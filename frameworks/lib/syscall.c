@@ -1,0 +1,88 @@
+#include <nxu/syscall.h>
+
+static int64_t
+nxu_syscall0(uint64_t number)
+{
+	register uint64_t x8 __asm__("x8") = number;
+	register uint64_t x0 __asm__("x0");
+	__asm__ volatile("svc #0" : "=r"(x0) : "r"(x8) : "memory");
+	return (int64_t)x0;
+}
+
+static int64_t
+nxu_syscall1(uint64_t number, uint64_t argument0)
+{
+	register uint64_t x8 __asm__("x8") = number;
+	register uint64_t x0 __asm__("x0") = argument0;
+	__asm__ volatile("svc #0" : "+r"(x0) : "r"(x8) : "memory");
+	return (int64_t)x0;
+}
+
+static int64_t
+nxu_syscall2(uint64_t number, uint64_t argument0, uint64_t argument1)
+{
+	register uint64_t x8 __asm__("x8") = number;
+	register uint64_t x0 __asm__("x0") = argument0;
+	register uint64_t x1 __asm__("x1") = argument1;
+	__asm__ volatile("svc #0" : "+r"(x0) : "r"(x1), "r"(x8) : "memory");
+	return (int64_t)x0;
+}
+
+static int64_t
+nxu_syscall3(uint64_t number, uint64_t argument0, uint64_t argument1, uint64_t argument2)
+{
+	register uint64_t x8 __asm__("x8") = number;
+	register uint64_t x0 __asm__("x0") = argument0;
+	register uint64_t x1 __asm__("x1") = argument1;
+	register uint64_t x2 __asm__("x2") = argument2;
+	__asm__ volatile("svc #0" : "+r"(x0) : "r"(x1), "r"(x2), "r"(x8) : "memory");
+	return (int64_t)x0;
+}
+
+static int64_t
+nxu_syscall6(uint64_t number, uint64_t argument0, uint64_t argument1, uint64_t argument2, uint64_t argument3, uint64_t argument4, uint64_t argument5)
+{
+	register uint64_t x8 __asm__("x8") = number;
+	register uint64_t x0 __asm__("x0") = argument0;
+	register uint64_t x1 __asm__("x1") = argument1;
+	register uint64_t x2 __asm__("x2") = argument2;
+	register uint64_t x3 __asm__("x3") = argument3;
+	register uint64_t x4 __asm__("x4") = argument4;
+	register uint64_t x5 __asm__("x5") = argument5;
+	__asm__ volatile("svc #0" : "+r"(x0) : "r"(x1), "r"(x2), "r"(x3), "r"(x4), "r"(x5), "r"(x8) : "memory");
+	return (int64_t)x0;
+}
+
+int64_t nxu_exit(uint64_t status) { return nxu_syscall1(NXU_SYS_EXIT, status); }
+int64_t nxu_write(uint64_t descriptor, const void *buffer, uint64_t length) { return nxu_syscall3(NXU_SYS_WRITE, descriptor, (uint64_t)buffer, length); }
+int64_t nxu_get_version(void *buffer, uint64_t capacity) { return nxu_syscall2(NXU_SYS_GET_VERSION, (uint64_t)buffer, capacity); }
+int64_t nxu_open(const char *path, uint64_t flags) { return nxu_syscall2(NXU_SYS_OPEN, (uint64_t)path, flags); }
+int64_t nxu_read(uint64_t descriptor, void *buffer, uint64_t length) { return nxu_syscall3(NXU_SYS_READ, descriptor, (uint64_t)buffer, length); }
+int64_t nxu_close(uint64_t descriptor) { return nxu_syscall1(NXU_SYS_CLOSE, descriptor); }
+int64_t nxu_spawn(const char *path, const char *name) { return nxu_syscall2(NXU_SYS_SPAWN, (uint64_t)path, (uint64_t)name); }
+int64_t nxu_waitpid(uint64_t pid, uint64_t *status) { return nxu_syscall2(NXU_SYS_WAITPID, pid, (uint64_t)status); }
+int64_t nxu_getpid(void) { return nxu_syscall0(NXU_SYS_GETPID); }
+int64_t nxu_yield(void) { return nxu_syscall0(NXU_SYS_YIELD); }
+int64_t nxu_get_boot_args(char *buffer, uint64_t capacity) { return nxu_syscall2(NXU_SYS_GET_BOOT_ARGS, (uint64_t)buffer, capacity); }
+int64_t nxu_klog_read(uint64_t *cursor, char *buffer, uint64_t capacity) { return nxu_syscall3(NXU_SYS_KLOG_READ, (uint64_t)cursor, (uint64_t)buffer, capacity); }
+int64_t nxu_unlink(const char *path) { return nxu_syscall1(NXU_SYS_UNLINK, (uint64_t)path); }
+int64_t nxu_sync(void) { return nxu_syscall0(NXU_SYS_SYNC); }
+int64_t nxu_uptime_us(void) { return nxu_syscall0(NXU_SYS_UPTIME_US); }
+int64_t nxu_readdir(uint64_t descriptor, nxu_dirent_t *entry) { return nxu_syscall2(NXU_SYS_READDIR, descriptor, (uint64_t)entry); }
+int64_t nxu_seek(uint64_t descriptor, uint64_t offset) { return nxu_syscall2(NXU_SYS_SEEK, descriptor, offset); }
+int64_t nxu_stat(const char *path, nxu_stat_t *stat) { return nxu_syscall2(NXU_SYS_STAT, (uint64_t)path, (uint64_t)stat); }
+int64_t nxu_mkdir(const char *path) { return nxu_syscall1(NXU_SYS_MKDIR, (uint64_t)path); }
+int64_t nxu_recovery_fs_mount_info(uint32_t index, nxu_recovery_fs_mount_info_t *info) { return nxu_syscall2(NXU_SYS_RECOVERY_FS_MOUNT_INFO, index, (uint64_t)info); }
+int64_t nxu_recovery_fs_mount(const char *filesystem, uint32_t device_index, const char *path) { return nxu_syscall3(NXU_SYS_RECOVERY_FS_MOUNT, (uint64_t)filesystem, device_index, (uint64_t)path); }
+int64_t nxu_recovery_fs_unmount(const char *path) { return nxu_syscall1(NXU_SYS_RECOVERY_FS_UNMOUNT, (uint64_t)path); }
+int64_t nxu_recovery_block_info(uint32_t index, nxu_recovery_block_info_t *info) { return nxu_syscall2(NXU_SYS_RECOVERY_BLOCK_INFO, index, (uint64_t)info); }
+int64_t nxu_recovery_fs_space_info(const char *path, nxu_recovery_fs_space_info_t *info) { return nxu_syscall2(NXU_SYS_RECOVERY_FS_SPACE_INFO, (uint64_t)path, (uint64_t)info); }
+int64_t nxu_recovery_block_layout_info(uint32_t index, nxu_recovery_block_layout_info_t *info) { return nxu_syscall2(NXU_SYS_RECOVERY_BLOCK_LAYOUT_INFO, index, (uint64_t)info); }
+int64_t nxu_recovery_block_partition_info(uint32_t device_index, uint32_t partition_index, nxu_recovery_block_partition_info_t *info) { return nxu_syscall3(NXU_SYS_RECOVERY_BLOCK_PARTITION_INFO, device_index, partition_index, (uint64_t)info); }
+int64_t nxu_recovery_block_health_info(uint32_t device_index, nxu_recovery_block_health_info_t *info) { return nxu_syscall2(NXU_SYS_RECOVERY_BLOCK_HEALTH_INFO, device_index, (uint64_t)info); }
+int64_t nxu_recovery_block_verify(uint32_t device_index) { return nxu_syscall1(NXU_SYS_RECOVERY_BLOCK_VERIFY, device_index); }
+
+int64_t nxu_recovery_display_info(nxu_recovery_display_info_t *info) { return nxu_syscall1(NXU_SYS_RECOVERY_DISPLAY_INFO, (uint64_t)info); }
+int64_t nxu_recovery_present(const uint32_t *pixels, uint32_t stride, uint32_t x, uint32_t y, uint32_t width, uint32_t height) { return nxu_syscall6(NXU_SYS_RECOVERY_PRESENT, (uint64_t)pixels, stride, x, y, width, height); }
+int64_t nxu_recovery_input(nxu_recovery_input_event_t *event) { return nxu_syscall1(NXU_SYS_RECOVERY_INPUT, (uint64_t)event); }
+int64_t nxu_system_reset(void) { return nxu_syscall0(NXU_SYS_SYSTEM_RESET); }

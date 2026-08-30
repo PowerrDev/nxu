@@ -1,0 +1,181 @@
+#ifndef NXU_KERN_PROC_H
+#define NXU_KERN_PROC_H
+
+#include <kern/process/task.h>
+#include <vfs/file.h>
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#define PROC_MAX 64U
+#define PROC_PID_KERNEL 0U
+#define PROC_PID_MAX 99999U
+#define PROC_PID_INVALID UINT32_MAX
+
+#define PROC_NAME_MAX 32U
+
+typedef uint32_t proc_id_t;
+typedef uint64_t proc_uniqueid_t;
+typedef uint32_t proc_idversion_t;
+
+typedef struct proc *proc_t;
+
+typedef enum {
+	PROC_STATE_UNUSED,
+	PROC_STATE_EMBRYO,
+	PROC_STATE_RUNNABLE,
+	PROC_STATE_RUNNING,
+	PROC_STATE_STOPPED,
+	PROC_STATE_ZOMBIE,
+	PROC_STATE_DEAD
+} proc_state_t;
+
+typedef enum {
+	PROC_FLAG_NONE = 0U,
+	PROC_FLAG_SYSTEM = 1U << 0U,
+	PROC_FLAG_EXITING = 1U << 1U,
+	PROC_FLAG_REAPED = 1U << 2U,
+	PROC_FLAG_EXECING = 1U << 3U,
+	PROC_FLAG_TRACED = 1U << 4U
+} proc_flag_t;
+
+/*
+ * proc_ident_t
+ *
+ * Stable identity for one process lifetime.
+ *
+ * A PID may be reused. uniqueid and idversion distinguish a stale identity
+ * from a later process which happens to receive the same PID.
+ */
+typedef struct {
+	proc_id_t pid;
+	proc_uniqueid_t uniqueid;
+	proc_idversion_t idversion;
+} proc_ident_t;
+
+/*
+ * struct proc
+ *
+ * UNIX process identity and lifecycle state.
+ *
+ * Execution resources belong to p_task. Open-file state belongs to p_fd and
+ * is shared by every thread in the task. Live processes reside on allproc;
+ * exited processes reside on zombproc until their parent reaps them.
+ *
+ * p_pptr / p_children / p_sibling_*
+ *     Intrusive process hierarchy.
+ *
+ * p_task
+ *     Address space and thread container.
+ *
+ * p_fd
+ *     Per-process descriptor table. Descriptor-owned file references are
+ *     closed before the process enters zombie state.
+ */
+struct proc {
+	proc_t p_list_prev;
+	proc_t p_list_next;
+
+	proc_t p_pptr;
+	proc_t p_children;
+
+	proc_t p_sibling_prev;
+	proc_t p_sibling_next;
+
+	struct task p_task;
+	struct filedesc p_fd;
+
+	proc_ident_t p_ident;
+
+	proc_state_t p_stat;
+	uint32_t p_flag;
+
+	uint32_t p_refcount;
+	uint32_t p_childrencnt;
+
+	uint64_t p_xstat;
+
+	char p_comm[PROC_NAME_MAX];
+
+	uint32_t p_slot;
+};
+
+bool proc_bootstrap(void);
+
+proc_t proc_kernel(void);
+proc_t proc_initproc(void);
+
+bool proc_create_user(
+	proc_t parent,
+	const char *name,
+	uint64_t entry,
+	uint64_t stack,
+	proc_t *result
+);
+
+proc_t proc_find(proc_id_t pid);
+proc_t proc_find_zombie(proc_id_t pid);
+proc_t proc_find_ident(const proc_ident_t *ident);
+
+bool proc_reference(proc_t proc);
+void proc_rele(proc_t proc);
+
+bool proc_make_runnable(proc_t proc);
+bool proc_mark_running(proc_t proc);
+
+bool proc_stop(proc_t proc);
+bool proc_continue(proc_t proc);
+
+bool proc_exit(proc_t proc, uint64_t status);
+bool proc_exit_current(uint64_t status);
+
+bool proc_reap(
+	proc_t parent,
+	proc_id_t pid,
+	uint64_t *status
+);
+
+bool proc_set_current(proc_t proc);
+proc_t current_proc(void);
+
+proc_id_t proc_selfpid(void);
+proc_id_t proc_ppid(proc_t proc);
+
+proc_t proc_parent_ref(proc_t proc);
+proc_t proc_first_child_ref(proc_t proc);
+proc_t proc_next_sibling_ref(proc_t proc);
+
+bool proc_is_inferior(
+	proc_t proc,
+	proc_t ancestor
+);
+
+task_t proc_task(proc_t proc);
+vm_address_space_t *proc_vm_map(proc_t proc);
+
+bool proc_get_ident(
+	proc_t proc,
+	proc_ident_t *ident
+);
+
+bool proc_set_name(
+	proc_t proc,
+	const char *name
+);
+
+bool proc_get_name(
+	proc_t proc,
+	char *buffer,
+	uint32_t size
+);
+
+proc_state_t proc_state(proc_t proc);
+
+uint32_t proc_child_count(proc_t proc);
+uint32_t proc_count(void);
+uint32_t proc_zombie_count(void);
+
+bool proc_validate(void);
+void proc_dump(void);
+
+#endif
