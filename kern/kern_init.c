@@ -18,6 +18,7 @@
 #include <drivers/video/display.h>
 #include <drivers/video/ramfb_console.h>
 #include <drivers/video/ui_service_host.h>
+#include <drivers/video/windowserver_host.h>
 #include <drivers/block/block_device.h>
 #include <kern/console/bootlog.h>
 #include <kern/memory/heap.h>
@@ -1691,6 +1692,27 @@ void kern_init_higher_half(void)
 		uint64_t hold_ms = input_enabled ? 3000ULL : 500ULL;
 		if (!boot_splash_wait(hold_ms, input_enabled ? kern_boot_splash_service : 0)) kern_fail("boot_splash: hold failed");
 	}
+
+#if defined(NXU_WINDOWSERVER_BOOT_TEST)
+	/*
+	* Start the experimental Rust WindowServer after display discovery and
+	* boot-splash ownership have completed.
+	*
+	* NXU retains ownership of the display device and framebuffer. The host
+	* bridge passes that framebuffer into WindowServer.framework, which performs
+	* the initial software composition and returns control to NXU.
+	*/
+	nxu_boot_log_ui_handoff();
+	arm64_enable_irqs();
+
+	if (!windowserver_bootstrap()) {
+		kern_fail("panic: WindowServer bootstrap failed");
+	}
+
+	for (;;) {
+		__asm__ volatile("wfe");
+	}
+#endif
 
 #if defined(NXU_UI_BOOT_TEST)
 	/*
