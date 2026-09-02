@@ -1,4 +1,13 @@
-build-uiservice
-build
-build-user
-assets/Recovery/Generated/
+/BUILD/
+/build/
+/build-*/
+/assets/Recovery/Generated/
+**/target/
+.idea/
+.vscode/
+.DS_Store
+.AppleDouble
+._*
+*.swp
+*.swo
+*~

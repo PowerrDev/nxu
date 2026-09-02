@@ -1,8 +1,10 @@
 .DEFAULT_GOAL := all
 
-BUILD := build
+BUILD_ROOT ?= BUILD
+CONFIG ?= default
+BUILD := $(BUILD_ROOT)/$(CONFIG)
 
-USER_BUILD := build-user
+USER_BUILD := $(BUILD_ROOT)/userland
 
 BOOT_ARGS ?=
 
@@ -24,7 +26,7 @@ KERNEL_IMAGE := $(BUILD)/kernel.bin
 
 DISK ?= disk.img
 
-DISK_SIZE ?= 64M
+DISK_SIZE ?= 16M
 
 DISK_ROOT ?= assets/DiskRoot
 
@@ -111,9 +113,9 @@ WINDOWSERVER ?= 0
 
 WINDOWSERVER_DIR ?= ../WindowServer.framework
 
-WINDOWSERVER_LIB := $(WINDOWSERVER_DIR)/build/libWindowServer.a
+WINDOWSERVER_LIB := $(WINDOWSERVER_DIR)/BUILD/libWindowServer.a
 
-WINDOWSERVER_INCLUDE := $(WINDOWSERVER_DIR)/build
+WINDOWSERVER_INCLUDE := $(WINDOWSERVER_DIR)/include
 
 
 # =============================================================================
@@ -208,8 +210,8 @@ C_SOURCES := \
     drivers/block/partition.c \
     drivers/video/display.c \
     drivers/video/ramfb_console.c \
-    drivers/video/ui_service_host.c \
-    drivers/video/windowserver_host.c \
+    platform/arm64/services/ui_service.c \
+    kern/aqua/window_server.c \
     drivers/virtio/virtio.c \
     drivers/virtio/virtio_block.c \
     drivers/virtio/virtio_gpu.c \
@@ -476,7 +478,7 @@ $(USER_STAGE_STAMP): $(USER_DAEMONS) $(USER_SERVICE_PLISTS)
 ifeq ($(UISERVICE),1)
 
 # Only the host bridge includes the generated UIService ABI header.
-$(BUILD)/drivers/video/ui_service_host.o: | uiservice-build
+$(BUILD)/platform/arm64/services/ui_service.o: | uiservice-build
 
 endif
 
@@ -484,7 +486,7 @@ endif
 ifeq ($(WINDOWSERVER),1)
 
 # Only the WindowServer host bridge includes the generated WindowServer ABI header.
-$(BUILD)/drivers/video/windowserver_host.o: | windowserver-build
+$(BUILD)/kern/aqua/window_server.o: | windowserver-build
 
 endif
 
@@ -623,7 +625,7 @@ uiservice-about: $(DISK) $(DISK_FORMAT_STAMP)
 	@echo "NXU: building UIService boot target with $(BUILD_JOBS) host job(s)"
 
 	$(MAKE) -j$(BUILD_JOBS) \
-		BUILD=build-uiservice \
+		BUILD_ROOT=BUILD CONFIG=uiservice \
 		UISERVICE=1 \
 		EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DNXU_UI_SERVICE_BOOT_TEST" \
 		all
@@ -656,7 +658,7 @@ windowserver-about: $(DISK) $(DISK_FORMAT_STAMP)
 	@echo "NXU: building WindowServer boot target with $(BUILD_JOBS) host job(s)"
 
 	$(MAKE) -j$(BUILD_JOBS) \
-		BUILD=build-windowserver \
+		BUILD_ROOT=BUILD CONFIG=windowserver \
 		WINDOWSERVER=1 \
 		EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DNXU_WINDOWSERVER_BOOT_TEST" \
 		all
@@ -666,7 +668,7 @@ windowserver-about: $(DISK) $(DISK_FORMAT_STAMP)
 		-cpu cortex-a72 \
 		-smp 1 \
 		-m 512M \
-		-kernel build-windowserver/kernel.bin \
+		-kernel BUILD/windowserver/kernel.bin \
 		-append "$(BOOT_ARGS)" \
 		-display cocoa \
 		-global virtio-mmio.force-legacy=false \
@@ -707,14 +709,14 @@ disk-check:
 
 journal-crash: $(DISK) $(DISK_FORMAT_STAMP)
 
-	$(MAKE) BUILD=build-journal-crash EXTRA_CFLAGS=-DNXU_JOURNAL_CRASH_TEST all
+	$(MAKE) BUILD_ROOT=BUILD CONFIG=journal-crash EXTRA_CFLAGS=-DNXU_JOURNAL_CRASH_TEST all
 
 	qemu-system-aarch64 \
 		-machine virt,gic-version=3 \
 		-cpu cortex-a72 \
 		-smp 1 \
 		-m 512M \
-		-kernel build-journal-crash/kernel.bin \
+		-kernel BUILD/journal-crash/kernel.bin \
 		-append "$(BOOT_ARGS)" \
 		-display gtk \
 		-global virtio-mmio.force-legacy=false \
@@ -736,11 +738,7 @@ journal-recover: run
 
 clean:
 
-	rm -rf $(BUILD) \
-		$(USER_BUILD) \
-		build-journal-crash \
-		build-uiservice \
-		build-windowserver
+	rm -rf $(BUILD_ROOT)
 
 	rm -f $(DISK_ROOT)/System/Library/CoreServices/bootd
 

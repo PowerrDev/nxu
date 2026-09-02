@@ -18,8 +18,8 @@
 #include <drivers/video/display.h>
 #include <drivers/video/ramfb_console.h>
 #include <drivers/video/ui_service_host.h>
-#include <drivers/video/windowserver_host.h>
 #include <drivers/block/block_device.h>
+#include <kern/aqua/window_server.h>
 #include <kern/console/bootlog.h>
 #include <kern/memory/heap.h>
 #include <kern/irq/irq.h>
