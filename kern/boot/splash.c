@@ -3,6 +3,7 @@
 #include <arch/arm64/timer.h>
 #include <kern/boot/splash_asset.h>
 #include <kern/console/console.h>
+#include <kern/console/font8x16.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -21,6 +22,17 @@
 #define BOOT_SPLASH_STATUS_HEIGHT 18U
 #define BOOT_SPLASH_STATUS_SCALE 2U
 #define BOOT_SPLASH_STATUS_COLOR 0x00D8D8DEU
+#define BOOT_SPLASH_STATUS_MAX_LENGTH 63U
+
+/*
+ * Verbose serial log rendered directly onto the splash scanout, underneath the
+ * logo/bar/status layer -- the same "SRD" look as an Apple internal boot: every
+ * line that would normally only reach UART scrolls across the framebuffer while
+ * the boot logo stays fixed on top of it.
+ */
+#define BOOT_SPLASH_TEXT_CELL_WIDTH FONT8X16_WIDTH
+#define BOOT_SPLASH_TEXT_CELL_HEIGHT FONT8X16_HEIGHT
+#define BOOT_SPLASH_TEXT_COLOR 0x00565660U
 
 static display_device_t *g_display;
 static uint64_t g_started_at;
@@ -28,6 +40,16 @@ static uint32_t g_scale;
 static uint32_t g_top;
 static uint32_t g_progress;
 static bool g_visible;
+
+static char g_status_text[BOOT_SPLASH_STATUS_MAX_LENGTH + 1U];
+static bool g_status_active;
+
+static uint32_t g_text_columns;
+static uint32_t g_text_rows;
+static uint32_t g_text_cursor_x;
+static uint32_t g_text_cursor_y;
+static bool g_text_active;
+static bool g_text_dirty;
 
 static const uint8_t g_status_glyph_space[7] = { 0U, 0U, 0U, 0U, 0U, 0U, 0U };
 static const uint8_t g_status_glyph_dot[7] = { 0U, 0U, 0U, 0U, 0U, 0x0CU, 0x0CU };
@@ -126,9 +148,14 @@ static uint32_t boot_splash_status_width(const char *status)
 	return count * glyph_width + (count - 1U) * spacing;
 }
 
-bool boot_splash_set_status(const char *status)
+/*
+ * Paint the cached status caption from g_status_text without presenting.
+ * Reused both by boot_splash_set_status() and by the text-overlay scroll
+ * handler, which must restore the caption after a full-screen scroll wipes it.
+ */
+static bool boot_splash_paint_status(void)
 {
-	if (!g_visible || g_display == 0 || status == 0) return false;
+	if (!g_status_active || g_display == 0) return false;
 	uint32_t top;
 	if (!boot_splash_status_rect(&top)) return false;
 
@@ -137,6 +164,7 @@ bool boot_splash_set_status(const char *status)
 		for (uint32_t x = 0U; x < g_display->width; x++) row[x] = BOOT_SPLASH_BACKGROUND;
 	}
 
+	const char *status = g_status_text;
 	uint32_t width = boot_splash_status_width(status);
 	uint32_t cursor = width < g_display->width ? (g_display->width - width) / 2U : 0U;
 	uint32_t glyph_top = top + (BOOT_SPLASH_STATUS_HEIGHT - 7U * BOOT_SPLASH_STATUS_SCALE) / 2U;
@@ -159,12 +187,29 @@ bool boot_splash_set_status(const char *status)
 		cursor += 6U * BOOT_SPLASH_STATUS_SCALE;
 	}
 
+	return true;
+}
+
+bool boot_splash_set_status(const char *status)
+{
+	if (!g_visible || g_display == 0 || status == 0) return false;
+	uint32_t top;
+	if (!boot_splash_status_rect(&top)) return false;
+
+	uint32_t length = 0U;
+	while (status[length] != '\0' && length < BOOT_SPLASH_STATUS_MAX_LENGTH) length++;
+	for (uint32_t index = 0U; index < length; index++) g_status_text[index] = status[index];
+	g_status_text[length] = '\0';
+	g_status_active = true;
+
+	if (!boot_splash_paint_status()) return false;
 	return display_present(g_display, 0U, top, g_display->width, BOOT_SPLASH_STATUS_HEIGHT);
 }
 
-static bool boot_splash_draw_bar(void)
+/* Paint the progress bar at its current fill level without presenting. */
+static bool boot_splash_paint_bar(void)
 {
-	if (!g_visible || g_display == 0) return false;
+	if (g_display == 0) return false;
 
 	uint32_t left;
 	uint32_t top;
@@ -187,7 +232,188 @@ static bool boot_splash_draw_bar(void)
 		}
 	}
 
+	return true;
+}
+
+static bool boot_splash_draw_bar(void)
+{
+	if (!g_visible || g_display == 0) return false;
+
+	uint32_t left;
+	uint32_t top;
+	if (!boot_splash_bar_rect(&left, &top)) return false;
+	if (!boot_splash_paint_bar()) return false;
+
 	return display_present(g_display, left, top, BOOT_SPLASH_BAR_WIDTH, BOOT_SPLASH_BAR_HEIGHT);
+}
+
+static uint32_t g_left;
+
+/* Paint the boot logo at its fixed position without presenting. */
+static void boot_splash_paint_logo(void)
+{
+	if (g_display == 0) return;
+
+	for (uint32_t source_y = 0U; source_y < g_boot_splash_height; source_y++) {
+		for (uint32_t source_x = 0U; source_x < g_boot_splash_width; source_x++) {
+			uint32_t source = g_boot_splash_pixels[(uint64_t)source_y * g_boot_splash_width + source_x];
+			if ((source >> 24U) == 0U) continue;
+			uint32_t destination_x = g_left + source_x * g_scale;
+			uint32_t destination_y = g_top + source_y * g_scale;
+
+			for (uint32_t dy = 0U; dy < g_scale; dy++) {
+				uint32_t *row = g_display->framebuffer + (uint64_t)(destination_y + dy) * g_display->stride + destination_x;
+				for (uint32_t dx = 0U; dx < g_scale; dx++) row[dx] = boot_splash_blend(row[dx], source);
+			}
+		}
+	}
+}
+
+/*
+ * Recomposite the logo, progress bar and status caption on top of the
+ * scrolling text console. Called after every full-screen text scroll, since
+ * the scroll shifts every pixel row -- including the fixed overlay -- up by
+ * one text line.
+ */
+static void boot_splash_composite_overlay(void)
+{
+	if (g_display == 0) return;
+	boot_splash_paint_logo();
+	(void)boot_splash_paint_bar();
+	(void)boot_splash_paint_status();
+}
+
+static void boot_splash_text_clear_cell(uint32_t column, uint32_t row)
+{
+	uint32_t start_x = column * BOOT_SPLASH_TEXT_CELL_WIDTH;
+	uint32_t start_y = row * BOOT_SPLASH_TEXT_CELL_HEIGHT;
+
+	for (uint32_t y = 0U; y < BOOT_SPLASH_TEXT_CELL_HEIGHT; y++) {
+		uint32_t *pixels = g_display->framebuffer + (uint64_t)(start_y + y) * g_display->stride + start_x;
+		for (uint32_t x = 0U; x < BOOT_SPLASH_TEXT_CELL_WIDTH; x++) pixels[x] = BOOT_SPLASH_BACKGROUND;
+	}
+}
+
+static void boot_splash_text_draw_char(uint32_t column, uint32_t row, char character)
+{
+	if (character < 32 || character > 126) character = '?';
+
+	uint32_t start_x = column * BOOT_SPLASH_TEXT_CELL_WIDTH;
+	uint32_t start_y = row * BOOT_SPLASH_TEXT_CELL_HEIGHT;
+	const uint8_t *glyph = &g_font8x16[(uint32_t)(uint8_t)character * FONT8X16_HEIGHT];
+
+	boot_splash_text_clear_cell(column, row);
+
+	for (uint32_t glyph_row = 0U; glyph_row < FONT8X16_HEIGHT; glyph_row++) {
+		uint8_t bits = glyph[glyph_row];
+		uint32_t *pixels = g_display->framebuffer + (uint64_t)(start_y + glyph_row) * g_display->stride + start_x;
+
+		for (uint32_t column_bit = 0U; column_bit < FONT8X16_WIDTH; column_bit++) {
+			if ((bits & (1U << column_bit)) == 0U) continue;
+			pixels[column_bit] = BOOT_SPLASH_TEXT_COLOR;
+		}
+	}
+}
+
+/*
+ * Shift the active text rows up by one cell height and clear the vacated
+ * line, exactly like a terminal scroll -- except this operates directly on
+ * the splash's live scanout, so the logo/bar/status must be repainted on top
+ * once the shift is done.
+ */
+static void boot_splash_text_scroll(void)
+{
+	uint32_t active_height = g_text_rows * BOOT_SPLASH_TEXT_CELL_HEIGHT;
+	uint32_t pixel_rows = active_height - BOOT_SPLASH_TEXT_CELL_HEIGHT;
+
+	for (uint32_t y = 0U; y < pixel_rows; y++) {
+		uint32_t *destination = g_display->framebuffer + (uint64_t)y * g_display->stride;
+		uint32_t *source = g_display->framebuffer + (uint64_t)(y + BOOT_SPLASH_TEXT_CELL_HEIGHT) * g_display->stride;
+		for (uint32_t x = 0U; x < g_display->width; x++) destination[x] = source[x];
+	}
+
+	for (uint32_t y = pixel_rows; y < active_height; y++) {
+		uint32_t *row = g_display->framebuffer + (uint64_t)y * g_display->stride;
+		for (uint32_t x = 0U; x < g_display->width; x++) row[x] = BOOT_SPLASH_BACKGROUND;
+	}
+
+	boot_splash_composite_overlay();
+}
+
+static void boot_splash_text_advance_line(void)
+{
+	g_text_cursor_x = 0U;
+	g_text_cursor_y++;
+
+	if (g_text_cursor_y >= g_text_rows) {
+		boot_splash_text_scroll();
+		g_text_cursor_y = g_text_rows - 1U;
+	}
+}
+
+/* Present the full screen once if the text console has drawn since the last flush. */
+static bool boot_splash_text_flush(void)
+{
+	if (!g_text_dirty || g_display == 0) return true;
+	g_text_dirty = false;
+	return display_present_full(g_display);
+}
+
+/*
+ * kconsole sink that mirrors every character written to kputc/kprintf (i.e.
+ * everything the serial/UART sink also receives) onto the splash scanout as
+ * scrolling monospace text, underneath the logo/bar/status overlay.
+ */
+static void boot_splash_text_putc(char character, void *context)
+{
+	(void)context;
+	if (!g_text_active) return;
+
+	if (character == '\r') {
+		g_text_cursor_x = 0U;
+		return;
+	}
+
+	if (character == '\n') {
+		boot_splash_text_advance_line();
+		g_text_dirty = true;
+		/*
+		 * Flush immediately on every completed line. Most of the kernel's
+		 * boot log happens between boot_splash_wait() returning and
+		 * boot_splash_finish() running, a long synchronous stretch with no
+		 * timer-driven present of its own -- without this the scrolling log
+		 * would never actually reach the scanout during that window.
+		 */
+		(void)boot_splash_text_flush();
+		return;
+	}
+
+	if (character == '\t') {
+		uint32_t spaces = 4U - (g_text_cursor_x % 4U);
+		for (uint32_t index = 0U; index < spaces; index++) boot_splash_text_putc(' ', context);
+		return;
+	}
+
+	if (g_text_cursor_x >= g_text_columns) boot_splash_text_advance_line();
+
+	boot_splash_text_draw_char(g_text_cursor_x, g_text_cursor_y, character);
+	g_text_cursor_x++;
+	g_text_dirty = true;
+}
+
+static void boot_splash_text_init(void)
+{
+	if (g_display == 0) {
+		g_text_active = false;
+		return;
+	}
+
+	g_text_columns = g_display->width / BOOT_SPLASH_TEXT_CELL_WIDTH;
+	g_text_rows = g_display->height / BOOT_SPLASH_TEXT_CELL_HEIGHT;
+	g_text_cursor_x = 0U;
+	g_text_cursor_y = 0U;
+	g_text_dirty = false;
+	g_text_active = g_text_columns != 0U && g_text_rows != 0U;
 }
 
 bool boot_splash_show(display_device_t *display)
@@ -208,24 +434,19 @@ bool boot_splash_show(display_device_t *display)
 
 	uint32_t scaled_width = g_boot_splash_width * g_scale;
 	uint32_t scaled_height = g_boot_splash_height * g_scale;
-	uint32_t left = (display->width - scaled_width) / 2U;
+	g_left = (display->width - scaled_width) / 2U;
 	g_top = (display->height - scaled_height) / 2U;
 
-	for (uint32_t source_y = 0U; source_y < g_boot_splash_height; source_y++) {
-		for (uint32_t source_x = 0U; source_x < g_boot_splash_width; source_x++) {
-			uint32_t source = g_boot_splash_pixels[(uint64_t)source_y * g_boot_splash_width + source_x];
-			if ((source >> 24U) == 0U) continue;
-			uint32_t destination_x = left + source_x * g_scale;
-			uint32_t destination_y = g_top + source_y * g_scale;
+	g_display = display;
+	g_status_active = false;
 
-			for (uint32_t dy = 0U; dy < g_scale; dy++) {
-				uint32_t *row = display->framebuffer + (uint64_t)(destination_y + dy) * display->stride + destination_x;
-				for (uint32_t dx = 0U; dx < g_scale; dx++) row[dx] = boot_splash_blend(row[dx], source);
-			}
-		}
+	boot_splash_text_init();
+	if (g_text_active && !kconsole_register_sink(boot_splash_text_putc, 0, false)) {
+		g_text_active = false;
 	}
 
-	g_display = display;
+	boot_splash_paint_logo();
+
 	g_started_at = timer_get_ticks();
 	g_progress = 80U;
 	g_visible = true;
@@ -254,6 +475,7 @@ bool boot_splash_wait(uint64_t milliseconds, boot_splash_service_t service)
 			uint32_t step = remaining / 24U;
 			if (remaining != 0U) g_progress += step != 0U ? step : 1U;
 			if (!boot_splash_draw_bar()) return false;
+			if (!boot_splash_text_flush()) return false;
 			next_frame = now + frame_interval;
 		}
 		__asm__ volatile("yield");
@@ -269,6 +491,15 @@ bool boot_splash_finish(void)
 	if (frequency == 0ULL) return false;
 	uint64_t frame_interval = frequency / BOOT_SPLASH_FRAME_HZ;
 	if (frame_interval == 0ULL) frame_interval = 1ULL;
+
+	/*
+	 * Stop mirroring the serial log onto the scanout before UI takes it over;
+	 * the completion animation below finishes without further text scrolling.
+	 */
+	if (g_text_active) {
+		kconsole_unregister_sink(boot_splash_text_putc, 0);
+		g_text_active = false;
+	}
 
 	while (g_progress < BOOT_SPLASH_PROGRESS_MAX) {
 		uint32_t remaining = BOOT_SPLASH_PROGRESS_MAX - g_progress;

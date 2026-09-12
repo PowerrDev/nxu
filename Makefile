@@ -225,6 +225,7 @@ C_SOURCES := \
     kern/boot/splash_asset.c \
     kern/console/console.c \
     kern/console/bootlog.c \
+    kern/console/font8x16.c \
     kern/exec/elf.c \
     kern/irq/irq.c \
     kern/kern_init.c \
