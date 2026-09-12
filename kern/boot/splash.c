@@ -50,6 +50,7 @@ static uint32_t g_text_cursor_x;
 static uint32_t g_text_cursor_y;
 static bool g_text_active;
 static bool g_text_dirty;
+static bool g_text_replaying;
 
 static const uint8_t g_status_glyph_space[7] = { 0U, 0U, 0U, 0U, 0U, 0U, 0U };
 static const uint8_t g_status_glyph_dot[7] = { 0U, 0U, 0U, 0U, 0U, 0x0CU, 0x0CU };
@@ -382,9 +383,11 @@ static void boot_splash_text_putc(char character, void *context)
 		 * boot log happens between boot_splash_wait() returning and
 		 * boot_splash_finish() running, a long synchronous stretch with no
 		 * timer-driven present of its own -- without this the scrolling log
-		 * would never actually reach the scanout during that window.
+		 * would never actually reach the scanout during that window. Skipped
+		 * during the one-time history replay in boot_splash_show(), which
+		 * would otherwise fire one full-screen present per retained line.
 		 */
-		(void)boot_splash_text_flush();
+		if (!g_text_replaying) (void)boot_splash_text_flush();
 		return;
 	}
 
@@ -441,8 +444,19 @@ bool boot_splash_show(display_device_t *display)
 	g_status_active = false;
 
 	boot_splash_text_init();
-	if (g_text_active && !kconsole_register_sink(boot_splash_text_putc, 0, false)) {
-		g_text_active = false;
+	if (g_text_active) {
+		/*
+		 * Replay the retained console history so the splash appears with the
+		 * boot log already dense and scrolled behind the logo -- the "SRD"
+		 * look -- rather than starting blank and only filling in from here.
+		 * g_text_replaying suppresses the per-line present during replay
+		 * (see boot_splash_text_putc) so this doesn't fire one full-screen
+		 * present per retained line; the present below shows the end result.
+		 */
+		g_text_replaying = true;
+		bool registered = kconsole_register_sink(boot_splash_text_putc, 0, true);
+		g_text_replaying = false;
+		if (!registered) g_text_active = false;
 	}
 
 	boot_splash_paint_logo();
