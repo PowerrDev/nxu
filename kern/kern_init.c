@@ -1769,8 +1769,8 @@ void kern_init_higher_half(void)
 
 		if (!recovery_boot) {
 			bool bootd_matches_recovery = false;
-			exec_status_t compare_status = exec_images_equal(init_path, bootd_recovery_path, &bootd_matches_recovery);
-			if (compare_status == EXEC_STATUS_OK && !bootd_matches_recovery) {
+			loader_status_t compare_status = exec_images_equal(init_path, bootd_recovery_path, &bootd_matches_recovery);
+			if (compare_status == LOADER_STATUS_OK && !bootd_matches_recovery) {
 				kputln("exec: bootd primary differs from recovery image");
 				init_path = bootd_recovery_path;
 				init_uses_fallback = true;
@@ -1783,15 +1783,15 @@ void kern_init_higher_half(void)
 		kputs(init_path);
 		kputln(" as PID 1");
 
-		exec_status_t init_status = exec_spawn(proc_kernel(), init_path, init_name, &g_boot_process);
-		if (init_status != EXEC_STATUS_OK && !recovery_boot && !init_uses_fallback) {
+		loader_status_t init_status = exec_spawn(proc_kernel(), init_path, init_name, &g_boot_process);
+		if (init_status != LOADER_STATUS_OK && !recovery_boot && !init_uses_fallback) {
 			kputs("exec: primary bootd unavailable: ");
 			kputln(exec_status_name(init_status));
 			kputln("exec: trying bootd recovery image");
 			init_status = exec_spawn(proc_kernel(), bootd_recovery_path, init_name, &g_boot_process);
 		}
 
-		if (init_status != EXEC_STATUS_OK || g_boot_process == 0) {
+		if (init_status != LOADER_STATUS_OK || g_boot_process == 0) {
 			kputs("exec: selected environment unavailable: ");
 			kputln(exec_status_name(init_status));
 			kern_fail("exec: PID 1 launch failed");

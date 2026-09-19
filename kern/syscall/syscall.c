@@ -162,10 +162,10 @@ syscall_spawn(uint64_t user_path, uint64_t user_name)
 	if (!vm_copy_string_from_user(name, user_name, sizeof(name))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 
 	proc_t child;
-	exec_status_t status = exec_spawn(current_proc(), path, name, &child);
-	if (status == EXEC_STATUS_NOT_FOUND) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
-	if (status == EXEC_STATUS_NO_MEMORY) return syscall_error(SYSCALL_ERROR_NO_MEMORY);
-	if (status != EXEC_STATUS_OK || child == 0) return syscall_error(SYSCALL_ERROR_IO);
+	loader_status_t status = exec_spawn(current_proc(), path, name, &child);
+	if (status == LOADER_STATUS_NOT_FOUND) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+	if (status == LOADER_STATUS_NO_MEMORY) return syscall_error(SYSCALL_ERROR_NO_MEMORY);
+	if (status != LOADER_STATUS_OK || child == 0) return syscall_error(SYSCALL_ERROR_IO);
 	return syscall_return(child->p_ident.pid);
 }
 
