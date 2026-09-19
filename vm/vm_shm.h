@@ -44,8 +44,7 @@ typedef struct vm_shm_region *vm_shm_region_t;
  * deliberately not a real VMA/region list, just enough for the handful of
  * shared regions (framebuffers) one process needs for this milestone.
  */
-#define VM_SHM_BASE 0x0000006000000000ULL
-#define VM_SHM_WINDOW_SIZE 0x0000000040000000ULL
+#include <mach/machine/vm_param.h>
 
 /*
  * Allocates size_bytes worth of physical pages (zeroed, per

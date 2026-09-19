@@ -6,7 +6,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define VMM_HIGHER_HALF_BASE 0xFFFFFF8000000000ULL
+#include <mach/machine/vm_param.h>
 
 typedef enum {
 	VMM_MEMORY_NORMAL,

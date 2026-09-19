@@ -34,8 +34,7 @@
  * vm/vm_shm.h's VM_SHM_BASE window and from kern/loader/elf.c's
  * LOADER_USER_STACK_BASE/TOP.
  */
-#define VM_MAP_BASE 0x0000005000000000ULL
-#define VM_MAP_WINDOW_SIZE 0x0000000100000000ULL
+#include <mach/machine/vm_param.h>
 
 /* Per-call cap, eager-backed like vm_shm's own cap, just larger since this
  * is meant for general-purpose heap/stack use rather than one framebuffer. */
