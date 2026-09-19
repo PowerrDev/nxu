@@ -46,6 +46,15 @@ uint32_t mouse_buttons(void);
 int64_t mouse_x(void);
 int64_t mouse_y(void);
 int64_t mouse_wheel(void);
+
+/*
+ * mouse_take_delta:
+ *
+ * Pop one queued packet's relative motion (oldest first). Returns false once
+ * nothing is queued. See mouse.c for why this exists alongside mouse_x()/
+ * mouse_y() instead of replacing them.
+ */
+bool mouse_take_delta(int32_t *dx, int32_t *dy);
 uint64_t mouse_event_count(void);
 uint64_t mouse_packet_count(void);
 void mouse_dump_state(void);
