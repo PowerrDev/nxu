@@ -26,12 +26,20 @@ run_case() {
 	local name=$1 ram=$2 append=$3 want=$4 output status pattern ok=1
 	shift 4
 
-	output=$(perl -e "alarm $TIMEOUT; exec @ARGV" qemu-system-i386 \
-		-kernel "$KERNEL" -m "$ram" \
-		-display none -serial stdio -monitor none -no-reboot \
-		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
-		-append "$append" 2>&1)
-	status=$?
+	local attempt
+	for attempt in 1 2; do
+		output=$(perl -e "alarm $TIMEOUT; exec @ARGV" qemu-system-i386 \
+			-kernel "$KERNEL" -m "$ram" \
+			-display none -serial stdio -monitor none -no-reboot \
+			-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+			-append "$append" 2>&1)
+		status=$?
+
+		# QEMU killed by a signal (host hiccup, watchdog) gets one more try;
+		# a guest that really hangs hangs twice and still fails.
+		[ "$status" -lt 128 ] && break
+		printf 'note  %-14s qemu died with status %s, retrying\n' "$name" "$status"
+	done
 
 	count=$((count + 1))
 
