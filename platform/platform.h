@@ -36,6 +36,17 @@ typedef struct {
 	uint32_t virtio_mmio_intid[PLATFORM_MAX_VIRTIO_MMIO_DEVICES];
 	uint32_t virtio_mmio_irq_flags[PLATFORM_MAX_VIRTIO_MMIO_DEVICES];
 	uint32_t virtio_mmio_count;
+
+	/*
+	 * x86 legacy platform (platform/i386). Zero on arm64. On x86 the
+	 * uart and rtc regions above are I/O-port ranges (base = first port,
+	 * size = port count) rather than MMIO frames, and fw_cfg, the GIC
+	 * regions and pcie_ecam stay empty: PCI is enumerated through
+	 * configuration mechanism 1 (see platform/i386/pci.h) and the counts
+	 * below only summarize what that enumeration found.
+	 */
+	uint32_t pci_bus_count;
+	uint32_t pci_device_count;
 } platform_t;
 
 bool platform_discover(

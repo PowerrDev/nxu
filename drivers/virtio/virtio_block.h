@@ -2,7 +2,7 @@
 #define NXU_DRIVERS_VIRTIO_VIRTIO_BLOCK_H
 
 #include <drivers/block/block_device.h>
-#include <drivers/virtio/virtio_mmio.h>
+#include <drivers/virtio/virtio_transport.h>
 #include <drivers/virtio/virtqueue.h>
 
 #include <stdbool.h>
@@ -30,7 +30,7 @@ typedef struct {
  * later scheduler/wait-queue lesson.
  */
 typedef struct {
-	virtio_mmio_device_t transport;
+	virtio_device_t transport;
 
 	virtqueue_t requestq;
 
@@ -59,11 +59,11 @@ typedef struct {
 /*
  * virtio_block_attach:
  *
- * Bind one modern VirtIO-MMIO block transport, publish requestq, discover
+ * Bind one VirtIO block device (any transport), publish requestq, discover
  * medium geometry, and register the resulting block device.
  */
 bool virtio_block_attach(
-	const virtio_mmio_device_t *transport
+	const virtio_device_t *transport
 );
 
 uint32_t virtio_block_device_count(void);

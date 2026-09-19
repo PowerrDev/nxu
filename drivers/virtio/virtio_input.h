@@ -2,7 +2,7 @@
 #define NXU_DRIVERS_VIRTIO_VIRTIO_INPUT_H
 
 #include <drivers/input/input.h>
-#include <drivers/virtio/virtio_mmio.h>
+#include <drivers/virtio/virtio_transport.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -19,7 +19,7 @@ typedef struct {
 } virtio_input_event_t;
 
 typedef struct {
-	virtio_mmio_device_t transport;
+	virtio_device_t transport;
 	virtqueue_t eventq;
 	virtqueue_t statusq;
 
@@ -38,7 +38,7 @@ typedef struct {
 /*
  * virtio_input_attach:
  *
- * Attach the VirtIO Input driver to one negotiated MMIO transport.
+ * Attach the VirtIO Input driver to one VirtIO device on any transport.
  *
  * Queue 0 is maintained as a permanently populated device-writable event
  * queue. Each completed event descriptor is consumed, normalized, delivered
@@ -52,7 +52,7 @@ typedef struct {
  *
  * Returns true after the device is classified, queued, and interrupt-enabled.
  */
-bool virtio_input_attach(const virtio_mmio_device_t *transport);
+bool virtio_input_attach(const virtio_device_t *transport);
 
 /*
  * virtio_input_service:

@@ -89,14 +89,28 @@ bool input_read(input_event_t *event)
 	return true;
 }
 
+/*
+ * The 64-bit counters are only ever written with IRQs masked, so reading them
+ * with IRQs masked is atomic on a uniprocessor. That also holds on 32-bit
+ * targets, where a plain 64-bit load is two instructions and a lock-free
+ * 64-bit atomic load is not guaranteed to exist.
+ */
 uint64_t input_event_count(void)
 {
-	return __atomic_load_n(&g_input.published, __ATOMIC_ACQUIRE);
+	uint64_t irq_state = ml_irq_save();
+	uint64_t value = g_input.published;
+
+	ml_irq_restore(irq_state);
+	return value;
 }
 
 uint64_t input_drop_count(void)
 {
-	return __atomic_load_n(&g_input.dropped, __ATOMIC_ACQUIRE);
+	uint64_t irq_state = ml_irq_save();
+	uint64_t value = g_input.dropped;
+
+	ml_irq_restore(irq_state);
+	return value;
 }
 
 uint32_t input_pending_count(void)

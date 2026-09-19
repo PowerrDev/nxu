@@ -1,5 +1,6 @@
 #include <drivers/virtio/virtqueue.h>
 
+#include <mach/machine/barrier.h>
 #include <vm/pmm.h>
 #include <vm/vmm.h>
 
@@ -21,12 +22,12 @@ static uint64_t virtqueue_align_up(uint64_t value, uint64_t alignment)
 
 static inline void virtqueue_publish_barrier(void)
 {
-	__asm__ volatile("dmb oshst" : : : "memory");
+	ml_dma_wmb();
 }
 
 static inline void virtqueue_consume_barrier(void)
 {
-	__asm__ volatile("dmb oshld" : : : "memory");
+	ml_dma_rmb();
 }
 
 /*
@@ -71,6 +72,7 @@ bool virtqueue_init(virtqueue_t *queue, uint16_t size)
 	queue->size = size;
 	queue->storage_physical = physical;
 	queue->storage_virtual = (void *)virtual_address;
+	queue->storage_pages = 1U;
 	queue->descriptors = (virtq_desc_t *)(base + descriptors_offset);
 	queue->available_flags = (volatile uint16_t *)(base + available_offset);
 	queue->available_index = (volatile uint16_t *)(base + available_offset + 2ULL);
@@ -93,6 +95,73 @@ bool virtqueue_init(virtqueue_t *queue, uint16_t size)
 }
 
 /*
+ * virtqueue_init_legacy:
+ *
+ * Legacy VirtIO-PCI layout: the device derives the used ring address from the
+ * queue PFN and the fixed 4096-byte QUEUE_ALIGN, so it is not free to sit right
+ * behind the available ring as in the modern layout above.
+ */
+bool virtqueue_init_legacy(virtqueue_t *queue, uint16_t size)
+{
+	if (queue == 0 || size == 0U || size > VIRTQUEUE_LEGACY_MAX_SIZE) return false;
+
+	if ((size & (uint16_t)(size - 1U)) != 0U) return false;
+	if (!vmm_higher_half_direct_map_enabled()) return false;
+
+	uint64_t descriptors_size = (uint64_t)size * sizeof(virtq_desc_t);
+	uint64_t available_offset = descriptors_size;
+	uint64_t available_size = 6ULL + (uint64_t)size * sizeof(uint16_t);
+	uint64_t used_offset = virtqueue_align_up(
+		available_offset + available_size,
+		PMM_PAGE_SIZE
+	);
+	uint64_t used_size = 6ULL + (uint64_t)size * sizeof(virtq_used_elem_t);
+	uint64_t total = virtqueue_align_up(used_offset + used_size, PMM_PAGE_SIZE);
+	uint32_t pages = (uint32_t)(total / PMM_PAGE_SIZE);
+
+	memset(queue, 0, sizeof(*queue));
+
+	uint64_t physical;
+	if (!pmm_allocate_contiguous_pages(pages, &physical)) return false;
+
+	uint64_t virtual_address;
+	if (!vmm_physical_to_higher_half(physical, &virtual_address)) {
+		(void)pmm_free_contiguous_pages(physical, pages);
+		return false;
+	}
+
+	memset((void *)virtual_address, 0, (size_t)total);
+
+	uint8_t *base = (uint8_t *)virtual_address;
+	queue->size = size;
+	queue->storage_physical = physical;
+	queue->storage_virtual = (void *)virtual_address;
+	queue->storage_pages = pages;
+	queue->descriptors = (virtq_desc_t *)base;
+	queue->available_flags = (volatile uint16_t *)(base + available_offset);
+	queue->available_index = (volatile uint16_t *)(base + available_offset + 2ULL);
+	queue->available_ring = (volatile uint16_t *)(base + available_offset + 4ULL);
+	queue->used_flags = (volatile uint16_t *)(base + used_offset);
+	queue->used_index = (volatile uint16_t *)(base + used_offset + 2ULL);
+	queue->used_ring = (volatile virtq_used_elem_t *)(base + used_offset + 4ULL);
+	queue->free_head = 0U;
+	queue->last_used_index = 0U;
+
+	uint16_t usable = size > VIRTQUEUE_MAX_SIZE ? (uint16_t)VIRTQUEUE_MAX_SIZE : size;
+
+	queue->free_count = usable;
+
+	for (uint16_t index = 0U; index < usable; index++) {
+		queue->free_next[index] = index + 1U < usable
+			? (uint16_t)(index + 1U)
+			: UINT16_MAX;
+	}
+
+	queue->initialized = true;
+	return true;
+}
+
+/*
  * virtqueue_destroy:
  *
  * Release queue metadata after device ownership has ended.
@@ -102,7 +171,10 @@ bool virtqueue_destroy(virtqueue_t *queue)
 	if (queue == 0 || !queue->initialized) return false;
 
 	uint64_t physical = queue->storage_physical;
+	uint32_t pages = queue->storage_pages;
 	memset(queue, 0, sizeof(*queue));
+
+	if (pages > 1U) return pmm_free_contiguous_pages(physical, pages);
 	return pmm_free_page(physical);
 }
 
@@ -133,7 +205,7 @@ bool virtqueue_alloc_descriptor(virtqueue_t *queue, uint16_t *index)
  */
 bool virtqueue_free_descriptor(virtqueue_t *queue, uint16_t index)
 {
-	if (queue == 0 || !queue->initialized || index >= queue->size) return false;
+	if (queue == 0 || !queue->initialized || index >= queue->size || index >= VIRTQUEUE_MAX_SIZE) return false;
 
 	if (queue->free_count >= queue->size) return false;
 
