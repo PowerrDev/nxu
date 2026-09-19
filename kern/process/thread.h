@@ -114,6 +114,15 @@ struct thread {
 	uint16_t base_pri;
 	uint16_t max_priority;
 
+	/*
+	 * Multilevel feedback queue level. 0 is the highest-priority queue.
+	 * The MLFQ policy in kern/sched_prism/sched.c keeps this in lockstep
+	 * with sched_pri/base_pri; it exists as its own field because the
+	 * mapping from level to priority is a policy detail the run queue
+	 * itself does not need to know about.
+	 */
+	uint8_t mlfq_level;
+
 	uint32_t suspend_count;
 	uint32_t quantum_remaining;
 
@@ -138,7 +147,9 @@ bool thread_bootstrap(void);
 /*
  * thread_create
  *
- * Create an initial suspended userspace thread attached to task.
+ * Create an initial suspended userspace thread attached to task. arg becomes
+ * the new thread's initial x0 (0 for a process's own initial thread, a
+ * caller-supplied value for a pthread-create-style spawned thread).
  *
  * The task maintains a residency reference while the thread remains
  * attached. The returned thread also carries a caller reference.
@@ -147,6 +158,7 @@ bool thread_create(
 	task_t task,
 	uint64_t entry,
 	uint64_t stack,
+	uint64_t arg,
 	thread_t *result
 );
 
@@ -246,6 +258,11 @@ thread_t thread_next_task_thread_ref(thread_t thread);
 thread_id_t thread_tid(thread_t thread);
 task_t thread_task(thread_t thread);
 
+/* Thread-safe read of task->active_thread_count (kern/process/task.h) --
+ * see the definition for why the raw field is not safe to read directly
+ * once a task can have more than one thread. */
+uint32_t task_active_thread_count(task_t task);
+
 /*
  * Thread state inspection.
  */
@@ -275,7 +292,8 @@ uint64_t thread_user_stack(thread_t thread);
 bool thread_set_user_state(
 	thread_t thread,
 	uint64_t entry,
-	uint64_t stack
+	uint64_t stack,
+	uint64_t arg
 );
 
 /*

@@ -1,6 +1,8 @@
 #include <kern/process/task.h>
 #include <kern/sched_prism/sched.h>
 #include <kern/process/thread.h>
+#include <vm/vm_map.h>
+#include <vm/vm_shm.h>
 
 #include <stdint.h>
 
@@ -27,6 +29,7 @@ static void task_reset(task_t task)
 			.table_count = 0ULL,
 			.active = false
 		},
+		.shm_next_va = 0ULL,
 		.threads = 0,
 		.thread_count = 0U,
 		.active_thread_count = 0U,
@@ -90,6 +93,7 @@ bool task_init_user(
 
 	if (!vm_address_space_create(&task->map)) return false;
 
+	task->shm_next_va = VM_SHM_BASE;
 	task->task_uniqueid = uniqueid;
 	task->ref_count = 1U;
 	task->state = TASK_STATE_ACTIVE;
@@ -103,6 +107,7 @@ bool task_init_user(
 		task,
 		entry,
 		stack,
+		0ULL,
 		&initial_thread
 	)) {
 		task->active = false;
@@ -211,6 +216,11 @@ bool task_terminate(task_t task)
 		thread_reap(thread);
 		thread_deallocate(thread);
 	}
+
+	/* Every thread of this task is gone by this point, so there is no
+	 * concurrent access left to guard against; reclaim its mmap'd memory
+	 * before the address space itself goes away. */
+	vm_map_destroy_all(&task->map);
 
 	task->active = false;
 	task->halting = false;

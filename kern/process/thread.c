@@ -88,6 +88,7 @@ static void thread_reset_locked(thread_t thread, uint32_t slot)
 		.sched_pri = THREAD_PRIORITY_DEFAULT,
 		.base_pri = THREAD_PRIORITY_DEFAULT,
 		.max_priority = THREAD_PRIORITY_MAX,
+		.mlfq_level = 0U,
 		.suspend_count = 0U,
 		.quantum_remaining = 0U,
 		.continuation = 0,
@@ -270,6 +271,7 @@ static bool thread_create_common(
 	bool kernel_thread,
 	uint64_t entry,
 	uint64_t stack,
+	uint64_t user_arg,
 	thread_continue_t continuation,
 	void *parameter,
 	thread_t *result
@@ -312,7 +314,8 @@ static bool thread_create_common(
 		machine_initialized = machine_thread_init_user(
 			&thread->machine,
 			entry,
-			stack
+			stack,
+			user_arg
 		);
 	}
 
@@ -376,6 +379,7 @@ bool thread_create(
 	task_t task,
 	uint64_t entry,
 	uint64_t stack,
+	uint64_t arg,
 	thread_t *result
 )
 {
@@ -386,6 +390,7 @@ bool thread_create(
 		false,
 		entry,
 		stack,
+		arg,
 		0,
 		0,
 		result
@@ -407,6 +412,7 @@ bool kernel_thread_create(
 	return thread_create_common(
 		task,
 		true,
+		0ULL,
 		0ULL,
 		0ULL,
 		continuation,
@@ -966,6 +972,25 @@ task_t thread_task(thread_t thread)
 }
 
 /*
+ * task_active_thread_count
+ *
+ * Unlike task->active_thread_count itself, this is safe to call once a task
+ * can have more than one thread: reads are serialized against the same
+ * g_thread_lock thread_task_insert_locked/thread_task_remove_locked take to
+ * mutate the field.
+ */
+uint32_t task_active_thread_count(task_t task)
+{
+	if (task == 0) return 0U;
+
+	thread_lock(&g_thread_lock);
+	uint32_t count = task->active_thread_count;
+	thread_unlock(&g_thread_lock);
+
+	return count;
+}
+
+/*
  * thread_is_active
  */
 bool thread_is_active(thread_t thread)
@@ -1154,7 +1179,8 @@ uint64_t thread_user_stack(thread_t thread)
 bool thread_set_user_state(
 	thread_t thread,
 	uint64_t entry,
-	uint64_t stack
+	uint64_t stack,
+	uint64_t arg
 )
 {
 	if (
@@ -1174,7 +1200,8 @@ bool thread_set_user_state(
 		valid = machine_thread_set_user_state(
 			&thread->machine,
 			entry,
-			stack
+			stack,
+			arg
 		);
 	}
 
@@ -1380,6 +1407,11 @@ void thread_dump(void)
 
 		kputs(", priority ");
 		kputu64(thread->sched_pri);
+
+		if (!thread_is_idle(thread)) {
+			kputs(", mlfq level ");
+			kputu64(thread->mlfq_level);
+		}
 
 		kputc('\n');
 	}

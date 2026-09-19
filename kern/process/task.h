@@ -44,6 +44,12 @@ typedef enum {
  *
  * bsd_info
  *     Back-pointer to the BSD-style proc object which owns this task.
+ *
+ * shm_next_va
+ *     Bump cursor for vm_shm_map_into (vm/vm_shm.h), starting at
+ *     VM_SHM_BASE. Not a real VMA/region list -- just enough to hand out a
+ *     fresh, non-overlapping VA for each shared-memory region this task
+ *     maps in turn.
  */
 struct task {
 	uint64_t task_uniqueid;
@@ -56,6 +62,7 @@ struct task {
 	bool halting;
 
 	vm_address_space_t map;
+	uint64_t shm_next_va;
 
 	thread_t threads;
 	uint32_t thread_count;
