@@ -6,7 +6,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-
 #define TRIAGE_SYSTEM_DEVICE "disk0p2"
 #define TRIAGE_SYSTEM_PARTITION_NAME "sevOS System"
 #define TRIAGE_BG_TOP STARTUP_OPTIONS_UI_ARGB(255U, 15U, 16U, 19U)
