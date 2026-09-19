@@ -1,6 +1,7 @@
 #ifndef NXU_KERN_PROC_H
 #define NXU_KERN_PROC_H
 
+#include <kern/ipc/ipc_space.h>
 #include <kern/process/task.h>
 #include <vfs/file.h>
 
@@ -71,6 +72,15 @@ typedef struct {
  * p_fd
  *     Per-process descriptor table. Descriptor-owned file references are
  *     closed before the process enters zombie state.
+ *
+ * p_ipc
+ *     Per-process NXPC name table. Owned port references are closed before
+ *     the process enters zombie state, exactly like p_fd.
+ *
+ * p_ipc_bootstrap_name
+ *     Name, within p_ipc, of the send right to the system bootstrap
+ *     registry inherited at spawn (see loader_spawn). IPC_SPACE_NAME_INVALID
+ *     until spawn-time handoff is wired up.
  */
 struct proc {
 	proc_t p_list_prev;
@@ -84,6 +94,8 @@ struct proc {
 
 	struct task p_task;
 	struct filedesc p_fd;
+	struct ipc_space p_ipc;
+	uint32_t p_ipc_bootstrap_name;
 
 	proc_ident_t p_ident;
 

@@ -102,6 +102,8 @@ static proc_t proc_allocate_slot_locked(void)
 			.p_sibling_next = 0,
 			.p_task = { 0 },
 			.p_fd = { 0 },
+			.p_ipc = { 0 },
+			.p_ipc_bootstrap_name = IPC_SPACE_NAME_INVALID,
 			.p_ident = {
 				.pid = PROC_PID_INVALID,
 				.uniqueid = 0ULL,
@@ -117,6 +119,7 @@ static proc_t proc_allocate_slot_locked(void)
 		};
 
 		filedesc_init(&g_proc_slots[index].p_fd);
+		ipc_space_init(&g_proc_slots[index].p_ipc);
 
 		return &g_proc_slots[index];
 	}
@@ -728,6 +731,9 @@ bool proc_exit(proc_t proc, uint64_t status)
 
 	/* Close descriptor-owned file references before the proc becomes a zombie. */
 	filedesc_close_all(&proc->p_fd);
+
+	/* Close owned NXPC name-table references before the proc becomes a zombie. */
+	ipc_space_close_all(&proc->p_ipc);
 
 	proc_reparent_children_locked(proc);
 
