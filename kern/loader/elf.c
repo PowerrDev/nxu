@@ -1,5 +1,8 @@
 #include <kern/loader/elf.h>
 #include <mach/arm64/cache.h>
+#include <kern/ipc/ipc_init.h>
+#include <kern/ipc/ipc_port.h>
+#include <kern/ipc/ipc_space.h>
 #include <kern/process/task.h>
 #include <kern/process/thread.h>
 #include <kern/sched_prism/sched.h>
@@ -57,7 +60,7 @@ _Static_assert(sizeof(elf64_header_t) == 64U, "ELF64 header layout mismatch");
 _Static_assert(sizeof(elf64_program_header_t) == 56U, "ELF64 program header layout mismatch");
 
 static bool
-exec_add_overflow(uint64_t left, uint64_t right, uint64_t *result)
+loader_add_overflow(uint64_t left, uint64_t right, uint64_t *result)
 {
 	if (result == 0 || left > UINT64_MAX - right) return true;
 	*result = left + right;
@@ -65,7 +68,7 @@ exec_add_overflow(uint64_t left, uint64_t right, uint64_t *result)
 }
 
 static bool
-exec_align_up(uint64_t value, uint64_t alignment, uint64_t *result)
+loader_align_up(uint64_t value, uint64_t alignment, uint64_t *result)
 {
 	if (result == 0 || alignment == 0ULL || (alignment & (alignment - 1ULL)) != 0ULL) return false;
 	if (value > UINT64_MAX - (alignment - 1ULL)) return false;
@@ -74,7 +77,7 @@ exec_align_up(uint64_t value, uint64_t alignment, uint64_t *result)
 }
 
 static loader_status_t
-exec_vnode_read_exact(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size)
+loader_vnode_read_exact(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size)
 {
 	uint8_t *bytes = buffer;
 	uint64_t complete = 0ULL;
@@ -90,7 +93,7 @@ exec_vnode_read_exact(vnode_t vnode, uint64_t offset, void *buffer, uint64_t siz
 }
 
 static bool
-exec_header_valid(const elf64_header_t *header)
+loader_header_valid(const elf64_header_t *header)
 {
 	if (header == 0) return false;
 	if (header->ident[0] != 0x7FU || header->ident[1] != 'E' || header->ident[2] != 'L' || header->ident[3] != 'F') return false;
@@ -102,7 +105,7 @@ exec_header_valid(const elf64_header_t *header)
 }
 
 static bool
-exec_segment_protection(const elf64_program_header_t *segment, vm_user_protection_t *protection)
+loader_segment_protection(const elf64_program_header_t *segment, vm_user_protection_t *protection)
 {
 	if (segment == 0 || protection == 0) return false;
 	if ((segment->flags & ELF_PF_W) != 0U && (segment->flags & ELF_PF_X) != 0U) return false;
@@ -119,7 +122,7 @@ exec_segment_protection(const elf64_program_header_t *segment, vm_user_protectio
 }
 
 static loader_status_t
-exec_map_zero_page(vm_address_space_t *map, uint64_t virtual_address, vm_user_protection_t protection)
+loader_map_zero_page(vm_address_space_t *map, uint64_t virtual_address, vm_user_protection_t protection)
 {
 	uint64_t physical_address;
 	if (!pmm_allocate_page(&physical_address)) return LOADER_STATUS_NO_MEMORY;
@@ -141,27 +144,27 @@ exec_map_zero_page(vm_address_space_t *map, uint64_t virtual_address, vm_user_pr
 }
 
 static loader_status_t
-exec_map_segment(vm_address_space_t *map, const elf64_program_header_t *segment)
+loader_map_segment(vm_address_space_t *map, const elf64_program_header_t *segment)
 {
 	if (segment->memory_size < segment->file_size || segment->memory_size == 0ULL) return LOADER_STATUS_BAD_FORMAT;
 	if ((segment->virtual_address & (PMM_PAGE_SIZE - 1ULL)) != (segment->offset & (PMM_PAGE_SIZE - 1ULL))) return LOADER_STATUS_BAD_FORMAT;
 
 	uint64_t segment_end;
-	if (exec_add_overflow(segment->virtual_address, segment->memory_size, &segment_end)) return LOADER_STATUS_BAD_FORMAT;
+	if (loader_add_overflow(segment->virtual_address, segment->memory_size, &segment_end)) return LOADER_STATUS_BAD_FORMAT;
 	if (segment->virtual_address < PMM_PAGE_SIZE || segment_end > LOADER_USER_STACK_BASE) return LOADER_STATUS_BAD_FORMAT;
 
 	uint64_t page_start = segment->virtual_address & ~(PMM_PAGE_SIZE - 1ULL);
 	uint64_t page_end;
-	if (!exec_align_up(segment_end, PMM_PAGE_SIZE, &page_end)) return LOADER_STATUS_BAD_FORMAT;
+	if (!loader_align_up(segment_end, PMM_PAGE_SIZE, &page_end)) return LOADER_STATUS_BAD_FORMAT;
 
 	vm_user_protection_t protection;
-	if (!exec_segment_protection(segment, &protection)) return LOADER_STATUS_BAD_FORMAT;
+	if (!loader_segment_protection(segment, &protection)) return LOADER_STATUS_BAD_FORMAT;
 
 	for (uint64_t address = page_start; address < page_end; address += PMM_PAGE_SIZE) {
 		vm_user_page_mapping_t existing;
 		if (vm_address_space_query_page(map, address, &existing)) return LOADER_STATUS_BAD_FORMAT;
 
-		loader_status_t status = exec_map_zero_page(map, address, protection);
+		loader_status_t status = loader_map_zero_page(map, address, protection);
 		if (status != LOADER_STATUS_OK) return status;
 	}
 
@@ -169,7 +172,7 @@ exec_map_segment(vm_address_space_t *map, const elf64_program_header_t *segment)
 }
 
 static loader_status_t
-exec_copy_segment(vnode_t vnode, vm_address_space_t *map, const elf64_program_header_t *segment)
+loader_copy_segment(vnode_t vnode, vm_address_space_t *map, const elf64_program_header_t *segment)
 {
 	uint64_t copied = 0ULL;
 
@@ -187,7 +190,7 @@ exec_copy_segment(vnode_t vnode, vm_address_space_t *map, const elf64_program_he
 		uint64_t kernel_address;
 		if (!vmm_physical_to_higher_half(mapping.physical_address, &kernel_address)) return LOADER_STATUS_PROCESS_ERROR;
 
-		loader_status_t status = exec_vnode_read_exact(vnode, segment->offset + copied, (void *)(kernel_address + page_offset), chunk);
+		loader_status_t status = loader_vnode_read_exact(vnode, segment->offset + copied, (void *)(kernel_address + page_offset), chunk);
 		if (status != LOADER_STATUS_OK) return status;
 		copied += chunk;
 	}
@@ -195,9 +198,9 @@ exec_copy_segment(vnode_t vnode, vm_address_space_t *map, const elf64_program_he
 	if ((segment->flags & ELF_PF_X) != 0U) {
 		uint64_t start_mapping = segment->virtual_address & ~(PMM_PAGE_SIZE - 1ULL);
 		uint64_t end;
-		if (exec_add_overflow(segment->virtual_address, segment->memory_size, &end)) return LOADER_STATUS_BAD_FORMAT;
+		if (loader_add_overflow(segment->virtual_address, segment->memory_size, &end)) return LOADER_STATUS_BAD_FORMAT;
 		uint64_t page_end;
-		if (!exec_align_up(end, PMM_PAGE_SIZE, &page_end)) return LOADER_STATUS_BAD_FORMAT;
+		if (!loader_align_up(end, PMM_PAGE_SIZE, &page_end)) return LOADER_STATUS_BAD_FORMAT;
 
 		for (uint64_t address = start_mapping; address < page_end; address += PMM_PAGE_SIZE) {
 			vm_user_page_mapping_t mapping;
@@ -212,10 +215,10 @@ exec_copy_segment(vnode_t vnode, vm_address_space_t *map, const elf64_program_he
 }
 
 static loader_status_t
-exec_map_stack(vm_address_space_t *map)
+loader_map_stack(vm_address_space_t *map)
 {
 	for (uint64_t address = LOADER_USER_STACK_BASE; address < LOADER_USER_STACK_TOP; address += PMM_PAGE_SIZE) {
-		loader_status_t status = exec_map_zero_page(map, address, VM_USER_PROTECTION_READ_WRITE);
+		loader_status_t status = loader_map_zero_page(map, address, VM_USER_PROTECTION_READ_WRITE);
 		if (status != LOADER_STATUS_OK) return status;
 	}
 
@@ -223,7 +226,7 @@ exec_map_stack(vm_address_space_t *map)
 }
 
 static loader_status_t
-exec_start_process(proc_t proc)
+loader_start_process(proc_t proc)
 {
 	task_t task = proc_task(proc);
 	thread_t thread = task_first_thread_ref(task);
@@ -244,8 +247,34 @@ exec_start_process(proc_t proc)
 	return started ? LOADER_STATUS_OK : LOADER_STATUS_PROCESS_ERROR;
 }
 
+/*
+ * Every new process inherits a send right to the system bootstrap registry
+ * (bootd's well-known port, see kern/ipc/ipc_init.h) at the process's own
+ * name 1 -- see kern/ipc/ipc_space.c's ipc_space_init: a fresh space's
+ * first insert always lands at name 1, so this happens before anything
+ * else could claim it. A no-op before bootd calls
+ * ipc_set_bootstrap_registry_port (bootd's own spawn included, and any
+ * kernel-side test harness that never registers one), leaving
+ * p_ipc_bootstrap_name at its IPC_SPACE_NAME_INVALID default.
+ */
 static void
-exec_discard_process(proc_t parent, proc_t proc)
+loader_handoff_bootstrap_port(proc_t proc)
+{
+	ipc_port_t bootstrap = ipc_bootstrap_registry_port();
+	if (bootstrap == IPC_PORT_NULL) return;
+	if (!ipc_port_reference(bootstrap)) return;
+
+	uint32_t name;
+	if (ipc_space_insert_port(&proc->p_ipc, bootstrap, &name) != IPC_SUCCESS) {
+		ipc_port_release(bootstrap);
+		return;
+	}
+
+	proc->p_ipc_bootstrap_name = name;
+}
+
+static void
+loader_discard_process(proc_t parent, proc_t proc)
 {
 	if (parent == 0 || proc == 0) return;
 	proc_id_t pid = proc->p_ident.pid;
@@ -255,7 +284,7 @@ exec_discard_process(proc_t parent, proc_t proc)
 }
 
 loader_status_t
-exec_images_equal(const char *left_path, const char *right_path, bool *equal)
+loader_images_equal(const char *left_path, const char *right_path, bool *equal)
 {
 	if (equal != 0) *equal = false;
 	if (left_path == 0 || right_path == 0 || equal == 0) return LOADER_STATUS_INVALID;
@@ -293,8 +322,8 @@ exec_images_equal(const char *left_path, const char *right_path, bool *equal)
 		uint64_t chunk = left->v_size - offset;
 		if (chunk > sizeof(left_buffer)) chunk = sizeof(left_buffer);
 
-		loader_status_t status = exec_vnode_read_exact(left, offset, left_buffer, chunk);
-		if (status == LOADER_STATUS_OK) status = exec_vnode_read_exact(right, offset, right_buffer, chunk);
+		loader_status_t status = loader_vnode_read_exact(left, offset, left_buffer, chunk);
+		if (status == LOADER_STATUS_OK) status = loader_vnode_read_exact(right, offset, right_buffer, chunk);
 		if (status != LOADER_STATUS_OK) {
 			vnode_rele(right);
 			vnode_rele(left);
@@ -318,7 +347,7 @@ exec_images_equal(const char *left_path, const char *right_path, bool *equal)
 }
 
 loader_status_t
-exec_spawn(proc_t parent, const char *path, const char *name, proc_t *result)
+loader_spawn(proc_t parent, const char *path, const char *name, proc_t *result)
 {
 	if (result != 0) *result = 0;
 	if (parent == 0 || path == 0 || name == 0 || result == 0) return LOADER_STATUS_INVALID;
@@ -333,21 +362,21 @@ exec_spawn(proc_t parent, const char *path, const char *name, proc_t *result)
 	}
 
 	elf64_header_t header;
-	loader_status_t status = exec_vnode_read_exact(vnode, 0ULL, &header, sizeof(header));
-	if (status != LOADER_STATUS_OK || !exec_header_valid(&header)) {
+	loader_status_t status = loader_vnode_read_exact(vnode, 0ULL, &header, sizeof(header));
+	if (status != LOADER_STATUS_OK || !loader_header_valid(&header)) {
 		vnode_rele(vnode);
 		return status == LOADER_STATUS_OK ? LOADER_STATUS_BAD_FORMAT : status;
 	}
 
 	uint64_t program_table_size = (uint64_t)header.program_header_count * sizeof(elf64_program_header_t);
 	uint64_t program_table_end;
-	if (exec_add_overflow(header.program_header_offset, program_table_size, &program_table_end) || program_table_end > vnode->v_size) {
+	if (loader_add_overflow(header.program_header_offset, program_table_size, &program_table_end) || program_table_end > vnode->v_size) {
 		vnode_rele(vnode);
 		return LOADER_STATUS_BAD_FORMAT;
 	}
 
 	elf64_program_header_t programs[ELF_PROGRAM_HEADER_MAX];
-	status = exec_vnode_read_exact(vnode, header.program_header_offset, programs, program_table_size);
+	status = loader_vnode_read_exact(vnode, header.program_header_offset, programs, program_table_size);
 	if (status != LOADER_STATUS_OK) {
 		vnode_rele(vnode);
 		return status;
@@ -359,7 +388,7 @@ exec_spawn(proc_t parent, const char *path, const char *name, proc_t *result)
 		if (segment->type != ELF_PT_LOAD) continue;
 		loadable = true;
 		uint64_t file_end;
-		if (exec_add_overflow(segment->offset, segment->file_size, &file_end) || file_end > vnode->v_size) {
+		if (loader_add_overflow(segment->offset, segment->file_size, &file_end) || file_end > vnode->v_size) {
 			vnode_rele(vnode);
 			return LOADER_STATUS_BAD_FORMAT;
 		}
@@ -376,20 +405,22 @@ exec_spawn(proc_t parent, const char *path, const char *name, proc_t *result)
 		return LOADER_STATUS_PROCESS_ERROR;
 	}
 
+	loader_handoff_bootstrap_port(proc);
+
 	vm_address_space_t *map = proc_vm_map(proc);
 	if (map == 0) status = LOADER_STATUS_PROCESS_ERROR;
 
 	for (uint32_t index = 0U; status == LOADER_STATUS_OK && index < header.program_header_count; index++) {
 		if (programs[index].type != ELF_PT_LOAD) continue;
-		status = exec_map_segment(map, &programs[index]);
+		status = loader_map_segment(map, &programs[index]);
 	}
 
 	for (uint32_t index = 0U; status == LOADER_STATUS_OK && index < header.program_header_count; index++) {
 		if (programs[index].type != ELF_PT_LOAD) continue;
-		status = exec_copy_segment(vnode, map, &programs[index]);
+		status = loader_copy_segment(vnode, map, &programs[index]);
 	}
 
-	if (status == LOADER_STATUS_OK) status = exec_map_stack(map);
+	if (status == LOADER_STATUS_OK) status = loader_map_stack(map);
 
 	if (status == LOADER_STATUS_OK) {
 		vm_user_page_mapping_t entry_mapping;
@@ -399,9 +430,9 @@ exec_spawn(proc_t parent, const char *path, const char *name, proc_t *result)
 
 	vnode_rele(vnode);
 
-	if (status == LOADER_STATUS_OK) status = exec_start_process(proc);
+	if (status == LOADER_STATUS_OK) status = loader_start_process(proc);
 	if (status != LOADER_STATUS_OK) {
-		exec_discard_process(parent, proc);
+		loader_discard_process(parent, proc);
 		return status;
 	}
 
@@ -410,7 +441,7 @@ exec_spawn(proc_t parent, const char *path, const char *name, proc_t *result)
 }
 
 const char *
-exec_status_name(loader_status_t status)
+loader_status_name(loader_status_t status)
 {
 	switch (status) {
 	case LOADER_STATUS_OK: return "ok";
