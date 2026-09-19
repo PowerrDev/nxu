@@ -68,6 +68,15 @@ bool i386_init_threads(const i386_boot_info_t *boot);
 bool i386_init_drivers(const i386_boot_info_t *boot);
 bool i386_init_userland(const i386_boot_info_t *boot);
 
+/*
+ * Runs after every phase (and its self-test) has completed. This is where a
+ * boot that has userland work to do hands the CPU to the scheduler: the boot
+ * context yields until it is told to stop, so user processes actually run.
+ * The default returns at once; a return lets i386_init() carry on to its
+ * qemu-exit / halt tail.
+ */
+bool i386_init_run(const i386_boot_info_t *boot);
+
 bool i386_init_platform_selftest(const i386_boot_info_t *boot);
 bool i386_init_interrupts_selftest(const i386_boot_info_t *boot);
 bool i386_init_vm_selftest(const i386_boot_info_t *boot);

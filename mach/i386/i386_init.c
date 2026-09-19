@@ -155,6 +155,7 @@ I386_WEAK_PHASE(i386_init_kernel)
 I386_WEAK_PHASE(i386_init_threads)
 I386_WEAK_PHASE(i386_init_drivers)
 I386_WEAK_PHASE(i386_init_userland)
+I386_WEAK_PHASE(i386_init_run)
 
 I386_WEAK_PHASE(i386_init_platform_selftest)
 I386_WEAK_PHASE(i386_init_interrupts_selftest)
@@ -274,6 +275,8 @@ void i386_init(uint32_t magic, const multiboot_info_t *info)
 	}
 
 	kputln("i386_init: boot phases complete");
+
+	i386_init_run(&g_boot_info);
 
 	/* Lets an automated run end cleanly under QEMU's isa-debug-exit device. */
 	{
