@@ -1,7 +1,7 @@
 #ifndef NXU_KERN_THREAD_H
 #define NXU_KERN_THREAD_H
 
-#include <arch/arm64/thread.h>
+#include <mach/arm64/thread.h>
 
 #include <stdbool.h>
 #include <stddef.h>

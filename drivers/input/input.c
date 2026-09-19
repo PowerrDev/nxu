@@ -1,7 +1,7 @@
 #include <kern/console/console.h>
 #include <drivers/input/input.h>
 
-#include <arch/arm64/system.h>
+#include <mach/arm64/system.h>
 #include <drivers/input/keyboard.h>
 #include <drivers/input/mouse.h>
 #include <platform/uart.h>

@@ -198,11 +198,11 @@ LDFLAGS := \
 # =============================================================================
 
 C_SOURCES := \
-    arch/arm64/cache.c \
-    arch/arm64/exception.c \
-    arch/arm64/gic.c \
-    arch/arm64/thread.c \
-    arch/arm64/timer.c \
+    mach/arm64/cache.c \
+    mach/arm64/exception.c \
+    mach/arm64/gic.c \
+    mach/arm64/thread.c \
+    mach/arm64/timer.c \
     drivers/input/input.c \
     drivers/input/keyboard.c \
     drivers/input/mouse.c \
@@ -267,10 +267,10 @@ C_SOURCES := \
 
 
 ASM_SOURCES := \
-    arch/arm64/start.S \
-    arch/arm64/context_switch.S \
-    arch/arm64/exception_vectors.S \
-    arch/arm64/transition.S
+    mach/arm64/start.S \
+    mach/arm64/context_switch.S \
+    mach/arm64/exception_vectors.S \
+    mach/arm64/transition.S
 
 
 OBJECTS := \

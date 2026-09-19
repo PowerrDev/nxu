@@ -1,8 +1,8 @@
 #include <kern/console/console.h>
 #include <drivers/virtio/virtio_input.h>
 
-#include <arch/arm64/gic.h>
-#include <arch/arm64/system.h>
+#include <mach/arm64/gic.h>
+#include <mach/arm64/system.h>
 #include <drivers/input/keyboard.h>
 #include <drivers/input/mouse.h>
 #include <kern/irq/irq.h>

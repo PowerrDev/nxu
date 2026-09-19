@@ -1,6 +1,6 @@
 #include <drivers/video/ui_service_host.h>
 
-#include <arch/arm64/timer.h>
+#include <mach/arm64/timer.h>
 #include <drivers/input/mouse.h>
 #include <drivers/video/display.h>
 #include <drivers/video/ramfb_console.h>

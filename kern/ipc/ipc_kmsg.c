@@ -9,7 +9,7 @@
 
 #include <kern/ipc/ipc_kmsg.h>
 
-#include <arch/arm64/system.h>
+#include <mach/arm64/system.h>
 #include <kern/memory/heap.h>
 
 #include <stddef.h>

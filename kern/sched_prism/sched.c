@@ -1,7 +1,7 @@
 #include <kern/console/console.h>
 #include <kern/sched_prism/sched.h>
-#include <arch/arm64/system.h>
-#include <arch/arm64/transition.h>
+#include <mach/arm64/system.h>
+#include <mach/arm64/transition.h>
 #include <kern/process/proc.h>
 #include <platform/uart.h>
 #include <vm/address_space.h>

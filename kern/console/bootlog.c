@@ -1,7 +1,7 @@
 #include <kern/console/bootlog.h>
 
-#include <arch/arm64/system.h>
-#include <arch/arm64/timer.h>
+#include <mach/arm64/system.h>
+#include <mach/arm64/timer.h>
 #include <kern/console/console.h>
 #include <kern/logging/version.h>
 #include <vm/vmm.h>

@@ -1,6 +1,6 @@
 #include <kern/console/console.h>
 
-#include <arch/arm64/timer.h>
+#include <mach/arm64/timer.h>
 #include <platform/uart.h>
 
 #include <stdarg.h>

@@ -1,6 +1,6 @@
 #include <kern/syscall/syscall.h>
 
-#include <arch/arm64/timer.h>
+#include <mach/arm64/timer.h>
 #include <kern/boot/boot_args.h>
 #include <kern/boot/boot_mode.h>
 #include <drivers/block/block_device.h>

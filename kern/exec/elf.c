@@ -1,5 +1,5 @@
 #include <kern/exec/elf.h>
-#include <arch/arm64/cache.h>
+#include <mach/arm64/cache.h>
 #include <kern/process/task.h>
 #include <kern/process/thread.h>
 #include <kern/sched_prism/sched.h>

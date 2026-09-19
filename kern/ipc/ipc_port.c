@@ -10,7 +10,7 @@
 
 #include <kern/ipc/ipc_port.h>
 
-#include <arch/arm64/system.h>
+#include <mach/arm64/system.h>
 #include <kern/memory/heap.h>
 
 #include <stdbool.h>
