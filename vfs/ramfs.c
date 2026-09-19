@@ -1,4 +1,5 @@
 #include <vfs/ramfs.h>
+#include <mach/machine/cpu.h>
 
 #include <kern/memory/heap.h>
 #include <vfs/vfs.h>
@@ -65,7 +66,7 @@ static struct vfs_filesystem g_ramfs_filesystem = {
 static void ramfs_lock(ramfs_mount_data_t *data)
 {
 	while (__atomic_exchange_n(&data->lock, 1U, __ATOMIC_ACQUIRE) != 0U) {
-		__asm__ volatile("yield");
+		cpu_relax();
 	}
 }
 

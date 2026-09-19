@@ -1,4 +1,5 @@
 #include <kern/console/console.h>
+#include <mach/machine/cpu.h>
 #include <vfs/vfs.h>
 #include <vfs/vfs_internal.h>
 
@@ -22,7 +23,7 @@ static bool g_vfs_initialized;
 static void vfs_lock(vfs_lock_t *lock)
 {
 	while (__atomic_exchange_n(&lock->value, 1U, __ATOMIC_ACQUIRE) != 0U) {
-		__asm__ volatile("yield");
+		cpu_relax();
 	}
 }
 

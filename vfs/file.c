@@ -1,4 +1,5 @@
 #include <vfs/file.h>
+#include <mach/machine/cpu.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -16,7 +17,7 @@ static bool g_file_table_initialized;
 static void file_lock(file_lock_t *lock)
 {
 	while (__atomic_exchange_n(&lock->value, 1U, __ATOMIC_ACQUIRE) != 0U) {
-		__asm__ volatile("yield");
+		cpu_relax();
 	}
 }
 
@@ -28,7 +29,7 @@ static void file_unlock(file_lock_t *lock)
 static void filedesc_lock(filedesc_t filedesc)
 {
 	while (__atomic_exchange_n(&filedesc->fd_lock, 1U, __ATOMIC_ACQUIRE) != 0U) {
-		__asm__ volatile("yield");
+		cpu_relax();
 	}
 }
 

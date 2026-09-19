@@ -1,4 +1,5 @@
 #include <kern/console/console.h>
+#include <mach/machine/cpu.h>
 #include <vfs/ext4.h>
 
 #include <drivers/block/block_device.h>
@@ -403,7 +404,7 @@ static bool ext4_verify_extent_block_checksum(
 static void ext4_lock(ext4_mount_data_t *data)
 {
 	while (__atomic_exchange_n(&data->lock, 1U, __ATOMIC_ACQUIRE) != 0U) {
-		__asm__ volatile("yield");
+		cpu_relax();
 	}
 }
 
