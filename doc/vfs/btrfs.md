@@ -197,6 +197,28 @@ bottom-up, so `test_arm64.sh` defines the fixtures in reverse and the root disk
 last; the kernel also needs the gpu/keyboard/mouse devices of the normal boot
 command. The arm64 test ends with a PSCI `SYSTEM_OFF`.
 
+## Booting a Btrfs disk and looking at it
+
+`make run-i386-btrfs` boots the i386 kernel with a Btrfs image as its only disk,
+mounts it read-only, prints the tree (and/or one file) to the serial console and
+exits. Unlike `btrfs-test=`, which grades the fixtures against expected
+listings, this works on any image (`vfs/btrfs/btrfs_list.{c,h}`, arch-neutral).
+
+    make run-i386-btrfs BTRFS_FIXTURE=tree            # a committed fixture
+    make run-i386-btrfs BTRFS_IMAGE=/path/disk.img    # any Btrfs image; never modified (QEMU snapshot=on)
+    make run-i386-btrfs BTRFS_FIXTURE=minimal BTRFS_CAT=/small.txt BTRFS_LS=0
+
+Options: `BTRFS_CAT=/path` prints that file (first 8 KiB, non-printable bytes as
+`.`), `BTRFS_LS=0` skips the tree, `BTRFS_SUBVOL=<id>` mounts that subvolume,
+`BTRFS_VERIFY=1` checks data checksums, `BTRFS_MAX=<n>` bounds the printed
+entries (default 512; the summary still counts everything), `BTRFS_TIMEOUT=<s>`.
+The listing is `<type><rwx mode> <nlink> <size> <path>[ -> target]`. The script
+is `tools/btrfs/run_i386.sh`; the kernel side is the boot arguments `btrfs-ls`,
+`btrfs-cat=<path>`, `btrfs-dev=<n>`, `btrfs-subvol=<id>`, `btrfs-verify=1` and
+`btrfs-max=<n>`, handled in `mach/i386/userland_init.c` before the ext4 root is
+mounted, so no root disk is needed. arm64 has no equivalent yet. A non-Btrfs or
+damaged image fails the mount cleanly and the run exits nonzero.
+
 ## Fixtures and ground truth
 
 See `tools/btrfs/fixtures/README.md`. Images and manifests come from an official

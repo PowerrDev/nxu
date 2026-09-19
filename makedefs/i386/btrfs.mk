@@ -21,6 +21,7 @@ I386_C_SOURCES += \
     vfs/btrfs/btrfs_inode.c \
     vfs/btrfs/btrfs_io.c \
     vfs/btrfs/btrfs_io_block.c \
+    vfs/btrfs/btrfs_list.c \
     vfs/btrfs/btrfs_root.c \
     vfs/btrfs/btrfs_selftest.c \
     vfs/btrfs/btrfs_super.c \
@@ -32,3 +33,22 @@ I386_C_SOURCES += \
 test-i386-btrfs: $(I386_KERNEL) i386-disk $(BTRFS_HOST_TOOL)
 
 	tools/btrfs/test_i386.sh $(I386_KERNEL) $(BUILD_ROOT)/i386/disk.img $(BUILD_ROOT)/btrfs-i386 $(BTRFS_HOST_TOOL)
+
+
+# Boot the i386 kernel on a Btrfs disk and look at it, the way run-i386 boots a
+# bare kernel. The Btrfs image is the only disk; the kernel mounts it read-only,
+# prints the tree (and/or one file) to the serial console and exits.
+#
+#   make run-i386-btrfs BTRFS_FIXTURE=tree                    a committed fixture (tools/btrfs/fixtures/<name>.img.zst)
+#   make run-i386-btrfs BTRFS_IMAGE=/path/to/disk.img         any Btrfs image (never modified)
+#
+# Optional: BTRFS_CAT=/path/in/fs   print that file      BTRFS_LS=0  skip the tree listing
+#           BTRFS_SUBVOL=<id>       mount that subvolume  BTRFS_VERIFY=1  verify data checksums
+#           BTRFS_MAX=<n>           entries to print (default 512)   BTRFS_TIMEOUT=<seconds> (default 120)
+.PHONY: run-i386-btrfs
+
+run-i386-btrfs: $(I386_KERNEL)
+
+	BTRFS_IMAGE="$(BTRFS_IMAGE)" BTRFS_FIXTURE="$(BTRFS_FIXTURE)" BTRFS_CAT="$(BTRFS_CAT)" BTRFS_LS="$(BTRFS_LS)" \
+		BTRFS_SUBVOL="$(BTRFS_SUBVOL)" BTRFS_VERIFY="$(BTRFS_VERIFY)" BTRFS_MAX="$(BTRFS_MAX)" BTRFS_TIMEOUT="$(BTRFS_TIMEOUT)" \
+		tools/btrfs/run_i386.sh $(I386_KERNEL)

@@ -29,6 +29,7 @@
 #include <kern/tests/ipc_process_test.h>
 #include <kern/tests/socket_process_test.h>
 #include <kern/tests/thread_process_test.h>
+#include <vfs/btrfs/btrfs_list.h>
 #include <vfs/btrfs/btrfs_selftest.h>
 #include <vfs/vfs.h>
 
@@ -40,6 +41,18 @@
 #define USERLAND_BOOTD_RECOVERY_PATH "/disk/System/Library/CoreServices/bootd.recovery"
 
 static proc_t g_boot_process;
+
+/* Decimal boot-arg value to uint32_t; stops at the first non-digit. */
+static uint32_t userland_parse_u32(const char *text)
+{
+	uint32_t value = 0U;
+
+	for (uint32_t index = 0U; text[index] >= '0' && text[index] <= '9'; index++) {
+		value = value * 10U + (uint32_t)(text[index] - '0');
+	}
+
+	return value;
+}
 
 static bool userland_run_process_test(const char *name)
 {
@@ -78,6 +91,35 @@ bool i386_init_userland(const i386_boot_info_t *boot)
 	if (block_device_count() == 0U) {
 		kputln("i386_init_userland: no block device, staying in kernel-only mode");
 		return true;
+	}
+
+	/*
+	 * "btrfs-ls" and/or "btrfs-cat=<path>": mount ANY Btrfs disk read-only and
+	 * print its tree / one file (see vfs/btrfs/btrfs_list.h, make
+	 * run-i386-btrfs). Handled before the ext4 root mount so the Btrfs image
+	 * can be the only disk. Options: btrfs-dev=<n> (block device, default 0),
+	 * btrfs-subvol=<id>, btrfs-verify=1, btrfs-max=<entries>.
+	 */
+	char list_value[128];
+	btrfs_list_request_t list_request;
+
+	memset(&list_request, 0, sizeof(list_request));
+	list_request.list = i386_boot_arg("btrfs-ls", list_value, sizeof(list_value));
+
+	if (i386_boot_arg("btrfs-cat", list_value, sizeof(list_value))) list_request.cat_path = list_value;
+
+	if (list_request.list || list_request.cat_path != 0) {
+		char option[24];
+
+		if (i386_boot_arg("btrfs-dev", option, sizeof(option))) list_request.device_index = userland_parse_u32(option);
+		if (i386_boot_arg("btrfs-subvol", option, sizeof(option))) list_request.subvolume = userland_parse_u32(option);
+		if (i386_boot_arg("btrfs-max", option, sizeof(option))) list_request.max_entries = userland_parse_u32(option);
+		list_request.verify = i386_boot_arg("btrfs-verify", option, sizeof(option));
+
+		bool list_ok = btrfs_list_run(&list_request);
+
+		kprintf("i386_init_userland: btrfs list %s\n", list_ok ? "done" : "FAILED");
+		return list_ok;
 	}
 
 	boot_mode_init();
