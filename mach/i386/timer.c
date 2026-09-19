@@ -35,7 +35,9 @@
 /* Channel 0, lobyte/hibyte access, mode 2 (rate generator), binary. */
 #define PIT_CMD_CHANNEL0_RATE 0x34U
 
-#define PIT_CALIBRATION_COUNT 11932U
+/* About 5 ms per countdown, eight of them. */
+#define PIT_CALIBRATION_COUNT 5966U
+#define PIT_CALIBRATION_ROUNDS 8U
 
 /* Mode 2 needs a reload of at least 2; a reload of 0 means 65536. */
 #define PIT_MIN_DIVISOR 2U
@@ -54,10 +56,14 @@ static inline uint64_t timer_rdtsc(void)
 	return ((uint64_t)high << 32U) | low;
 }
 
-uint64_t timer_calibrate(void)
+/*
+ * Time one PIT channel 2 countdown of PIT_CALIBRATION_COUNT input clocks in
+ * TSC ticks. The TSC is read before the gate is raised and after the poll
+ * sees the terminal count, so every delay (a busy host, an SMI, the slow port
+ * accesses of an emulator) can only make the result longer than the truth.
+ */
+static uint64_t timer_measure_countdown(uint8_t gate)
 {
-	uint8_t gate = inb(PIT_GATE_PORT);
-
 	/* Gate channel 2 off and the speaker off while it is programmed. */
 	outb(PIT_GATE_PORT, (uint8_t)(gate & ~0x03U));
 
@@ -66,16 +72,33 @@ uint64_t timer_calibrate(void)
 	outb(PIT_CHANNEL2_DATA, (uint8_t)(PIT_CALIBRATION_COUNT & 0xFFU));
 	outb(PIT_CHANNEL2_DATA, (uint8_t)(PIT_CALIBRATION_COUNT >> 8U));
 
+	uint64_t start = timer_rdtsc();
+
 	/* Raising the gate starts the countdown. */
 	outb(PIT_GATE_PORT, (uint8_t)((gate & ~0x02U) | 0x01U));
-
-	uint64_t start = timer_rdtsc();
 
 	while ((inb(PIT_GATE_PORT) & 0x20U) == 0U) {
 		__asm__ volatile("pause");
 	}
 
-	uint64_t elapsed = timer_rdtsc() - start;
+	return timer_rdtsc() - start;
+}
+
+uint64_t timer_calibrate(void)
+{
+	uint8_t gate = inb(PIT_GATE_PORT);
+	uint64_t elapsed = ~0ULL;
+
+	/*
+	 * Several short countdowns, keeping the shortest: a stall inflates a
+	 * sample but nothing can shrink one, and a single sample on a loaded
+	 * emulator host was seen to read several times too fast.
+	 */
+	for (uint32_t round = 0U; round < PIT_CALIBRATION_ROUNDS; round++) {
+		uint64_t sample = timer_measure_countdown(gate);
+
+		if (sample < elapsed) elapsed = sample;
+	}
 
 	outb(PIT_GATE_PORT, gate);
 
