@@ -36,8 +36,22 @@ typedef enum {
 	IPC_QUEUE_EMPTY,
 	IPC_QUEUE_FULL,
 	IPC_BUFFER_TOO_SMALL,
-	IPC_OVERFLOW
+	IPC_OVERFLOW,
+	IPC_SPACE_FULL,
+	IPC_NAME_INVALID
 } ipc_return_t;
+
+/*
+ * A kernel message may carry at most one transferable name, moved into the
+ * receiving task's ipc_space on delivery. IPC_KMSG_XFER_MEMORY is added
+ * alongside vm_shm_region_t (see vm/vm_shm.h); only IPC_KMSG_XFER_PORT is
+ * used until then.
+ */
+typedef enum {
+	IPC_KMSG_XFER_NONE = 0,
+	IPC_KMSG_XFER_PORT,
+	IPC_KMSG_XFER_MEMORY
+} ipc_kmsg_xfer_type_t;
 
 struct ipc_kmsg;
 struct ipc_port;
