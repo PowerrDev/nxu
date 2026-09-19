@@ -62,7 +62,13 @@ nxu_thread_spawn(void (*entry)(void *arg), void *arg, uint64_t stack_size)
 	if (base < 0) return base;
 
 	uintptr_t top = ((uintptr_t)base + (uintptr_t)stack_size) & ~(uintptr_t)15U;
-	uintptr_t *frame = (uintptr_t *)(top - 2U * sizeof(uintptr_t));
+	/*
+	 * The kernel rejects a thread stack pointer that is not 16-byte aligned
+	 * (syscall_thread_create, shared with arm64), so the {entry, arg} frame
+	 * sits a full 16 bytes below the aligned top, not just the two words it
+	 * needs. The trampoline re-aligns its own call frame regardless.
+	 */
+	uintptr_t *frame = (uintptr_t *)(top - 16U);
 
 	frame[0] = (uintptr_t)entry;
 	frame[1] = (uintptr_t)arg;
