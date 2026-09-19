@@ -153,6 +153,10 @@ bootd_manager_init(bootd_manager_t *manager)
 	if (nxu_get_boot_args(manager->boot_args, sizeof(manager->boot_args)) < 0) manager->boot_args[0] = '\0';
 	manager->safe_mode = nxu_arg_present(manager->boot_args, "-x");
 
+	if (!bootd_registry_init(&manager->registry)) {
+		bootd_manager_log("bootstrap registry unavailable; service discovery by name disabled");
+	}
+
 	bootd_manager_log("loading service definitions");
 	if (!bootd_manager_discover(manager)) return false;
 	return true;
@@ -177,9 +181,24 @@ bootd_manager_poll(bootd_manager_t *manager)
 {
 	if (manager == 0) return;
 
+	bootd_registry_poll(&manager->registry);
+
 	int64_t uptime = nxu_uptime_us();
 	if (uptime < 0) return;
 	uint64_t now_us = (uint64_t)uptime;
 
-	for (uint32_t index = 0U; index < manager->job_count; index++) bootd_job_poll(&manager->jobs[index], now_us);
+	/*
+	 * bootd_job_poll can block for a long time inside bootd_job_spawn (ELF
+	 * loading a large binary, or the primary/recovery image byte-compare
+	 * for a KeepAlive job -- see job.c) -- bootd is single-threaded, so
+	 * nothing else runs meanwhile. Re-polling the registry between jobs
+	 * (not just once at the top of this function) means a lookup sent
+	 * while an earlier job is still spawning gets answered as soon as its
+	 * spawn finishes, instead of waiting for every remaining job in this
+	 * cycle to also be checked first.
+	 */
+	for (uint32_t index = 0U; index < manager->job_count; index++) {
+		bootd_job_poll(&manager->jobs[index], now_us);
+		bootd_registry_poll(&manager->registry);
+	}
 }

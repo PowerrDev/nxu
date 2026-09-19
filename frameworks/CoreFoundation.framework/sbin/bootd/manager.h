@@ -2,6 +2,7 @@
 #define NXU_BOOTD_MANAGER_H
 
 #include <frameworks/CoreFoundation.framework/sbin/bootd/job.h>
+#include <frameworks/CoreFoundation.framework/sbin/bootd/registry.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -14,6 +15,7 @@ typedef struct {
 	uint32_t job_count;
 	char boot_args[BOOTD_BOOT_ARGS_SIZE];
 	bool safe_mode;
+	bootd_registry_t registry;
 } bootd_manager_t;
 
 bool bootd_manager_init(bootd_manager_t *manager);
