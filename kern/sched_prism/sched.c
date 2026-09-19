@@ -1,7 +1,7 @@
 #include <kern/console/console.h>
 #include <kern/sched_prism/sched.h>
+#include <mach/machine/cpu.h>
 #include <mach/machine/machine_routines.h>
-#include <mach/arm64/transition.h>
 #include <kern/process/proc.h>
 #include <platform/uart.h>
 #include <vm/address_space.h>
@@ -42,7 +42,7 @@ static void sched_lock(sched_lock_t *lock)
 			__ATOMIC_ACQUIRE
 		) != 0U
 	) {
-		__asm__ volatile("yield");
+		cpu_relax();
 	}
 }
 
@@ -64,7 +64,7 @@ void sched_fatal(const char *message)
 	kputln(message);
 
 	for (;;) {
-		__asm__ volatile("wfe");
+		cpu_wait_for_event();
 	}
 }
 
@@ -285,12 +285,7 @@ void sched_thread_continue(void)
 		sched_fatal("machine_thread_has_user_state: user thread has no EL0 state");
 	}
 
-	arm64_enter_el0(
-		thread->machine.user.pc,
-		thread->machine.user.sp,
-		thread->machine.user.spsr,
-		thread->machine.user.x0
-	);
+	machine_thread_enter_user(&thread->machine);
 
 	/*
 	 * The current SYS_exit path terminates the task before redirecting ERET
@@ -329,7 +324,7 @@ void sched_idle_continue(void *parameter)
 	(void)parameter;
 
 	for (;;) {
-		__asm__ volatile("wfi");
+		cpu_wait_for_interrupt();
 	}
 }
 
@@ -445,9 +440,9 @@ static bool sched_switch(sched_switch_reason_t reason)
 
 	sched_unlock(&g_sched.lock);
 
-	arm64_switch_context(
-		&current->machine.context,
-		&next->machine.context
+	machine_thread_switch_context(
+		&current->machine,
+		&next->machine
 	);
 
 	/*

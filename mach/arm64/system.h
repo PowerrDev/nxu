@@ -142,4 +142,21 @@ static inline void arm64_irq_disable(void)
 	);
 }
 
+/*
+ * The machine-neutral operations behind <mach/machine/system.h>. Both use
+ * PSCI over the hypervisor-call conduit (SYSTEM_RESET, SYSTEM_OFF). They
+ * return only if the firmware refused the request.
+ */
+static inline void machine_system_reset(void)
+{
+	register uint64_t x0 __asm__("x0") = 0x84000009ULL;
+	__asm__ volatile("hvc #0" : "+r"(x0) :: "memory");
+}
+
+static inline void machine_system_power_off(void)
+{
+	register uint64_t x0 __asm__("x0") = 0x84000008ULL;
+	__asm__ volatile("hvc #0" : "+r"(x0) :: "memory");
+}
+
 #endif

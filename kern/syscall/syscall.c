@@ -1,6 +1,7 @@
 #include <kern/syscall/syscall.h>
 
-#include <mach/arm64/timer.h>
+#include <mach/machine/system.h>
+#include <mach/machine/timer.h>
 #include <kern/boot/boot_args.h>
 #include <kern/boot/boot_mode.h>
 #include <drivers/block/block_device.h>
@@ -591,8 +592,7 @@ static syscall_result_t
 syscall_system_reset(void)
 {
 	if (!boot_mode_is_triage_os()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
-	register uint64_t x0 __asm__("x0") = 0x84000009ULL;
-	__asm__ volatile("hvc #0" : "+r"(x0) :: "memory");
+	machine_system_reset();
 	return syscall_error(SYSCALL_ERROR_IO);
 }
 

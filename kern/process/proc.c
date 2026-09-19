@@ -1,6 +1,8 @@
 #include <kern/console/console.h>
 #include <kern/process/proc.h>
 
+#include <mach/machine/cpu.h>
+
 #include <platform/uart.h>
 
 #include <stdbool.h>
@@ -43,7 +45,7 @@ static void proc_lock(proc_lock_t *lock)
 			__ATOMIC_ACQUIRE
 		) != 0U
 	) {
-		__asm__ volatile("yield");
+		cpu_relax();
 	}
 }
 

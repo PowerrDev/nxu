@@ -7,6 +7,8 @@
 
 #include <kern/ipc/shm_registry.h>
 
+#include <mach/machine/cpu.h>
+
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -24,7 +26,7 @@ static void
 shm_registry_lock(void)
 {
 	while (__atomic_exchange_n(&g_shm_registry_lock, 1U, __ATOMIC_ACQUIRE) != 0U) {
-		__asm__ volatile("yield");
+		cpu_relax();
 	}
 }
 
