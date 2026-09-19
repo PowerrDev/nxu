@@ -13,5 +13,6 @@
 #include <stdbool.h>
 
 bool ipc_self_test(void);
+bool ipc_space_self_test(void);
 
 #endif
