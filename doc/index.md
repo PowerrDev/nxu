@@ -86,6 +86,7 @@ deviates from that rule in two places; both are recorded in
 - [Files and descriptor tables](vfs/file-descriptors.md) — per-open state and per-process descriptors.
 - [ramfs](vfs/ramfs.md) — heap-backed validation filesystem.
 - [ext4](vfs/ext4.md) — writable allocation, metadata CRC32C, extents, directories and ordered transactions.
+- [Btrfs](vfs/btrfs.md) — read-only driver: layered pure core, subvolumes, tests against real Linux-made images.
 - [JBD2](vfs/jbd2.md) — write-ahead metadata transactions, commit ordering and crash recovery.
 
 ## Virtual memory (`vm`)

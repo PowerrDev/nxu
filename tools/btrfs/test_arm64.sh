@@ -34,7 +34,7 @@ arch_boot() {
 	rm -f "$SCRATCH/root.img"
 	cp "$ROOT" "$SCRATCH/root.img"
 
-	# ARM_DEVICE_ORDER: see the note in doc/vfs/btrfs.md. QEMU virt hands out
+	# Device order (see doc/vfs/btrfs.md): QEMU virt hands out
 	# virtio-mmio slots from the top of the bus down while the kernel probes
 	# from the bottom up, so the device defined last is registered first: define
 	# the fixtures in reverse and the root disk last.
