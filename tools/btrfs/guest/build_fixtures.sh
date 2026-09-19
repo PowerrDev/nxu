@@ -204,7 +204,7 @@ if want variants; then
 	rm -f $WORK/s16k.img
 	truncate -s 128M $WORK/s16k.img
 	mkfs.btrfs -q -f -L s16k -U "$(uuid_for s16k)" -s 16384 -n 16384 --rootdir $WORK/stage $WORK/s16k.img > $WORK/mkfs.log 2>&1 || { cat $WORK/mkfs.log; fail "mkfs s16k"; }
-	python3 $GUESTDIR/manifest.py $WORK/stage --no-ino > $OUT/s16k.manifest
+	python3 $GUESTDIR/manifest.py $WORK/stage --no-ino --staging > $OUT/s16k.manifest
 	mkdir -p /mnt/s16k
 	# `finish` expects a mounted fs; do the tail of it by hand.
 	btrfs check --readonly $WORK/s16k.img > $WORK/check.log 2>&1 || { cat $WORK/check.log; fail "btrfs check s16k"; }

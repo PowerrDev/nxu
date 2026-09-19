@@ -2,7 +2,7 @@ superblock: bytenr=65536, device=/work/mixed.img
 ---------------------------------------------------------
 csum_type		0 (crc32c)
 csum_size		4
-csum			0x349f6a26 [match]
+csum			0x5119f87b [match]
 bytenr			65536
 flags			0x1
 			( WRITTEN )
@@ -40,7 +40,7 @@ incompat_flags		0x345
 			  NO_HOLES )
 cache_generation	0
 uuid_tree_generation	9
-dev_item.uuid		bbd8afe9-04e4-4a9e-8abe-571804ba0964
+dev_item.uuid		d5062410-fe16-4212-a7ae-c1914633bb35
 dev_item.fsid		f509975a-bbd4-5b96-80b7-8909f5d084e5 [match]
 dev_item.type		0
 dev_item.total_bytes	67108864
@@ -59,13 +59,13 @@ sys_chunk_array[2048]:
 		io_align 4096 io_width 4096 sector_size 4096
 		num_stripes 1 sub_stripes 0
 			stripe 0 devid 1 offset 1048576
-			dev_uuid bbd8afe9-04e4-4a9e-8abe-571804ba0964
+			dev_uuid d5062410-fe16-4212-a7ae-c1914633bb35
 backup_roots[4]:
 	backup 0:
 		backup_tree_root:	5578752	gen: 9	level: 0
 		backup_chunk_root:	1048576	gen: 5	level: 0
-		backup_extent_root:	5562368	gen: 9	level: 0
-		backup_fs_root:		5558272	gen: 9	level: 1
+		backup_extent_root:	5558272	gen: 9	level: 0
+		backup_fs_root:		5566464	gen: 9	level: 1
 		backup_dev_root:	5582848	gen: 9	level: 0
 		csum_root:	5554176	gen: 9	level: 0
 		backup_total_bytes:	67108864

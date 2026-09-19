@@ -2,7 +2,7 @@ superblock: bytenr=65536, device=/work/nodatasum.img
 ---------------------------------------------------------
 csum_type		0 (crc32c)
 csum_size		4
-csum			0x7394410d [match]
+csum			0xbb8676bb [match]
 bytenr			65536
 flags			0x1
 			( WRITTEN )
@@ -40,7 +40,7 @@ incompat_flags		0x361
 			  NO_HOLES )
 cache_generation	0
 uuid_tree_generation	9
-dev_item.uuid		de8f894d-9648-4c1d-a695-5d0334472f09
+dev_item.uuid		db924a27-ba82-4fe9-88c4-445e39b9e232
 dev_item.fsid		e4e8822a-1fc7-5a09-9b0a-53eacf454c3f [match]
 dev_item.type		0
 dev_item.total_bytes	134217728
@@ -59,9 +59,9 @@ sys_chunk_array[2048]:
 		io_align 65536 io_width 65536 sector_size 4096
 		num_stripes 2 sub_stripes 1
 			stripe 0 devid 1 offset 22020096
-			dev_uuid de8f894d-9648-4c1d-a695-5d0334472f09
+			dev_uuid db924a27-ba82-4fe9-88c4-445e39b9e232
 			stripe 1 devid 1 offset 30408704
-			dev_uuid de8f894d-9648-4c1d-a695-5d0334472f09
+			dev_uuid db924a27-ba82-4fe9-88c4-445e39b9e232
 backup_roots[4]:
 	backup 0:
 		backup_tree_root:	30785536	gen: 9	level: 0

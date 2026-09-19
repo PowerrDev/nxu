@@ -2,7 +2,7 @@ superblock: bytenr=65536, device=/work/meta-single.img
 ---------------------------------------------------------
 csum_type		0 (crc32c)
 csum_size		4
-csum			0x0865f335 [match]
+csum			0xb62db0f9 [match]
 bytenr			65536
 flags			0x1
 			( WRITTEN )
@@ -11,7 +11,7 @@ fsid			c7bfbd8a-f6e4-57a1-afcc-5d04b9388d6f
 metadata_uuid		00000000-0000-0000-0000-000000000000
 label			meta-single
 generation		9
-root			5652480
+root			5668864
 sys_array_size		97
 chunk_root_generation	9
 root_level		0
@@ -40,7 +40,7 @@ incompat_flags		0x361
 			  NO_HOLES )
 cache_generation	0
 uuid_tree_generation	9
-dev_item.uuid		bed822d2-6996-4245-81ee-d70a9253eb78
+dev_item.uuid		10288351-0dd0-4c5c-8d62-bceff1cfc39e
 dev_item.fsid		c7bfbd8a-f6e4-57a1-afcc-5d04b9388d6f [match]
 dev_item.type		0
 dev_item.total_bytes	134217728
@@ -59,15 +59,15 @@ sys_chunk_array[2048]:
 		io_align 4096 io_width 4096 sector_size 4096
 		num_stripes 1 sub_stripes 0
 			stripe 0 devid 1 offset 1048576
-			dev_uuid bed822d2-6996-4245-81ee-d70a9253eb78
+			dev_uuid 10288351-0dd0-4c5c-8d62-bceff1cfc39e
 backup_roots[4]:
 	backup 0:
-		backup_tree_root:	5652480	gen: 9	level: 0
+		backup_tree_root:	5668864	gen: 9	level: 0
 		backup_chunk_root:	1081344	gen: 9	level: 0
-		backup_extent_root:	5603328	gen: 9	level: 0
-		backup_fs_root:		5636096	gen: 9	level: 0
-		backup_dev_root:	5668864	gen: 9	level: 0
-		csum_root:	5586944	gen: 9	level: 0
+		backup_extent_root:	5619712	gen: 9	level: 0
+		backup_fs_root:		5652480	gen: 9	level: 0
+		backup_dev_root:	5685248	gen: 9	level: 0
+		csum_root:	5603328	gen: 9	level: 0
 		backup_total_bytes:	134217728
 		backup_bytes_used:	372736
 		backup_num_devices:	1

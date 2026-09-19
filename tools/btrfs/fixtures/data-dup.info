@@ -2,7 +2,7 @@ superblock: bytenr=65536, device=/work/data-dup.img
 ---------------------------------------------------------
 csum_type		0 (crc32c)
 csum_size		4
-csum			0x88524571 [match]
+csum			0x0121dbab [match]
 bytenr			65536
 flags			0x1
 			( WRITTEN )
@@ -40,7 +40,7 @@ incompat_flags		0x361
 			  NO_HOLES )
 cache_generation	0
 uuid_tree_generation	9
-dev_item.uuid		609cb4b4-702a-4c4c-8fe9-834faea13b39
+dev_item.uuid		de252497-a228-44e6-918d-547f48f84b52
 dev_item.fsid		ebc1adf3-076e-575a-9079-ef11b78ffb72 [match]
 dev_item.type		0
 dev_item.total_bytes	268435456
@@ -59,9 +59,9 @@ sys_chunk_array[2048]:
 		io_align 65536 io_width 65536 sector_size 4096
 		num_stripes 2 sub_stripes 1
 			stripe 0 devid 1 offset 22020096
-			dev_uuid 609cb4b4-702a-4c4c-8fe9-834faea13b39
+			dev_uuid de252497-a228-44e6-918d-547f48f84b52
 			stripe 1 devid 1 offset 30408704
-			dev_uuid 609cb4b4-702a-4c4c-8fe9-834faea13b39
+			dev_uuid de252497-a228-44e6-918d-547f48f84b52
 backup_roots[4]:
 	backup 0:
 		backup_tree_root:	30818304	gen: 9	level: 0

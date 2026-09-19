@@ -4,7 +4,7 @@
 Runs inside the Alpine guest, against a filesystem the real Linux Btrfs driver
 mounted, so the manifest is Linux's view of the image, not ours.
 
-usage: manifest.py ROOT [--flags FILE] [--no-ino] [--no-times]
+usage: manifest.py ROOT [--flags FILE] [--no-ino] [--no-times] [--staging]
 
 One tab separated record per path, sorted by path bytes:
 
@@ -25,6 +25,14 @@ One tab separated record per path, sorted by path bytes:
   target  the symlink target, "-" otherwise
   flag    "-" or a marker from --flags (a file of "path<TAB>flag" lines),
           e.g. "compressed" for files the driver must refuse to read
+
+Two things are deliberately "-" (unknown / not comparable):
+  * the mtime of a directory with inode number 2: Linux synthesises an empty
+    directory for a subvolume that was nested in the source of a snapshot and
+    stamps it with the time of the lookup;
+  * with --staging (a directory tree that was NOT read back from Btrfs, used
+    for images made with `mkfs.btrfs --rootdir`), the size and link count of
+    directories, which are tmpfs's numbers there, not Btrfs's.
 
 The first line is a comment naming the format.
 """
@@ -57,6 +65,7 @@ def main():
     flags = {}
     no_ino = False
     no_times = False
+    staging = False
     while args:
         a = args.pop(0)
         if a == "--flags":
@@ -69,6 +78,8 @@ def main():
             no_ino = True
         elif a == "--no-times":
             no_times = True
+        elif a == "--staging":
+            staging = True
         else:
             sys.exit("manifest.py: bad argument " + a)
 
@@ -105,11 +116,14 @@ def main():
             t = b"s"
         else:
             sys.exit("manifest.py: unknown file type at " + repr(path_b))
+        unknown_time = no_times or (t == b"d" and st.st_ino == 2)
+        unknown_dir = staging and t == b"d"
         fields = [
             rel, t, b"%o" % m, b"%d" % st.st_uid, b"%d" % st.st_gid,
-            b"%d" % st.st_size, b"%d" % st.st_nlink,
+            b"-" if unknown_dir else b"%d" % st.st_size,
+            b"-" if unknown_dir else b"%d" % st.st_nlink,
             b"-" if no_ino else b"%d" % st.st_ino, rdev,
-            b"-" if no_times else b"%d" % st.st_mtime, crc, sha, target,
+            b"-" if unknown_time else b"%d" % st.st_mtime, crc, sha, target,
             flags.get(rel, b"-"),
         ]
         for f in fields:

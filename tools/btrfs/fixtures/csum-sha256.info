@@ -2,7 +2,7 @@ superblock: bytenr=65536, device=/work/csum-sha256.img
 ---------------------------------------------------------
 csum_type		2 (sha256)
 csum_size		32
-csum			0xa42bb56389d6167a94b8b2d2a9bf524185bcdb6b6d01ddd39c86822d75237891 [match]
+csum			0xef69b3c671f55418d832c627354ba6d14a1531b8f861a6e1bd1ff291b81419b7 [match]
 bytenr			65536
 flags			0x1
 			( WRITTEN )
@@ -40,7 +40,7 @@ incompat_flags		0x361
 			  NO_HOLES )
 cache_generation	0
 uuid_tree_generation	9
-dev_item.uuid		3a3984c5-967e-4d52-a650-b1ddff557e59
+dev_item.uuid		82d0681f-eb59-4eed-a02f-faa2d202b8c2
 dev_item.fsid		4ed2ddcd-e258-5854-86fa-83e0e08ba730 [match]
 dev_item.type		0
 dev_item.total_bytes	134217728
@@ -59,9 +59,9 @@ sys_chunk_array[2048]:
 		io_align 65536 io_width 65536 sector_size 4096
 		num_stripes 2 sub_stripes 1
 			stripe 0 devid 1 offset 22020096
-			dev_uuid 3a3984c5-967e-4d52-a650-b1ddff557e59
+			dev_uuid 82d0681f-eb59-4eed-a02f-faa2d202b8c2
 			stripe 1 devid 1 offset 30408704
-			dev_uuid 3a3984c5-967e-4d52-a650-b1ddff557e59
+			dev_uuid 82d0681f-eb59-4eed-a02f-faa2d202b8c2
 backup_roots[4]:
 	backup 0:
 		backup_tree_root:	30851072	gen: 9	level: 0

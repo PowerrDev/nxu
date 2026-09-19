@@ -2,7 +2,7 @@ superblock: bytenr=65536, device=/work/minimal.img
 ---------------------------------------------------------
 csum_type		0 (crc32c)
 csum_size		4
-csum			0x58af3b1b [match]
+csum			0x202b4b1b [match]
 bytenr			65536
 flags			0x1
 			( WRITTEN )
@@ -40,7 +40,7 @@ incompat_flags		0x361
 			  NO_HOLES )
 cache_generation	0
 uuid_tree_generation	9
-dev_item.uuid		5b44642a-b5c5-4006-88d9-61a672bdf83a
+dev_item.uuid		1c320fc0-a907-46fb-be86-422665250034
 dev_item.fsid		414fd7ef-fe22-57d5-afb6-a7382da473c9 [match]
 dev_item.type		0
 dev_item.total_bytes	134217728
@@ -59,9 +59,9 @@ sys_chunk_array[2048]:
 		io_align 65536 io_width 65536 sector_size 4096
 		num_stripes 2 sub_stripes 1
 			stripe 0 devid 1 offset 22020096
-			dev_uuid 5b44642a-b5c5-4006-88d9-61a672bdf83a
+			dev_uuid 1c320fc0-a907-46fb-be86-422665250034
 			stripe 1 devid 1 offset 30408704
-			dev_uuid 5b44642a-b5c5-4006-88d9-61a672bdf83a
+			dev_uuid 1c320fc0-a907-46fb-be86-422665250034
 backup_roots[4]:
 	backup 0:
 		backup_tree_root:	30621696	gen: 9	level: 0

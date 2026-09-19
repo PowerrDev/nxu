@@ -2,7 +2,7 @@ superblock: bytenr=65536, device=/work/no-skinny.img
 ---------------------------------------------------------
 csum_type		0 (crc32c)
 csum_size		4
-csum			0xd8607ae9 [match]
+csum			0x1e3c6197 [match]
 bytenr			65536
 flags			0x1
 			( WRITTEN )
@@ -39,7 +39,7 @@ incompat_flags		0x261
 			  NO_HOLES )
 cache_generation	0
 uuid_tree_generation	9
-dev_item.uuid		ca2ad958-32d7-43d7-9755-3ab98f7a8142
+dev_item.uuid		8289294c-7e67-433b-a99c-71354ef186a8
 dev_item.fsid		40bb86c3-fd76-57e3-bf2f-fb5ca43b0304 [match]
 dev_item.type		0
 dev_item.total_bytes	134217728
@@ -58,9 +58,9 @@ sys_chunk_array[2048]:
 		io_align 65536 io_width 65536 sector_size 4096
 		num_stripes 2 sub_stripes 1
 			stripe 0 devid 1 offset 22020096
-			dev_uuid ca2ad958-32d7-43d7-9755-3ab98f7a8142
+			dev_uuid 8289294c-7e67-433b-a99c-71354ef186a8
 			stripe 1 devid 1 offset 30408704
-			dev_uuid ca2ad958-32d7-43d7-9755-3ab98f7a8142
+			dev_uuid 8289294c-7e67-433b-a99c-71354ef186a8
 backup_roots[4]:
 	backup 0:
 		backup_tree_root:	30818304	gen: 9	level: 0

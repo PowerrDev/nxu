@@ -2,7 +2,7 @@ superblock: bytenr=65536, device=/work/raid0.0.img
 ---------------------------------------------------------
 csum_type		0 (crc32c)
 csum_size		4
-csum			0xa04712b1 [match]
+csum			0x5d448f45 [match]
 bytenr			65536
 flags			0x1
 			( WRITTEN )
@@ -40,7 +40,7 @@ incompat_flags		0x361
 			  NO_HOLES )
 cache_generation	0
 uuid_tree_generation	0
-dev_item.uuid		13427dae-6866-4e89-80d6-88b50e10701f
+dev_item.uuid		a4934f07-65f6-4dac-ad49-369710e1e5e7
 dev_item.fsid		41d553bd-5954-5883-8df7-31931aeb3dde [match]
 dev_item.type		0
 dev_item.total_bytes	134217728
@@ -59,9 +59,9 @@ sys_chunk_array[2048]:
 		io_align 65536 io_width 65536 sector_size 4096
 		num_stripes 2 sub_stripes 1
 			stripe 0 devid 1 offset 22020096
-			dev_uuid 13427dae-6866-4e89-80d6-88b50e10701f
+			dev_uuid a4934f07-65f6-4dac-ad49-369710e1e5e7
 			stripe 1 devid 2 offset 1048576
-			dev_uuid 2f0b91a1-38fa-497e-a7f7-701f505a2804
+			dev_uuid 95257a2d-50a4-4d75-9dfc-fb75c1d1f0a3
 backup_roots[4]:
 	backup 0:
 		backup_tree_root:	38830080	gen: 5	level: 0

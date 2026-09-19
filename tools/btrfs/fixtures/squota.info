@@ -2,7 +2,7 @@ superblock: bytenr=65536, device=/work/squota.img
 ---------------------------------------------------------
 csum_type		0 (crc32c)
 csum_size		4
-csum			0x14c966ed [match]
+csum			0x0f9678c2 [match]
 bytenr			65536
 flags			0x1
 			( WRITTEN )
@@ -41,7 +41,7 @@ incompat_flags		0x10361
 			  SIMPLE_QUOTA )
 cache_generation	0
 uuid_tree_generation	13
-dev_item.uuid		5a26913a-c573-440d-91f6-cab44c4ea2f2
+dev_item.uuid		5ab6dc92-d05d-4190-bea2-8600c2a6ddc4
 dev_item.fsid		dd54e31a-9d9e-550c-9cca-58778e72d865 [match]
 dev_item.type		0
 dev_item.total_bytes	134217728
@@ -60,9 +60,9 @@ sys_chunk_array[2048]:
 		io_align 65536 io_width 65536 sector_size 4096
 		num_stripes 2 sub_stripes 1
 			stripe 0 devid 1 offset 22020096
-			dev_uuid 5a26913a-c573-440d-91f6-cab44c4ea2f2
+			dev_uuid 5ab6dc92-d05d-4190-bea2-8600c2a6ddc4
 			stripe 1 devid 1 offset 30408704
-			dev_uuid 5a26913a-c573-440d-91f6-cab44c4ea2f2
+			dev_uuid 5ab6dc92-d05d-4190-bea2-8600c2a6ddc4
 backup_roots[4]:
 	backup 0:
 		backup_tree_root:	30834688	gen: 13	level: 0

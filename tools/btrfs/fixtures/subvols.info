@@ -2,7 +2,7 @@ superblock: bytenr=65536, device=/work/subvols.img
 ---------------------------------------------------------
 csum_type		0 (crc32c)
 csum_size		4
-csum			0xc6fe1e43 [match]
+csum			0x20f1c7be [match]
 bytenr			65536
 flags			0x1
 			( WRITTEN )
@@ -40,7 +40,7 @@ incompat_flags		0x361
 			  NO_HOLES )
 cache_generation	0
 uuid_tree_generation	11
-dev_item.uuid		7ca8d82a-a0cd-4dac-919d-0774f76e7c56
+dev_item.uuid		47ebecab-7d97-42d1-880a-f70bf2da1181
 dev_item.fsid		bc12c44e-29b0-59c7-921e-efade4e6c50b [match]
 dev_item.type		0
 dev_item.total_bytes	134217728
@@ -59,9 +59,9 @@ sys_chunk_array[2048]:
 		io_align 65536 io_width 65536 sector_size 4096
 		num_stripes 2 sub_stripes 1
 			stripe 0 devid 1 offset 22020096
-			dev_uuid 7ca8d82a-a0cd-4dac-919d-0774f76e7c56
+			dev_uuid 47ebecab-7d97-42d1-880a-f70bf2da1181
 			stripe 1 devid 1 offset 30408704
-			dev_uuid 7ca8d82a-a0cd-4dac-919d-0774f76e7c56
+			dev_uuid 47ebecab-7d97-42d1-880a-f70bf2da1181
 backup_roots[4]:
 	backup 0:
 		backup_tree_root:	30507008	gen: 9	level: 0
