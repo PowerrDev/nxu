@@ -173,6 +173,20 @@ static bool selftest_boost_self(void)
 #define SELFTEST_YIELD_UNTIL(condition) \
 	for (uint32_t spins_ = 0U; !(condition) && spins_ < 100000U; spins_++) (void)sched_yield()
 
+/*
+ * With paging on (the integrated kernel) user code must live in mapped user
+ * pages, which needs the vm area's address spaces and the loader; the ring 3
+ * stages below run kernel-image code with flat segments and so only work
+ * with paging off, as in a threads-only bring-up.
+ */
+static bool selftest_paging_enabled(void)
+{
+	uint32_t cr0;
+
+	__asm__ volatile("movl %%cr0, %0" : "=r"(cr0));
+	return (cr0 & 0x80000000U) != 0U;
+}
+
 /* ---- 1: shared scheduler self-tests ------------------------------------- */
 
 static bool test_shared_scheduler(void)
@@ -396,8 +410,11 @@ static bool test_syscall_frame(void)
 	uint32_t edx = (uint32_t)sizeof(message) - 1U;
 	uint32_t ebx = 1U;
 
-	__asm__ volatile("int $0x80" : "+a"(eax), "+b"(ebx), "+c"(ecx), "+d"(edx) : : "memory");
-	SELFTEST_CHECK(eax == (uint32_t)sizeof(message) - 1U, "write returns the byte count");
+	/* A kernel pointer is only a valid "user" pointer while paging is off. */
+	if (!selftest_paging_enabled()) {
+		__asm__ volatile("int $0x80" : "+a"(eax), "+b"(ebx), "+c"(ecx), "+d"(edx) : : "memory");
+		SELFTEST_CHECK(eax == (uint32_t)sizeof(message) - 1U, "write returns the byte count");
+	}
 
 	eax = SYSCALL_GETPID;
 	__asm__ volatile("int $0x80" : "+a"(eax) : : "memory");
@@ -817,6 +834,16 @@ static bool test_ring3_preemption(void)
 	return true;
 }
 
+static bool test_ring3(void)
+{
+	if (selftest_paging_enabled()) {
+		kputln("i386_init_threads_selftest: paging is on, ring 3 stages skipped (need mapped user pages)");
+		return true;
+	}
+
+	return test_ring3_syscalls() && test_ring3_faults() && test_ring3_preemption();
+}
+
 /* ---- the phase hook ------------------------------------------------------- */
 
 bool i386_init_threads_selftest(const i386_boot_info_t *boot)
@@ -838,9 +865,7 @@ bool i386_init_threads_selftest(const i386_boot_info_t *boot)
 		test_kernel_threads() &&
 		test_tick_and_preempt() &&
 		test_syscall_frame() &&
-		test_ring3_syscalls() &&
-		test_ring3_faults() &&
-		test_ring3_preemption();
+		test_ring3();
 
 	selftest_restore_pic();
 

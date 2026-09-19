@@ -18,6 +18,7 @@ STATUS_CLEAN=1
 
 failures=0
 count=0
+RING3_PATTERNS=()
 
 # run_case <name> <boot args> <expected qemu status> <expected output>...
 run_case() {
@@ -54,6 +55,17 @@ run_case() {
 		fi
 	done
 
+	# Ring 3 stages need paging off; an integrated kernel (paging on) skips them.
+	if ! printf '%s\n' "$output" | grep -qF -- "ring 3 stages skipped"; then
+		for pattern in "${RING3_PATTERNS[@]:-}"; do
+			[ -n "$pattern" ] || continue
+			if ! printf '%s\n' "$output" | grep -qF -- "$pattern"; then
+				ok=0
+				printf 'FAIL  %-12s missing ring 3 output: %s\n' "$name" "$pattern"
+			fi
+		done
+	fi
+
 	if printf '%s\n' "$output" | grep -qF -- "FAIL"; then
 		ok=0
 		printf 'FAIL  %-12s a self-test reported FAIL\n' "$name"
@@ -72,22 +84,26 @@ run_case boot "qemu-exit=1" $STATUS_CLEAN \
 	"i386_init_threads: scheduler up" \
 	"i386_init: boot phases complete"
 
-# The whole self-test, stage by stage.
+# The whole self-test, stage by stage. The ring 3 patterns apply unless the
+# kernel reports that it skipped those stages because paging is on.
+RING3_PATTERNS=(
+	"i386_init_threads_selftest: hello from ring 3"
+	"syscall: exit(42)"
+	"i386_init_threads_selftest: ring 3 entry and system calls passed"
+	"terminated by #GP General Protection Fault"
+	"terminated by #UD Invalid Opcode"
+	"terminated by #DE Divide Error"
+	"i386_init_threads_selftest: ring 3 faults terminate only the offender"
+	"syscall: exit(7)"
+	"i386_init_threads_selftest: ring 3 preemption passed (log uuuVuuuuu)"
+)
+
 run_case selftest "test=threads qemu-exit=1" $STATUS_CLEAN \
 	"i386_init_threads_selftest: run queue and MLFQ self-tests passed" \
 	"i386_init_threads_selftest: machine_thread contracts passed" \
 	"i386_init_threads_selftest: kernel threads passed (log ABCABCABCABC)" \
 	"i386_init_threads_selftest: MLFQ ticks and preempt-on-return passed" \
 	"i386_init_threads_selftest: system-call request path passed" \
-	"i386_init_threads_selftest: hello from ring 3" \
-	"syscall: exit(42)" \
-	"i386_init_threads_selftest: ring 3 entry and system calls passed" \
-	"terminated by #GP General Protection Fault" \
-	"terminated by #UD Invalid Opcode" \
-	"terminated by #DE Divide Error" \
-	"i386_init_threads_selftest: ring 3 faults terminate only the offender" \
-	"syscall: exit(7)" \
-	"i386_init_threads_selftest: ring 3 preemption passed (log uuuVuuuuu)" \
 	"i386_init: threads self-test passed" \
 	"i386_init: boot phases complete"
 
