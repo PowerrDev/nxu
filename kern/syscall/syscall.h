@@ -1,7 +1,7 @@
 #ifndef NXU_KERN_SYSCALL_H
 #define NXU_KERN_SYSCALL_H
 
-#include <abi/syscall.h>
+#include <kern/syscall/syscall_defs.h>
 #include <stdint.h>
 
 #define SYSCALL_ARGUMENT_COUNT 6U

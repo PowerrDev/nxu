@@ -1,7 +1,7 @@
 #ifndef NXU_RECOVERY_SERVICES_H
 #define NXU_RECOVERY_SERVICES_H
 
-#include <abi/syscall.h>
+#include <kern/syscall/syscall_defs.h>
 #include <nxu/syscall.h>
 
 #include <stdbool.h>

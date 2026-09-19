@@ -1,7 +1,7 @@
 #ifndef NXU_USER_SYSCALL_H
 #define NXU_USER_SYSCALL_H
 
-#include <abi/syscall.h>
+#include <kern/syscall/syscall_defs.h>
 
 #include <stdint.h>
 
