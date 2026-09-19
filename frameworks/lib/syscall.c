@@ -40,6 +40,31 @@ nxu_syscall3(uint64_t number, uint64_t argument0, uint64_t argument1, uint64_t a
 }
 
 static int64_t
+nxu_syscall4(uint64_t number, uint64_t argument0, uint64_t argument1, uint64_t argument2, uint64_t argument3)
+{
+	register uint64_t x8 __asm__("x8") = number;
+	register uint64_t x0 __asm__("x0") = argument0;
+	register uint64_t x1 __asm__("x1") = argument1;
+	register uint64_t x2 __asm__("x2") = argument2;
+	register uint64_t x3 __asm__("x3") = argument3;
+	__asm__ volatile("svc #0" : "+r"(x0) : "r"(x1), "r"(x2), "r"(x3), "r"(x8) : "memory");
+	return (int64_t)x0;
+}
+
+static int64_t
+nxu_syscall5(uint64_t number, uint64_t argument0, uint64_t argument1, uint64_t argument2, uint64_t argument3, uint64_t argument4)
+{
+	register uint64_t x8 __asm__("x8") = number;
+	register uint64_t x0 __asm__("x0") = argument0;
+	register uint64_t x1 __asm__("x1") = argument1;
+	register uint64_t x2 __asm__("x2") = argument2;
+	register uint64_t x3 __asm__("x3") = argument3;
+	register uint64_t x4 __asm__("x4") = argument4;
+	__asm__ volatile("svc #0" : "+r"(x0) : "r"(x1), "r"(x2), "r"(x3), "r"(x4), "r"(x8) : "memory");
+	return (int64_t)x0;
+}
+
+static int64_t
 nxu_syscall6(uint64_t number, uint64_t argument0, uint64_t argument1, uint64_t argument2, uint64_t argument3, uint64_t argument4, uint64_t argument5)
 {
 	register uint64_t x8 __asm__("x8") = number;
@@ -86,3 +111,21 @@ int64_t nxu_recovery_display_info(nxu_recovery_display_info_t *info) { return nx
 int64_t nxu_recovery_present(const uint32_t *pixels, uint32_t stride, uint32_t x, uint32_t y, uint32_t width, uint32_t height) { return nxu_syscall6(NXU_SYS_RECOVERY_PRESENT, (uint64_t)pixels, stride, x, y, width, height); }
 int64_t nxu_recovery_input(nxu_recovery_input_event_t *event) { return nxu_syscall1(NXU_SYS_RECOVERY_INPUT, (uint64_t)event); }
 int64_t nxu_system_reset(void) { return nxu_syscall0(NXU_SYS_SYSTEM_RESET); }
+
+int64_t nxu_ipc_port_allocate(void) { return nxu_syscall0(NXU_SYS_IPC_PORT_ALLOCATE); }
+int64_t nxu_ipc_port_deallocate(uint32_t name) { return nxu_syscall1(NXU_SYS_IPC_PORT_DEALLOCATE, name); }
+int64_t nxu_ipc_bootstrap_port(void) { return nxu_syscall0(NXU_SYS_IPC_BOOTSTRAP_PORT); }
+int64_t nxu_ipc_send(uint32_t dest_name, const void *buffer, uint64_t length, uint32_t xfer_name) { return nxu_syscall4(NXU_SYS_IPC_SEND, dest_name, (uint64_t)buffer, length, xfer_name); }
+int64_t nxu_ipc_receive(uint32_t port_name, void *buffer, uint64_t capacity, uint32_t *out_xfer_name, uint32_t *out_xfer_type) { return nxu_syscall5(NXU_SYS_IPC_RECEIVE, port_name, (uint64_t)buffer, capacity, (uint64_t)out_xfer_name, (uint64_t)out_xfer_type); }
+int64_t nxu_ipc_register_bootstrap(uint32_t port_name) { return nxu_syscall1(NXU_SYS_IPC_REGISTER_BOOTSTRAP, port_name); }
+int64_t nxu_display_claim(void) { return nxu_syscall0(NXU_SYS_DISPLAY_CLAIM); }
+int64_t nxu_shm_create(uint64_t size) { return nxu_syscall1(NXU_SYS_SHM_CREATE, size); }
+int64_t nxu_shm_map(uint64_t id) { return nxu_syscall1(NXU_SYS_SHM_MAP, id); }
+int64_t nxu_mmap(uint64_t size, uint64_t prot_flags) { return nxu_syscall2(NXU_SYS_MMAP, size, prot_flags); }
+int64_t nxu_munmap(uint64_t address, uint64_t size) { return nxu_syscall2(NXU_SYS_MUNMAP, address, size); }
+int64_t nxu_thread_create(void (*entry)(void *arg), void *stack, void *arg) { return nxu_syscall3(NXU_SYS_THREAD_CREATE, (uint64_t)entry, (uint64_t)stack, (uint64_t)arg); }
+int64_t nxu_thread_exit(uint64_t status) { return nxu_syscall1(NXU_SYS_THREAD_EXIT, status); }
+int64_t nxu_thread_self(void) { return nxu_syscall0(NXU_SYS_THREAD_SELF); }
+int64_t nxu_socket_listen(const char *name, uint32_t backlog) { return nxu_syscall2(NXU_SYS_SOCKET_LISTEN, (uint64_t)name, backlog); }
+int64_t nxu_socket_connect(const char *name) { return nxu_syscall1(NXU_SYS_SOCKET_CONNECT, (uint64_t)name); }
+int64_t nxu_socket_accept(uint64_t listen_descriptor) { return nxu_syscall1(NXU_SYS_SOCKET_ACCEPT, listen_descriptor); }
