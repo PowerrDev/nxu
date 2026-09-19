@@ -12,6 +12,7 @@
 I386_THREADS_STANDINS := 0
 
 I386_C_SOURCES += \
+    mach/i386/fs_test.c \
     mach/i386/kernel_init.c \
     mach/i386/mmio_map.c \
     mach/i386/userland_init.c \
@@ -37,8 +38,15 @@ I386_C_SOURCES += \
 
 # End-to-end boots of the whole kernel with userland from the ext4 image:
 # bootd as PID 1, and the cross-process IPC, thread and socket tests.
-.PHONY: test-i386-boot
+.PHONY: test-i386-boot test-i386-fs
 
 test-i386-boot: $(I386_KERNEL) i386-disk
 
 	tools/test_i386_boot.sh $(I386_KERNEL) $(BUILD_ROOT)/i386/disk.img
+
+
+# ext4 write and journal tests: the guest writes and crashes, the host's e2fsck
+# and debugfs check the image (needs e2fsprogs).
+test-i386-fs: $(I386_KERNEL) i386-disk
+
+	tools/test_i386_fs.sh $(I386_KERNEL) $(BUILD_ROOT)/i386/disk.img

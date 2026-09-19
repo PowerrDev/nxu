@@ -17,6 +17,7 @@
  */
 
 #include <mach/i386/boot_info.h>
+#include <mach/i386/fs_test.h>
 #include <mach/i386/timer.h>
 
 #include <drivers/block/block_device.h>
@@ -98,6 +99,16 @@ bool i386_init_userland(const i386_boot_info_t *boot)
 	char test[16];
 
 	if (i386_boot_arg("process-test", test, sizeof(test))) return userland_run_process_test(test);
+
+	/* "fs-test=<write|journal-crash|journal-verify>": see fs_test.h. */
+	char fs_mode[24];
+
+	if (i386_boot_arg("fs-test", fs_mode, sizeof(fs_mode))) {
+		bool fs_ok = i386_fs_test_run(fs_mode);
+
+		kprintf("i386_init_userland: fs-test %s %s\n", fs_mode, fs_ok ? "passed" : "FAILED");
+		return fs_ok;
+	}
 
 	/* Same policy as arm64: prefer bootd, fall back to its recovery image. */
 	kprintf("i386_init_userland: loading %s as PID 1\n", USERLAND_BOOTD_PATH);
