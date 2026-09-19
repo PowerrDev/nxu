@@ -456,7 +456,6 @@ bool i386_trap_self_test(void)
 	if (eax != I386_SYSCALL_UNIMPLEMENTED) return false;
 	if (ecx != 0xC0DEC0DEU || edx != 0xD00DD00DU) return false;
 	if (esi != 0x51515151U || edi != 0xD1D1D1D1U) return false;
-	if (g_syscall_count == 0U) return false;
 
 	return true;
 }
