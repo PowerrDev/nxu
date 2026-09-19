@@ -21,6 +21,7 @@ nvram_string_length_bounded(const char *string, uint32_t limit)
 	return length;
 }
 
+#if !defined(__i386__) && !defined(__x86_64__)
 bool
 nvram_bootstrap(const dtb_t *dtb)
 {
@@ -47,6 +48,25 @@ nvram_bootstrap(const dtb_t *dtb)
 	g_nvram.initialized = true;
 	return true;
 }
+#else
+bool
+nvram_bootstrap_bootargs(const char *bootargs)
+{
+	if (g_nvram.initialized) return false;
+
+	memset(&g_nvram, 0, sizeof(g_nvram));
+	g_nvram.backend = NVRAM_BACKEND_BOOTLOADER;
+
+	uint32_t length = nvram_string_length_bounded(bootargs, NVRAM_VALUE_MAX);
+
+	if (length != 0U) memcpy(g_nvram.boot_args, bootargs, length);
+	g_nvram.boot_args[length] = '\0';
+	g_nvram.boot_args_length = length;
+
+	g_nvram.initialized = true;
+	return true;
+}
+#endif
 
 nvram_status_t
 nvram_get(const char *name, char *value, uint32_t capacity, uint32_t *length)

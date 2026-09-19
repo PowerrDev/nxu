@@ -20,7 +20,8 @@ typedef enum {
 
 typedef enum {
 	NVRAM_BACKEND_NONE,
-	NVRAM_BACKEND_DEVICE_TREE
+	NVRAM_BACKEND_DEVICE_TREE,
+	NVRAM_BACKEND_BOOTLOADER
 } nvram_backend_t;
 
 /*
@@ -29,6 +30,13 @@ typedef enum {
  * firmware-variable backend exists.
  */
 bool nvram_bootstrap(const dtb_t *dtb);
+
+/*
+ * x86 has no device tree: the Multiboot loader hands the kernel its command
+ * line as a plain string, which becomes the same read-only boot-args view.
+ * Only defined on x86 builds.
+ */
+bool nvram_bootstrap_bootargs(const char *bootargs);
 nvram_status_t nvram_get(const char *name, char *value, uint32_t capacity, uint32_t *length);
 nvram_status_t nvram_set(const char *name, const char *value);
 nvram_backend_t nvram_backend(void);
