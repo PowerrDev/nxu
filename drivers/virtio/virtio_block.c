@@ -3,6 +3,7 @@
 #include <drivers/virtio/virtio_block.h>
 
 #include <drivers/block/block_device.h>
+#include <mach/machine/barrier.h>
 #include <platform/uart.h>
 #include <vm/pmm.h>
 #include <vm/vmm.h>
@@ -68,7 +69,7 @@ static void virtio_block_lock(
 			__ATOMIC_ACQUIRE
 		) != 0U
 	) {
-		__asm__ volatile("yield");
+		ml_cpu_relax();
 	}
 }
 
@@ -222,7 +223,7 @@ static bool virtio_block_wait(
 			&id,
 			&length
 		)) {
-			__asm__ volatile("yield");
+			ml_cpu_relax();
 
 			continue;
 		}
@@ -333,12 +334,7 @@ static bool virtio_block_transfer_one(
 
 	status->next = 0U;
 
-	__asm__ volatile(
-		"dmb oshst"
-		:
-		:
-		: "memory"
-	);
+	ml_dma_wmb();
 
 	if (!virtqueue_submit(
 		&device->requestq,
@@ -354,7 +350,7 @@ static bool virtio_block_transfer_one(
 		return false;
 	}
 
-	virtio_mmio_notify(
+	virtio_device_notify(
 		&device->transport,
 		VIRTIO_BLK_REQUESTQ
 	);
@@ -365,12 +361,7 @@ static bool virtio_block_transfer_one(
 			header_desc
 		);
 
-	__asm__ volatile(
-		"dmb oshld"
-		:
-		:
-		: "memory"
-	);
+	ml_dma_rmb();
 
 	uint8_t request_status = *device->status;
 
@@ -588,12 +579,7 @@ static bool virtio_block_flush_request(
 
 	status->next = 0U;
 
-	__asm__ volatile(
-		"dmb oshst"
-		:
-		:
-		: "memory"
-	);
+	ml_dma_wmb();
 
 	if (!virtqueue_submit(
 		&device->requestq,
@@ -614,7 +600,7 @@ static bool virtio_block_flush_request(
 		return false;
 	}
 
-	virtio_mmio_notify(
+	virtio_device_notify(
 		&device->transport,
 		VIRTIO_BLK_REQUESTQ
 	);
@@ -625,12 +611,7 @@ static bool virtio_block_flush_request(
 			header_desc
 		);
 
-	__asm__ volatile(
-		"dmb oshld"
-		:
-		:
-		: "memory"
-	);
+	ml_dma_rmb();
 
 	uint8_t request_status = *device->status;
 
@@ -689,11 +670,8 @@ static void virtio_block_cleanup(
 	virtio_block_device_t *device
 )
 {
-	if (
-		device->transport.mmio_base !=
-		0ULL
-	) {
-		(void)virtio_mmio_reset(
+	if (virtio_device_live(&device->transport)) {
+		(void)virtio_device_reset(
 			&device->transport
 		);
 	}
@@ -736,7 +714,7 @@ static void virtio_block_cleanup(
  * transport-independent block device.
  */
 bool virtio_block_attach(
-	const virtio_mmio_device_t *transport
+	const virtio_device_t *transport
 )
 {
 	if (
@@ -772,7 +750,7 @@ bool virtio_block_attach(
 		(1ULL << VIRTIO_BLK_F_BLK_SIZE) |
 		(1ULL << VIRTIO_BLK_F_FLUSH);
 
-	if (!virtio_mmio_begin(
+	if (!virtio_device_begin(
 		&device->transport,
 		accepted_features
 	)) {
@@ -791,9 +769,11 @@ bool virtio_block_attach(
 			(1ULL << VIRTIO_BLK_F_FLUSH)
 		) != 0ULL;
 
-	if (!virtqueue_init(
-		&device->requestq,
-		VIRTIO_BLOCK_QUEUE_SIZE
+	if (!virtio_device_queue_init(
+		&device->transport,
+		VIRTIO_BLK_REQUESTQ,
+		VIRTIO_BLOCK_QUEUE_SIZE,
+		&device->requestq
 	)) {
 		goto fail;
 	}
@@ -803,7 +783,7 @@ bool virtio_block_attach(
 	 */
 	*device->requestq.available_flags = VIRTQ_AVAIL_F_NO_INTERRUPT;
 
-	if (!virtio_mmio_setup_queue(
+	if (!virtio_device_setup_queue(
 		&device->transport,
 		VIRTIO_BLK_REQUESTQ,
 		&device->requestq
@@ -838,7 +818,7 @@ bool virtio_block_attach(
 	}
 
 	uint64_t capacity =
-		virtio_mmio_config_read64(
+		virtio_device_config_read64(
 			&device->transport,
 			VIRTIO_BLK_CONFIG_CAPACITY
 		);
@@ -856,7 +836,7 @@ bool virtio_block_attach(
 		) != 0ULL
 	) {
 		uint32_t configured =
-			virtio_mmio_config_read32(
+			virtio_device_config_read32(
 				&device->transport,
 				VIRTIO_BLK_CONFIG_BLK_SIZE
 			);
@@ -888,7 +868,7 @@ bool virtio_block_attach(
 
 	device->block_storage.driver_data = device;
 
-	if (!virtio_mmio_finish(
+	if (!virtio_device_finish(
 		&device->transport
 	)) {
 		goto fail;

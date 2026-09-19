@@ -1,5 +1,7 @@
 #include <drivers/virtio/virtio_mmio.h>
 
+#include <kern/irq/irq.h>
+#include <mach/arm64/gic.h>
 #include <vm/vmm.h>
 
 #include <stdbool.h>
@@ -37,6 +39,10 @@
 
 #define VIRTIO_MMIO_CONFIG_GENERATION_OFFSET 0x0FCU
 #define VIRTIO_MMIO_CONFIG_OFFSET 0x100U
+
+#define VIRTIO_MMIO_GIC_PRIORITY 0x90U
+#define VIRTIO_MMIO_IRQ_TYPE_EDGE_RISING 0x01U
+#define VIRTIO_MMIO_IRQ_TYPE_EDGE_FALLING 0x02U
 
 /*
  * virtio_mmio_read32:
@@ -209,6 +215,7 @@ bool virtio_mmio_probe(
 		sizeof(probe)
 	);
 
+	probe.ops = &virtio_mmio_ops;
 	probe.region = *region;
 	probe.mmio_base = virtual_address;
 	probe.intid = intid;
@@ -734,3 +741,66 @@ void virtio_mmio_config_write8(
 
 	virtio_mmio_barrier();
 }
+
+/*
+ * virtio_mmio_queue_init:
+ *
+ * MMIO lets the driver choose the queue size (bounded by QueueNumMax when the
+ * queue is published), so the requested size is used as given.
+ */
+static bool virtio_mmio_queue_init(
+	virtio_device_t *device,
+	uint16_t queue_index,
+	uint16_t size,
+	virtqueue_t *queue
+)
+{
+	(void)device;
+	(void)queue_index;
+
+	return virtqueue_init(queue, size);
+}
+
+/*
+ * virtio_mmio_irq_attach:
+ *
+ * Bind the class driver's handler to this transport's GIC INTID and enable
+ * the SPI. The registration is undone if the GIC rejects the INTID.
+ */
+static bool virtio_mmio_irq_attach(
+	virtio_device_t *device,
+	irq_handler_t handler,
+	void *context
+)
+{
+	if (!irq_register(device->intid, handler, context)) return false;
+
+	bool edge_triggered =
+		(device->irq_flags &
+		(VIRTIO_MMIO_IRQ_TYPE_EDGE_RISING | VIRTIO_MMIO_IRQ_TYPE_EDGE_FALLING)) != 0U;
+
+	if (!gic_enable_spi(device->intid, VIRTIO_MMIO_GIC_PRIORITY, edge_triggered)) {
+		(void)irq_unregister(device->intid, handler, context);
+		return false;
+	}
+
+	return true;
+}
+
+const virtio_transport_ops_t virtio_mmio_ops = {
+	.name = "virtio-mmio",
+	.begin = virtio_mmio_begin,
+	.queue_init = virtio_mmio_queue_init,
+	.setup_queue = virtio_mmio_setup_queue,
+	.finish = virtio_mmio_finish,
+	.reset = virtio_mmio_reset,
+	.fail = virtio_mmio_fail,
+	.notify = virtio_mmio_notify,
+	.interrupt_status = virtio_mmio_interrupt_status,
+	.interrupt_ack = virtio_mmio_interrupt_ack,
+	.irq_attach = virtio_mmio_irq_attach,
+	.config_read8 = virtio_mmio_config_read8,
+	.config_read32 = virtio_mmio_config_read32,
+	.config_read64 = virtio_mmio_config_read64,
+	.config_write8 = virtio_mmio_config_write8
+};

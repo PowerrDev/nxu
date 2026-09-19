@@ -3,6 +3,7 @@
 #include <drivers/video/display.h>
 #include <kern/console/console.h>
 #include <kern/console/ioregistry.h>
+#include <mach/machine/barrier.h>
 #include <vm/pmm.h>
 #include <vm/vmm.h>
 
@@ -110,7 +111,7 @@ typedef struct {
 } virtio_gpu_resource_flush_t;
 
 typedef struct {
-	virtio_mmio_device_t transport;
+	virtio_device_t transport;
 	virtqueue_t controlq;
 
 	uint64_t control_physical;
@@ -156,7 +157,7 @@ static ioreg_id_t virtio_gpu_ioreg_family(void)
 static void virtio_gpu_lock(virtio_gpu_device_t *device)
 {
 	while (__atomic_exchange_n(&device->lock, 1U, __ATOMIC_ACQUIRE) != 0U) {
-		__asm__ volatile("yield");
+		ml_cpu_relax();
 	}
 }
 
@@ -188,7 +189,7 @@ static bool virtio_gpu_wait(virtio_gpu_device_t *device, uint16_t expected_head)
 		uint32_t length;
 
 		if (!virtqueue_pop_used(&device->controlq, &id, &length)) {
-			__asm__ volatile("yield");
+			ml_cpu_relax();
 			continue;
 		}
 
@@ -254,7 +255,7 @@ static bool virtio_gpu_command(
 
 	bool ok = virtqueue_submit(&device->controlq, request_desc);
 	if (ok) {
-		virtio_mmio_notify(&device->transport, VIRTIO_GPU_CONTROLQ);
+		virtio_device_notify(&device->transport, VIRTIO_GPU_CONTROLQ);
 		ok = virtio_gpu_wait(device, request_desc);
 	}
 
@@ -460,7 +461,7 @@ static bool virtio_gpu_allocate_framebuffer(virtio_gpu_device_t *device)
 	return true;
 }
 
-bool virtio_gpu_attach(const virtio_mmio_device_t *transport)
+bool virtio_gpu_attach(const virtio_device_t *transport)
 {
 	if (transport == 0 || transport->device_id != VIRTIO_DEVICE_ID_GPU) return false;
 
@@ -473,7 +474,7 @@ bool virtio_gpu_attach(const virtio_mmio_device_t *transport)
 
 	kprintf("VirtIOGPUFamily: probe 0x%llx, INTID %u\n", (unsigned long long)transport->region.base, transport->intid);
 
-	if (!virtio_mmio_begin(&device->transport, 0ULL)) {
+	if (!virtio_device_begin(&device->transport, 0ULL)) {
 		kputln("VirtIOGPUFamily: transport feature negotiation failed before queue setup");
 		return false;
 	}
@@ -483,17 +484,17 @@ bool virtio_gpu_attach(const virtio_mmio_device_t *transport)
 	 * claims controlq. QEMU does not require cursorq for 2D scanout commands.
 	 */
 	failure_stage = "control queue allocation";
-	if (!virtqueue_init(&device->controlq, VIRTIO_GPU_QUEUE_SIZE)) goto fail;
+	if (!virtio_device_queue_init(&device->transport, VIRTIO_GPU_CONTROLQ, VIRTIO_GPU_QUEUE_SIZE, &device->controlq)) goto fail;
 
 	*device->controlq.available_flags = VIRTQ_AVAIL_F_NO_INTERRUPT;
 
 	failure_stage = "control queue transport setup";
-	if (!virtio_mmio_setup_queue(&device->transport, VIRTIO_GPU_CONTROLQ, &device->controlq)) goto fail;
+	if (!virtio_device_setup_queue(&device->transport, VIRTIO_GPU_CONTROLQ, &device->controlq)) goto fail;
 
 	failure_stage = "control request page allocation";
 	if (!virtio_gpu_allocate_page(&device->control_physical, &device->control)) goto fail;
 	failure_stage = "DRIVER_OK transition";
-	if (!virtio_mmio_finish(&device->transport)) goto fail;
+	if (!virtio_device_finish(&device->transport)) goto fail;
 
 	failure_stage = "GET_DISPLAY_INFO";
 	if (!virtio_gpu_get_display_info(device)) goto fail;
@@ -538,7 +539,7 @@ bool virtio_gpu_attach(const virtio_mmio_device_t *transport)
 
 fail:
 	kprintf("VirtIOGPUFamily: attach failed during %s\n", failure_stage);
-	virtio_mmio_fail(&device->transport);
+	virtio_device_fail(&device->transport);
 
 	if (device->framebuffer_pages != 0ULL) {
 		(void)pmm_free_contiguous_pages(device->framebuffer_physical, device->framebuffer_pages);

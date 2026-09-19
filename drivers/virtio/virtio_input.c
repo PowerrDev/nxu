@@ -2,7 +2,7 @@
 #include <kern/console/ioregistry.h>
 #include <drivers/virtio/virtio_input.h>
 
-#include <mach/arm64/gic.h>
+#include <mach/machine/barrier.h>
 #include <mach/machine/machine_routines.h>
 #include <drivers/input/keyboard.h>
 #include <drivers/input/mouse.h>
@@ -35,12 +35,6 @@
 #define REL_X 0U
 #define REL_Y 1U
 #define BTN_LEFT 0x110U
-
-#define VIRTIO_MMIO_INTERRUPT_USED_BUFFER 0x01U
-#define VIRTIO_MMIO_INTERRUPT_CONFIG 0x02U
-
-#define GIC_IRQ_TYPE_EDGE_RISING 0x01U
-#define GIC_IRQ_TYPE_EDGE_FALLING 0x02U
 
 _Static_assert(
 	sizeof(virtio_input_event_t) == 8U,
@@ -84,22 +78,22 @@ static bool virtio_input_bitmap_test(
  * into caller storage.
  */
 static uint32_t virtio_input_read_config(
-	virtio_mmio_device_t *transport,
+	virtio_device_t *transport,
 	uint8_t select,
 	uint8_t subsel,
 	uint8_t *buffer,
 	uint32_t capacity
 )
 {
-	virtio_mmio_config_write8(transport, VIRTIO_INPUT_CONFIG_SELECT, select);
-	virtio_mmio_config_write8(transport, VIRTIO_INPUT_CONFIG_SUBSEL, subsel);
-	__asm__ volatile("dmb osh" : : : "memory");
+	virtio_device_config_write8(transport, VIRTIO_INPUT_CONFIG_SELECT, select);
+	virtio_device_config_write8(transport, VIRTIO_INPUT_CONFIG_SUBSEL, subsel);
+	ml_dma_mb();
 
-	uint32_t size = virtio_mmio_config_read8(transport, VIRTIO_INPUT_CONFIG_SIZE);
+	uint32_t size = virtio_device_config_read8(transport, VIRTIO_INPUT_CONFIG_SIZE);
 	if (size > capacity) size = capacity;
 
 	for (uint32_t index = 0U; index < size; index++) {
-		buffer[index] = virtio_mmio_config_read8(
+		buffer[index] = virtio_device_config_read8(
 			transport,
 			VIRTIO_INPUT_CONFIG_DATA + index
 		);
@@ -115,7 +109,7 @@ static uint32_t virtio_input_read_config(
  * on its transport slot or name.
  */
 static input_device_class_t virtio_input_classify(
-	virtio_mmio_device_t *transport
+	virtio_device_t *transport
 )
 {
 	uint8_t bitmap[128];
@@ -283,7 +277,7 @@ static void virtio_input_process_eventq(virtio_input_device_t *device)
 			buffer < VIRTIO_INPUT_EVENT_QUEUE_SIZE &&
 			length >= sizeof(virtio_input_event_t)
 		) {
-			__asm__ volatile("dmb oshld" : : : "memory");
+			ml_dma_rmb();
 			virtio_input_event_t raw = device->event_buffers[buffer];
 			virtio_input_route_event(device, &raw);
 		}
@@ -291,7 +285,7 @@ static void virtio_input_process_eventq(virtio_input_device_t *device)
 		if (virtqueue_submit(&device->eventq, (uint16_t)id)) requeued = true;
 	}
 
-	if (requeued) virtio_mmio_notify(&device->transport, VIRTIO_INPUT_EVENTQ);
+	if (requeued) virtio_device_notify(&device->transport, VIRTIO_INPUT_EVENTQ);
 }
 
 /*
@@ -305,18 +299,18 @@ static void virtio_input_irq(uint32_t intid, void *context)
 	virtio_input_device_t *device = context;
 	if (device == 0 || !device->attached || device->transport.intid != intid) return;
 
-	uint32_t status = virtio_mmio_interrupt_status(&device->transport);
+	uint32_t status = virtio_device_interrupt_status(&device->transport);
 	if (status == 0U) return;
 
-	virtio_mmio_interrupt_ack(&device->transport, status);
+	virtio_device_interrupt_ack(&device->transport, status);
 	device->irq_count++;
 
-	if ((status & VIRTIO_MMIO_INTERRUPT_USED_BUFFER) != 0U) {
+	if ((status & VIRTIO_INTERRUPT_USED_BUFFER) != 0U) {
 		virtio_input_process_eventq(device);
 	}
 
 	/* Configuration-change interrupts require no action for fixed QEMU HID. */
-	(void)(status & VIRTIO_MMIO_INTERRUPT_CONFIG);
+	(void)(status & VIRTIO_INTERRUPT_CONFIG);
 }
 
 /*
@@ -343,7 +337,7 @@ static void virtio_input_cleanup(virtio_input_device_t *device)
  * Negotiate and attach one VirtIO Input device, initialize its queues,
  * classify it, and register its interrupt source.
  */
-bool virtio_input_attach(const virtio_mmio_device_t *transport)
+bool virtio_input_attach(const virtio_device_t *transport)
 {
 	if (
 		transport == 0 ||
@@ -357,7 +351,7 @@ bool virtio_input_attach(const virtio_mmio_device_t *transport)
 	memset(device, 0, sizeof(*device));
 	device->transport = *transport;
 
-	if (!virtio_mmio_begin(&device->transport, 0ULL)) goto fail;
+	if (!virtio_device_begin(&device->transport, 0ULL)) goto fail;
 
 	virtio_input_read_name(device);
 	device->device_class = virtio_input_classify(&device->transport);
@@ -365,12 +359,12 @@ bool virtio_input_attach(const virtio_mmio_device_t *transport)
 
 	device->input_device_id = g_next_input_device_id++;
 
-	if (!virtqueue_init(&device->eventq, VIRTIO_INPUT_EVENT_QUEUE_SIZE)) goto fail;
-	if (!virtqueue_init(&device->statusq, VIRTIO_INPUT_STATUS_QUEUE_SIZE)) goto fail;
+	if (!virtio_device_queue_init(&device->transport, VIRTIO_INPUT_EVENTQ, VIRTIO_INPUT_EVENT_QUEUE_SIZE, &device->eventq)) goto fail;
+	if (!virtio_device_queue_init(&device->transport, VIRTIO_INPUT_STATUSQ, VIRTIO_INPUT_STATUS_QUEUE_SIZE, &device->statusq)) goto fail;
 	if (!virtio_input_allocate_buffers(device)) goto fail;
 	if (!virtio_input_populate_eventq(device)) goto fail;
 
-	if (!virtio_mmio_setup_queue(
+	if (!virtio_device_setup_queue(
 		&device->transport,
 		VIRTIO_INPUT_EVENTQ,
 		&device->eventq
@@ -378,7 +372,7 @@ bool virtio_input_attach(const virtio_mmio_device_t *transport)
 		goto fail;
 	}
 
-	if (!virtio_mmio_setup_queue(
+	if (!virtio_device_setup_queue(
 		&device->transport,
 		VIRTIO_INPUT_STATUSQ,
 		&device->statusq
@@ -386,7 +380,7 @@ bool virtio_input_attach(const virtio_mmio_device_t *transport)
 		goto fail;
 	}
 
-	if (!virtio_mmio_finish(&device->transport)) goto fail;
+	if (!virtio_device_finish(&device->transport)) goto fail;
 
 	if (device->device_class == INPUT_DEVICE_KEYBOARD) {
 		if (!keyboard_attach(device->input_device_id)) goto fail;
@@ -394,16 +388,7 @@ bool virtio_input_attach(const virtio_mmio_device_t *transport)
 		if (!mouse_attach(device->input_device_id)) goto fail;
 	}
 
-	if (!irq_register(device->transport.intid, virtio_input_irq, device)) goto fail;
-
-	bool edge_triggered =
-		(device->transport.irq_flags &
-		(GIC_IRQ_TYPE_EDGE_RISING | GIC_IRQ_TYPE_EDGE_FALLING)) != 0U;
-
-	if (!gic_enable_spi(device->transport.intid, 0x90U, edge_triggered)) {
-		(void)irq_unregister(device->transport.intid, virtio_input_irq, device);
-		goto fail;
-	}
+	if (!virtio_device_irq_attach(&device->transport, virtio_input_irq, device)) goto fail;
 
 	device->attached = true;
 	g_virtio_input_device_count++;
@@ -421,11 +406,11 @@ bool virtio_input_attach(const virtio_mmio_device_t *transport)
 		"VirtIOInputDevice"
 	);
 
-	virtio_mmio_notify(&device->transport, VIRTIO_INPUT_EVENTQ);
+	virtio_device_notify(&device->transport, VIRTIO_INPUT_EVENTQ);
 	return true;
 
 fail:
-	virtio_mmio_fail(&device->transport);
+	virtio_device_fail(&device->transport);
 	virtio_input_cleanup(device);
 	return false;
 }

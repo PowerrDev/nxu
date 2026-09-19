@@ -15,9 +15,81 @@ static uint32_t g_virtio_block_count;
 static uint32_t g_virtio_gpu_count;
 static bool g_virtio_initialized;
 
+#define VIRTIO_MAX_BUS_SCANNERS 4U
+
+static virtio_bus_scan_t g_virtio_bus_scanners[VIRTIO_MAX_BUS_SCANNERS];
+static uint32_t g_virtio_bus_scanner_count;
+
+bool virtio_bus_register(virtio_bus_scan_t scan)
+{
+	if (scan == 0 || g_virtio_initialized) return false;
+
+	for (uint32_t index = 0U; index < g_virtio_bus_scanner_count; index++) {
+		if (g_virtio_bus_scanners[index] == scan) return true;
+	}
+
+	if (g_virtio_bus_scanner_count >= VIRTIO_MAX_BUS_SCANNERS) return false;
+
+	g_virtio_bus_scanners[g_virtio_bus_scanner_count++] = scan;
+	return true;
+}
+
 /*
- * Probe the Device-Tree-described transports and report only live devices and
- * class-driver results. Empty QEMU MMIO slots are expected and remain silent.
+ * Match one live device to its class driver, whichever bus it was found on.
+ * A GPU that fails to attach is reported and skipped; a block or input device
+ * that fails to attach stops the scan.
+ */
+bool virtio_bind_device(const virtio_device_t *device, const virtio_probe_policy_t *policy)
+{
+	if (device == 0 || policy == 0) return false;
+
+	g_virtio_device_count++;
+
+	if (device->device_id == VIRTIO_DEVICE_ID_GPU) {
+		if (!policy->gpu) return true;
+
+		if (!virtio_gpu_attach(device)) {
+			kprintf("VirtIOFamily: GPU at 0x%llx failed to attach\n", (unsigned long long)device->region.base);
+			return true;
+		}
+
+		g_virtio_gpu_count++;
+		if (policy->on_gpu_ready != 0) policy->on_gpu_ready();
+		return true;
+	}
+
+	if (device->device_id == VIRTIO_DEVICE_ID_BLOCK) {
+		if (!policy->block) return true;
+
+		if (!virtio_block_attach(device)) {
+			kprintf("VirtIOFamily: block device at 0x%llx failed to attach\n", (unsigned long long)device->region.base);
+			return false;
+		}
+
+		g_virtio_block_count++;
+		return true;
+	}
+
+	if (device->device_id == VIRTIO_DEVICE_ID_INPUT) {
+		if (!policy->input) return true;
+
+		if (!virtio_input_attach(device)) {
+			kprintf("VirtIOFamily: input device at 0x%llx failed to attach\n", (unsigned long long)device->region.base);
+			return false;
+		}
+
+		g_virtio_input_count++;
+		return true;
+	}
+
+	kprintf("VirtIOFamily: unclaimed device ID %u at 0x%llx\n", device->device_id, (unsigned long long)device->region.base);
+	return true;
+}
+
+/*
+ * Probe the Device-Tree-described MMIO transports, then every registered bus
+ * scanner (VirtIO-PCI on x86), and report only live devices and class-driver
+ * results. Empty QEMU MMIO slots are expected and remain silent.
  */
 bool virtio_init(const platform_t *platform, const virtio_probe_policy_t *policy)
 {
@@ -29,46 +101,11 @@ bool virtio_init(const platform_t *platform, const virtio_probe_policy_t *policy
 
 		if (!virtio_mmio_probe(&platform->virtio_mmio[index], platform->virtio_mmio_intid[index], platform->virtio_mmio_irq_flags[index], &device)) continue;
 
-		g_virtio_device_count++;
+		if (!virtio_bind_device(&device, policy)) return false;
+	}
 
-		if (device.device_id == VIRTIO_DEVICE_ID_GPU) {
-			if (!policy->gpu) continue;
-
-			if (!virtio_gpu_attach(&device)) {
-				kprintf("VirtIOFamily: GPU at 0x%llx failed to attach\n", (unsigned long long)device.region.base);
-				continue;
-			}
-
-			g_virtio_gpu_count++;
-			if (policy->on_gpu_ready != 0) policy->on_gpu_ready();
-			continue;
-		}
-
-		if (device.device_id == VIRTIO_DEVICE_ID_BLOCK) {
-			if (!policy->block) continue;
-
-			if (!virtio_block_attach(&device)) {
-				kprintf("VirtIOFamily: block device at 0x%llx failed to attach\n", (unsigned long long)device.region.base);
-				return false;
-			}
-
-			g_virtio_block_count++;
-			continue;
-		}
-
-		if (device.device_id == VIRTIO_DEVICE_ID_INPUT) {
-			if (!policy->input) continue;
-
-			if (!virtio_input_attach(&device)) {
-				kprintf("VirtIOFamily: input device at 0x%llx failed to attach\n", (unsigned long long)device.region.base);
-				return false;
-			}
-
-			g_virtio_input_count++;
-			continue;
-		}
-
-		kprintf("VirtIOFamily: unclaimed device ID %u at 0x%llx\n", device.device_id, (unsigned long long)device.region.base);
+	for (uint32_t index = 0U; index < g_virtio_bus_scanner_count; index++) {
+		if (!g_virtio_bus_scanners[index](platform, policy)) return false;
 	}
 
 	g_virtio_initialized = true;

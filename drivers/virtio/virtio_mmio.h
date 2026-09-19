@@ -1,6 +1,7 @@
 #ifndef NXU_DRIVERS_VIRTIO_VIRTIO_MMIO_H
 #define NXU_DRIVERS_VIRTIO_VIRTIO_MMIO_H
 
+#include <drivers/virtio/virtio_transport.h>
 #include <drivers/virtio/virtqueue.h>
 #include <platform/platform.h>
 
@@ -11,32 +12,14 @@
 #define VIRTIO_MMIO_VERSION_MODERN 2U
 
 
-#define VIRTIO_STATUS_ACKNOWLEDGE 0x01U
-#define VIRTIO_STATUS_DRIVER 0x02U
-#define VIRTIO_STATUS_DRIVER_OK 0x04U
-#define VIRTIO_STATUS_FEATURES_OK 0x08U
-#define VIRTIO_STATUS_DEVICE_NEEDS_RESET 0x40U
-#define VIRTIO_STATUS_FAILED 0x80U
+/*
+ * The MMIO transport is one implementation of the transport interface in
+ * virtio_transport.h; the device object it fills in is the common
+ * virtio_device_t, with ops pointing at virtio_mmio_ops.
+ */
+typedef virtio_device_t virtio_mmio_device_t;
 
-#define VIRTIO_F_VERSION_1 32U
-
-#define VIRTIO_DEVICE_ID_NONE 0U
-#define VIRTIO_DEVICE_ID_BLOCK 2U
-#define VIRTIO_DEVICE_ID_GPU 16U
-#define VIRTIO_DEVICE_ID_INPUT 18U
-
-typedef struct {
-	platform_region_t region;
-	uint64_t mmio_base;
-	uint32_t intid;
-	uint32_t irq_flags;
-	uint32_t device_id;
-	uint32_t vendor_id;
-	uint64_t device_features;
-	uint64_t driver_features;
-	bool initialized;
-	bool driver_ok;
-} virtio_mmio_device_t;
+extern const virtio_transport_ops_t virtio_mmio_ops;
 
 /*
  * virtio_mmio_probe:
