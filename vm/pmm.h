@@ -44,6 +44,19 @@ bool pmm_free_contiguous_pages(
 	uint64_t page_count
 );
 
+/*
+ * Extra ownership on an already-allocated page, for memory mapped into more
+ * than one address space (see vm/vm_shm.h). A freshly allocated page starts
+ * with one implicit owner and needs no bookkeeping here; pmm_page_retain
+ * records each additional owner beyond that first one, and
+ * pmm_free_page/pmm_free_contiguous_pages only actually return a page to
+ * the free bitmap once every owner, implicit and retained, has released it.
+ */
+bool pmm_page_retain(uint64_t physical_address);
+
+/* Total owners of an allocated page (1 with no extra retains, 0 if free/unallocated). */
+uint32_t pmm_page_refcount(uint64_t physical_address);
+
 bool pmm_enter_higher_half(void);
 bool pmm_higher_half_enabled(void);
 

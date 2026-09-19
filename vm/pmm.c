@@ -12,6 +12,49 @@ extern uint8_t __kernel_end[];
 
 static pmm_state_t g_pmm;
 
+/*
+ * Sparse extra-ownership table for pages retained by more than their
+ * original allocator (vm/vm_shm.h's shared framebuffers). Most pages are
+ * never shared, so this is a small fixed table of only the pages that
+ * currently are, rather than a refcount slot per physical page -- which
+ * would also need its own early-boot carve-out the way g_pmm.bitmap does.
+ * A page with no entry here simply has its one implicit owner.
+ */
+#define PMM_SHARED_MAX 4096U
+
+typedef struct {
+	uint64_t physical_address;
+	uint32_t extra_references;
+	bool used;
+} pmm_shared_entry_t;
+
+static pmm_shared_entry_t g_pmm_shared[PMM_SHARED_MAX];
+
+static pmm_shared_entry_t *pmm_shared_find(uint64_t physical_address)
+{
+	for (uint32_t index = 0U; index < PMM_SHARED_MAX; index++) {
+		if (g_pmm_shared[index].used && g_pmm_shared[index].physical_address == physical_address) {
+			return &g_pmm_shared[index];
+		}
+	}
+
+	return 0;
+}
+
+static pmm_shared_entry_t *pmm_shared_alloc(uint64_t physical_address)
+{
+	for (uint32_t index = 0U; index < PMM_SHARED_MAX; index++) {
+		if (!g_pmm_shared[index].used) {
+			g_pmm_shared[index].used = true;
+			g_pmm_shared[index].physical_address = physical_address;
+			g_pmm_shared[index].extra_references = 0U;
+			return &g_pmm_shared[index];
+		}
+	}
+
+	return 0;
+}
+
 static bool pmm_kernel_symbol_physical(
 	const void *symbol,
 	uint64_t *physical_address
@@ -589,14 +632,71 @@ bool pmm_free_contiguous_pages(
 		if (!pmm_bitmap_is_used(first + offset)) return false;
 	}
 
+	/*
+	 * A page still held by another owner (see pmm_page_retain) just drops
+	 * one reference instead of returning to the free bitmap -- mirrors
+	 * pmm_free_page's per-page logic, applied across the whole run since a
+	 * caller may release a contiguous allocation while it is only partly
+	 * shared (e.g. one page of it still mapped elsewhere).
+	 */
+	uint64_t freed_count = 0ULL;
+	uint64_t lowest_freed = g_pmm.page_count;
+
 	for (uint64_t offset = 0ULL; offset < page_count; offset++) {
-		pmm_bitmap_set_free(first + offset);
+		uint64_t page_index = first + offset;
+		uint64_t page_address = g_pmm.memory_base + page_index * PMM_PAGE_SIZE;
+
+		pmm_shared_entry_t *entry = pmm_shared_find(page_address);
+		if (entry != 0 && entry->extra_references != 0U) {
+			entry->extra_references--;
+			continue;
+		}
+
+		if (entry != 0) entry->used = false;
+
+		pmm_bitmap_set_free(page_index);
+		freed_count++;
+		if (page_index < lowest_freed) lowest_freed = page_index;
 	}
 
-	g_pmm.free_page_count += page_count;
-	g_pmm.used_page_count -= page_count;
-	if (first < g_pmm.next_hint) g_pmm.next_hint = first;
+	g_pmm.free_page_count += freed_count;
+	g_pmm.used_page_count -= freed_count;
+	if (freed_count != 0ULL && lowest_freed < g_pmm.next_hint) g_pmm.next_hint = lowest_freed;
 	return true;
+}
+
+bool pmm_page_retain(uint64_t physical_address)
+{
+	if (
+		!g_pmm.initialized ||
+		(physical_address & (PMM_PAGE_SIZE - 1ULL)) != 0ULL
+	) {
+		return false;
+	}
+
+	uint64_t page_index;
+	if (!pmm_address_to_index(physical_address, &page_index)) return false;
+	if (!pmm_bitmap_is_used(page_index)) return false;
+
+	pmm_shared_entry_t *entry = pmm_shared_find(physical_address);
+	if (entry == 0) entry = pmm_shared_alloc(physical_address);
+	if (entry == 0) return false;
+
+	if (entry->extra_references == UINT32_MAX) return false;
+	entry->extra_references++;
+	return true;
+}
+
+uint32_t pmm_page_refcount(uint64_t physical_address)
+{
+	if (!g_pmm.initialized || (physical_address & (PMM_PAGE_SIZE - 1ULL)) != 0ULL) return 0U;
+
+	uint64_t page_index;
+	if (!pmm_address_to_index(physical_address, &page_index)) return 0U;
+	if (!pmm_bitmap_is_used(page_index)) return 0U;
+
+	const pmm_shared_entry_t *entry = pmm_shared_find(physical_address);
+	return 1U + (entry != 0 ? entry->extra_references : 0U);
 }
 
 bool pmm_free_page(uint64_t physical_address)
@@ -619,6 +719,16 @@ bool pmm_free_page(uint64_t physical_address)
 
 	if (!pmm_bitmap_is_used(page_index)) {
 		return false;
+	}
+
+	pmm_shared_entry_t *entry = pmm_shared_find(physical_address);
+	if (entry != 0) {
+		if (entry->extra_references != 0U) {
+			entry->extra_references--;
+			return true;
+		}
+
+		entry->used = false;
 	}
 
 	pmm_bitmap_set_free(page_index);
