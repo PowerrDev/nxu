@@ -15,6 +15,8 @@
 
 #include <kern/ipc/ipc_port.h>
 
+#include <mach/machine/cpu.h>
+
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -23,7 +25,7 @@ static void
 ipc_space_lock(ipc_space_t space)
 {
 	while (__atomic_exchange_n(&space->is_lock, 1U, __ATOMIC_ACQUIRE) != 0U) {
-		__asm__ volatile("yield");
+		cpu_relax();
 	}
 }
 

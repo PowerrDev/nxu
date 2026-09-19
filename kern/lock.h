@@ -1,6 +1,8 @@
 #ifndef NXU_KERN_LOCK_H
 #define NXU_KERN_LOCK_H
 
+#include <mach/machine/cpu.h>
+
 #include <stdint.h>
 
 /*
@@ -22,7 +24,7 @@ static inline void nxu_spin_lock(nxu_spinlock_t *lock)
 			__ATOMIC_ACQUIRE
 		) != 0U
 	) {
-		__asm__ volatile("yield");
+		cpu_relax();
 	}
 }
 
