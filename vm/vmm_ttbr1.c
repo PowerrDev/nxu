@@ -413,6 +413,14 @@ bool vmm_map_higher_half_direct_map(const platform_t *platform)
 	}
 
 	if (!vmm_map_ttbr1_region(
+		&platform->rtc,
+		VMM_MEMORY_DEVICE,
+		VMM_PROTECTION_READ_WRITE
+	)) {
+		return false;
+	}
+
+	if (!vmm_map_ttbr1_region(
 		&platform->pcie_ecam,
 		VMM_MEMORY_DEVICE,
 		VMM_PROTECTION_READ_WRITE

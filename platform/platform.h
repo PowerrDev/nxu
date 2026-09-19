@@ -24,6 +24,8 @@ typedef struct {
 	platform_region_t gic_distributor;
 	platform_region_t gic_redistributor;
 
+	platform_region_t rtc;
+
 	platform_region_t pcie_ecam;
 	uint32_t pcie_bus_start;
 	uint32_t pcie_bus_end;

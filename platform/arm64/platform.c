@@ -33,6 +33,7 @@ typedef struct {
 	bool is_uart;
 	bool is_fw_cfg;
 	bool is_gic;
+	bool is_rtc;
 	bool is_pcie;
 	bool is_virtio_mmio;
 } platform_node_t;
@@ -426,6 +427,14 @@ static void platform_property(
 	if (platform_compatible_contains(
 		value,
 		length,
+		"arm,pl031"
+	)) {
+		node->is_rtc = true;
+	}
+
+	if (platform_compatible_contains(
+		value,
+		length,
 		"pci-host-ecam-generic"
 	)) {
 		node->is_pcie = true;
@@ -543,6 +552,16 @@ static void platform_end_node(
 			node,
 			0U,
 			&platform->fw_cfg
+		);
+
+		return;
+	}
+
+	if (node->is_rtc) {
+		(void)platform_read_reg(
+			node,
+			0U,
+			&platform->rtc
 		);
 
 		return;
@@ -724,6 +743,10 @@ void platform_dump(const platform_t *platform)
 		"GIC redistributor",
 		&platform->gic_redistributor
 	);
+
+	if (platform->rtc.size != 0ULL) {
+		platform_dump_region("RTC", &platform->rtc);
+	}
 
 	if (platform->pcie_ecam.size != 0U) {
 		platform_dump_region(
