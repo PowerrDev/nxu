@@ -15,7 +15,11 @@ typedef enum {
 	LOADER_STATUS_PROCESS_ERROR
 } loader_status_t;
 
-/* Load a static AArch64 ELF image from VFS and start it as a child process. */
+/*
+ * Load a static executable from VFS and start it as a child process. The
+ * accepted format follows the build target: ELF64/EM_AARCH64 on arm64,
+ * ELF32/EM_386 on i386 (see kern/loader/elf_format.h).
+ */
 loader_status_t loader_spawn(proc_t parent, const char *path, const char *name, proc_t *result);
 
 /* Compare two regular-file images byte-for-byte. */
