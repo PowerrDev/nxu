@@ -21,10 +21,19 @@
 #include <drivers/block/block_device.h>
 #include <kern/aqua/window_server.h>
 #include <kern/console/bootlog.h>
+#include <kern/console/ioregistry.h>
 #include <kern/memory/heap.h>
 #include <kern/irq/irq.h>
 #include <kern/ipc/ipc_init.h>
 #include <kern/tests/ipc_test.h>
+#include <kern/tests/vm_shm_test.h>
+#include <kern/tests/vm_map_test.h>
+#include <kern/tests/ipc_process_test.h>
+#include <kern/tests/thread_process_test.h>
+#include <kern/tests/socket_process_test.h>
+#include <kern/tests/xamethyst_process_test.h>
+#include <kern/tests/windowserver_process_test.h>
+#include <kern/tests/about_sevos_process_test.h>
 #include <kern/ipc/ipc_types.h>
 #include <kern/process/proc.h>
 #include <kern/sched_prism/sched.h>
@@ -32,6 +41,7 @@
 #include <kern/process/thread.h>
 #include <platform/dtb.h>
 #include <platform/platform.h>
+#include <platform/rtc.h>
 #include <platform/uart.h>
 #include <vm/address_space.h>
 #include <vm/pmm.h>
@@ -118,8 +128,31 @@ static void kern_boot_splash_service(void)
 {
 	virtio_input_service();
 	if (boot_mode_poll() && !boot_splash_set_status("Loading startup options...")) {
-		kern_fail("boot_splash: recovery status update failed");
+		kern_fail("kern_boot_splash_service: recovery status update failed");
 	}
+}
+
+static bool g_boot_splash_shown;
+
+/*
+ * Shows the splash on whatever display is currently registered, if it has
+ * not already been shown. Passed to virtio_init() so it fires the instant a
+ * GPU attaches, mid-scan, before the remaining MMIO slots (input, block) are
+ * probed -- the splash then paints its first frame as soon as a display
+ * physically exists instead of waiting for the whole bus scan (and the
+ * black, unpresented scanout in between) to finish. Also called again after
+ * the ramfb-fallback check further down, in case no GPU was found and the
+ * ramfb emergency console registered a display instead.
+ */
+static void kern_boot_splash_show_if_needed(void)
+{
+	if (g_boot_splash_shown) return;
+
+	display_device_t *display = display_primary();
+	if (display == 0) return;
+
+	if (!boot_splash_show(display)) kern_fail("kern_boot_splash_show_if_needed: initialization failed");
+	g_boot_splash_shown = true;
 }
 
 /*
@@ -444,7 +477,7 @@ static bool kern_test_ext4(void)
 			g_ext4_persist_message,
 			sizeof(g_ext4_persist_message) - 1ULL
 		)) return false;
-		kputln("NXUFilesystemDriver: persistence marker recovered from previous boot");
+		kputln("IOFilesystemFamily: persistence marker recovered from previous boot");
 	} else if (status == VFS_STATUS_NOT_FOUND) {
 		status = vfs_open(
 			filedesc,
@@ -463,12 +496,12 @@ static bool kern_test_ext4(void)
 		if (vfs_close(filedesc, descriptor) != VFS_STATUS_OK) return false;
 
 		if (status != VFS_STATUS_OK || written != sizeof(g_ext4_persist_message) - 1ULL) return false;
-		kputln("NXUFilesystemDriver: persistence marker created; reboot to verify persistence");
+		kputln("IOFilesystemFamily: persistence marker created; reboot to verify persistence");
 	} else {
 		return false;
 	}
 
-	kputs("NXUFilesystemDriver: /hello.txt: ");
+	kputs("IOFilesystemFamily: /hello.txt: ");
 	kputs(g_ext4_test_message);
 	return filedesc->fd_open_count == 0U;
 
@@ -526,7 +559,7 @@ static void kern_run_jbd2_crash_test(void)
 	kputln("jbd2: crash-test transaction committed");
 	kputln("jbd2: durable commit verified before simulated power loss");
 	kputln("jbd2: home metadata intentionally not checkpointed");
-	kputln("jbd2: halt complete; close QEMU and run make journal-recover");
+	kputln("jbd2: halt complete; close QEMU and run make run");
 	arm64_irq_disable();
 	for (;;) __asm__ volatile("wfe");
 }
@@ -1472,26 +1505,122 @@ void kern_init_higher_half(void)
 	kputln("heap: initializing kernel heap");
 
 	if (!heap_init()) {
-		kern_fail("heap: initialization failed");
+		kern_fail("heap_init: initialization failed");
 	}
 
-	kputln("heap: kernel heap initialized");
+	kputln("heap_init: kernel heap initialized");
 
 	if (!kern_test_small_heap()) {
-		kern_fail("heap: allocation, reuse or free test failed");
+		kern_fail("kern_test_small_heap: allocation, reuse or free test failed");
 	}
 
-	kputln("heap: allocation, reuse and free tests passed");
+	kputln("kern_test_small_heap: allocation, reuse and free tests passed");
 	heap_dump();
 
-	kputln("heap: testing multi-page allocation");
+	kputln("kern_test_large_heap: testing multi-page allocation");
 
 	if (!kern_test_large_heap()) {
-		kern_fail("heap: multi-page allocation/free test failed");
+		kern_fail("kern_test_large_heap: multi-page allocation/free test failed");
 	}
 
 	kputln("heap: multi-page allocation/free test passed");
 	heap_dump();
+
+	/*
+	 * Interrupt controller and boot-policy-controlled device probing.
+	 *
+	 * This runs immediately after the heap, ahead of IPC, process, VFS,
+	 * thread and scheduler bring-up, so the boot splash can appear the
+	 * moment a display is available instead of after nearly the entire
+	 * kernel init sequence -- the rest of boot then proceeds with the
+	 * splash already on screen and the console log scrolling behind it.
+	 */
+
+	gic_init();
+	kputln("kern_init: GICv3 initialized");
+	kprintf("IOPlatformCPU: cpu0 MPIDR 0x%llx, GICv3 redistributor 0, enabled\n", (unsigned long long)arm64_read_mpidr_el1());
+	(void)ioreg_add(ioreg_family_platform(), "IOPlatformCPU", "IOPlatformCPU");
+
+	if (!irq_init()) kern_fail("irq: initialization failed");
+	kputln("IOInterruptController: GICv3 vector table online");
+	(void)ioreg_add(ioreg_family_platform(), "IOInterruptController", "IOInterruptController");
+
+	if (!input_init()) kern_fail("input: core initialization failed");
+	kputln("IOHIDSystem: input core online");
+
+	if (!keyboard_init()) kern_fail("keyboard: initialization failed");
+	kputln("IOHIDSystem: keyboard driver matched");
+
+	boot_mode_init();
+	kputln("IOBootMode: recovery key watch armed");
+	(void)ioreg_add(ioreg_family_platform(), "IOBootMode", "IOBootMode");
+
+	if (!mouse_init()) kern_fail("VirtIOMouseFamily: initialization failed");
+	kputln("IOHIDSystem: mouse driver matched");
+
+	if (!block_device_init()) kern_fail("VirtIOBlockFamily: initialization failed");
+	kputln("IOStorageFamily: block device core online");
+
+	if (!display_init()) kern_fail("IODisplayFamily: core initialization failed");
+	kputln("IOGraphicsFamily: display core online");
+
+	if (!rtc_init()) kern_fail("rtc_init: initialization failed");
+	kputln("IORTC: real-time clock online");
+	(void)ioreg_add(ioreg_family_platform(), "IORTC", "IORTC");
+
+	nxu_boot_log_driver_handoff();
+	kputln("VirtIOFamily: probing MMIO transports");
+
+	const platform_t *runtime_platform = platform_get();
+	bool input_enabled = !boot_args_component_disabled(BOOT_COMPONENT_INPUT);
+	bool block_enabled = !boot_args_component_disabled(BOOT_COMPONENT_BLOCK);
+	bool gpu_enabled = !boot_args_component_disabled(BOOT_COMPONENT_GPU);
+	virtio_probe_policy_t virtio_policy = {
+		.input = input_enabled,
+		.block = block_enabled,
+		.gpu = gpu_enabled,
+		.on_gpu_ready = gpu_enabled ? kern_boot_splash_show_if_needed : 0
+	};
+
+	if (runtime_platform == 0 || !virtio_init(runtime_platform, &virtio_policy)) {
+		kern_fail("VirtIOFamily: initialization failed");
+	}
+
+	if (input_enabled && !keyboard_is_present()) kern_fail("keyboard: VirtIO keyboard not found");
+	if (input_enabled && !mouse_is_present()) kern_fail("mouse: VirtIO mouse not found");
+	if (block_enabled && block_device_count() == 0U) kern_fail("VirtIOBlockFamily: VirtIO block device not found");
+
+	if (!input_enabled) kputln("input: disabled by boot-args");
+	if (!block_enabled) kputln("VirtIOBlockFamily: disabled by boot-args");
+	if (!gpu_enabled) kputln("NXUDisplayDriverFamily: VirtIO GPU disabled by boot-args");
+
+	if (gpu_enabled && (display_primary() == 0 || virtio_gpu_count() == 0U)) {
+		kputln("NXUDisplayDriverFamily: VirtIO GPU not found");
+
+		if (ramfb_console_init(runtime_platform)) {
+			kputln("NXUDisplayDriverFamily: emergency ramfb console active");
+		} else {
+			kputln("NXUDisplayDriverFamily: emergency ramfb console unavailable");
+		}
+	}
+
+	/*
+	 * Covers the ramfb-fallback path above: the splash already showed via
+	 * the on_gpu_ready callback if a real GPU attached, so this is a no-op
+	 * in the common case.
+	 */
+	kern_boot_splash_show_if_needed();
+
+	/*
+	 * Recovery startup selection is deliberately independent from UIService.framework.
+	 * Shift+R is sampled against the raw input queue while this kernel-owned
+	 * splash is visible, before either sevOS or triageOS userspace starts.
+	 */
+	display_device_t *boot_display = display_primary();
+	if (boot_display != 0) {
+		uint64_t hold_ms = input_enabled ? 3000ULL : 500ULL;
+		if (!boot_splash_wait(hold_ms, input_enabled ? kern_boot_splash_service : 0)) kern_fail("boot_splash_wait: hold failed");
+	}
 
 	/* NXPC kernel message transport. */
 
@@ -1501,7 +1630,19 @@ void kern_init_higher_half(void)
 		kern_fail(NXPC_LOG_PREFIX "kernel transport self-test failed");
 	}
 
+	if (!ipc_space_self_test()) {
+		kern_fail(NXPC_LOG_PREFIX "per-process name table self-test failed");
+	}
+
 	kputln(NXPC_LOG_PREFIX "kernel transport ready");
+
+	if (!vm_shm_self_test()) {
+		kern_fail("vm_shm: self-test failed");
+	}
+
+	if (!vm_map_self_test()) {
+		kern_fail("vm_map: self-test failed");
+	}
 
 	/* Process and thread core. */
 
@@ -1529,55 +1670,59 @@ void kern_init_higher_half(void)
 
 	if (!kern_test_crc32c()) kern_fail("NXU_CRC32C_Checksum: self-test failed");
 	kputln("NXU_CRC32C_Checksum: self-test passed");
-	kputln("VirtualFilesystemDriver: initializing virtual filesystem");
+	kputln("IOVirtualFSDriver initializing virtual filesystem");
 
-	if (!vfs_init()) kern_fail("VirtualFilesystemDriver: initialization failed");
-	if (!ramfs_register()) kern_fail("VirtualFilesystemDriver: ramfs registration failed");
-	if (!ext4_register()) kern_fail("VirtualFilesystemDriver: ext4 registration failed");
+	if (!vfs_init()) kern_fail("IOVirtualFSDriver initialization failed");
+	if (!ramfs_register()) kern_fail("IOVirtualFSDriver ramfs registration failed");
+	if (!ext4_register()) kern_fail("IOVirtualFSDriver ext4 registration failed");
 
 	vfs_status_t mount_status = vfs_mount("ramfs", 0, "/");
-	if (mount_status != VFS_STATUS_OK) kern_fail("VirtualFilesystemDriver: root ramfs mount failed");
+	if (mount_status != VFS_STATUS_OK) kern_fail("IOVirtualFSDriver root ramfs mount failed");
 
-	kputln("VirtualFilesystemDriver: mounted ramfs at /");
+	kputln("IOVirtualFSDriver mounted ramfs at /");
 
-	if (vfs_mkdir("/disk") != VFS_STATUS_OK) kern_fail("VirtualFilesystemDriver: /disk mountpoint creation failed");
+	if (vfs_mkdir("/disk") != VFS_STATUS_OK) kern_fail("IOVirtualFSDriver: /disk mountpoint creation failed");
 
-	if (!kern_test_vfs()) kern_fail("VirtualFilesystemDriver: pathname/file-descriptor self-test failed");
+	if (!kern_test_vfs()) kern_fail("IOVirtualFSDriver pathname/file-descriptor self-test failed");
 
-	kputln("VirtualFilesystemDriver: pathname/file-descriptor self-test passed");
+	kputln("IOVirtualFSDriver pathname/file-descriptor self-test passed");
 	vfs_dump();
 
-	kputln("thread: initializing thread subsystem");
+	kputln("thread_bootstrap: initializing thread subsystem");
 
 	if (!thread_bootstrap()) {
-		kern_fail("thread: subsystem initialization failed");
+		kern_fail("thread_bootstrap: subsystem initialization failed");
 	}
 
-	kputln("SchedulerKernelComponent: initializing processor scheduler");
+	kputln("sched_bootstrap: initializing processor scheduler");
 
 	if (!sched_bootstrap(proc_task(proc_kernel()))) {
-		kern_fail("SchedulerKernelComponent: scheduler initialization failed");
+		kern_fail("sched_bootstrap: scheduler initialization failed");
 	}
 
 	if (!sched_run_queue_self_test()) {
-		kern_fail("SchedulerKernelComponent: run queue self-test failed");
+		kern_fail("sched_run_queue_self_test: run queue self-test failed");
+	}
+
+	if (!sched_mlfq_self_test()) {
+		kern_fail("sched_mlfq_self_test: MLFQ feedback self-test failed");
 	}
 
 	if (!sched_validate() || !thread_validate()) {
-		kern_fail("SchedulerKernelComponent: bootstrap validation failed");
+		kern_fail("sched_validate: bootstrap validation failed");
 	}
 
 	kputln("thread: thread subsystem initialized");
-	kputln("SchedulerKernelComponent: fixed-priority run queue self-test passed");
+	kputln("sched_validate: fixed-priority run queue self-test passed");
+	kputln("sched_validate: MLFQ feedback self-test passed");
 	sched_dump();
 	thread_dump();
 
 	/* AArch64 scheduler context-switch validation. */
 
-	kputln("SchedulerKernelComponent: testing AArch64 context switching");
+	kputln("kernel_thread_create: testing AArch64 context switching");
 
 	g_sched_context_test_stage = 0U;
-
 	thread_t context_test_thread;
 
 	if (!kernel_thread_create(
@@ -1586,39 +1731,39 @@ void kern_init_higher_half(void)
 		(void *)&g_sched_context_test_stage,
 		&context_test_thread
 	)) {
-		kern_fail("SchedulerKernelComponent: context-switch test thread creation failed");
+		kern_fail("kernel_thread_create: context-switch test thread creation failed");
 	}
 
 	if (!sched_thread_start(context_test_thread)) {
-		kern_fail("SchedulerKernelComponent: context-switch test thread start failed");
+		kern_fail("sched_thread_start: context-switch test thread start failed");
 	}
 
 	if (!sched_yield()) {
-		kern_fail("SchedulerKernelComponent: context-switch test dispatch failed");
+		kern_fail("sched_yield: context-switch test dispatch failed");
 	}
 
 	if (
 		g_sched_context_test_stage != 1U ||
 		current_thread() != sched_bootstrap_thread()
 	) {
-		kern_fail("SchedulerKernelComponent: AArch64 context-switch test failed");
+		kern_fail("sched_bootstrap_thread: AArch64 context-switch test failed");
 	}
 
 	if (!sched_thread_terminate(context_test_thread)) {
-		kern_fail("SchedulerKernelComponent: context-switch test termination failed");
+		kern_fail("sched_thread_terminate: context-switch test termination failed");
 	}
 
 	if (!thread_reap(context_test_thread)) {
-		kern_fail("SchedulerKernelComponent: context-switch test reap failed");
+		kern_fail("thread_reap: context-switch test reap failed");
 	}
 
 	thread_deallocate(context_test_thread);
 
 	if (!sched_validate() || !thread_validate()) {
-		kern_fail("SchedulerKernelComponent: post-switch validation failed");
+		kern_fail("sched_validate: post-switch validation failed");
 	}
 
-	kputln("SchedulerKernelComponent: AArch64 context-switch test passed");
+	kputln("sched_validate: AArch64 context-switch test passed");
 
 	/* EL0 exception-vector classification. */
 	kputln("ARM64ExceptionHandler(): validating EL0 vector classification");
@@ -1633,75 +1778,10 @@ void kern_init_higher_half(void)
 	kputln("ARM64ExceptionHandler(): EL0 IRQ vector classified");
 	kputln("ARM64ExceptionHandler(): EL0 return state is recoverable");
 
-	/* Interrupt controller and boot-policy-controlled device probing. */
-
-	gic_init();
-	kputln("kern_init: GICv3 initialized");
-
-	if (!irq_init()) kern_fail("irq: initialization failed");
-	if (!input_init()) kern_fail("input: core initialization failed");
-	if (!keyboard_init()) kern_fail("keyboard: initialization failed");
-	boot_mode_init();
-	if (!mouse_init()) kern_fail("mouse: initialization failed");
-	if (!block_device_init()) kern_fail("VirtIOBlockFamily: initialization failed");
-	if (!display_init()) kern_fail("NXUDisplayDriverFamily: core initialization failed");
-
-	nxu_boot_log_driver_handoff();
-	kputln("VirtIOFamily: probing MMIO transports");
-
-	const platform_t *runtime_platform = platform_get();
-	bool input_enabled = !boot_args_component_disabled(BOOT_COMPONENT_INPUT);
-	bool block_enabled = !boot_args_component_disabled(BOOT_COMPONENT_BLOCK);
-	bool gpu_enabled = !boot_args_component_disabled(BOOT_COMPONENT_GPU);
-	virtio_probe_policy_t virtio_policy = {
-		.input = input_enabled,
-		.block = block_enabled,
-		.gpu = gpu_enabled
-	};
-
-	if (runtime_platform == 0 || !virtio_init(runtime_platform, &virtio_policy)) {
-		kern_fail("VirtIOFamily: initialization failed");
-	}
-
-	if (input_enabled && !keyboard_is_present()) kern_fail("keyboard: VirtIO keyboard not found");
-	if (input_enabled && !mouse_is_present()) kern_fail("mouse: VirtIO mouse not found");
-	if (block_enabled && block_device_count() == 0U) kern_fail("VirtIOBlockFamily: VirtIO block device not found");
-
-	if (!input_enabled) kputln("input: disabled by boot-args");
-	if (!block_enabled) kputln("VirtIOBlockFamily: disabled by boot-args");
-	if (!gpu_enabled) kputln("NXUDisplayDriverFamily: VirtIO GPU disabled by boot-args");
-
-	if (gpu_enabled && (display_primary() == 0 || virtio_gpu_count() == 0U)) {
-		kputln("NXUDisplayDriverFamily: VirtIO GPU not found");
-
-		if (ramfb_console_init(runtime_platform)) {
-			kputln("NXUDisplayDriverFamily: emergency ramfb console active");
-		} else {
-			kputln("NXUDisplayDriverFamily: emergency ramfb console unavailable");
-		}
-	}
-
-	/*
-	 * Recovery startup selection is deliberately independent from UIService.framework.
-	 * Shift+R is sampled against the raw input queue while this kernel-owned
-	 * splash is visible, before either sevOS or triageOS userspace starts.
-	 */
-	display_device_t *boot_display = display_primary();
-	if (boot_display != 0) {
-		if (!boot_splash_show(boot_display)) kern_fail("boot_splash: initialization failed");
-		uint64_t hold_ms = input_enabled ? 3000ULL : 500ULL;
-		if (!boot_splash_wait(hold_ms, input_enabled ? kern_boot_splash_service : 0)) kern_fail("boot_splash: hold failed");
-	}
-
-#if defined(NXU_WINDOWSERVER_BOOT_TEST)
-	/*
-	* Start the experimental Rust WindowServer after display discovery and
-	* boot-splash ownership have completed.
-	*
-	* NXU retains ownership of the display device and framebuffer. The host
-	* bridge passes that framebuffer into WindowServer.framework, which performs
-	* the initial software composition and returns control to NXU.
-	*/
+#if defined(NXU_WINDOWSERVER_BOOT_TEST) && !defined(NXU_AQUA_BOOT_TEST)
+	/* WindowServer-only bring-up remains available as a compositor smoke test. */
+	if (boot_display != 0) ioreg_dump();
+	if (boot_display != 0 && !boot_splash_finish()) kern_fail("boot_splash_finish: completion failed");
 	nxu_boot_log_ui_handoff();
 	arm64_enable_irqs();
 
@@ -1714,14 +1794,34 @@ void kern_init_higher_half(void)
 	}
 #endif
 
-#if defined(NXU_UI_BOOT_TEST)
-	/*
-	 * Hand the early graphical session to UI only after platform input and
-	 * display discovery is complete, NXU keeps ownership of the hardware
-	 */
+#if defined(NXU_AQUA_BOOT_TEST)
+	if (boot_display != 0) ioreg_dump();
+	if (boot_display != 0 && !boot_splash_finish()) kern_fail("boot_splash_finish: completion failed");
 	nxu_boot_log_ui_handoff();
 	arm64_enable_irqs();
 
+	if (!windowserver_bootstrap()) {
+		kern_fail("panic: WindowServer bootstrap failed");
+	}
+	if (!ui_service_bootstrap()) {
+		kern_fail("panic: interactive session failed");
+	}
+
+	for (;;) {
+		__asm__ volatile("wfe");
+	}
+#endif
+
+#if defined(NXU_UI_SERVICE_BOOT_TEST)
+	/* UIService requires WindowServer for surface submission. */
+	if (boot_display != 0) ioreg_dump();
+	if (boot_display != 0 && !boot_splash_finish()) kern_fail("boot_splash_finish: completion failed");
+	nxu_boot_log_ui_handoff();
+	arm64_enable_irqs();
+
+#if defined(NXU_WINDOWSERVER)
+	if (!windowserver_bootstrap()) kern_fail("panic: WindowServer bootstrap failed");
+#endif
 	if (!ui_service_bootstrap()) kern_fail("panic: interactive session failed");
 
 	for (;;) __asm__ volatile("wfe");
@@ -1734,22 +1834,22 @@ void kern_init_higher_half(void)
 	if (block_enabled) {
 		if (!kern_test_block_device()) kern_fail("VirtIOBlockFamily: sector read test failed");
 
-		kputln("NXUFilesystemDriver: mounting disk0 at /disk");
+		kputln("IOFilesystemFamily: mounting disk0 at /disk");
 		vfs_status_t ext4_mount_status = vfs_mount("ext4", block_device_first(), "/disk");
 		if (ext4_mount_status != VFS_STATUS_OK) {
-			kputs("NXUFilesystemDriver: mount failed: ");
+			kputs("IOFilesystemFamily: mount failed: ");
 			kputln(vfs_status_name(ext4_mount_status));
-			kern_fail("NXUFilesystemDriver: mount failed");
+			kern_fail("IOFilesystemFamily: mount failed");
 		}
 
 		ext4_dump();
 		if (boot_mode_is_triage_os()) {
-			kputln("NXUFilesystemDriver: recovery boot; writable filesystem self-test skipped");
+			kputln("IOFilesystemFamily: recovery boot; writable filesystem self-test skipped");
 		} else {
-			if (!kern_test_ext4()) kern_fail("NXUFilesystemDriver: writable filesystem self-test failed");
-			kputln("NXUFilesystemDriver: writable filesystem self-test passed");
-			if (vfs_sync_all() != VFS_STATUS_OK) kern_fail("VirtualFilesystemDriver: filesystem sync failed");
-			kputln("VirtualFilesystemDriver: mounted filesystems synchronized");
+			if (!kern_test_ext4()) kern_fail("IOFilesystemFamily: writable filesystem self-test failed");
+			kputln("IOFilesystemFamily: writable filesystem self-test passed");
+			if (vfs_sync_all() != VFS_STATUS_OK) kern_fail("IOVirtualFSDriver filesystem sync failed");
+			kputln("IOVirtualFSDriver mounted filesystems synchronized");
 		}
 
 		ext4_dump();
@@ -1757,6 +1857,56 @@ void kern_init_higher_half(void)
 
 #if defined(NXU_JOURNAL_CRASH_TEST)
 		kern_run_jbd2_crash_test();
+#endif
+
+#if defined(NXU_IPC_PROCESS_TEST)
+		if (!ipc_process_test()) kern_fail("ipc_process_test: failed");
+		kputln("ipc_process_test: passed; halting (test build, no bootd)");
+		for (;;) __asm__ volatile("wfe");
+#endif
+
+#if defined(NXU_THREAD_PROCESS_TEST)
+		if (!thread_process_test()) kern_fail("thread_process_test: failed");
+		kputln("thread_process_test: passed; halting (test build, no bootd)");
+		for (;;) __asm__ volatile("wfe");
+#endif
+
+#if defined(NXU_SOCKET_PROCESS_TEST)
+		if (!socket_process_test()) kern_fail("socket_process_test: failed");
+		kputln("socket_process_test: passed; halting (test build, no bootd)");
+		for (;;) __asm__ volatile("wfe");
+#endif
+
+#if defined(NXU_XAMETHYST_PROCESS_TEST)
+		if (boot_display != 0 && !boot_splash_finish()) kern_fail("boot_splash_finish: completion failed");
+
+		if (!xamethyst_process_test()) kern_fail("amethyst_test_process: failed");
+		kputln("amethyst_test_process: passed; halting (test build)");
+		for (;;) __asm__ volatile("wfe");
+#endif
+
+#if defined(NXU_WINDOWSERVER_PROCESS_TEST)
+		/*
+		 * Hand the framebuffer over to WindowServer completely, exactly
+		 * like the normal boot path does right before spawning bootd
+		 * (see the boot_splash_finish() call a few lines below this
+		 * block): once unregistered, no further kprintf/kputln output
+		 * touches the graphical console, leaving WindowServer's own
+		 * present() calls as the only thing drawing to the screen.
+		 */
+		if (boot_display != 0 && !boot_splash_finish()) kern_fail("boot_splash_finish: completion failed");
+
+		if (!windowserver_process_test()) kern_fail("windowserver_process_test: failed");
+		kputln("windowserver_process_test: passed; halting (test build)");
+		for (;;) __asm__ volatile("wfe");
+#endif
+
+#if defined(NXU_ABOUT_SEVOS_PROCESS_TEST)
+		if (boot_display != 0 && !boot_splash_finish()) kern_fail("boot_splash_finish: completion failed");
+
+		if (!about_sevos_process_test()) kern_fail("about_sevos_process_test: failed");
+		kputln("about_sevos_process_test: passed; halting (test build)");
+		for (;;) __asm__ volatile("wfe");
 #endif
 
 		bool recovery_boot = boot_mode_is_triage_os();
@@ -1769,35 +1919,36 @@ void kern_init_higher_half(void)
 
 		if (!recovery_boot) {
 			bool bootd_matches_recovery = false;
-			loader_status_t compare_status = exec_images_equal(init_path, bootd_recovery_path, &bootd_matches_recovery);
+			loader_status_t compare_status = loader_images_equal(init_path, bootd_recovery_path, &bootd_matches_recovery);
 			if (compare_status == LOADER_STATUS_OK && !bootd_matches_recovery) {
-				kputln("exec: bootd primary differs from recovery image");
+				kputln("loader_images_equal: bootd primary differs from recovery image");
 				init_path = bootd_recovery_path;
 				init_uses_fallback = true;
 			}
 		}
 
 		kprintf("boot: selected environment: %s\n", boot_mode_name());
-		if (boot_display != 0 && !boot_splash_finish()) kern_fail("boot_splash: completion failed");
-		kputs("exec: loading ");
+		if (boot_display != 0) ioreg_dump();
+		if (boot_display != 0 && !boot_splash_finish()) kern_fail("boot_splash_finish: completion failed");
+		kputs("loader_spawn: loading ");
 		kputs(init_path);
 		kputln(" as PID 1");
 
-		loader_status_t init_status = exec_spawn(proc_kernel(), init_path, init_name, &g_boot_process);
+		loader_status_t init_status = loader_spawn(proc_kernel(), init_path, init_name, &g_boot_process);
 		if (init_status != LOADER_STATUS_OK && !recovery_boot && !init_uses_fallback) {
-			kputs("exec: primary bootd unavailable: ");
-			kputln(exec_status_name(init_status));
-			kputln("exec: trying bootd recovery image");
-			init_status = exec_spawn(proc_kernel(), bootd_recovery_path, init_name, &g_boot_process);
+			kputs("loader_spawn: primary bootd unavailable: ");
+			kputln(loader_status_name(init_status));
+			kputln("loader_spawn: trying bootd recovery image");
+			init_status = loader_spawn(proc_kernel(), bootd_recovery_path, init_name, &g_boot_process);
 		}
 
 		if (init_status != LOADER_STATUS_OK || g_boot_process == 0) {
-			kputs("exec: selected environment unavailable: ");
-			kputln(exec_status_name(init_status));
-			kern_fail("exec: PID 1 launch failed");
+			kputs("loader_spawn: selected environment unavailable: ");
+			kputln(loader_status_name(init_status));
+			kern_fail("loader_spawn: PID 1 launch failed");
 		}
 
-		if (g_boot_process->p_ident.pid != 1U) kern_fail("exec: selected environment did not receive PID 1");
+		if (g_boot_process->p_ident.pid != 1U) kern_fail("loader_spawn: selected environment did not receive PID 1");
 		kprintf("%s: PID %u ready for scheduler dispatch\n", init_name, g_boot_process->p_ident.pid);
 		kputln("VirtIOBlockFamily: VirtIO block device initialized");
 	}
@@ -1815,11 +1966,11 @@ void kern_init_higher_half(void)
 	kputln("kern_init: IRQs enabled");
 
 	if (g_boot_process != 0) {
-		kprintf("SchedulerKernelComponent: dispatching %s PID %u\n", boot_mode_is_triage_os() ? "triageOS" : "bootd", g_boot_process->p_ident.pid);
+		kprintf("sched: dispatching %s PID %u\n", boot_mode_is_triage_os() ? "triageOS" : "bootd", g_boot_process->p_ident.pid);
 		kputln(boot_mode_is_triage_os() ? "kern_init: recovery userspace active" : "kern_init: root userspace services active");
 
 		for (;;) {
-			if (!sched_yield()) kern_fail("SchedulerKernelComponent: userspace dispatch failed");
+			if (!sched_yield()) kern_fail("sched: userspace dispatch failed");
 		}
 	}
 
@@ -1882,206 +2033,139 @@ void kern_init(const void *dtb_address)
 	kputln("dtb: bootstrap begin");
 
 	if (!dtb_bootstrap(dtb_address)) {
-		kern_fail(
-			"dtb: invalid Device Tree Blob"
-		);
+		kern_fail("dtb_bootstrap: invalid Device Tree Blob");
 	}
 
-	kputln("dtb: bootstrap complete");
+	kputln("dtb_bootstrap: bootstrap complete");
 
 	const dtb_t *device_tree = dtb_get_boot();
 
 	if (device_tree == 0) {
 		kern_fail(
-			"dtb: boot Device Tree unavailable"
+			"dtb_t device_tree: boot Device Tree unavailable"
 		);
 	}
 
-	kputln("nvram: bootstrap begin");
-	if (!nvram_bootstrap(device_tree)) kern_fail("nvram: bootstrap failed");
-	kputln("nvram: bootstrap complete");
+	kputln("nvram_bootstrap: bootstrap begin");
+	if (!nvram_bootstrap(device_tree)) kern_fail("nvram_bootstrap: bootstrap failed");
+	kputln("nvram_bootstrap: bootstrap complete");
 
-	kputln("boot-args: initialization begin");
-	if (!boot_args_init()) kern_fail("boot-args: initialization failed");
-	kputln("boot-args: initialization complete");
+	kputln("boot_args: initialization begin");
+	if (!boot_args_init()) kern_fail("boot_args_init: initialization failed");
+	kputln("boot_args_init: initialization complete");
 	boot_args_dump();
 
 	kern_dump_boot_dtb(device_tree);
 
-	kputln(
-		"dtb: walking structure block"
-	);
+	kputln("dtb: walking structure block");
 
 	// if (!dtb_dump(device_tree)) {
 	// 	kern_fail(
-	// 		"dtb: malformed structure block"
+	// 		"dtb_dump: malformed structure block"
 	// 	);
 	// }
 
 	/* Permanent platform description. */
 
-	kputln(
-		"platform: discovering hardware"
-	);
+	kputln("platform: discovering hardware");
 
 	if (!platform_bootstrap(device_tree)) {
-		kern_fail(
-			"platform: hardware discovery failed"
-		);
+		kern_fail("platform: hardware discovery failed");
 	}
 
 	const platform_t *platform = platform_get();
 
 	if (platform == 0) {
-		kern_fail(
-			"platform: permanent platform state unavailable"
-		);
+		kern_fail("platform: permanent platform state unavailable");
 	}
 
-	kputln(
-		"platform: hardware discovery complete"
-	);
+	kputln("platform: hardware discovery complete");
 
 	platform_dump(platform);
 	nxu_boot_log_platform(device_tree, platform);
 
 	/* Physical memory manager. */
-
-	kputln(
-		"pmm: initializing physical memory manager"
-	);
+	kputln("pmm: initializing physical memory manager");
 
 	if (!pmm_init(
 		platform,
 		device_tree
 	)) {
-		kern_fail(
-			"pmm: initialization failed"
-		);
+		kern_fail("pmm_init: initialization failed");
 	}
 
-	kputln(
-		"pmm: physical memory manager initialized"
-	);
+	kputln("pmm_init: physical memory manager initialized");
 
 	pmm_dump();
 
 	if (!kern_test_pmm()) {
-		kern_fail(
-			"pmm: allocation/free test failed"
-		);
+		kern_fail("kern_test_pmm: allocation/free test failed");
 	}
 
-	kputln(
-		"pmm: allocation/free test passed"
-	);
+	kputln("pmm: allocation/free test passed");
 
 	/* Exception level and vector table. */
 
-	kputs(
-		"kern_init: current raw exception level: 0x"
-	);
+	kputs("kern_init: current raw exception level: 0x");
+	kputhex_byte((uint8_t)current_el_raw);
+	kputc('\n');
+	kputs("kern_init: current exception level: EL");
 
-	kputhex_byte(
-		(uint8_t)current_el_raw
-	);
+	kputc((char)('0' + current_el));
 
 	kputc('\n');
 
-	kputs(
-		"kern_init: current exception level: EL"
-	);
-
-	kputc(
-		(char)('0' + current_el)
-	);
-
-	kputc('\n');
-
-	/* Exception vectors were installed during early bootstrap. */
+	/* Note: Exception vectors were installed during early bootstrap. */
 
 	/* TTBR0 identity address space. */
-
-	kputln(
-		"vmm: building identity address space"
-	);
+	kputln("vmm_init: building identity address space");
 
 	if (!vmm_init(platform)) {
-		kern_fail(
-			"vmm: initialization failed"
-		);
+		kern_fail("vmm_init: initialization failed");
 	}
 
-	kputln(
-		"vmm: stage-1 MMU enabled"
-	);
+	kputln("vmm: stage 1 MMU enabled");
 
 	vmm_dump();
 
 	if (!vmm_validate_kernel_permissions()) {
-		kern_fail(
-			"vmm: kernel permission validation failed"
-		);
+		kern_fail("vmm_validate_kernel_permissions: kernel permission validation failed");
 	}
 
-	kputln(
-		"vmm: kernel permissions validated"
-	);
+	kputln("vmm_validate_kernel_permissions: kernel permissions validated");
 
 	if (!kern_validate_identity_mappings(
 		platform
 	)) {
-		kern_fail(
-			"vmm: identity translation test failed"
-		);
+		kern_fail("kern_validate_identity_mappings: identity translation test failed");
 	}
 
-	kputln(
-		"vmm: stack identity translation passed"
-	);
-
-	kputln(
-		"vmm: UART identity translation passed"
-	);
+	kputln("vmm: stack identity translation passed");
+	kputln("vmm: UART identity translation passed");
 
 	/* CPU caches and live table updates. */
-
-	kputln(
-		"cache: initializing CPU caches"
-	);
+	kputln("cache_init: initializing CPU caches");
 
 	if (!cache_init()) {
-		kern_fail(
-			"cache: initialization failed"
-		);
+		kern_fail("cache_init: initialization failed");
 	}
 
-	kputln(
-		"cache: CPU caches initialized"
-	);
+	kputln("cache_init: CPU caches initialized");
 
 	cache_dump();
 
 	/* TTBR1 kernel alias and full direct map. */
-
-	kputln(
-		"vmm: installing TTBR1 higher-half alias"
-	);
+	kputln("vmm: installing TTBR1 higher-half alias");
 
 	if (!vmm_init_higher_half_alias()) {
-		kern_fail(
-			"vmm: TTBR1 higher-half initialization failed"
-		);
+		kern_fail("vmm: TTBR1 higher-half initialization failed");
 	}
 
-	kputln(
-		"vmm: TTBR1 higher-half alias installed"
-	);
+	kputln("vmm: TTBR1 higher-half alias installed");
 
 	vmm_dump_higher_half();
 
 	/* The live mapping test now targets a TTBR1 virtual address */
-
 	kputln("vmm: testing live page mappings");
 
 	if (!kern_test_live_vmm()) {
