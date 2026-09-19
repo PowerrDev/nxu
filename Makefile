@@ -28,7 +28,7 @@ DISK ?= disk.img
 
 DISK_SIZE ?= 16M
 
-DISK_ROOT ?= assets/DiskRoot
+DISK_ROOT ?= tools/DiskRoot
 
 DISK_FORMAT_STAMP ?= .nxu-ext4-jbd2-format
 
@@ -46,7 +46,7 @@ USER_CC := clang
 
 USER_LD := ld.lld
 
-RECOVERY_GENERATED_FONT_DIR := assets/Recovery/Generated
+RECOVERY_GENERATED_FONT_DIR := tools/Recovery/Generated
 
 RECOVERY_SANS_SOURCE := frameworks/Recovery.framework/StartupOptionsUI/font_sans.c
 
@@ -502,7 +502,7 @@ apply-assets:
 
 	@mkdir -p "$(UISERVICE_DIR)/assets/Cursors"
 
-	cp assets/UI/Cursors/*.cur "$(UISERVICE_DIR)/assets/Cursors/"
+	cp tools/UI/Cursors/*.cur "$(UISERVICE_DIR)/assets/Cursors/"
 
 	@echo "Applied sevOS UIService assets to $(UISERVICE_DIR)/assets"
 

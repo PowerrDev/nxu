@@ -1,7 +1,7 @@
 /BUILD/
 /build/
 /build-*/
-/assets/Recovery/Generated/
+/tools/Recovery/Generated/
 **/target/
 .idea/
 .vscode/
