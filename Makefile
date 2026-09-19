@@ -880,6 +880,8 @@ disk-check:
 
 include makedefs/tests.mk
 
+include makedefs/i386.mk
+
 
 # =============================================================================
 # Cleanup
