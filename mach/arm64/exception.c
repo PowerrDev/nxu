@@ -1,9 +1,9 @@
 #include <kern/console/console.h>
-#include <arch/arm64/exception.h>
-#include <arch/arm64/gic.h>
-#include <arch/arm64/system.h>
-#include <arch/arm64/timer.h>
-#include <arch/arm64/transition.h>
+#include <mach/arm64/exception.h>
+#include <mach/arm64/gic.h>
+#include <mach/arm64/system.h>
+#include <mach/arm64/timer.h>
+#include <mach/arm64/transition.h>
 #include <kern/sched_prism/sched.h>
 #include <kern/irq/irq.h>
 #include <kern/syscall/syscall.h>

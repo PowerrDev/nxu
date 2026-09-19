@@ -1,4 +1,4 @@
-#include <arch/arm64/gic.h>
+#include <mach/arm64/gic.h>
 #include <vm/vmm.h>
 
 #include <stdbool.h>

@@ -1,5 +1,5 @@
 #include <kern/console/console.h>
-#include <arch/arm64/cache.h>
+#include <mach/arm64/cache.h>
 #include <platform/uart.h>
 
 #include <stdbool.h>

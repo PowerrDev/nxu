@@ -1,4 +1,4 @@
-#include <arch/arm64/timer.h>
+#include <mach/arm64/timer.h>
 
 #include <stdint.h>
 
