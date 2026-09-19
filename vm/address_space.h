@@ -119,4 +119,22 @@ uint64_t vm_address_space_table_count(
 	const vm_address_space_t *space
 );
 
+/*
+ * Optional teardown, implemented by ports that reclaim address spaces (the
+ * i386 port; the arm64 one still leaks them, see kern/process/task.c).
+ *
+ * vm_address_space_release_pages() unmaps every user page in space and drops
+ * one pmm reference per mapping (pmm_free_page), so a page shared through
+ * vm/vm_shm.h survives until its last mapping goes. It returns how many
+ * mappings it removed. Only call it for spaces whose every mapping owns a
+ * reference; pages mapped without one must be unmapped individually first.
+ *
+ * vm_address_space_destroy() frees the page tables and the root of space and
+ * zeroes it; it leaves the mapped pages alone (release them first) and
+ * deactivates space if it is the active one. vm_map_destroy_all() should have
+ * run for the space, since destroy does not free its region list.
+ */
+uint64_t vm_address_space_release_pages(vm_address_space_t *space);
+bool vm_address_space_destroy(vm_address_space_t *space);
+
 #endif

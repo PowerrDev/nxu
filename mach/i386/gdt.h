@@ -76,6 +76,13 @@ void i386_gdt_init(void);
 void i386_gdt_set_kernel_stack(uint32_t esp0);
 
 /*
+ * Page directory the double-fault task runs on. The task switch loads CR3
+ * from the TSS, so it must be a directory that maps the kernel (any address
+ * space's kernel half will do, the master kernel directory is the safe pick).
+ */
+void i386_gdt_set_double_fault_cr3(uint32_t cr3);
+
+/*
  * The main TSS. After a task switch to the double-fault TSS the CPU stores
  * the faulting context here, which is what the #DF report reads.
  */

@@ -31,6 +31,17 @@ bool pmm_init(
 	const dtb_t *dtb
 );
 
+/*
+ * Ports without a device tree (i386) keep boot-time data out of the
+ * allocator by registering its physical range here, before pmm_init(), which
+ * reads them alongside the kernel image. Only implemented for those ports:
+ * the arm64 pmm learns the same from its dtb.
+ */
+bool pmm_reserve_boot_range(
+	uint64_t base,
+	uint64_t size
+);
+
 bool pmm_allocate_page(uint64_t *physical_address);
 bool pmm_free_page(uint64_t physical_address);
 

@@ -268,6 +268,8 @@ static void pmm_reserve_range(
 	}
 }
 
+#if !defined(__i386__)
+
 static bool pmm_find_bitmap_location(
 	uint64_t kernel_end,
 	uint64_t bitmap_storage_bytes,
@@ -482,6 +484,266 @@ bool pmm_init(
 
 	return true;
 }
+
+#else /* __i386__ */
+
+/*
+ * x86 has no device tree. The platform hands over RAM as a sorted list of
+ * regions (mach/i386/memory_map.h), the kernel is a known physical range,
+ * and everything else that must survive (the bootloader's information
+ * structure and command line) is registered with pmm_reserve_boot_range()
+ * before pmm_init(). All of physical memory is reachable through the
+ * permanent direct map, so the bitmap is addressed through it from the start.
+ */
+#define PMM_BOOT_RANGE_MAX 16U
+
+typedef struct {
+	uint64_t base;
+	uint64_t size;
+} pmm_boot_range_t;
+
+static pmm_boot_range_t g_pmm_boot_ranges[PMM_BOOT_RANGE_MAX];
+static uint32_t g_pmm_boot_range_count;
+
+bool pmm_reserve_boot_range(uint64_t base, uint64_t size)
+{
+	if (g_pmm.initialized || size == 0ULL || g_pmm_boot_range_count >= PMM_BOOT_RANGE_MAX) {
+		return false;
+	}
+
+	if (base > UINT64_MAX - size) {
+		return false;
+	}
+
+	g_pmm_boot_ranges[g_pmm_boot_range_count].base = base;
+	g_pmm_boot_ranges[g_pmm_boot_range_count].size = size;
+	g_pmm_boot_range_count++;
+
+	return true;
+}
+
+/*
+ * First page-aligned physical address at or above `start` where
+ * `bytes` fit without touching a registered boot range.
+ */
+static bool pmm_find_free_gap(
+	uint64_t start,
+	uint64_t bytes,
+	uint64_t *address
+)
+{
+	uint64_t candidate;
+
+	if (!pmm_align_up(start, PMM_PAGE_SIZE, &candidate)) {
+		return false;
+	}
+
+	for (uint32_t pass = 0U; pass <= PMM_BOOT_RANGE_MAX; pass++) {
+		bool moved = false;
+
+		for (uint32_t index = 0U; index < g_pmm_boot_range_count; index++) {
+			uint64_t range_end = g_pmm_boot_ranges[index].base + g_pmm_boot_ranges[index].size;
+
+			if (!pmm_ranges_overlap(
+				candidate,
+				candidate + bytes,
+				g_pmm_boot_ranges[index].base,
+				range_end
+			)) {
+				continue;
+			}
+
+			if (!pmm_align_up(range_end, PMM_PAGE_SIZE, &candidate)) {
+				return false;
+			}
+
+			moved = true;
+		}
+
+		if (!moved) {
+			*address = candidate;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool pmm_init(
+	const platform_t *platform,
+	const dtb_t *dtb
+)
+{
+	(void)dtb;
+
+	if (
+		platform == 0 ||
+		platform->memory_region_count == 0U
+	) {
+		return false;
+	}
+
+	memset(&g_pmm, 0, sizeof(g_pmm));
+
+	const platform_region_t *first = &platform->memory_regions[0];
+	const platform_region_t *last = &platform->memory_regions[platform->memory_region_count - 1U];
+
+	uint64_t raw_memory_end;
+
+	if (!pmm_add(
+		last->base,
+		last->size,
+		&raw_memory_end
+	)) {
+		return false;
+	}
+
+	uint64_t memory_base;
+
+	if (!pmm_align_up(
+		first->base,
+		PMM_PAGE_SIZE,
+		&memory_base
+	)) {
+		return false;
+	}
+
+	uint64_t memory_end =
+		pmm_align_down(
+			raw_memory_end,
+			PMM_PAGE_SIZE
+		);
+
+	/* The allocator zeroes pages through the direct map: nothing beyond it is usable. */
+	if (
+		memory_end <= memory_base ||
+		memory_end > VM_DIRECT_MAP_SIZE
+	) {
+		return false;
+	}
+
+	/* Regions must be ascending and disjoint; the gaps between them are reserved below. */
+	for (uint32_t index = 1U; index < platform->memory_region_count; index++) {
+		const platform_region_t *previous = &platform->memory_regions[index - 1U];
+
+		if (platform->memory_regions[index].base < previous->base + previous->size) {
+			return false;
+		}
+	}
+
+	g_pmm.memory_base = memory_base;
+	g_pmm.memory_end = memory_end;
+
+	g_pmm.page_count =
+		(memory_end - memory_base) /
+		PMM_PAGE_SIZE;
+
+	g_pmm.bitmap_bytes = (g_pmm.page_count + 7ULL) / 8ULL;
+
+	if (!pmm_align_up(
+		g_pmm.bitmap_bytes,
+		PMM_PAGE_SIZE,
+		&g_pmm.bitmap_storage_bytes
+	)) {
+		return false;
+	}
+
+	uint64_t kernel_start;
+	uint64_t kernel_end;
+
+	if (
+		!pmm_kernel_symbol_physical(__kernel_start, &kernel_start) ||
+		!pmm_kernel_symbol_physical(__kernel_end, &kernel_end)
+	) {
+		return false;
+	}
+
+	uint64_t bitmap_address;
+
+	if (!pmm_find_free_gap(
+		kernel_end,
+		g_pmm.bitmap_storage_bytes,
+		&bitmap_address
+	)) {
+		return false;
+	}
+
+	if (
+		bitmap_address < memory_base ||
+		bitmap_address + g_pmm.bitmap_storage_bytes > memory_end
+	) {
+		return false;
+	}
+
+	uint64_t bitmap_virtual;
+
+	if (!vmm_physical_to_higher_half(
+		bitmap_address,
+		&bitmap_virtual
+	)) {
+		return false;
+	}
+
+	g_pmm.bitmap = (uint8_t *)(uintptr_t)bitmap_virtual;
+	g_pmm.higher_half = true;
+
+	memset(
+		g_pmm.bitmap,
+		0,
+		g_pmm.bitmap_storage_bytes
+	);
+
+	g_pmm.free_page_count = g_pmm.page_count;
+	g_pmm.used_page_count = 0ULL;
+
+	if (kernel_end > memory_base) {
+		pmm_reserve_range(
+			memory_base,
+			kernel_end - memory_base
+		);
+	}
+
+	pmm_reserve_range(
+		bitmap_address,
+		g_pmm.bitmap_storage_bytes
+	);
+
+	for (uint32_t index = 0U; index < g_pmm_boot_range_count; index++) {
+		pmm_reserve_range(
+			g_pmm_boot_ranges[index].base,
+			g_pmm_boot_ranges[index].size
+		);
+	}
+
+	for (uint32_t index = 1U; index < platform->memory_region_count; index++) {
+		const platform_region_t *previous = &platform->memory_regions[index - 1U];
+		uint64_t gap_start = previous->base + previous->size;
+
+		pmm_reserve_range(
+			gap_start,
+			platform->memory_regions[index].base - gap_start
+		);
+	}
+
+	uint64_t bitmap_bit_count = g_pmm.bitmap_bytes * 8ULL;
+
+	for (
+		uint64_t page = g_pmm.page_count;
+		page < bitmap_bit_count;
+		page++
+	) {
+		pmm_bitmap_set_used(page);
+	}
+
+	g_pmm.next_hint = 0ULL;
+	g_pmm.initialized = true;
+
+	(void)kernel_start;
+
+	return true;
+}
+
+#endif /* __i386__ */
 
 bool pmm_allocate_page(uint64_t *physical_address)
 {

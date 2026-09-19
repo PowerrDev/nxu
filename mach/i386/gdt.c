@@ -113,9 +113,18 @@ void i386_gdt_init(void)
 	/*
 	 * The double-fault task starts fresh on its own stack every time, so
 	 * only the fields the CPU loads on the task switch are meaningful.
-	 * cr3 stays 0 until paging exists; the VM layer must copy the live
-	 * page directory here when it turns paging on.
+	 * start.S turns paging on before any C code runs, so cr3 starts as the
+	 * boot page directory (the master kernel directory the VM layer keeps
+	 * refining in place); i386_gdt_set_double_fault_cr3() lets the VM layer
+	 * republish it should the master directory ever move.
 	 */
+	{
+		uint32_t cr3;
+
+		__asm__ volatile("movl %%cr3, %0" : "=r"(cr3));
+		g_double_fault_tss.cr3 = cr3;
+	}
+
 	g_double_fault_tss.ss0 = GDT_KERNEL_DATA_SEL;
 	g_double_fault_tss.esp0 = (uint32_t)(uintptr_t)&g_double_fault_stack[DOUBLE_FAULT_STACK_SIZE];
 	g_double_fault_tss.eip = (uint32_t)(uintptr_t)i386_double_fault_task;
@@ -164,6 +173,11 @@ void i386_gdt_init(void)
 void i386_gdt_set_kernel_stack(uint32_t esp0)
 {
 	g_main_tss.esp0 = esp0;
+}
+
+void i386_gdt_set_double_fault_cr3(uint32_t cr3)
+{
+	g_double_fault_tss.cr3 = cr3;
 }
 
 const i386_tss_t *i386_gdt_main_tss(void)

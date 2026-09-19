@@ -31,7 +31,11 @@ struct vm_shm_region {
 static void vm_shm_lock(vm_shm_region_t region)
 {
 	while (__atomic_exchange_n(&region->lock, 1U, __ATOMIC_ACQUIRE) != 0U) {
+#if defined(__i386__) || defined(__x86_64__)
+		__asm__ volatile("pause");
+#else
 		__asm__ volatile("yield");
+#endif
 	}
 }
 

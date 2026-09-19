@@ -22,7 +22,11 @@ static inline void nxu_spin_lock(nxu_spinlock_t *lock)
 			__ATOMIC_ACQUIRE
 		) != 0U
 	) {
+#if defined(__i386__) || defined(__x86_64__)
+		__asm__ volatile("pause");
+#else
 		__asm__ volatile("yield");
+#endif
 	}
 }
 
