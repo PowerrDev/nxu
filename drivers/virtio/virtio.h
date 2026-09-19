@@ -10,6 +10,13 @@ typedef struct {
 	bool input;
 	bool block;
 	bool gpu;
+	/*
+	 * Optional: invoked the instant a GPU attaches, mid-scan, before the
+	 * remaining MMIO slots (input, block) are probed. Lets a caller paint
+	 * the first frame (e.g. the boot splash) as early as physically
+	 * possible instead of waiting for the whole bus scan to finish.
+	 */
+	void (*on_gpu_ready)(void);
 } virtio_probe_policy_t;
 
 /*

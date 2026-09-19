@@ -2,6 +2,7 @@
 
 #include <drivers/video/display.h>
 #include <kern/console/console.h>
+#include <kern/console/ioregistry.h>
 #include <vm/pmm.h>
 #include <vm/vmm.h>
 
@@ -142,6 +143,15 @@ _Static_assert(sizeof(virtio_gpu_resource_flush_t) == 48U, "VirtIO GPU flush siz
 
 static virtio_gpu_device_t g_virtio_gpu_devices[VIRTIO_GPU_MAX_DEVICES];
 static uint32_t g_virtio_gpu_device_count;
+static ioreg_id_t g_virtio_gpu_ioreg_family;
+
+static ioreg_id_t virtio_gpu_ioreg_family(void)
+{
+	if (g_virtio_gpu_ioreg_family == 0U) {
+		g_virtio_gpu_ioreg_family = ioreg_add(ioreg_family_graphics(), "VirtIOGPUFamily", "VirtIOGPUFamily");
+	}
+	return g_virtio_gpu_ioreg_family;
+}
 
 static void virtio_gpu_lock(virtio_gpu_device_t *device)
 {
@@ -450,12 +460,6 @@ static bool virtio_gpu_allocate_framebuffer(virtio_gpu_device_t *device)
 	return true;
 }
 
-static void virtio_gpu_clear_framebuffer(virtio_gpu_device_t *device)
-{
-	uint64_t pixels = (uint64_t)device->width * device->height;
-	for (uint64_t index = 0ULL; index < pixels; index++) device->framebuffer[index] = 0x00141416U;
-}
-
 bool virtio_gpu_attach(const virtio_mmio_device_t *transport)
 {
 	if (transport == 0 || transport->device_id != VIRTIO_DEVICE_ID_GPU) return false;
@@ -512,9 +516,16 @@ bool virtio_gpu_attach(const virtio_mmio_device_t *transport)
 	device->display.driver = device;
 	device->display.present = virtio_gpu_display_present;
 
-	virtio_gpu_clear_framebuffer(device);
-	failure_stage = "initial TRANSFER_TO_HOST_2D/RESOURCE_FLUSH";
-	if (!virtio_gpu_display_present(&device->display, 0U, 0U, device->width, device->height)) goto fail;
+	/*
+	 * No initial clear/present here: the guest-side framebuffer is left
+	 * unflushed on purpose so the scanout shows nothing until the first
+	 * real caller (the boot splash) paints and flushes it -- avoiding an
+	 * extra, unnecessary frame between SET_SCANOUT and that first paint.
+	 * The command round-trips above (GET_DISPLAY_INFO, RESOURCE_CREATE_2D,
+	 * RESOURCE_ATTACH_BACKING, SET_SCANOUT) already exercise the same
+	 * virtqueue plumbing TRANSFER_TO_HOST_2D/RESOURCE_FLUSH would, so
+	 * skipping it here does not skip meaningful validation.
+	 */
 
 	failure_stage = "display registry insertion";
 	if (!display_register(&device->display)) goto fail;
@@ -522,6 +533,7 @@ bool virtio_gpu_attach(const virtio_mmio_device_t *transport)
 	device->attached = true;
 	g_virtio_gpu_device_count++;
 	kprintf("VirtIOGPUFamily: scanout %u online at %ux%u, framebuffer %llu bytes\n", device->scanout_id, device->width, device->height, (unsigned long long)device->framebuffer_bytes);
+	(void)ioreg_add(virtio_gpu_ioreg_family(), "Display0", "VirtIOGPUDevice");
 	return true;
 
 fail:

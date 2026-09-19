@@ -40,6 +40,7 @@ bool virtio_init(const platform_t *platform, const virtio_probe_policy_t *policy
 			}
 
 			g_virtio_gpu_count++;
+			if (policy->on_gpu_ready != 0) policy->on_gpu_ready();
 			continue;
 		}
 
