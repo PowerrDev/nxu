@@ -2,6 +2,8 @@
 #include <kern/process/thread.h>
 #include <kern/process/task.h>
 
+#include <mach/machine/cpu.h>
+
 #include <platform/uart.h>
 #include <vm/vm_kern.h>
 #include <vm/vmm.h>
@@ -47,7 +49,7 @@ static void thread_lock(thread_lock_t *lock)
 			__ATOMIC_ACQUIRE
 		) != 0U
 	) {
-		__asm__ volatile("yield");
+		cpu_relax();
 	}
 }
 
@@ -1155,7 +1157,7 @@ uint64_t thread_user_entry(thread_t thread)
 		return 0ULL;
 	}
 
-	return thread->machine.user.pc;
+	return machine_thread_user_pc(&thread->machine);
 }
 
 /*
@@ -1170,7 +1172,7 @@ uint64_t thread_user_stack(thread_t thread)
 		return 0ULL;
 	}
 
-	return thread->machine.user.sp;
+	return machine_thread_user_sp(&thread->machine);
 }
 
 /*

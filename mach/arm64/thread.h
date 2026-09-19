@@ -1,6 +1,8 @@
 #ifndef NXU_ARCH_ARM64_THREAD_H
 #define NXU_ARCH_ARM64_THREAD_H
 
+#include <mach/arm64/transition.h>
+
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -120,5 +122,55 @@ void arm64_switch_context(
 	arm64_kernel_context_t *old_context,
 	const arm64_kernel_context_t *new_context
 );
+
+/*
+ * The machine-neutral operations behind <mach/machine/thread.h>. They are
+ * thin wrappers so the scheduler and thread code do not name arm64 symbols.
+ */
+
+/*
+ * machine_thread_user_pc / machine_thread_user_sp
+ *
+ * The initial EL0 program counter and stack pointer.
+ */
+static inline uint64_t machine_thread_user_pc(const machine_thread_t *machine)
+{
+	return machine->user.pc;
+}
+
+static inline uint64_t machine_thread_user_sp(const machine_thread_t *machine)
+{
+	return machine->user.sp;
+}
+
+/*
+ * machine_thread_switch_context
+ *
+ * Save the current kernel context into old_machine and restore
+ * new_machine's. Returns in the restored thread.
+ */
+static inline void machine_thread_switch_context(
+	machine_thread_t *old_machine,
+	machine_thread_t *new_machine
+)
+{
+	arm64_switch_context(&old_machine->context, &new_machine->context);
+}
+
+/*
+ * machine_thread_enter_user
+ *
+ * Enter EL0 with the thread's initial user state. Returns only when the EL0
+ * program has exited through the SYS_exit redirect.
+ */
+static inline void machine_thread_enter_user(machine_thread_t *machine)
+{
+	arm64_enter_el0(
+		machine->user.pc,
+		machine->user.sp,
+		machine->user.spsr,
+		machine->user.x0
+	);
+}
 
 #endif

@@ -1,7 +1,7 @@
 #ifndef NXU_KERN_THREAD_H
 #define NXU_KERN_THREAD_H
 
-#include <mach/arm64/thread.h>
+#include <mach/machine/thread.h>
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -148,8 +148,9 @@ bool thread_bootstrap(void);
  * thread_create
  *
  * Create an initial suspended userspace thread attached to task. arg becomes
- * the new thread's initial x0 (0 for a process's own initial thread, a
- * caller-supplied value for a pthread-create-style spawned thread).
+ * the new thread's initial argument register (x0 on arm64, eax on i386; 0
+ * for a process's own initial thread, a caller-supplied value for a
+ * pthread-create-style spawned thread).
  *
  * The task maintains a residency reference while the thread remains
  * attached. The returned thread also carries a caller reference.
