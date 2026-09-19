@@ -18,6 +18,7 @@ typedef struct {
 	thread_t bootstrap_thread;
 	thread_t idle_thread;
 	bool initialized;
+	uint32_t mlfq_boost_ticks;
 } sched_state_t;
 
 typedef enum {
@@ -68,12 +69,117 @@ void sched_fatal(const char *message)
 }
 
 /*
+ * MLFQ level tables.
+ *
+ * Each level is scheduled at one fixed run-queue priority, so the existing
+ * fixed-priority run queue already gives MLFQ its "always run the highest
+ * non-empty line" (Rule 1) and "share a line round-robin" (Rule 2)
+ * behavior. Only the level<->priority/quantum mapping is policy here.
+ */
+static const uint16_t sched_mlfq_priority[SCHED_MLFQ_LEVELS] = {
+	63U, 47U, 31U, 15U
+};
+
+static const uint32_t sched_mlfq_quantum[SCHED_MLFQ_LEVELS] = {
+	4U, 8U, 16U, 32U
+};
+
+_Static_assert(
+	sizeof(sched_mlfq_priority) / sizeof(sched_mlfq_priority[0]) == SCHED_MLFQ_LEVELS,
+	"sched_mlfq_priority must have exactly SCHED_MLFQ_LEVELS entries"
+);
+
+_Static_assert(
+	sizeof(sched_mlfq_quantum) / sizeof(sched_mlfq_quantum[0]) == SCHED_MLFQ_LEVELS,
+	"sched_mlfq_quantum must have exactly SCHED_MLFQ_LEVELS entries"
+);
+
+uint16_t sched_mlfq_level_priority(uint8_t level)
+{
+	if (level > SCHED_MLFQ_BOTTOM_LEVEL) level = SCHED_MLFQ_BOTTOM_LEVEL;
+	return sched_mlfq_priority[level];
+}
+
+uint32_t sched_mlfq_level_quantum(uint8_t level)
+{
+	if (level > SCHED_MLFQ_BOTTOM_LEVEL) level = SCHED_MLFQ_BOTTOM_LEVEL;
+	return sched_mlfq_quantum[level];
+}
+
+/*
+ * sched_mlfq_assign
+ *
+ * Move a thread to a given MLFQ level: update its feedback level, the
+ * run-queue priority that level is scheduled at and the quantum it is
+ * granted there. The idle thread never participates in MLFQ.
+ *
+ * Callers are responsible for keeping run-queue membership consistent -
+ * this only touches the thread's own fields, so it must be called either
+ * before the thread is enqueued or while it is off any run queue.
+ */
+static void sched_mlfq_assign(thread_t thread, uint8_t level)
+{
+	if (thread == 0 || thread_is_idle(thread)) return;
+
+	if (level > SCHED_MLFQ_BOTTOM_LEVEL) level = SCHED_MLFQ_BOTTOM_LEVEL;
+
+	thread->mlfq_level = level;
+	thread->sched_pri = sched_mlfq_priority[level];
+	thread->base_pri = sched_mlfq_priority[level];
+	thread->quantum_remaining = sched_mlfq_quantum[level];
+}
+
+/*
+ * sched_mlfq_boost_locked
+ *
+ * The "equalizer" rule: drain every level below the top queue and put its
+ * threads back at level 0 with a fresh top-level quantum, then do the same
+ * for the currently running thread. Called with g_sched.lock held.
+ */
+static void sched_mlfq_boost_locked(processor_t processor)
+{
+	if (processor == 0) return;
+
+	for (
+		uint8_t level = SCHED_MLFQ_TOP_LEVEL + 1U;
+		level < SCHED_MLFQ_LEVELS;
+		level++
+	) {
+		uint16_t priority = sched_mlfq_priority[level];
+		thread_t thread;
+
+		while (
+			(thread = run_queue_dequeue_priority(&processor->runq, priority)) != 0
+		) {
+			sched_mlfq_assign(thread, SCHED_MLFQ_TOP_LEVEL);
+
+			if (!run_queue_enqueue(&processor->runq, thread, RUN_QUEUE_TAIL)) {
+				sched_fatal("run_queue_enqueue: MLFQ boost re-enqueue failed");
+			}
+		}
+	}
+
+	thread_t current = processor->active_thread;
+
+	if (current != 0 && !thread_is_idle(current)) {
+		sched_mlfq_assign(current, SCHED_MLFQ_TOP_LEVEL);
+	}
+}
+
+/*
  * sched_quantum_reset
+ *
+ * The idle thread keeps a fixed placeholder quantum; it is never charged by
+ * sched_tick() and never appears in the run queue. Every other thread's
+ * quantum comes from its current MLFQ level.
  */
 static void sched_quantum_reset(thread_t thread)
 {
 	if (thread == 0) return;
-	thread->quantum_remaining = SCHED_DEFAULT_QUANTUM_TICKS;
+
+	thread->quantum_remaining = thread_is_idle(thread)
+		? SCHED_DEFAULT_QUANTUM_TICKS
+		: sched_mlfq_level_quantum(thread->mlfq_level);
 }
 
 /*
@@ -155,34 +261,35 @@ void sched_thread_continue(void)
 
 	thread_t thread = current_thread();
 
-	if (thread == 0) sched_fatal("SchedulerKernelComponent: first thread has no current object");
+	if (thread == 0) sched_fatal("sched_thread_continue: first thread has no current object");
 
 	if ((thread->flags & TH_FLAG_KERNEL) != 0U) {
 		thread_continue_t continuation = thread->continuation;
 		void *parameter = thread->parameter;
 
 		if (continuation == 0) {
-			sched_fatal("SchedulerKernelComponent: kernel thread has no continuation");
+			sched_fatal("sched_thread_continue: kernel thread has no continuation");
 		}
 
 		arm64_irq_enable();
 		continuation(parameter);
 
 		if (!sched_thread_terminate(thread)) {
-			sched_fatal("SchedulerKernelComponent: returned kernel thread could not terminate");
+			sched_fatal("sched_thread_terminate: returned kernel thread could not terminate");
 		}
 
 		sched_exit_current();
 	}
 
 	if (!machine_thread_has_user_state(&thread->machine)) {
-		sched_fatal("SchedulerKernelComponent: user thread has no EL0 state");
+		sched_fatal("machine_thread_has_user_state: user thread has no EL0 state");
 	}
 
 	arm64_enter_el0(
 		thread->machine.user.pc,
 		thread->machine.user.sp,
-		thread->machine.user.spsr
+		thread->machine.user.spsr,
+		thread->machine.user.x0
 	);
 
 	/*
@@ -191,7 +298,7 @@ void sched_thread_continue(void)
 	 * therefore an invalid scheduler transition.
 	 */
 	if (thread_is_active(thread)) {
-		sched_fatal("SchedulerKernelComponent: active user thread returned to first-run trampoline");
+		sched_fatal("thread_is_active: active user thread returned to first-run trampoline");
 	}
 
 	sched_exit_current();
@@ -311,14 +418,14 @@ static bool sched_switch(sched_switch_reason_t reason)
 	sched_unlock(&g_sched.lock);
 
 	if (!sched_activate_thread(next)) {
-		sched_fatal("SchedulerKernelComponent: incoming thread activation failed");
+		sched_fatal("sched_activate_thread: incoming thread activation failed");
 	}
 
 	sched_lock(&g_sched.lock);
 
 	if (!thread_set_current(next)) {
 		sched_unlock(&g_sched.lock);
-		sched_fatal("SchedulerKernelComponent: current-thread handoff failed");
+		sched_fatal("thread_set_current: current-thread handoff failed");
 	}
 
 	processor->previous_thread = current;
@@ -402,7 +509,7 @@ bool sched_bootstrap(task_t kernel_task)
 		return false;
 	}
 
-	sched_quantum_reset(bootstrap_thread);
+	sched_mlfq_assign(bootstrap_thread, SCHED_MLFQ_TOP_LEVEL);
 	sched_quantum_reset(idle_thread);
 
 	processor_t processor = current_processor();
@@ -518,6 +625,14 @@ bool sched_thread_start(thread_t thread)
 	if (thread == 0 || thread->started) return false;
 
 	if (!sched_prepare_new_thread(thread)) return false;
+
+	/*
+	 * Rule 3, the newbie premium: a brand-new thread is assumed to be
+	 * interactive until proven otherwise, so it starts in the
+	 * highest-priority MLFQ queue.
+	 */
+	sched_mlfq_assign(thread, SCHED_MLFQ_TOP_LEVEL);
+
 	if (!thread_start(thread)) return false;
 
 	if (thread_is_idle(thread)) return true;
@@ -639,14 +754,14 @@ void sched_exit_current(void)
 	thread_t thread = current_thread();
 
 	if (thread == 0 || !thread_is_terminated(thread)) {
-		sched_fatal("SchedulerKernelComponent: exit requested by non-terminated thread");
+		sched_fatal("thread_is_terminated: exit requested by non-terminated thread");
 	}
 
 	if (!sched_switch(SCHED_SWITCH_EXIT)) {
-		sched_fatal("SchedulerKernelComponent: terminating thread could not dispatch successor");
+		sched_fatal("sched_switch: terminating thread could not dispatch successor");
 	}
 
-	sched_fatal("SchedulerKernelComponent: terminated thread resumed unexpectedly");
+	sched_fatal("sched_exit_current: terminated thread resumed unexpectedly");
 }
 
 void sched_tick(void)
@@ -670,8 +785,33 @@ void sched_tick(void)
 		if (thread->quantum_remaining == 0U) {
 			processor->quantum_expiration_count++;
 			processor->preemption_pending = true;
-			sched_quantum_reset(thread);
+
+			/*
+			 * Rule 4, the demotion: the thread ran through its entire
+			 * quantum without voluntarily giving up the CPU (blocking or
+			 * yielding resets the quantum without ever reaching zero
+			 * here), so treat it as CPU-bound and drop it one MLFQ level.
+			 * sched_mlfq_assign() also grants the new level's quantum, so
+			 * there is no separate sched_quantum_reset() call here.
+			 */
+			uint8_t level = thread->mlfq_level;
+
+			if (level < SCHED_MLFQ_BOTTOM_LEVEL) level++;
+			sched_mlfq_assign(thread, level);
 		}
+	}
+
+	/*
+	 * Rule 5, the equalizer boost. This runs on wall-clock ticks regardless
+	 * of which thread is active (including while the CPU is idle) so
+	 * background work queued during a quiet period is not left waiting at
+	 * the bottom the moment something else shows up.
+	 */
+	g_sched.mlfq_boost_ticks++;
+
+	if (g_sched.mlfq_boost_ticks >= SCHED_MLFQ_BOOST_INTERVAL_TICKS) {
+		g_sched.mlfq_boost_ticks = 0U;
+		sched_mlfq_boost_locked(processor);
 	}
 
 	sched_unlock(&g_sched.lock);
@@ -742,6 +882,81 @@ bool sched_run_queue_self_test(void)
 	return run_queue_validate(&runq);
 }
 
+/*
+ * sched_mlfq_test_thread
+ */
+static void sched_mlfq_test_thread(struct thread *thread, uint8_t level)
+{
+	memset(thread, 0, sizeof(*thread));
+	thread->thread_id = (thread_id_t)level + 100ULL;
+	thread->ref_count = 1U;
+	thread->state = TH_RUN;
+	thread->active = true;
+	thread->started = true;
+	thread->max_priority = THREAD_PRIORITY_MAX;
+
+	sched_mlfq_assign(thread, level);
+}
+
+bool sched_mlfq_self_test(void)
+{
+	struct processor test_processor;
+	struct thread queued_mid;
+	struct thread queued_bottom;
+	struct thread running;
+	struct thread hog;
+
+	memset(&test_processor, 0, sizeof(test_processor));
+	run_queue_init(&test_processor.runq);
+
+	/* A thread starts life at the top queue (Rule 3). */
+	sched_mlfq_test_thread(&hog, SCHED_MLFQ_TOP_LEVEL);
+	if (hog.mlfq_level != SCHED_MLFQ_TOP_LEVEL) return false;
+	if (hog.sched_pri != sched_mlfq_level_priority(SCHED_MLFQ_TOP_LEVEL)) return false;
+
+	/*
+	 * Rule 4: a CPU-bound thread that keeps exhausting its quantum drops
+	 * one level per exhaustion until it reaches the bottom queue, and
+	 * never falls off the bottom.
+	 */
+	for (uint8_t level = SCHED_MLFQ_TOP_LEVEL; level < SCHED_MLFQ_BOTTOM_LEVEL; level++) {
+		if (hog.mlfq_level != level) return false;
+		if (hog.quantum_remaining != sched_mlfq_level_quantum(level)) return false;
+
+		sched_mlfq_assign(&hog, (uint8_t)(hog.mlfq_level + 1U));
+	}
+
+	if (hog.mlfq_level != SCHED_MLFQ_BOTTOM_LEVEL) return false;
+
+	sched_mlfq_assign(&hog, (uint8_t)(hog.mlfq_level + 1U));
+	if (hog.mlfq_level != SCHED_MLFQ_BOTTOM_LEVEL) return false;
+
+	/*
+	 * Rule 5: threads parked below the top queue, and the currently
+	 * running thread, all return to level 0 on a boost.
+	 */
+	sched_mlfq_test_thread(&queued_mid, SCHED_MLFQ_BOTTOM_LEVEL - 1U);
+	sched_mlfq_test_thread(&queued_bottom, SCHED_MLFQ_BOTTOM_LEVEL);
+	sched_mlfq_test_thread(&running, SCHED_MLFQ_BOTTOM_LEVEL);
+
+	if (!run_queue_enqueue(&test_processor.runq, &queued_mid, RUN_QUEUE_TAIL)) return false;
+	if (!run_queue_enqueue(&test_processor.runq, &queued_bottom, RUN_QUEUE_TAIL)) return false;
+
+	test_processor.active_thread = &running;
+
+	sched_mlfq_boost_locked(&test_processor);
+
+	if (queued_mid.mlfq_level != SCHED_MLFQ_TOP_LEVEL) return false;
+	if (queued_bottom.mlfq_level != SCHED_MLFQ_TOP_LEVEL) return false;
+	if (running.mlfq_level != SCHED_MLFQ_TOP_LEVEL) return false;
+
+	if (queued_mid.sched_pri != sched_mlfq_level_priority(SCHED_MLFQ_TOP_LEVEL)) return false;
+	if (queued_mid.runq != &test_processor.runq) return false;
+	if (queued_bottom.runq != &test_processor.runq) return false;
+
+	return run_queue_validate(&test_processor.runq);
+}
+
 bool sched_validate(void)
 {
 	if (!g_sched.initialized) return false;
@@ -769,13 +984,13 @@ bool sched_validate(void)
 void sched_dump(void)
 {
 	if (!g_sched.initialized) {
-		kputln("SchedulerKernelComponent: not initialized");
+		kputln("sched_dump: not initialized");
 		return;
 	}
 
 	processor_t processor = current_processor();
 
-	kputs("SchedulerKernelComponent: cpu ");
+	kputs("sched_dump: cpu ");
 	kputu64(processor->cpu_id);
 	kputs(", current tid ");
 	kputu64(thread_tid(processor->active_thread));
@@ -783,7 +998,7 @@ void sched_dump(void)
 	kputu64(thread_tid(processor->idle_thread));
 	kputc('\n');
 
-	kputs("SchedulerKernelComponent: run queue count: ");
+	kputs("sched_dump: run queue count: ");
 	kputu64(processor->runq.count);
 	kputs(", highq: ");
 
@@ -794,17 +1009,36 @@ void sched_dump(void)
 		kputc('\n');
 	}
 
-	kputs("SchedulerKernelComponent: context switches: ");
+	kputs("sched_dump: context switches: ");
 	kputu64(processor->context_switch_count);
 	kputs(", dispatches: ");
 	kputu64(processor->dispatch_count);
 	kputc('\n');
 
-	kputs("SchedulerKernelComponent: preemptions: ");
+	kputs("sched_dump: preemptions: ");
 	kputu64(processor->preemption_count);
 	kputs(", quantum expirations: ");
 	kputu64(processor->quantum_expiration_count);
 	kputs(", default quantum: ");
 	kputu64(SCHED_DEFAULT_QUANTUM_TICKS);
 	kputln(" tick(s)");
+
+	kputs("sched_dump: MLFQ levels: ");
+	kputu64(SCHED_MLFQ_LEVELS);
+	kputs(", boost interval: ");
+	kputu64(SCHED_MLFQ_BOOST_INTERVAL_TICKS);
+	kputs(" tick(s), next boost in ");
+	kputu64(SCHED_MLFQ_BOOST_INTERVAL_TICKS - g_sched.mlfq_boost_ticks);
+	kputln(" tick(s)");
+
+	if (
+		processor->active_thread != 0 &&
+		!thread_is_idle(processor->active_thread)
+	) {
+		kputs("thread_is_idle: active thread MLFQ level: ");
+		kputu64(processor->active_thread->mlfq_level);
+		kputs(", quantum remaining: ");
+		kputu64(processor->active_thread->quantum_remaining);
+		kputc('\n');
+	}
 }

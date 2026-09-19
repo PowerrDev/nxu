@@ -10,6 +10,28 @@
 
 #define SCHED_DEFAULT_QUANTUM_TICKS 4U
 
+/*
+ * Multilevel feedback queue policy.
+ *
+ * MLFQ is implemented on top of the existing fixed-priority run queue: each
+ * feedback level maps to one fixed sched_pri bucket, so queue selection and
+ * FIFO round-robin sharing within a level come for free from run_queue_t.
+ * The policy layer only decides which level a thread belongs to and how
+ * long its quantum is at that level.
+ *
+ * Level 0 is the highest-priority queue. A thread starts at level 0 (the
+ * "newbie premium"), drops one level whenever it exhausts a full quantum
+ * without blocking (it is treated as CPU-bound), and every threads in the
+ * system are boosted back to level 0 on a fixed interval so long-running
+ * work cannot starve.
+ */
+#define SCHED_MLFQ_LEVELS 4U
+#define SCHED_MLFQ_TOP_LEVEL 0U
+#define SCHED_MLFQ_BOTTOM_LEVEL (SCHED_MLFQ_LEVELS - 1U)
+
+/* ~4 seconds at the 100 Hz kernel timer. */
+#define SCHED_MLFQ_BOOST_INTERVAL_TICKS 400U
+
 typedef enum {
 	SCHED_HEADQ,
 	SCHED_TAILQ
@@ -122,9 +144,31 @@ bool sched_preemption_pending(void);
 void sched_clear_preemption(void);
 
 /*
+ * sched_mlfq_level_priority
+ *
+ * The fixed run-queue priority a given MLFQ level is scheduled at. Levels
+ * above SCHED_MLFQ_BOTTOM_LEVEL are clamped to the bottom queue.
+ */
+uint16_t sched_mlfq_level_priority(uint8_t level);
+
+/*
+ * sched_mlfq_level_quantum
+ *
+ * Quantum length, in timer ticks, granted to a thread at a given MLFQ
+ * level. Deeper levels get longer quanta so CPU-bound work is preempted
+ * less often once it has been identified as such.
+ */
+uint32_t sched_mlfq_level_quantum(uint8_t level);
+
+/*
  * sched_run_queue_self_test
  */
 bool sched_run_queue_self_test(void);
+
+/*
+ * sched_mlfq_self_test
+ */
+bool sched_mlfq_self_test(void);
 
 /*
  * sched_validate

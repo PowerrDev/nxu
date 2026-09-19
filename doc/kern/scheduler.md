@@ -1,6 +1,6 @@
 # Scheduler
 
-NXU uses a single-processor fixed-priority scheduler. Threads are the schedulable objects, `processor_t` owns CPU-local scheduling state, and `run_queue_t` owns runnable-queue ordering.
+NXU uses a single-processor fixed-priority run queue with a multilevel feedback queue (MLFQ) policy layered on top. Threads are the schedulable objects, `processor_t` owns CPU-local scheduling state, and `run_queue_t` owns runnable-queue ordering.
 
 Scheduling policy is deliberately separate from the AArch64 context-switch mechanism. Priority policy, queue selection, and quantum accounting can therefore change without replacing the thread machine context or the switch ABI.
 
@@ -22,6 +22,32 @@ Higher numeric scheduling priorities run before lower priorities. Threads at the
 
 The idle thread is not inserted in the normal run queue. It is selected only when no ordinary runnable thread exists.
 
+## Multilevel feedback queue policy
+
+`kern/sched_prism/sched.c` implements MLFQ on top of the fixed-priority run queue rather than beside it. Each feedback level is scheduled at exactly one fixed `sched_pri` bucket, so the run queue's existing "always dequeue the highest non-empty bucket, FIFO within a bucket" behavior already gives MLFQ its rank ordering and round-robin sharing for free. The policy layer only owns the level<->priority/quantum mapping and the rules for moving a thread between levels.
+
+```text
+level  sched_pri  quantum (ticks)
+0 (top)       63                4
+1             47                8
+2             31               16
+3 (bottom)    15               32
+```
+
+`SCHED_MLFQ_LEVELS`, the priority table and the quantum table live in `kern/sched_prism/sched.c`; `sched_mlfq_level_priority()` and `sched_mlfq_level_quantum()` expose the mapping. Quanta grow at deeper levels so CPU-bound work that has already been identified as such is preempted less often, which cuts context-switch overhead for background work without touching interactive responsiveness at level 0.
+
+The five rules and where each lives:
+
+1. **Rank.** `run_queue_dequeue()` always returns the thread in the highest non-empty priority bucket, so a runnable level-0 thread always preempts or is selected ahead of anything at level 1-3. Unchanged by MLFQ.
+2. **Round-robin within a line.** Threads enqueued at `RUN_QUEUE_TAIL` at the same `sched_pri` are already FIFO. MLFQ pins every thread at a level to that level's one fixed priority, so this is inherited directly.
+3. **Newbie premium.** `sched_thread_start()` calls `sched_mlfq_assign(thread, SCHED_MLFQ_TOP_LEVEL)` before the thread is ever enqueued, so a brand-new thread always starts at level 0.
+4. **Demotion.** `sched_tick()` charges one tick against `thread->quantum_remaining`. If that reaches zero, the thread ran its entire slice without blocking or yielding (both of those paths dispatch through `sched_switch()` before the quantum hits zero and get a fresh quantum at the same level), so it is treated as CPU-bound: `sched_mlfq_assign()` drops it one level (clamped at `SCHED_MLFQ_BOTTOM_LEVEL`) and grants the new level's quantum. A thread that blocks for I/O before exhausting its quantum never gets demoted, which is what keeps interactive work at the top.
+5. **Equalizer boost.** `sched_tick()` also advances a `SCHED_MLFQ_BOOST_INTERVAL_TICKS`-tick counter (400 ticks, ~4s at the 100 Hz kernel timer) independent of which thread is active. When it fires, `sched_mlfq_boost_locked()` drains every run-queue bucket below level 0 with `run_queue_dequeue_priority()`, reassigns each thread to level 0 with a fresh quantum, and does the same to the currently active thread. This runs even while the CPU is idle, so work that arrived and was demoted during a quiet period does not stay parked at the bottom indefinitely.
+
+`sched_mlfq_self_test()` exercises the demotion ladder (including that it clamps at the bottom) and the boost path against synthetic threads and a throwaway `processor_t`, and runs at boot alongside `sched_run_queue_self_test()`.
+
+A thread pinned to an explicit priority through `sched_thread_set_priority()` is not touched by demotion or boost logic directly - that call is an escape hatch outside the MLFQ ladder. It only rejoins normal MLFQ movement the next time `sched_mlfq_assign()` is called on it (thread start, demotion, or boost).
+
 ## Lesson 24 context switching
 
 Lesson 24 completes the first real scheduler dispatch path.
@@ -37,7 +63,7 @@ x30 / lr
 SP_EL1
 ```
 
-`arm64_switch_context()` is implemented in `arch/arm64/context_switch.S`. It saves the outgoing context, replaces the kernel stack pointer, restores the incoming context and returns through the incoming x30.
+`arm64_switch_context()` is implemented in `mach/arm64/context_switch.S`. It saves the outgoing context, replaces the kernel stack pointer, restores the incoming context and returns through the incoming x30.
 
 Caller-saved x0-x18 are not part of the ordinary scheduler context. Asynchronous exceptions preserve the full architectural state in `arm64_exception_frame_t` instead.
 
@@ -169,8 +195,7 @@ The current scheduler is sufficient for basic input drivers and a larger userspa
 - wait queues and event channels,
 - preemption-disable counters for safe kernel preemption,
 - sleep deadlines,
-- dynamic priorities,
-- multiple processors and per-CPU scheduler state,
+- multiple processors and per-CPU scheduler state (MLFQ state is currently per-processor already, but only one processor exists),
 - inter-processor reschedule interrupts,
 - load balancing,
-- richer policy above the fixed-priority run queue.
+- MLFQ refinements: per-level time-slice accounting instead of per-level quantum length alone, and a configurable level count/boost interval instead of the fixed constants in `sched.c`.
