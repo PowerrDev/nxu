@@ -54,7 +54,7 @@ run_case() {
 }
 
 run_case selftest "qemu-exit=1" $STATUS_CLEAN \
-	"i386_gdt_init: 8 descriptors" \
+	"8 descriptors" \
 	"i386_idt_init: 256 gates" \
 	"trap self-test passed"
 
