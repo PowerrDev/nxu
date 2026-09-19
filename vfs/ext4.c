@@ -2480,7 +2480,7 @@ static vfs_status_t ext4_journal_map_locked(
 		previous = physical;
 	}
 
-	kputs("NXUFilesystemDriver: journal blocks ");
+	kputs("IOFilesystemFamily: journal blocks ");
 	kputu64(blocks);
 	kputs(", physical runs ");
 	kputu64(runs);
@@ -2741,7 +2741,7 @@ void ext4_dump(void)
 		ext4_mount_data_t *data = g_ext4_mounts[index];
 		if (data == 0 || !data->active) continue;
 
-		kputs("NXUFilesystemDriver: mount ");
+		kputs("IOFilesystemFamily: mount ");
 		kputs(data->mount->m_path);
 		kputs(", block size: ");
 		kputu64(data->block_size);
@@ -2753,7 +2753,7 @@ void ext4_dump(void)
 		kputu64(data->inode_size);
 		kputc('\n');
 
-		kputs("NXUFilesystemDriver: features compat ");
+		kputs("IOFilesystemFamily: features compat ");
 		kputhex32(data->feature_compat);
 		kputs(", incompat ");
 		kputhex32(data->feature_incompat);
@@ -2761,18 +2761,18 @@ void ext4_dump(void)
 		kputhex32(data->feature_ro_compat);
 		kputc('\n');
 
-		kputs("NXUFilesystemDriver: resident vnodes: ");
+		kputs("IOFilesystemFamily: resident vnodes: ");
 		kputu64(data->node_count);
 		kputc('\n');
 
-		kputs("NXUFilesystemDriver: free blocks: ");
+		kputs("IOFilesystemFamily: free blocks: ");
 		kputu64(data->free_blocks_count);
 		kputs(", free inodes: ");
 		kputu64(data->free_inodes_count);
 		kputc('\n');
 
-		kputln("NXUFilesystemDriver: metadata checksums: CRC32C");
-		kputln("NXUFilesystemDriver: journal: JBD2 checksum-v3, ordered data");
+		kputln("IOFilesystemFamily: metadata checksums: CRC32C");
+		kputln("IOFilesystemFamily: journal: JBD2 checksum-v3, ordered data");
 		kputs("jbd2: commits: ");
 		kputu64(data->journal.commit_count);
 		kputs(", replays: ");

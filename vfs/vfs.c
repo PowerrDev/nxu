@@ -415,7 +415,7 @@ const char *vfs_status_name(vfs_status_t status)
 
 void vfs_dump(void)
 {
-	kputs("VirtualFilesystemDriver: filesystems: ");
+	kputs("IOVirtualFSDriver filesystems: ");
 	kputu64(g_filesystem_count);
 	kputs(", mounts: ");
 	kputu64(g_mount_count);
@@ -425,7 +425,7 @@ void vfs_dump(void)
 		mount_t mount = &g_mounts[index];
 		if (!mount->m_active) continue;
 
-		kputs("VirtualFilesystemDriver: mount ");
+		kputs("IOVirtualFSDriver mount ");
 		kputs(mount->m_path);
 		kputs(" type ");
 		kputs(mount->m_filesystem->fs_name);
