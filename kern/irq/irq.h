@@ -6,6 +6,15 @@
 
 #define IRQ_MAX_INTID 1019U
 
+/*
+ * On x86 the interrupt ID is the line of the legacy PIC pair, 0..15, and a
+ * line may be shared: irq_register() chains any number of handlers (up to a
+ * small fixed depth) on one intid, irq_dispatch() runs all of them and each
+ * handler checks its own device. Registering the identical handler and
+ * context twice on a line, or a full chain, fails. On arm64 an intid has a
+ * single owner, as documented below.
+ */
+
 typedef void (*irq_handler_t)(uint32_t intid, void *context);
 
 /*
