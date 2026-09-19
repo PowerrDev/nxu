@@ -39,6 +39,7 @@
 
 #include <kern/console/console.h>
 #include <mach/machine/barrier.h>
+#include <mach/machine/machine_routines.h>
 #include <mach/machine/timer.h>
 
 #include <stdbool.h>
@@ -394,6 +395,19 @@ static bool devices_selftest_block(void)
 	return ok;
 }
 
+static uint64_t devices_input_interrupts(void)
+{
+	uint64_t total = 0ULL;
+
+	for (uint32_t index = 0U; index < virtio_input_device_count(); index++) {
+		const virtio_input_device_t *device = virtio_input_device(index);
+
+		if (device != 0) total += device->irq_count;
+	}
+
+	return total;
+}
+
 static uint64_t devices_input_events(input_device_class_t device_class)
 {
 	uint64_t total = 0ULL;
@@ -442,16 +456,32 @@ static bool devices_selftest_input(void)
 
 	kprintf("i386_init_drivers_selftest: waiting for input events (%llu s)\n", (unsigned long long)wait_seconds);
 
+	/*
+	 * With handlers chained on the PIC lines the events must arrive by
+	 * interrupt: unmask the CPU and do not poll. Otherwise poll.
+	 */
+	bool by_interrupt = virtio_pci_irq_bound_count() != 0U;
+	uint64_t irq_state = ml_irq_save();
+
+	if (by_interrupt) {
+		ml_irq_enable();
+		kputln("i386_init_drivers_selftest: input delivered by interrupt");
+	} else {
+		kputln("i386_init_drivers_selftest: input delivered by polling");
+	}
+
 	uint64_t deadline = timer_get_microseconds() + wait_seconds * 1000000ULL;
 
 	while (timer_get_microseconds() < deadline) {
-		virtio_input_service();
+		if (!by_interrupt) virtio_input_service();
 
 		if (devices_input_events(INPUT_DEVICE_KEYBOARD) != 0ULL && devices_input_events(INPUT_DEVICE_MOUSE) != 0ULL) {
+			ml_irq_restore(irq_state);
 			kprintf(
-				"i386_init_drivers_selftest: received %llu keyboard and %llu mouse event(s), %u queued for userspace\n",
+				"i386_init_drivers_selftest: received %llu keyboard and %llu mouse event(s), %llu interrupt(s), %u queued for userspace\n",
 				(unsigned long long)devices_input_events(INPUT_DEVICE_KEYBOARD),
 				(unsigned long long)devices_input_events(INPUT_DEVICE_MOUSE),
+				(unsigned long long)devices_input_interrupts(),
 				input_pending_count()
 			);
 			return true;
@@ -460,6 +490,7 @@ static bool devices_selftest_input(void)
 		ml_cpu_relax();
 	}
 
+	ml_irq_restore(irq_state);
 	kputln("i386_init_drivers_selftest: FAIL timed out waiting for input events");
 	return false;
 }

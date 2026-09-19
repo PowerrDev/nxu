@@ -201,51 +201,71 @@ verify no-devices "$STATUS" $STATUS_CLEAN "$OUTPUT" \
 
 # ---- input: events injected through the QEMU monitor reach the drivers -------
 
-DISK=$WORK/input.img
-make_disk "$DISK"
-SERIAL=$WORK/input.serial
-MONITOR=$WORK/monitor.sock
-: > "$SERIAL"
-
-watchdog "$TIMEOUT" qemu-system-i386 -M pc \
-	-kernel "$KERNEL" -m 512M \
-	-display none -serial file:"$SERIAL" -monitor unix:"$MONITOR",server,nowait -no-reboot \
-	-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
-	-drive if=none,format=raw,file="$DISK",id=d0 \
-	"${DEVICE_FLAGS[@]}" \
-	-append "test=drivers qemu-exit=1 expect-input=2 input-wait=20" < /dev/null > /dev/null 2>&1 &
-QEMU_PID=$!
-
-# Wait for the guest to say it is polling, then inject a key press and mouse motion.
-waited=0
-while ! grep -qF "waiting for input events" "$SERIAL" 2> /dev/null; do
-	sleep 0.2
-	waited=$((waited + 1))
-	if [ "$waited" -gt 100 ] || ! kill -0 $QEMU_PID 2> /dev/null; then break; fi
-done
-
 monitor_send() {
 	# The monitor answers on the same socket; give it a moment before closing.
 	(printf '%s\n' "$1"; sleep 0.5) | nc -U "$MONITOR" > /dev/null 2>&1
 }
 
-# Keep injecting until the guest reports (it needs both classes of event).
-for attempt in 1 2 3 4 5 6 7 8; do
-	if grep -qF "received" "$SERIAL" 2> /dev/null; then break; fi
-	monitor_send "sendkey a"
-	monitor_send "mouse_move 5 5"
-	sleep 0.3
-done
+# input_case <name> <extra boot args>
+input_case() {
+	local name=$1 extra=$2 waited=0 attempt
 
-wait $QEMU_PID
-STATUS=$?
-OUTPUT=$(cat "$SERIAL")
+	DISK=$WORK/$name.img
+	make_disk "$DISK"
+	SERIAL=$WORK/$name.serial
+	MONITOR=$WORK/$name.sock
+	: > "$SERIAL"
 
-verify input-events "$STATUS" $STATUS_CLEAN "$OUTPUT" \
+	watchdog "$TIMEOUT" qemu-system-i386 -M pc \
+		-kernel "$KERNEL" -m 512M \
+		-display none -serial file:"$SERIAL" -monitor unix:"$MONITOR",server,nowait -no-reboot \
+		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+		-drive if=none,format=raw,file="$DISK",id=d0 \
+		"${DEVICE_FLAGS[@]}" \
+		-append "test=drivers qemu-exit=1 expect-input=2 input-wait=20 $extra" < /dev/null > /dev/null 2>&1 &
+	QEMU_PID=$!
+
+	# Wait for the guest to say it is waiting, then inject a key press and mouse motion.
+	while ! grep -qF "waiting for input events" "$SERIAL" 2> /dev/null; do
+		sleep 0.2
+		waited=$((waited + 1))
+		if [ "$waited" -gt 100 ] || ! kill -0 $QEMU_PID 2> /dev/null; then break; fi
+	done
+
+	# Keep injecting until the guest reports (it needs both classes of event).
+	for attempt in 1 2 3 4 5 6 7 8; do
+		if grep -qF "received" "$SERIAL" 2> /dev/null; then break; fi
+		monitor_send "sendkey a"
+		monitor_send "mouse_move 5 5"
+		sleep 0.3
+	done
+
+	wait $QEMU_PID
+	STATUS=$?
+	OUTPUT=$(cat "$SERIAL")
+}
+
+input_case input-poll ""
+verify input-poll "$STATUS" $STATUS_CLEAN "$OUTPUT" \
 	"waiting for input events" \
 	"keyboard and" \
 	"mouse event(s)" \
 	"drivers self-test passed"
+
+# With virtio-irq=1 the events arrive by interrupt when the interrupts area is
+# linked in (irq_register chains, the PIC line is unmasked), and by polling
+# when it is not; either way the events must arrive.
+input_case input-irq "virtio-irq=1"
+verify input-irq "$STATUS" $STATUS_CLEAN "$OUTPUT" \
+	"VirtIO interrupts enabled" \
+	"mouse event(s)" \
+	"drivers self-test passed"
+
+if printf '%s\n' "$OUTPUT" | grep -qF "input delivered by interrupt"; then
+	echo "      (input-irq: events were delivered by PIC interrupt)"
+else
+	echo "      (input-irq: no interrupt path linked, events were polled)"
+fi
 
 echo
 printf '%s case(s), %s failure(s)\n' "$count" "$failures"

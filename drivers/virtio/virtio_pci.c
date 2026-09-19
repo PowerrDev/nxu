@@ -66,6 +66,7 @@
 #define VIRTIO_PCI_RESET_SPINS 1000000U
 
 static bool g_virtio_pci_irq_mode;
+static uint32_t g_virtio_pci_irq_bound;
 
 void virtio_pci_set_irq_mode(bool enabled)
 {
@@ -75,6 +76,11 @@ void virtio_pci_set_irq_mode(bool enabled)
 bool virtio_pci_irq_mode(void)
 {
 	return g_virtio_pci_irq_mode;
+}
+
+uint32_t virtio_pci_irq_bound_count(void)
+{
+	return g_virtio_pci_irq_bound;
 }
 
 /*
@@ -118,6 +124,7 @@ static bool virtio_pci_irq_attach(virtio_device_t *device, irq_handler_t handler
 
 	if (pic_unmask != 0) pic_unmask(line);
 
+	g_virtio_pci_irq_bound++;
 	kprintf("virtio_pci_irq_attach: handler chained on IRQ %u\n", (unsigned int)line);
 	return true;
 }

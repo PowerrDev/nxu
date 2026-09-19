@@ -53,4 +53,7 @@ bool virtio_pci_register(void);
 void virtio_pci_set_irq_mode(bool enabled);
 bool virtio_pci_irq_mode(void);
 
+/* How many class-driver handlers actually got chained onto a PIC line. */
+uint32_t virtio_pci_irq_bound_count(void);
+
 #endif
