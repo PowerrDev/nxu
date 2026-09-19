@@ -184,6 +184,19 @@ thread_t run_queue_peek(const run_queue_t *runq)
 }
 
 /*
+ * run_queue_dequeue_priority
+ */
+thread_t run_queue_dequeue_priority(run_queue_t *runq, uint16_t priority)
+{
+	if (runq == 0 || !run_queue_priority_valid(priority)) return 0;
+
+	thread_t thread = runq->queues[priority].head;
+
+	if (thread == 0 || !run_queue_remove(runq, thread)) return 0;
+	return thread;
+}
+
+/*
  * run_queue_validate
  */
 bool run_queue_validate(const run_queue_t *runq)

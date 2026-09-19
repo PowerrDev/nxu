@@ -72,6 +72,16 @@ bool run_queue_remove(run_queue_t *runq, thread_t thread);
 thread_t run_queue_peek(const run_queue_t *runq);
 
 /*
+ * run_queue_dequeue_priority
+ *
+ * Remove and return the head thread queued at exactly one priority bucket,
+ * independent of runq->highq. Feedback policies use this to drain one
+ * specific level (for example, everything below the top MLFQ queue during a
+ * priority boost) without disturbing threads at other priorities.
+ */
+thread_t run_queue_dequeue_priority(run_queue_t *runq, uint16_t priority);
+
+/*
  * run_queue_validate
  *
  * Validate queue linkage, bitmap state, priority placement and accounting.
