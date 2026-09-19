@@ -24,7 +24,7 @@ run_case() {
 	local name=$1 append=$2 want=$3 output status pattern ok=1
 	shift 3
 
-	output=$(perl -e "alarm $TIMEOUT; exec @ARGV" qemu-system-i386 \
+	output=$(perl "$(dirname "$0")/qemu_watchdog.pl" "$TIMEOUT" qemu-system-i386 \
 		-kernel "$KERNEL" -m 128M \
 		-display none -serial stdio -monitor none -no-reboot \
 		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \

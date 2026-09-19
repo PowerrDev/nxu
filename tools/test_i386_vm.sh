@@ -28,7 +28,7 @@ run_case() {
 
 	local attempt
 	for attempt in 1 2; do
-		output=$(perl -e "alarm $TIMEOUT; exec @ARGV" qemu-system-i386 \
+		output=$(perl "$(dirname "$0")/qemu_watchdog.pl" "$TIMEOUT" qemu-system-i386 \
 			-kernel "$KERNEL" -m "$ram" \
 			-display none -serial stdio -monitor none -no-reboot \
 			-device isa-debug-exit,iobase=0xf4,iosize=0x04 \

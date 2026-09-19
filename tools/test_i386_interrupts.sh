@@ -30,7 +30,7 @@ run_once() {
 	local append=$1 want=$2 status pattern ok=0
 	shift 2
 
-	output=$(perl -e "alarm $TIMEOUT; exec @ARGV" qemu-system-i386 \
+	output=$(perl "$(dirname "$0")/qemu_watchdog.pl" "$TIMEOUT" qemu-system-i386 \
 		-kernel "$KERNEL" -m 128M \
 		-display none -serial stdio -monitor none -no-reboot \
 		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
