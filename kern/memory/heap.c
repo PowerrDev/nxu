@@ -516,7 +516,15 @@ heap_find_large_record(
 bool heap_init(void)
 {
 	if (g_heap.initialized) {
+#if defined(__i386__)
+		/*
+		 * On i386 the VM self-test brings the heap up on its own, so the
+		 * kernel phase finding it already running is not an error.
+		 */
+		return true;
+#else
 		return false;
+#endif
 	}
 
 	memset(&g_heap, 0, sizeof(g_heap));
