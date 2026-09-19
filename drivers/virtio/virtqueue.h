@@ -6,6 +6,9 @@
 
 #define VIRTQUEUE_MAX_SIZE 128U
 
+/* Largest ring a legacy device may impose (QEMU virtio-blk allows up to 1024). */
+#define VIRTQUEUE_LEGACY_MAX_SIZE 1024U
+
 #define VIRTQ_DESC_F_NEXT 1U
 #define VIRTQ_DESC_F_WRITE 2U
 #define VIRTQ_DESC_F_INDIRECT 4U
@@ -28,6 +31,7 @@ typedef struct {
 
 	uint64_t storage_physical;
 	void *storage_virtual;
+	uint32_t storage_pages;
 
 	virtq_desc_t *descriptors;
 	volatile uint16_t *available_flags;
@@ -63,11 +67,27 @@ typedef struct {
 bool virtqueue_init(virtqueue_t *queue, uint16_t size);
 
 /*
+ * virtqueue_init_legacy:
+ *
+ * Allocate and initialize one split virtqueue in the legacy (pre-1.0) layout
+ * that a legacy VirtIO-PCI device expects: descriptor table and available ring
+ * first, the used ring starting on the next 4096-byte boundary. The ring size
+ * is dictated by the device, not chosen by the driver, and may be larger than
+ * VIRTQUEUE_MAX_SIZE; the rings are then sized for the device but only the
+ * first VIRTQUEUE_MAX_SIZE descriptors are ever handed out.
+ *
+ * The storage is a run of physically contiguous, page-aligned pages (two or
+ * more), recorded in storage_pages. Returns true when the queue is ready for
+ * transport publication.
+ */
+bool virtqueue_init_legacy(virtqueue_t *queue, uint16_t size);
+
+/*
  * virtqueue_destroy:
  *
  * Release queue storage after the queue is no longer visible to a device.
  *
- * Returns true when the backing page was released.
+ * Returns true when the backing page(s) were released.
  */
 bool virtqueue_destroy(virtqueue_t *queue);
 
@@ -92,7 +112,7 @@ bool virtqueue_free_descriptor(virtqueue_t *queue, uint16_t index);
  * virtqueue_submit:
  *
  * Publish one descriptor head to the available ring. Ring stores are ordered
- * before the available index update with an AArch64 DMA barrier.
+ * before the available index update with the machine's DMA write barrier.
  *
  * The caller notifies the transport separately.
  */
