@@ -17,6 +17,7 @@
 #include <stdbool.h>
 
 static bool g_ipc_initialized;
+static ipc_port_t g_bootstrap_registry_port;
 
 /*
  * Routine:     ipc_init
@@ -40,4 +41,17 @@ bool
 ipc_initialized(void)
 {
 	return g_ipc_initialized;
+}
+
+ipc_port_t
+ipc_bootstrap_registry_port(void)
+{
+	return g_bootstrap_registry_port;
+}
+
+void
+ipc_set_bootstrap_registry_port(ipc_port_t port)
+{
+	if (g_bootstrap_registry_port != IPC_PORT_NULL) ipc_port_release(g_bootstrap_registry_port);
+	g_bootstrap_registry_port = port;
 }
