@@ -3,7 +3,7 @@
 #include <kern/boot/boot_mode.h>
 #include <kern/boot/splash.h>
 #include <kern/boot/nvram.h>
-#include <kern/exec/elf.h>
+#include <kern/loader/elf.h>
 #include <mach/arm64/cache.h>
 #include <mach/arm64/exception.h>
 #include <mach/arm64/gic.h>

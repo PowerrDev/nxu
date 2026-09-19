@@ -11,7 +11,7 @@
 #include <drivers/virtio/virtio_input.h>
 #include <drivers/video/display.h>
 #include <kern/console/console.h>
-#include <kern/exec/elf.h>
+#include <kern/loader/elf.h>
 #include <kern/logging/version.h>
 #include <kern/process/proc.h>
 #include <kern/sched_prism/sched.h>
