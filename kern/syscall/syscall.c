@@ -11,12 +11,24 @@
 #include <drivers/virtio/virtio_input.h>
 #include <drivers/video/display.h>
 #include <kern/console/console.h>
+#include <kern/console/display_owner.h>
 #include <kern/loader/elf.h>
+#include <kern/ipc/ipc_init.h>
+#include <kern/ipc/ipc_kmsg.h>
+#include <kern/ipc/ipc_port.h>
+#include <kern/ipc/ipc_space.h>
+#include <kern/ipc/ipc_types.h>
+#include <kern/ipc/shm_registry.h>
+#include <kern/ipc/socket.h>
 #include <kern/logging/version.h>
+#include <kern/memory/heap.h>
 #include <kern/process/proc.h>
+#include <kern/process/thread.h>
 #include <kern/sched_prism/sched.h>
 #include <vfs/vfs.h>
 #include <vm/user_copy.h>
+#include <vm/vm_map.h>
+#include <vm/vm_shm.h>
 
 #include <stdint.h>
 #include <string.h>
@@ -60,6 +72,24 @@ syscall_vfs_error(vfs_status_t status)
 	case VFS_STATUS_NOT_SUPPORTED: return SYSCALL_ERROR_NOT_SUPPORTED;
 	case VFS_STATUS_INVALID: return SYSCALL_ERROR_INVALID_ARGUMENT;
 	case VFS_STATUS_BUSY: return SYSCALL_ERROR_BUSY;
+	default: return SYSCALL_ERROR_IO;
+	}
+}
+
+static syscall_error_t
+syscall_ipc_error(ipc_return_t status)
+{
+	switch (status) {
+	case IPC_INVALID_ARGUMENT: return SYSCALL_ERROR_INVALID_ARGUMENT;
+	case IPC_NO_MEMORY: return SYSCALL_ERROR_NO_MEMORY;
+	case IPC_MESSAGE_TOO_LARGE: return SYSCALL_ERROR_INVALID_ARGUMENT;
+	case IPC_PORT_INACTIVE: return SYSCALL_ERROR_NOT_FOUND;
+	case IPC_QUEUE_EMPTY: return SYSCALL_ERROR_AGAIN;
+	case IPC_QUEUE_FULL: return SYSCALL_ERROR_BUSY;
+	case IPC_BUFFER_TOO_SMALL: return SYSCALL_ERROR_INVALID_ARGUMENT;
+	case IPC_OVERFLOW: return SYSCALL_ERROR_INVALID_ARGUMENT;
+	case IPC_SPACE_FULL: return SYSCALL_ERROR_NO_SPACE;
+	case IPC_NAME_INVALID: return SYSCALL_ERROR_NOT_FOUND;
 	default: return SYSCALL_ERROR_IO;
 	}
 }
@@ -162,7 +192,7 @@ syscall_spawn(uint64_t user_path, uint64_t user_name)
 	if (!vm_copy_string_from_user(name, user_name, sizeof(name))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 
 	proc_t child;
-	loader_status_t status = exec_spawn(current_proc(), path, name, &child);
+	loader_status_t status = loader_spawn(current_proc(), path, name, &child);
 	if (status == LOADER_STATUS_NOT_FOUND) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
 	if (status == LOADER_STATUS_NO_MEMORY) return syscall_error(SYSCALL_ERROR_NO_MEMORY);
 	if (status != LOADER_STATUS_OK || child == 0) return syscall_error(SYSCALL_ERROR_IO);
@@ -460,7 +490,7 @@ syscall_recovery_block_verify(uint64_t device_index)
 static syscall_result_t
 syscall_recovery_display_info(uint64_t user_info)
 {
-	if (!boot_mode_is_triage_os()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+	if (!boot_mode_is_triage_os() && !display_owner_is(proc_selfpid())) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
 	display_device_t *display = display_primary();
 	if (display == 0 || display->framebuffer == 0) return syscall_error(SYSCALL_ERROR_IO);
 
@@ -478,7 +508,7 @@ syscall_recovery_display_info(uint64_t user_info)
 static syscall_result_t
 syscall_recovery_present(uint64_t user_pixels, uint64_t stride, uint64_t x, uint64_t y, uint64_t width, uint64_t height)
 {
-	if (!boot_mode_is_triage_os()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+	if (!boot_mode_is_triage_os() && !display_owner_is(proc_selfpid())) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
 	display_device_t *display = display_primary();
 	if (display == 0 || display->framebuffer == 0) return syscall_error(SYSCALL_ERROR_IO);
 	if (stride < display->width || x >= display->width || y >= display->height || width == 0ULL || height == 0ULL) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
@@ -499,7 +529,7 @@ syscall_recovery_present(uint64_t user_pixels, uint64_t stride, uint64_t x, uint
 static syscall_result_t
 syscall_recovery_input(uint64_t user_event)
 {
-	if (!boot_mode_is_triage_os()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+	if (!boot_mode_is_triage_os() && !display_owner_is(proc_selfpid())) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
 
 	/*
 	 * Drain already-normalized input before polling the VirtIO transports. A
@@ -583,6 +613,414 @@ syscall_get_version(uint64_t user_buffer, uint64_t capacity)
 	return syscall_return(SYSCALL_VERSION_LENGTH);
 }
 
+static syscall_result_t
+syscall_ipc_port_allocate(void)
+{
+	ipc_port_t port;
+	ipc_return_t status = ipc_port_alloc(&port);
+	if (status != IPC_SUCCESS) return syscall_error(syscall_ipc_error(status));
+
+	uint32_t name;
+	status = ipc_space_insert_port(&current_proc()->p_ipc, port, &name);
+	if (status != IPC_SUCCESS) {
+		ipc_port_release(port);
+		return syscall_error(syscall_ipc_error(status));
+	}
+
+	return syscall_return(name);
+}
+
+static syscall_result_t
+syscall_ipc_port_deallocate(uint64_t name)
+{
+	if (name == 0ULL || name > IPC_SPACE_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
+	ipc_port_t port;
+	ipc_return_t status = ipc_space_remove(&current_proc()->p_ipc, (uint32_t)name, &port);
+	if (status != IPC_SUCCESS) return syscall_error(syscall_ipc_error(status));
+
+	ipc_port_release(port);
+	return syscall_return(0ULL);
+}
+
+static syscall_result_t
+syscall_ipc_bootstrap_port(void)
+{
+	proc_t proc = current_proc();
+	if (proc->p_ipc_bootstrap_name == IPC_SPACE_NAME_INVALID) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+	return syscall_return(proc->p_ipc_bootstrap_name);
+}
+
+/*
+ * xfer_name, when not IPC_SPACE_NAME_INVALID, must be a name the caller
+ * currently holds; whatever it refers to is transferred to the receiver on
+ * a successful ipc_receive, exactly like Mach right passing but limited to
+ * one transferable name per message.
+ */
+static syscall_result_t
+syscall_ipc_send(uint64_t dest_name, uint64_t user_buffer, uint64_t length, uint64_t xfer_name)
+{
+	if (dest_name == 0ULL || dest_name > IPC_SPACE_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	if (length == 0ULL || length > IPC_KMSG_MAX_INLINE_SIZE) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	if (xfer_name > IPC_SPACE_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
+	/* Heap, not stack: syscall handlers run on a 16 KiB kernel stack (see
+	 * THREAD_KERNEL_STACK_SIZE) and IPC_KMSG_MAX_INLINE_SIZE is 4 KiB. */
+	void *buffer = kmalloc(length);
+	if (buffer == 0) return syscall_error(SYSCALL_ERROR_NO_MEMORY);
+
+	if (!vm_copy_from_user(buffer, user_buffer, length)) {
+		(void)kfree(buffer);
+		return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	}
+
+	proc_t proc = current_proc();
+
+	ipc_port_t xfer_port = IPC_PORT_NULL;
+	if (xfer_name != IPC_SPACE_NAME_INVALID) {
+		ipc_return_t lookup_status = ipc_space_lookup_port(&proc->p_ipc, (uint32_t)xfer_name, &xfer_port);
+		if (lookup_status != IPC_SUCCESS) {
+			(void)kfree(buffer);
+			return syscall_error(syscall_ipc_error(lookup_status));
+		}
+	}
+
+	ipc_port_t dest_port;
+	ipc_return_t status = ipc_space_lookup_port(&proc->p_ipc, (uint32_t)dest_name, &dest_port);
+	if (status != IPC_SUCCESS) {
+		if (xfer_port != IPC_PORT_NULL) ipc_port_release(xfer_port);
+		(void)kfree(buffer);
+		return syscall_error(syscall_ipc_error(status));
+	}
+
+	ipc_kmsg_t kmsg;
+	status = ipc_kmsg_alloc(buffer, length, xfer_port, &kmsg);
+	(void)kfree(buffer);
+	if (status != IPC_SUCCESS) {
+		if (xfer_port != IPC_PORT_NULL) ipc_port_release(xfer_port);
+		ipc_port_release(dest_port);
+		return syscall_error(syscall_ipc_error(status));
+	}
+	/* xfer_port's reference (if any) now belongs to kmsg. */
+
+	status = ipc_port_enqueue(dest_port, kmsg);
+	ipc_port_release(dest_port);
+	if (status != IPC_SUCCESS) {
+		ipc_kmsg_free(kmsg);
+		return syscall_error(syscall_ipc_error(status));
+	}
+
+	return syscall_return(0ULL);
+}
+
+/*
+ * Returns the received message's size on success (matching syscall_read's
+ * convention), or SYSCALL_ERROR_AGAIN if port_name's queue is empty --
+ * every event loop using this is expected to poll it in its own
+ * nxu_yield() loop, the same pattern bootd already uses for nxu_waitpid.
+ * user_out_xfer_name/user_out_xfer_type may be 0 to ignore a transfer.
+ */
+static syscall_result_t
+syscall_ipc_receive(uint64_t port_name, uint64_t user_buffer, uint64_t capacity, uint64_t user_out_xfer_name, uint64_t user_out_xfer_type)
+{
+	if (port_name == 0ULL || port_name > IPC_SPACE_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
+	proc_t proc = current_proc();
+
+	ipc_port_t port;
+	ipc_return_t status = ipc_space_lookup_port(&proc->p_ipc, (uint32_t)port_name, &port);
+	if (status != IPC_SUCCESS) return syscall_error(syscall_ipc_error(status));
+
+	ipc_kmsg_t kmsg;
+	status = ipc_port_dequeue(port, &kmsg);
+	ipc_port_release(port);
+	if (status != IPC_SUCCESS) return syscall_error(syscall_ipc_error(status));
+
+	if ((uint64_t)kmsg->ikm_size > capacity) {
+		/* The message is already off the queue and there is no way to put
+		 * it back; a too-small buffer is a caller bug (NXPC protocols are
+		 * fixed-size messages, so a conforming client never hits this) and
+		 * the message is lost rather than silently truncated. */
+		ipc_kmsg_free(kmsg);
+		return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	}
+
+	if (kmsg->ikm_size != 0ULL && !vm_copy_to_user(user_buffer, kmsg->ikm_data, kmsg->ikm_size)) {
+		ipc_kmsg_free(kmsg);
+		return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	}
+
+	uint32_t xfer_name = IPC_SPACE_NAME_INVALID;
+	uint32_t xfer_type = 0U;
+
+	if (kmsg->ikm_xfer_type == IPC_KMSG_XFER_PORT) {
+		ipc_return_t insert_status = ipc_space_insert_port(&proc->p_ipc, kmsg->ikm_xfer_port, &xfer_name);
+		if (insert_status == IPC_SUCCESS) {
+			/* Ownership moved into proc->p_ipc; ipc_kmsg_free below must not
+			 * also release it. */
+			kmsg->ikm_xfer_type = IPC_KMSG_XFER_NONE;
+			kmsg->ikm_xfer_port = IPC_PORT_NULL;
+			xfer_type = (uint32_t)IPC_KMSG_XFER_PORT;
+		}
+		/* A full receiver space silently drops the transfer (freed below
+		 * with the rest of the message) rather than failing the whole
+		 * receive -- the payload the caller asked for is still valid. */
+	}
+
+	uint64_t received_size = (uint64_t)kmsg->ikm_size;
+	ipc_kmsg_free(kmsg);
+
+	if (user_out_xfer_name != 0ULL && !vm_copy_to_user(user_out_xfer_name, &xfer_name, sizeof(xfer_name))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	if (user_out_xfer_type != 0ULL && !vm_copy_to_user(user_out_xfer_type, &xfer_type, sizeof(xfer_type))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
+	return syscall_return(received_size);
+}
+
+static syscall_result_t
+syscall_ipc_register_bootstrap(uint64_t port_name)
+{
+	if (proc_selfpid() != 1U) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+	if (port_name == 0ULL || port_name > IPC_SPACE_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
+	ipc_port_t port;
+	ipc_return_t status = ipc_space_lookup_port(&current_proc()->p_ipc, (uint32_t)port_name, &port);
+	if (status != IPC_SUCCESS) return syscall_error(syscall_ipc_error(status));
+
+	ipc_set_bootstrap_registry_port(port);
+	return syscall_return(0ULL);
+}
+
+static syscall_result_t
+syscall_display_claim(void)
+{
+	return display_owner_claim(proc_selfpid()) ? syscall_return(0ULL) : syscall_error(SYSCALL_ERROR_BUSY);
+}
+
+static syscall_result_t
+syscall_shm_create(uint64_t size)
+{
+	if (size == 0ULL || size > VM_SHM_MAX_BYTES) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
+	vm_shm_region_t region;
+	if (!vm_shm_create(size, &region)) return syscall_error(SYSCALL_ERROR_NO_MEMORY);
+
+	uint32_t id;
+	if (!shm_registry_publish(region, &id)) {
+		vm_shm_release(region);
+		return syscall_error(SYSCALL_ERROR_NO_SPACE);
+	}
+
+	return syscall_return(id);
+}
+
+/*
+ * Maps the region registered under id into the caller's own address space.
+ * The handle reference shm_registry_attach hands back is intentionally
+ * never released afterward -- there is no unmap syscall yet (out of scope
+ * for this milestone) and no vm_address_space_destroy either, matching the
+ * existing "no address-space teardown on process exit" gap already
+ * documented in kern/tests/vm_shm_test.c.
+ */
+static syscall_result_t
+syscall_shm_map(uint64_t id)
+{
+	if (id == 0ULL || id > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
+	vm_shm_region_t region;
+	if (!shm_registry_attach((uint32_t)id, &region)) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+
+	proc_t proc = current_proc();
+	uint64_t va;
+	if (!vm_shm_map_into(proc_vm_map(proc), &proc->p_task.shm_next_va, region, VM_USER_PROTECTION_READ_WRITE, &va)) {
+		vm_shm_release(region);
+		return syscall_error(SYSCALL_ERROR_NO_MEMORY);
+	}
+
+	return syscall_return(va);
+}
+
+static bool
+syscall_mmap_protection(uint64_t prot_flags, vm_user_protection_t *protection)
+{
+	switch (prot_flags) {
+	case NXU_MMAP_PROT_READ_WRITE: *protection = VM_USER_PROTECTION_READ_WRITE; return true;
+	case NXU_MMAP_PROT_READ_ONLY: *protection = VM_USER_PROTECTION_READ_ONLY; return true;
+	case NXU_MMAP_PROT_READ_EXECUTE: *protection = VM_USER_PROTECTION_READ_EXECUTE; return true;
+	default: return false;
+	}
+}
+
+static syscall_result_t
+syscall_mmap(uint64_t size, uint64_t prot_flags)
+{
+	vm_user_protection_t protection;
+	if (!syscall_mmap_protection(prot_flags, &protection)) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
+	if (size == 0ULL || size > VM_MAP_MAX_BYTES) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
+	uint64_t va;
+	if (!vm_map_anon(proc_vm_map(current_proc()), size, protection, &va)) {
+		return syscall_error(SYSCALL_ERROR_NO_MEMORY);
+	}
+
+	return syscall_return(va);
+}
+
+static syscall_result_t
+syscall_munmap(uint64_t address, uint64_t size)
+{
+	if (size == 0ULL) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
+	if (!vm_map_free(proc_vm_map(current_proc()), address, size)) {
+		return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	}
+
+	return syscall_return(0ULL);
+}
+
+/*
+ * entry/arg follow pthread_create's shape: the new thread starts at entry
+ * with arg in its initial x0. stack is the initial SP -- one past the last
+ * valid byte, like kern/loader/elf.c's LOADER_USER_STACK_TOP -- and must fall
+ * inside a region the caller itself nxu_mmap'd, the only general-purpose
+ * way a user program can obtain a fresh stack today.
+ */
+static syscall_result_t
+syscall_thread_create(uint64_t entry, uint64_t stack, uint64_t arg)
+{
+	if (entry == 0ULL || stack == 0ULL || (stack & 0xFULL) != 0ULL) {
+		return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	}
+
+	proc_t proc = current_proc();
+
+	if (!vm_map_lookup(proc_vm_map(proc), stack - 1ULL, 0, 0)) {
+		return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	}
+
+	thread_t thread;
+	if (!thread_create(proc_task(proc), entry, stack, arg, &thread)) {
+		return syscall_error(SYSCALL_ERROR_NO_MEMORY);
+	}
+
+	if (!thread_stack_alloc(thread) || !sched_thread_start(thread)) {
+		thread_deallocate(thread);
+		return syscall_error(SYSCALL_ERROR_NO_MEMORY);
+	}
+
+	uint64_t tid = (uint64_t)thread_tid(thread);
+	thread_deallocate(thread);
+
+	return syscall_return(tid);
+}
+
+/*
+ * If the calling thread is the last one active in its task, this is
+ * equivalent to syscall_exit -- routed through the very same path rather
+ * than reimplementing fd-table/ipc-space teardown here. Otherwise only this
+ * one thread is torn down; sched_exit_current() never returns.
+ */
+static syscall_result_t
+syscall_thread_exit(uint64_t status)
+{
+	task_t task = proc_task(current_proc());
+
+	if (task_active_thread_count(task) <= 1U) {
+		return syscall_exit(status);
+	}
+
+	if (!sched_thread_terminate(current_thread())) {
+		return syscall_error(SYSCALL_ERROR_IO);
+	}
+
+	sched_exit_current();
+}
+
+static syscall_result_t
+syscall_thread_self(void)
+{
+	return syscall_return((uint64_t)thread_tid(current_thread()));
+}
+
+#define SYSCALL_SOCKET_NAME_BUFFER_SIZE (SOCKET_NAME_MAX + 1U)
+
+/*
+ * Installs socket in a fresh file object/descriptor, releasing socket on
+ * any failure so the caller never has to -- mirrors how syscall_open's
+ * vfs_open already folds file_alloc + filedesc_install into one step.
+ */
+static syscall_result_t
+syscall_socket_install(socket_t socket)
+{
+	file_t file;
+	if (file_alloc_socket(socket, &file) != VFS_STATUS_OK) {
+		socket_close(socket);
+		return syscall_error(SYSCALL_ERROR_NO_MEMORY);
+	}
+
+	uint32_t descriptor;
+	if (filedesc_install(&current_proc()->p_fd, file, &descriptor) != VFS_STATUS_OK) {
+		file_rele(file);
+		return syscall_error(SYSCALL_ERROR_NO_SPACE);
+	}
+
+	return syscall_return(descriptor);
+}
+
+static syscall_result_t
+syscall_socket_listen(uint64_t user_name, uint64_t backlog)
+{
+	char name[SYSCALL_SOCKET_NAME_BUFFER_SIZE];
+	if (!vm_copy_string_from_user(name, user_name, sizeof(name))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
+	socket_t socket;
+	if (!socket_create(&socket)) return syscall_error(SYSCALL_ERROR_NO_MEMORY);
+
+	if (!socket_listen(socket, name, (uint32_t)backlog)) {
+		socket_close(socket);
+		return syscall_error(SYSCALL_ERROR_EXISTS);
+	}
+
+	return syscall_socket_install(socket);
+}
+
+static syscall_result_t
+syscall_socket_connect(uint64_t user_name)
+{
+	char name[SYSCALL_SOCKET_NAME_BUFFER_SIZE];
+	if (!vm_copy_string_from_user(name, user_name, sizeof(name))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
+	socket_t socket;
+	if (!socket_connect(name, true, &socket)) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+
+	return syscall_socket_install(socket);
+}
+
+static syscall_result_t
+syscall_socket_accept(uint64_t listen_descriptor)
+{
+	if (listen_descriptor < VFS_FD_FIRST_FILE || listen_descriptor >= VFS_FD_MAX) return syscall_error(SYSCALL_ERROR_BAD_FD);
+
+	file_t listener;
+	if (filedesc_get(&current_proc()->p_fd, (uint32_t)listen_descriptor, &listener) != VFS_STATUS_OK) {
+		return syscall_error(SYSCALL_ERROR_BAD_FD);
+	}
+
+	if (listener->f_type != FILE_TYPE_SOCKET) {
+		file_rele(listener);
+		return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	}
+
+	socket_t socket;
+	bool accepted = socket_accept(listener->f_socket, true, &socket);
+
+	file_rele(listener);
+
+	if (!accepted) return syscall_error(SYSCALL_ERROR_IO);
+
+	return syscall_socket_install(socket);
+}
+
 syscall_result_t
 syscall_dispatch(const syscall_request_t *request)
 {
@@ -621,6 +1059,23 @@ syscall_dispatch(const syscall_request_t *request)
 	case SYSCALL_RECOVERY_BLOCK_PARTITION_INFO: return syscall_recovery_block_partition_info(request->arguments[0], request->arguments[1], request->arguments[2]);
 	case SYSCALL_RECOVERY_BLOCK_HEALTH_INFO: return syscall_recovery_block_health_info(request->arguments[0], request->arguments[1]);
 	case SYSCALL_RECOVERY_BLOCK_VERIFY: return syscall_recovery_block_verify(request->arguments[0]);
+	case SYSCALL_IPC_PORT_ALLOCATE: return syscall_ipc_port_allocate();
+	case SYSCALL_IPC_PORT_DEALLOCATE: return syscall_ipc_port_deallocate(request->arguments[0]);
+	case SYSCALL_IPC_BOOTSTRAP_PORT: return syscall_ipc_bootstrap_port();
+	case SYSCALL_IPC_SEND: return syscall_ipc_send(request->arguments[0], request->arguments[1], request->arguments[2], request->arguments[3]);
+	case SYSCALL_IPC_RECEIVE: return syscall_ipc_receive(request->arguments[0], request->arguments[1], request->arguments[2], request->arguments[3], request->arguments[4]);
+	case SYSCALL_IPC_REGISTER_BOOTSTRAP: return syscall_ipc_register_bootstrap(request->arguments[0]);
+	case SYSCALL_DISPLAY_CLAIM: return syscall_display_claim();
+	case SYSCALL_SHM_CREATE: return syscall_shm_create(request->arguments[0]);
+	case SYSCALL_SHM_MAP: return syscall_shm_map(request->arguments[0]);
+	case SYSCALL_MMAP: return syscall_mmap(request->arguments[0], request->arguments[1]);
+	case SYSCALL_MUNMAP: return syscall_munmap(request->arguments[0], request->arguments[1]);
+	case SYSCALL_THREAD_CREATE: return syscall_thread_create(request->arguments[0], request->arguments[1], request->arguments[2]);
+	case SYSCALL_THREAD_EXIT: return syscall_thread_exit(request->arguments[0]);
+	case SYSCALL_THREAD_SELF: return syscall_thread_self();
+	case SYSCALL_SOCKET_LISTEN: return syscall_socket_listen(request->arguments[0], request->arguments[1]);
+	case SYSCALL_SOCKET_CONNECT: return syscall_socket_connect(request->arguments[0]);
+	case SYSCALL_SOCKET_ACCEPT: return syscall_socket_accept(request->arguments[0]);
 	default: return syscall_error(SYSCALL_ERROR_UNKNOWN);
 	}
 }
