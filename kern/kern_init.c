@@ -49,6 +49,7 @@
 #include <vm/user_copy.h>
 #include <vm/vm_kern.h>
 #include <vm/vmm.h>
+#include <vfs/btrfs/btrfs_selftest.h>
 #include <vfs/ext4.h>
 #include <vfs/ramfs.h>
 #include <vfs/vfs.h>
@@ -1855,6 +1856,26 @@ void kern_init_higher_half(void)
 
 		ext4_dump();
 		vfs_dump();
+
+		/*
+		 * Boot argument only ("-append btrfs-test=<spec>"): mount Btrfs
+		 * fixtures attached as extra virtio-blk devices after the root disk
+		 * and check them (vfs/btrfs/btrfs_selftest.h). Absent, this does
+		 * nothing: the filesystem is not even registered.
+		 */
+		char btrfs_spec[256];
+
+		if (boot_arg_value("btrfs-test", btrfs_spec, sizeof(btrfs_spec))) {
+			bool btrfs_ok = btrfs_selftest_run(btrfs_spec);
+
+			kputs(btrfs_ok ? "btrfs-test: passed; powering off (test build, no bootd)\n" : "btrfs-test: FAILED; powering off\n");
+
+			/* PSCI SYSTEM_OFF; the test script also stops QEMU on the result line. */
+			register uint64_t function __asm__("x0") = 0x84000008ULL;
+			__asm__ volatile("hvc #0" : "+r"(function) : : "memory");
+
+			for (;;) __asm__ volatile("wfe");
+		}
 
 #if defined(NXU_JOURNAL_CRASH_TEST)
 		kern_run_jbd2_crash_test();

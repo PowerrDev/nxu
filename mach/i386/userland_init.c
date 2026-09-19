@@ -29,6 +29,7 @@
 #include <kern/tests/ipc_process_test.h>
 #include <kern/tests/socket_process_test.h>
 #include <kern/tests/thread_process_test.h>
+#include <vfs/btrfs/btrfs_selftest.h>
 #include <vfs/vfs.h>
 
 #include <stdbool.h>
@@ -108,6 +109,20 @@ bool i386_init_userland(const i386_boot_info_t *boot)
 
 		kprintf("i386_init_userland: fs-test %s %s\n", fs_mode, fs_ok ? "passed" : "FAILED");
 		return fs_ok;
+	}
+
+	/*
+	 * "btrfs-test=<spec>[,<spec>...]": mount the Btrfs fixtures attached as
+	 * extra disks after the root disk and check them; see
+	 * vfs/btrfs/btrfs_selftest.h. Skips the userland launch like fs-test.
+	 */
+	char btrfs_spec[256];
+
+	if (i386_boot_arg("btrfs-test", btrfs_spec, sizeof(btrfs_spec))) {
+		bool btrfs_ok = btrfs_selftest_run(btrfs_spec);
+
+		kprintf("i386_init_userland: btrfs-test %s\n", btrfs_ok ? "passed" : "FAILED");
+		return btrfs_ok;
 	}
 
 	/* Same policy as arm64: prefer bootd, fall back to its recovery image. */
