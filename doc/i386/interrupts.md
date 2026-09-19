@@ -45,7 +45,9 @@ nest. The `intid` of `irq_register`/`irq_dispatch` is the PIC line, 0..15.
   and leaves IF clear. `timer_start_periodic` may be called again to change
   the rate; it resets the count and opens IRQ0. The IRQ0 handler counts the
   tick and then calls the weak `sched_tick()`. Ticks are counted, not time:
-  use `timer_get_microseconds()` for wall time.
+  use `timer_get_microseconds()` for wall time. The TSC is calibrated
+  against PIT channel 2 by keeping the shortest of eight ~5 ms countdowns,
+  since a stalled host can only make a sample longer.
 * **Unclaimed interrupts** (no handler chained) make `i386_trap_irq` return
   false, which the trap layer turns into a fatal report.
 
