@@ -32,6 +32,8 @@ arm64_enter_higher_half:
  * x0: first EL0 instruction
  * x1: initial EL0 stack pointer
  * x2: initial SPSR_EL1 value
+ * x3: initial EL0 x0 (the pthread-create-style argument a spawned thread's
+ *     entry function receives; 0 for a process's own initial thread)
  */
 arm64_enter_el0:
 	/*
@@ -55,6 +57,12 @@ arm64_enter_el0:
 	 * The owning thread supplies its initial EL0 PSTATE.
 	 */
 	msr spsr_el1, x2
+
+	/*
+	 * x0 has already been consumed by the msr above, so it is free to carry
+	 * the EL0 entry's own initial x0 value across the eret below.
+	 */
+	mov x0, x3
 
 	isb
 	eret

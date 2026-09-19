@@ -1,4 +1,4 @@
-#include <arch/arm64/thread.h>
+#include <mach/arm64/thread.h>
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -55,6 +55,7 @@ static void machine_thread_zero(machine_thread_t *machine)
 			.pc = 0ULL,
 			.sp = 0ULL,
 			.spsr = ARM64_THREAD_SPSR_EL0T,
+			.x0 = 0ULL,
 			.valid = false
 		}
 	};
@@ -75,13 +76,14 @@ void machine_thread_init_kernel(machine_thread_t *machine)
 bool machine_thread_init_user(
 	machine_thread_t *machine,
 	uint64_t entry,
-	uint64_t stack
+	uint64_t stack,
+	uint64_t arg
 )
 {
 	if (machine == 0 || entry == 0ULL || stack == 0ULL) return false;
 
 	machine_thread_zero(machine);
-	return machine_thread_set_user_state(machine, entry, stack);
+	return machine_thread_set_user_state(machine, entry, stack, arg);
 }
 
 /*
@@ -90,7 +92,8 @@ bool machine_thread_init_user(
 bool machine_thread_set_user_state(
 	machine_thread_t *machine,
 	uint64_t entry,
-	uint64_t stack
+	uint64_t stack,
+	uint64_t arg
 )
 {
 	if (machine == 0 || entry == 0ULL || stack == 0ULL) return false;
@@ -98,6 +101,7 @@ bool machine_thread_set_user_state(
 	machine->user.pc = entry;
 	machine->user.sp = stack;
 	machine->user.spsr = ARM64_THREAD_SPSR_EL0T;
+	machine->user.x0 = arg;
 	machine->user.valid = true;
 
 	return true;

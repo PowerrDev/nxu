@@ -44,6 +44,7 @@ typedef struct {
 	uint64_t pc;
 	uint64_t sp;
 	uint64_t spsr;
+	uint64_t x0;
 	bool valid;
 } arm64_user_state_t;
 
@@ -67,23 +68,27 @@ void machine_thread_init_kernel(machine_thread_t *machine);
 /*
  * machine_thread_init_user
  *
- * Initialize machine-dependent state for an AArch64 EL0 thread.
+ * Initialize machine-dependent state for an AArch64 EL0 thread. arg becomes
+ * the thread's initial x0, the pthread-create-style argument a spawned
+ * thread's entry function receives.
  */
 bool machine_thread_init_user(
 	machine_thread_t *machine,
 	uint64_t entry,
-	uint64_t stack
+	uint64_t stack,
+	uint64_t arg
 );
 
 /*
  * machine_thread_set_user_state
  *
- * Replace the initial EL0 PC and stack state.
+ * Replace the initial EL0 PC, stack and argument-register state.
  */
 bool machine_thread_set_user_state(
 	machine_thread_t *machine,
 	uint64_t entry,
-	uint64_t stack
+	uint64_t stack,
+	uint64_t arg
 );
 
 /*

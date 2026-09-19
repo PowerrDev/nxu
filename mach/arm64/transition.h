@@ -48,7 +48,7 @@ static inline uint64_t arm64_read_vector_base(void)
 	return value;
 }
 
-void arm64_enter_el0(uint64_t entry, uint64_t stack, uint64_t spsr);
+void arm64_enter_el0(uint64_t entry, uint64_t stack, uint64_t spsr, uint64_t arg);
 
 uint64_t arm64_el0_return_address(void);
 
