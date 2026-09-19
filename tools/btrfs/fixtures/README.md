@@ -59,7 +59,7 @@ timestamps are whenever the images were built.
 | `csum-xxhash`, `csum-sha256`, `csum-blake2` | `--csum`: refused at mount |
 | `raid1`, `raid0`, `raid5`, `single2dev` | the FIRST device only of a 2/2/3/2-device filesystem: refused at mount |
 
-Whole set: about 900 KB compressed. Extent-tree-v2 and raid-stripe-tree cannot
+Whole set: the 28 images are about 855 KB compressed; the manifests add 1.6 MB (1.3 MB of it is `deep`, 9000 files); the directory is 2.7 MB. Extent-tree-v2 and raid-stripe-tree cannot
 be built (this btrfs-progs has no experimental features); they and the damaged
 variants (bad superblock magic/checksum, bad tree-block checksum, chunk-tree
 corruption, truncated device, unknown incompat bits, log tree) are made from good
