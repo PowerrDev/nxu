@@ -9,8 +9,9 @@
 # Included from makedefs/i386.mk. The shared block, input and VirtIO sources
 # are the ones the arm64 kernel builds; virtio_mmio.c (GIC specific) and
 # virtio_gpu.c (UI side) are not built here, platform/i386/virtio_stubs.c
-# stands in for what the VirtIO core calls from them. devices_shim.c holds
-# weak stand-ins for the VM and interrupts areas' pmm/vmm/irq entry points.
+# stands in for what the VirtIO core calls from them. The pmm/vmm/irq entry
+# points come from the VM and interrupts areas now, so devices_shim.c (weak
+# stand-ins for them) is no longer linked.
 
 I386_C_SOURCES += \
     drivers/block/block_device.c \
@@ -25,7 +26,6 @@ I386_C_SOURCES += \
     drivers/virtio/virtqueue.c \
     kern/console/ioregistry.c \
     platform/i386/devices_init.c \
-    platform/i386/devices_shim.c \
     platform/i386/pci.c \
     platform/i386/platform.c \
     platform/i386/rtc.c \
