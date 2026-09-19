@@ -8,6 +8,60 @@ USER_BUILD := $(BUILD_ROOT)/userland
 
 BOOT_ARGS ?=
 
+# Native virtio-gpu scanout resolution for the GUI boot targets: the host
+# display's PHYSICAL pixel count (not its point/logical resolution). QEMU's
+# cocoa backend (ui/cocoa.m resizeWindow) sizes a non-resizable window as
+# guest_pixels / [NSWindow backingScaleFactor] and presents the framebuffer
+# 1:1 against physical pixels, i.e. genuine HiDPI - no scaling, no blur.
+# That path only runs when the window is NOT resizable, so leave zoom-to-fit
+# and full-screen off; enabling either makes QEMU stretch a smaller raster
+# to fill the window instead, which is blurry.
+#
+# Auto-detected below from the main screen's *visible* frame (full panel
+# resolution minus the menu bar and Dock), converted to physical pixels via
+# backingScaleFactor, so the guest scanout always matches the desktop area
+# actually available on whatever machine is running `make`. Sizing against
+# the full panel resolution instead (e.g. `system_profiler`'s "Resolution:"
+# line) is still wrong even though it matches the display: QEMU's window sits
+# below the menu bar like any other window, so a window as tall as the whole
+# panel runs under the Dock and off the bottom of the usable desktop -- a
+# mismatch here is not cosmetic, since QEMU sizes a non-resizable cocoa
+# window 1:1 against these guest pixels / backingScaleFactor, and a guest
+# resolution taller/wider than the *usable* area also throws off where the
+# titlebar/chrome actually land on screen relative to where WindowServer
+# thinks they are.
+#
+# Falls back to 2732x1536 (a 2x-Retina 1366x768-point display) if detection
+# fails (non-macOS host, or `osascript`/AppKit unavailable). Override
+# explicitly with e.g. `make test TEST=windowserver-about QEMU_GPU_XRES=... QEMU_GPU_YRES=...`
+# if you want a different guest resolution than your host's usable desktop area.
+DETECTED_RESOLUTION := $(shell osascript -l JavaScript -e 'ObjC.import("AppKit"); var s = $$.NSScreen.mainScreen; var f = s.visibleFrame; var k = s.backingScaleFactor; Math.round(f.size.width * k) + " " + Math.round(f.size.height * k);' 2>/dev/null)
+DETECTED_GPU_XRES := $(word 1,$(DETECTED_RESOLUTION))
+DETECTED_GPU_YRES := $(word 2,$(DETECTED_RESOLUTION))
+
+QEMU_GPU_XRES ?= $(if $(DETECTED_GPU_XRES),$(DETECTED_GPU_XRES),2732)
+QEMU_GPU_YRES ?= $(if $(DETECTED_GPU_YRES),$(DETECTED_GPU_YRES),1536)
+QEMU_GPU_DEVICE := -device virtio-gpu-device,xres=$(QEMU_GPU_XRES),yres=$(QEMU_GPU_YRES)
+
+# The host's real content scale (physical pixels per point, e.g. 2.0 on a
+# Retina display, 1.0 on a plain external monitor), as thousandths so it can
+# travel as a plain integer boot arg. UIService.framework's window chrome,
+# fonts and control metrics were all authored assuming a fixed 2x-Retina
+# canvas (see WindowServer.framework's compositor doc comments); without
+# this, that assumption silently breaks whenever this host's actual
+# backingScaleFactor isn't exactly 2 -- QEMU still sizes its window to the
+# usable desktop area correctly (per the resolution math above), but
+# everything UIService draws inside it ends up rendered for a density that
+# doesn't match, which reads as the whole scene being "zoomed" in or out.
+# Passed through to the kernel below as `ui.scale=<permille>` (see
+# `ui_service_bootstrap` and `ui_core::scale` on the UIService side) so it
+# can rescale instead of assuming 2x unconditionally. Falls back to 2000
+# (2.0x) under the same conditions QEMU_GPU_XRES/YRES fall back to 2732x1536.
+DETECTED_SCALE_PERMILLE := $(shell osascript -l JavaScript -e 'ObjC.import("AppKit"); Math.round($$.NSScreen.mainScreen.backingScaleFactor * 1000);' 2>/dev/null)
+QEMU_UI_SCALE_PERMILLE ?= $(if $(DETECTED_SCALE_PERMILLE),$(DETECTED_SCALE_PERMILLE),2000)
+
+QEMU_DISPLAY := -display cocoa
+
 RAMFB ?= 0
 
 ifeq ($(RAMFB),1)
@@ -42,7 +96,7 @@ LD := ld.lld
 
 OBJCOPY := llvm-objcopy
 
-USER_CC := clang
+USER_CC := ccache clang
 
 USER_LD := ld.lld
 
@@ -84,12 +138,22 @@ USER_CFLAGS := \
     -Iframeworks/Recovery.framework/triageOS \
     -I.
 
-USER_LDFLAGS := -T makedefs/user.ld -nostdlib -static
+USER_LDFLAGS := --allow-multiple-definition -T makedefs/user.ld -nostdlib -static
 
 # Use all host logical CPUs for recursive kernel/framework builds by default.
 BUILD_JOBS ?= $(shell sysctl -n hw.logicalcpu 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 4)
 
 export CARGO_BUILD_JOBS ?= $(BUILD_JOBS)
+
+# Quiet-by-default build output: short "TAG  path" status lines instead of
+# full compiler/linker invocations (pass V=1 to print the real commands).
+ifeq ($(V),1)
+Q :=
+QUIET_PRINT = @:
+else
+Q := @
+QUIET_PRINT = @printf "  %-7s %s\n"
+endif
 
 
 # =============================================================================
@@ -113,9 +177,15 @@ WINDOWSERVER ?= 0
 
 WINDOWSERVER_DIR ?= ../WindowServer.framework
 
-WINDOWSERVER_LIB := $(WINDOWSERVER_DIR)/BUILD/libWindowServer.a
-
 WINDOWSERVER_INCLUDE := $(WINDOWSERVER_DIR)/include
+
+# Userland archive: windowserver-nxu's compositor built as a standalone
+# staticlib (WindowServer.framework's nxu/ wrapper crate) for linking into
+# a real NXU process instead of the kernel -- see
+# frameworks/BootDaemons.framework/windowserver_service.c.
+WINDOWSERVER_SERVICE_LIB := $(WINDOWSERVER_DIR)/BUILD/libWindowServerService.a
+
+USER_CFLAGS += -I$(WINDOWSERVER_INCLUDE)
 
 
 # =============================================================================
@@ -126,7 +196,6 @@ EXTRA_LIBS :=
 
 UISERVICE_DEPS :=
 
-WINDOWSERVER_DEPS :=
 
 
 # =============================================================================
@@ -180,9 +249,7 @@ ifeq ($(WINDOWSERVER),1)
 
 CFLAGS += -DNXU_WINDOWSERVER -I$(WINDOWSERVER_INCLUDE)
 
-EXTRA_LIBS += $(WINDOWSERVER_LIB)
 
-WINDOWSERVER_DEPS += windowserver-build
 
 endif
 
@@ -226,6 +293,7 @@ C_SOURCES := \
     kern/console/console.c \
     kern/console/bootlog.c \
     kern/console/font8x16.c \
+    kern/console/ioregistry.c \
     kern/loader/elf.c \
     kern/irq/irq.c \
     kern/kern_init.c \
@@ -238,7 +306,19 @@ C_SOURCES := \
     kern/ipc/ipc_init.c \
     kern/ipc/ipc_kmsg.c \
     kern/ipc/ipc_port.c \
+    kern/ipc/ipc_space.c \
+    kern/ipc/shm_registry.c \
+    kern/ipc/socket.c \
+    kern/console/display_owner.c \
     kern/tests/ipc_test.c \
+    kern/tests/vm_shm_test.c \
+    kern/tests/vm_map_test.c \
+    kern/tests/ipc_process_test.c \
+    kern/tests/thread_process_test.c \
+    kern/tests/socket_process_test.c \
+    kern/tests/xamethyst_process_test.c \
+    kern/tests/windowserver_process_test.c \
+    kern/tests/about_sevos_process_test.c \
     kern/syscall/syscall.c \
     kern/process/thread.c \
     vfs/ext4.c \
@@ -252,6 +332,8 @@ C_SOURCES := \
     vm/pmm.c \
     vm/vmm.c \
     vm/address_space.c \
+    vm/vm_shm.c \
+    vm/vm_map.c \
     vm/vmm_tables.c \
     vm/vmm_ttbr1.c \
     vm/vmm_debug.c \
@@ -261,6 +343,7 @@ C_SOURCES := \
     platform/dtb_chosen.c \
     platform/arm64/fw_cfg.c \
     platform/arm64/platform.c \
+    platform/arm64/rtc.c \
     platform/arm64/uart.c \
     libk/crc32c.c \
     libk/string.c
@@ -289,13 +372,27 @@ DEPENDENCIES := \
 USER_C_SOURCES := \
     frameworks/lib/syscall.c \
     frameworks/lib/string.c \
+    frameworks/lib/thread.c \
     frameworks/CoreFoundation.framework/lib/plist/plist.c \
     frameworks/CoreFoundation.framework/lib/service/service_config.c \
+    frameworks/CoreFoundation.framework/lib/service/bootstrap_client.c \
     frameworks/CoreFoundation.framework/sbin/bootd/job.c \
     frameworks/CoreFoundation.framework/sbin/bootd/manager.c \
+    frameworks/CoreFoundation.framework/sbin/bootd/registry.c \
     frameworks/CoreFoundation.framework/sbin/bootd/main.c \
     frameworks/BootDaemons.framework/logd.c \
     frameworks/BootDaemons.framework/patchd.c \
+    frameworks/BootDaemons.framework/ipctest_a.c \
+    frameworks/BootDaemons.framework/ipctest_b.c \
+    frameworks/BootDaemons.framework/threadtest.c \
+    frameworks/BootDaemons.framework/sockettest_server.c \
+    frameworks/BootDaemons.framework/sockettest_client.c \
+    frameworks/BootDaemons.framework/xamethyst.c \
+    frameworks/BootDaemons.framework/x11test_handshake.c \
+    frameworks/BootDaemons.framework/x11test_input.c \
+    frameworks/BootDaemons.framework/windowserver_service.c \
+    frameworks/BootDaemons.framework/wstest_client.c \
+    frameworks/BootDaemons.framework/about_sevos_service.c \
     frameworks/Recovery.framework/lib/RecoveryServices.c \
     frameworks/Recovery.framework/StartupOptionsUI/drawing.c \
     $(RECOVERY_SANS_SOURCE) \
@@ -312,17 +409,20 @@ USER_DEPENDENCIES := $(USER_C_SOURCES:%.c=$(USER_BUILD)/%.d)
 USER_COMMON_OBJECTS := \
     $(USER_BUILD)/frameworks/crt0.o \
     $(USER_BUILD)/frameworks/lib/syscall.o \
-    $(USER_BUILD)/frameworks/lib/string.o
+    $(USER_BUILD)/frameworks/lib/string.o \
+    $(USER_BUILD)/frameworks/lib/thread.o
 
 
 USER_COREFOUNDATION_OBJECTS := \
     $(USER_BUILD)/frameworks/CoreFoundation.framework/lib/plist/plist.o \
-    $(USER_BUILD)/frameworks/CoreFoundation.framework/lib/service/service_config.o
+    $(USER_BUILD)/frameworks/CoreFoundation.framework/lib/service/service_config.o \
+    $(USER_BUILD)/frameworks/CoreFoundation.framework/lib/service/bootstrap_client.o
 
 
 USER_BOOTD_OBJECTS := \
     $(USER_BUILD)/frameworks/CoreFoundation.framework/sbin/bootd/job.o \
     $(USER_BUILD)/frameworks/CoreFoundation.framework/sbin/bootd/manager.o \
+    $(USER_BUILD)/frameworks/CoreFoundation.framework/sbin/bootd/registry.o \
     $(USER_BUILD)/frameworks/CoreFoundation.framework/sbin/bootd/main.o
 
 
@@ -341,12 +441,25 @@ USER_DAEMONS := \
     $(USER_BUILD)/bootd \
     $(USER_BUILD)/logd \
     $(USER_BUILD)/patchd \
-    $(USER_BUILD)/triageOS
+    $(USER_BUILD)/triageOS \
+    $(USER_BUILD)/ipctest_a \
+    $(USER_BUILD)/ipctest_b \
+    $(USER_BUILD)/threadtest \
+    $(USER_BUILD)/sockettest_server \
+    $(USER_BUILD)/sockettest_client \
+    $(USER_BUILD)/xamethyst \
+    $(USER_BUILD)/x11test_handshake \
+    $(USER_BUILD)/x11test_input \
+    $(USER_BUILD)/windowserver_service \
+    $(USER_BUILD)/wstest_client \
+    $(USER_BUILD)/about_sevos_service
 
 
 USER_SERVICE_PLISTS := \
     frameworks/BootDaemons.framework/Services/com.nxu.logd.plist \
-    frameworks/BootDaemons.framework/Services/com.nxu.patchd.plist
+    frameworks/BootDaemons.framework/Services/com.nxu.patchd.plist \
+    frameworks/BootDaemons.framework/Services/com.nxu.windowserver.plist \
+    frameworks/BootDaemons.framework/Services/com.nxu.about-sevos.plist
 
 
 USER_STAGE_STAMP := $(USER_BUILD)/.staged
@@ -355,19 +468,15 @@ USER_STAGE_STAMP := $(USER_BUILD)/.staged
 .PHONY: all \
         userland \
         run \
+        run-console \
         uiservice-build \
-        uiservice-about \
         windowserver-build \
-        windowserver-about \
-        ui-about \
         apply-assets \
         recovery-assets \
         clean \
         symbolize \
         disk-reset \
-        disk-check \
-        journal-crash \
-        journal-recover
+        disk-check
 
 
 -include $(DEPENDENCIES) $(USER_DEPENDENCIES)
@@ -398,28 +507,36 @@ $(BUILD)/%.o: %.c
 
 	@mkdir -p $(dir $@)
 
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(QUIET_PRINT) "CC" "$<"
+
+	$(Q)$(CC) $(CFLAGS) -c $< -o $@
 
 
 $(BUILD)/%.o: %.S
 
 	@mkdir -p $(dir $@)
 
-	$(CC) $(ASFLAGS) -c $< -o $@
+	$(QUIET_PRINT) "AS" "$<"
+
+	$(Q)$(CC) $(ASFLAGS) -c $< -o $@
 
 
 $(USER_BUILD)/%.o: %.c
 
 	@mkdir -p $(dir $@)
 
-	$(USER_CC) $(USER_CFLAGS) -c $< -o $@
+	$(QUIET_PRINT) "CC" "$<"
+
+	$(Q)$(USER_CC) $(USER_CFLAGS) -c $< -o $@
 
 
 $(USER_BUILD)/%.o: %.S
 
 	@mkdir -p $(dir $@)
 
-	$(USER_CC) --target=aarch64-none-elf -c $< -o $@
+	$(QUIET_PRINT) "AS" "$<"
+
+	$(Q)$(USER_CC) --target=aarch64-none-elf -c $< -o $@
 
 
 # =============================================================================
@@ -428,22 +545,107 @@ $(USER_BUILD)/%.o: %.S
 
 $(USER_BUILD)/bootd: $(USER_COMMON_OBJECTS) $(USER_COREFOUNDATION_OBJECTS) $(USER_BOOTD_OBJECTS)
 
-	$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 
 $(USER_BUILD)/logd: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/logd.o
 
-	$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 
 $(USER_BUILD)/patchd: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/patchd.o
 
-	$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 
 $(USER_BUILD)/triageOS: $(USER_COMMON_OBJECTS) $(USER_RECOVERY_OBJECTS)
 
-	$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+
+$(USER_BUILD)/ipctest_a: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/CoreFoundation.framework/lib/service/bootstrap_client.o $(USER_BUILD)/frameworks/BootDaemons.framework/ipctest_a.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+
+$(USER_BUILD)/ipctest_b: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/CoreFoundation.framework/lib/service/bootstrap_client.o $(USER_BUILD)/frameworks/BootDaemons.framework/ipctest_b.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+
+$(USER_BUILD)/threadtest: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/threadtest.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+
+$(USER_BUILD)/sockettest_server: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/sockettest_server.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+
+$(USER_BUILD)/sockettest_client: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/sockettest_client.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+
+$(USER_BUILD)/xamethyst: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/xamethyst.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+
+$(USER_BUILD)/x11test_handshake: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/x11test_handshake.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+
+$(USER_BUILD)/x11test_input: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/x11test_input.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+
+$(USER_BUILD)/windowserver_service: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/CoreFoundation.framework/lib/service/bootstrap_client.o $(USER_BUILD)/frameworks/BootDaemons.framework/windowserver_service.o $(WINDOWSERVER_SERVICE_LIB) | windowserver-build
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+
+$(USER_BUILD)/wstest_client: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/CoreFoundation.framework/lib/service/bootstrap_client.o $(USER_BUILD)/frameworks/BootDaemons.framework/wstest_client.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+
+$(USER_BUILD)/about_sevos_service: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/CoreFoundation.framework/lib/service/bootstrap_client.o $(USER_BUILD)/frameworks/BootDaemons.framework/about_sevos_service.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 
 userland: $(USER_DAEMONS)
@@ -453,23 +655,47 @@ $(USER_STAGE_STAMP): $(USER_DAEMONS) $(USER_SERVICE_PLISTS)
 
 	@mkdir -p $(DISK_ROOT)/System/Library/CoreServices $(DISK_ROOT)/System/Library/BootDaemons $(DISK_ROOT)/System/Recovery $(DISK_ROOT)/var/log $(DISK_ROOT)/var/db/patchd
 
-	cp $(USER_BUILD)/bootd $(DISK_ROOT)/System/Library/CoreServices/bootd
+	$(QUIET_PRINT) "STAGE" "$(DISK_ROOT)"
 
-	cp $(USER_BUILD)/bootd $(DISK_ROOT)/System/Library/CoreServices/bootd.recovery
+	$(Q)cp $(USER_BUILD)/bootd $(DISK_ROOT)/System/Library/CoreServices/bootd
 
-	cp $(USER_BUILD)/logd $(DISK_ROOT)/System/Library/CoreServices/logd
+	$(Q)cp $(USER_BUILD)/bootd $(DISK_ROOT)/System/Library/CoreServices/bootd.recovery
 
-	cp $(USER_BUILD)/logd $(DISK_ROOT)/System/Library/CoreServices/logd.recovery
+	$(Q)cp $(USER_BUILD)/logd $(DISK_ROOT)/System/Library/CoreServices/logd
 
-	cp $(USER_BUILD)/patchd $(DISK_ROOT)/System/Library/CoreServices/patchd
+	$(Q)cp $(USER_BUILD)/logd $(DISK_ROOT)/System/Library/CoreServices/logd.recovery
 
-	cp $(USER_BUILD)/patchd $(DISK_ROOT)/System/Library/CoreServices/patchd.recovery
+	$(Q)cp $(USER_BUILD)/patchd $(DISK_ROOT)/System/Library/CoreServices/patchd
 
-	cp $(USER_BUILD)/triageOS $(DISK_ROOT)/System/Recovery/triageOS
+	$(Q)cp $(USER_BUILD)/patchd $(DISK_ROOT)/System/Library/CoreServices/patchd.recovery
 
-	cp $(USER_SERVICE_PLISTS) $(DISK_ROOT)/System/Library/BootDaemons/
+	$(Q)cp $(USER_BUILD)/triageOS $(DISK_ROOT)/System/Recovery/triageOS
 
-	touch $@
+	$(Q)cp $(USER_BUILD)/ipctest_a $(DISK_ROOT)/System/Library/CoreServices/ipctest_a
+
+	$(Q)cp $(USER_BUILD)/ipctest_b $(DISK_ROOT)/System/Library/CoreServices/ipctest_b
+
+	$(Q)cp $(USER_BUILD)/threadtest $(DISK_ROOT)/System/Library/CoreServices/threadtest
+
+	$(Q)cp $(USER_BUILD)/sockettest_server $(DISK_ROOT)/System/Library/CoreServices/sockettest_server
+
+	$(Q)cp $(USER_BUILD)/sockettest_client $(DISK_ROOT)/System/Library/CoreServices/sockettest_client
+
+	$(Q)cp $(USER_BUILD)/xamethyst $(DISK_ROOT)/System/Library/CoreServices/xamethyst
+
+	$(Q)cp $(USER_BUILD)/x11test_handshake $(DISK_ROOT)/System/Library/CoreServices/x11test_handshake
+
+	$(Q)cp $(USER_BUILD)/x11test_input $(DISK_ROOT)/System/Library/CoreServices/x11test_input
+
+	$(Q)cp $(USER_BUILD)/windowserver_service $(DISK_ROOT)/System/Library/CoreServices/windowserver_service
+
+	$(Q)cp $(USER_BUILD)/wstest_client $(DISK_ROOT)/System/Library/CoreServices/wstest_client
+
+	$(Q)cp $(USER_BUILD)/about_sevos_service $(DISK_ROOT)/System/Library/CoreServices/about_sevos_service
+
+	$(Q)cp $(USER_SERVICE_PLISTS) $(DISK_ROOT)/System/Library/BootDaemons/
+
+	@touch $@
 
 
 # =============================================================================
@@ -556,12 +782,16 @@ $(KERNEL): $(OBJECTS) $(UISERVICE_DEPS) $(WINDOWSERVER_DEPS)
 
 	@mkdir -p $(dir $@)
 
-	$(LD) $(LDFLAGS) $(OBJECTS) $(EXTRA_LIBS) -o $@
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(LD) $(LDFLAGS) $(OBJECTS) $(EXTRA_LIBS) -o $@
 
 
 $(KERNEL_IMAGE): $(KERNEL)
 
-	$(OBJCOPY) -O binary $(KERNEL) $(KERNEL_IMAGE)
+	$(QUIET_PRINT) "OBJCOPY" "$@"
+
+	$(Q)$(OBJCOPY) -O binary $(KERNEL) $(KERNEL_IMAGE)
 
 
 # =============================================================================
@@ -575,9 +805,11 @@ $(DISK): $(USER_STAGE_STAMP)
 		exit 1; \
 	}
 
-	truncate -s $(DISK_SIZE) $(DISK)
+	$(QUIET_PRINT) "MKFS" "$@"
 
-	$(MKFS_EXT4) -F -q -b 4096 -I 256 \
+	$(Q)truncate -s $(DISK_SIZE) $(DISK)
+
+	$(Q)$(MKFS_EXT4) -F -q -b 4096 -I 256 \
 		-O has_journal,metadata_csum,^metadata_csum_seed,^dir_index,^orphan_file,^fast_commit \
 		-E lazy_itable_init=0,lazy_journal_init=0 \
 		-L NXU -d $(DISK_ROOT) $(DISK)
@@ -596,7 +828,15 @@ $(DISK_FORMAT_STAMP):
 # Normal boot
 # =============================================================================
 
-run: $(KERNEL_IMAGE) $(DISK) $(DISK_FORMAT_STAMP)
+# `run` boots the full graphical stack (WindowServer + UIService, Voyager app)
+# -- equivalent to `make test TEST=ui-voyager` (see makedefs/tests.mk). For the plain kernel-only console boot (no sibling framework
+# repos required; what `run` used to be), use `run-console`.
+run:
+
+	$(MAKE) test TEST=ui-voyager
+
+
+run-console: $(KERNEL_IMAGE) $(DISK) $(DISK_FORMAT_STAMP)
 
 	qemu-system-aarch64 \
 		-machine virt,gic-version=3 \
@@ -604,79 +844,13 @@ run: $(KERNEL_IMAGE) $(DISK) $(DISK_FORMAT_STAMP)
 		-smp 1 \
 		-m 512M \
 		-kernel $(KERNEL_IMAGE) \
-		-append "$(BOOT_ARGS)" \
-		-display cocoa \
+		-append "$(BOOT_ARGS) ui.scale=$(QEMU_UI_SCALE_PERMILLE)" \
+		$(QEMU_DISPLAY) \
 		-global virtio-mmio.force-legacy=false \
 		-drive if=none,format=raw,file=$(DISK),id=nxudisk \
 		$(QEMU_RAMFB_DEVICE) \
 		-device virtio-blk-device,drive=nxudisk \
-		-device virtio-gpu-device \
-		-device virtio-keyboard-device \
-		-device virtio-mouse-device \
-		-serial stdio \
-		-monitor none
-
-
-# =============================================================================
-# UIService boot test
-# =============================================================================
-
-uiservice-about: $(DISK) $(DISK_FORMAT_STAMP)
-
-	@echo "NXU: building UIService boot target with $(BUILD_JOBS) host job(s)"
-
-	$(MAKE) -j$(BUILD_JOBS) \
-		BUILD_ROOT=BUILD CONFIG=uiservice \
-		UISERVICE=1 \
-		EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DNXU_UI_SERVICE_BOOT_TEST" \
-		all
-
-	qemu-system-aarch64 \
-		-machine virt,gic-version=3 \
-		-cpu cortex-a72 \
-		-smp 1 \
-		-m 512M \
-		-kernel build-uiservice/kernel.bin \
-		-append "$(BOOT_ARGS)" \
-		-display cocoa \
-		-global virtio-mmio.force-legacy=false \
-		-drive if=none,format=raw,file=$(DISK),id=nxudisk \
-		$(QEMU_RAMFB_DEVICE) \
-		-device virtio-blk-device,drive=nxudisk \
-		-device virtio-gpu-device \
-		-device virtio-keyboard-device \
-		-device virtio-mouse-device \
-		-serial stdio \
-		-monitor none
-
-
-# =============================================================================
-# WindowServer boot test
-# =============================================================================
-
-windowserver-about: $(DISK) $(DISK_FORMAT_STAMP)
-
-	@echo "NXU: building WindowServer boot target with $(BUILD_JOBS) host job(s)"
-
-	$(MAKE) -j$(BUILD_JOBS) \
-		BUILD_ROOT=BUILD CONFIG=windowserver \
-		WINDOWSERVER=1 \
-		EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DNXU_WINDOWSERVER_BOOT_TEST" \
-		all
-
-	qemu-system-aarch64 \
-		-machine virt,gic-version=3 \
-		-cpu cortex-a72 \
-		-smp 1 \
-		-m 512M \
-		-kernel BUILD/windowserver/kernel.bin \
-		-append "$(BOOT_ARGS)" \
-		-display cocoa \
-		-global virtio-mmio.force-legacy=false \
-		-drive if=none,format=raw,file=$(DISK),id=nxudisk \
-		$(QEMU_RAMFB_DEVICE) \
-		-device virtio-blk-device,drive=nxudisk \
-		-device virtio-gpu-device \
+		$(QEMU_GPU_DEVICE) \
 		-device virtio-keyboard-device \
 		-device virtio-mouse-device \
 		-serial stdio \
@@ -704,33 +878,7 @@ disk-check:
 	$(E2FSCK) -fn $(DISK)
 
 
-# =============================================================================
-# Journal tests
-# =============================================================================
-
-journal-crash: $(DISK) $(DISK_FORMAT_STAMP)
-
-	$(MAKE) BUILD_ROOT=BUILD CONFIG=journal-crash EXTRA_CFLAGS=-DNXU_JOURNAL_CRASH_TEST all
-
-	qemu-system-aarch64 \
-		-machine virt,gic-version=3 \
-		-cpu cortex-a72 \
-		-smp 1 \
-		-m 512M \
-		-kernel BUILD/journal-crash/kernel.bin \
-		-append "$(BOOT_ARGS)" \
-		-display gtk \
-		-global virtio-mmio.force-legacy=false \
-		-drive if=none,format=raw,file=$(DISK),id=nxudisk \
-		-device virtio-blk-device,drive=nxudisk \
-		-device virtio-gpu-device \
-		-device virtio-keyboard-device \
-		-device virtio-mouse-device \
-		-serial stdio \
-		-monitor none
-
-
-journal-recover: run
+include makedefs/tests.mk
 
 
 # =============================================================================
@@ -757,5 +905,3 @@ clean:
 
 	rm -rf $(DISK_ROOT)/System/Library/BootDaemons
 
-
-ui-about: uiservice-about
