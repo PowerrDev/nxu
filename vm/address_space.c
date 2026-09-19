@@ -1,6 +1,8 @@
 #include <vm/address_space.h>
 #include <vm/vmm_internal.h>
 
+#include <kern/lock.h>
+
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -299,6 +301,8 @@ bool vm_address_space_map_page(
 		return false;
 	}
 
+	nxu_spin_lock(&space->lock);
+
 	uint64_t *table_count =
 		space == g_active_address_space
 			? &g_vmm.table_count
@@ -313,10 +317,12 @@ bool vm_address_space_map_page(
 		table_count,
 		&entry
 	)) {
+		nxu_spin_unlock(&space->lock);
 		return false;
 	}
 
 	if ((*entry & VMM_DESC_VALID) != 0ULL) {
+		nxu_spin_unlock(&space->lock);
 		return false;
 	}
 
@@ -326,6 +332,65 @@ bool vm_address_space_map_page(
 	if (space == g_active_address_space) {
 		space->table_count = g_vmm.table_count;
 	}
+
+	nxu_spin_unlock(&space->lock);
+
+	return true;
+}
+
+bool vm_address_space_unmap_page(
+	vm_address_space_t *space,
+	uint64_t virtual_address
+)
+{
+	if (
+		space == 0 ||
+		space->root == 0 ||
+		virtual_address < VM_USER_NULL_GUARD_SIZE ||
+		!vmm_lower_page_valid(virtual_address)
+	) {
+		return false;
+	}
+
+	nxu_spin_lock(&space->lock);
+
+	uint64_t table_count =
+		space == g_active_address_space
+			? g_vmm.table_count
+			: space->table_count;
+
+	uint64_t *entry;
+
+	/* create=false: this only ever clears an existing leaf entry, never
+	 * allocates intermediate tables, so table_count is never modified here
+	 * -- see vm_address_space_query_page for the same read-only usage. */
+	if (!vmm_root_get_l3_entry(
+		space->root,
+		virtual_address,
+		false,
+		&table_count,
+		&entry
+	)) {
+		nxu_spin_unlock(&space->lock);
+		return false;
+	}
+
+	if ((*entry & VMM_DESC_VALID) == 0ULL) {
+		nxu_spin_unlock(&space->lock);
+		return false;
+	}
+
+	/* Break the mapping before invalidating its cached translation, exactly
+	 * like vmm_unmap_page does for the kernel TTBR1 side. */
+	*entry = 0ULL;
+
+	if (space == g_active_address_space) {
+		vmm_invalidate_page(virtual_address);
+	} else {
+		__asm__ volatile("dsb ish" ::: "memory");
+	}
+
+	nxu_spin_unlock(&space->lock);
 
 	return true;
 }
@@ -345,6 +410,14 @@ bool vm_address_space_query_page(
 		return false;
 	}
 
+	/* space is logically const to callers (this only inspects a mapping),
+	 * but the lock still has to be taken to avoid reading a page-table
+	 * entry that vm_address_space_map_page/unmap_page is concurrently
+	 * publishing on another thread of the same task. */
+	nxu_spinlock_t *lock = (nxu_spinlock_t *)&space->lock;
+
+	nxu_spin_lock(lock);
+
 	uint64_t table_count = space->table_count;
 	uint64_t *entry;
 
@@ -355,10 +428,13 @@ bool vm_address_space_query_page(
 		&table_count,
 		&entry
 	)) {
+		nxu_spin_unlock(lock);
 		return false;
 	}
 
 	uint64_t descriptor = *entry;
+
+	nxu_spin_unlock(lock);
 
 	if (
 		(descriptor & VMM_DESC_TYPE_MASK) !=
