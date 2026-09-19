@@ -14,9 +14,24 @@
 #define BOOT_SPLASH_BAR_HEIGHT 6U
 #define BOOT_SPLASH_BAR_GAP 44U
 #define BOOT_SPLASH_FRAME_HZ 30U
+/*
+ * Deliberately much lower than BOOT_SPLASH_FRAME_HZ: every text-overlay
+ * present transfers the whole framebuffer (~3.7MB at 1366x690 XRGB8888), and
+ * a burst of log lines a few milliseconds apart can queue full-frame
+ * presents faster than an emulated virtio-gpu queue drains them, leaving the
+ * screen showing a stale/in-flight frame until the backlog clears.
+ */
+#define BOOT_SPLASH_TEXT_PRESENT_HZ 8U
 #define BOOT_SPLASH_BAR_TRACK 0x00303034U
 #define BOOT_SPLASH_BAR_FILL 0x00FFFFFFU
 #define BOOT_SPLASH_PROGRESS_MAX 1000U
+/*
+ * Ceiling boot_splash_text_flush() nudges the bar toward while the log is
+ * still streaming in, leaving a visible amount of bar for
+ * boot_splash_finish() to close out once loading actually completes -- see
+ * both for the full picture.
+ */
+#define BOOT_SPLASH_LOG_PROGRESS_MAX 950U
 #define BOOT_SPLASH_FINISH_MIN_STEP 24U
 #define BOOT_SPLASH_STATUS_GAP 18U
 #define BOOT_SPLASH_STATUS_HEIGHT 18U
@@ -44,6 +59,18 @@ static bool g_visible;
 static char g_status_text[BOOT_SPLASH_STATUS_MAX_LENGTH + 1U];
 static bool g_status_active;
 
+/*
+ * Pixel rectangle reserved for the fixed logo/bar header, computed once in
+ * boot_splash_text_init(). Text draws, clears and scroll copies all check
+ * this rectangle and skip only the cells/columns that actually overlap it,
+ * so the console can use the full screen (both the rows above and below the
+ * header, and the columns to its left and right within those same rows)
+ * instead of losing whole rows across the entire screen width.
+ */
+static uint32_t g_header_top;
+static uint32_t g_header_bottom;
+static uint32_t g_header_left;
+static uint32_t g_header_right;
 static uint32_t g_text_columns;
 static uint32_t g_text_rows;
 static uint32_t g_text_cursor_x;
@@ -250,7 +277,12 @@ static bool boot_splash_draw_bar(void)
 
 static uint32_t g_left;
 
-/* Paint the boot logo at its fixed position without presenting. */
+/*
+ * Paint the boot logo at its fixed position without presenting. Called once,
+ * from boot_splash_show(): the scrolling text region lives entirely below
+ * the logo/bar (see boot_splash_text_init()), so nothing ever scrolls
+ * through or overwrites this rect again after the initial paint.
+ */
 static void boot_splash_paint_logo(void)
 {
 	if (g_display == 0) return;
@@ -271,23 +303,40 @@ static void boot_splash_paint_logo(void)
 }
 
 /*
- * Recomposite the logo, progress bar and status caption on top of the
- * scrolling text console. Called after every full-screen text scroll, since
- * the scroll shifts every pixel row -- including the fixed overlay -- up by
- * one text line.
+ * Pixel Y of the header's bottom edge -- right below the logo, or below the
+ * bar too when it fits -- used by boot_splash_text_init() as the point the
+ * scrolling console resumes below the header. The status caption is
+ * deliberately not reserved for -- it is rare (only shown while a recovery
+ * key is held during the splash hold) and reserving space for it
+ * unconditionally would leave a permanent dead gap in the far more common
+ * case where it never appears.
  */
-static void boot_splash_composite_overlay(void)
+static uint32_t boot_splash_text_region_top(void)
 {
-	if (g_display == 0) return;
-	boot_splash_paint_logo();
-	(void)boot_splash_paint_bar();
-	(void)boot_splash_paint_status();
+	uint32_t top = g_top + g_boot_splash_height * g_scale;
+
+	uint32_t bar_left;
+	uint32_t bar_top;
+	if (boot_splash_bar_rect(&bar_left, &bar_top)) {
+		uint32_t bar_bottom = bar_top + BOOT_SPLASH_BAR_HEIGHT;
+		if (bar_bottom > top) top = bar_bottom;
+	}
+
+	if (g_display != 0 && top > g_display->height) top = g_display->height;
+	return top;
+}
+
+/* Does the pixel rectangle [left, right) x [top, bottom) overlap the header? */
+static bool boot_splash_rect_hits_header(uint32_t left, uint32_t right, uint32_t top, uint32_t bottom)
+{
+	return right > g_header_left && left < g_header_right && bottom > g_header_top && top < g_header_bottom;
 }
 
 static void boot_splash_text_clear_cell(uint32_t column, uint32_t row)
 {
 	uint32_t start_x = column * BOOT_SPLASH_TEXT_CELL_WIDTH;
 	uint32_t start_y = row * BOOT_SPLASH_TEXT_CELL_HEIGHT;
+	if (boot_splash_rect_hits_header(start_x, start_x + BOOT_SPLASH_TEXT_CELL_WIDTH, start_y, start_y + BOOT_SPLASH_TEXT_CELL_HEIGHT)) return;
 
 	for (uint32_t y = 0U; y < BOOT_SPLASH_TEXT_CELL_HEIGHT; y++) {
 		uint32_t *pixels = g_display->framebuffer + (uint64_t)(start_y + y) * g_display->stride + start_x;
@@ -301,9 +350,11 @@ static void boot_splash_text_draw_char(uint32_t column, uint32_t row, char chara
 
 	uint32_t start_x = column * BOOT_SPLASH_TEXT_CELL_WIDTH;
 	uint32_t start_y = row * BOOT_SPLASH_TEXT_CELL_HEIGHT;
-	const uint8_t *glyph = &g_font8x16[(uint32_t)(uint8_t)character * FONT8X16_HEIGHT];
 
 	boot_splash_text_clear_cell(column, row);
+	if (boot_splash_rect_hits_header(start_x, start_x + BOOT_SPLASH_TEXT_CELL_WIDTH, start_y, start_y + BOOT_SPLASH_TEXT_CELL_HEIGHT)) return;
+
+	const uint8_t *glyph = &g_font8x16[(uint32_t)(uint8_t)character * FONT8X16_HEIGHT];
 
 	for (uint32_t glyph_row = 0U; glyph_row < FONT8X16_HEIGHT; glyph_row++) {
 		uint8_t bits = glyph[glyph_row];
@@ -317,28 +368,55 @@ static void boot_splash_text_draw_char(uint32_t column, uint32_t row, char chara
 }
 
 /*
- * Shift the active text rows up by one cell height and clear the vacated
- * line, exactly like a terminal scroll -- except this operates directly on
- * the splash's live scanout, so the logo/bar/status must be repainted on top
- * once the shift is done.
+ * Copy one raw scanline, skipping the header's column range if this
+ * scanline falls inside its row range -- protecting the header's own
+ * pixels from ever being read as scroll source or overwritten as scroll
+ * destination, without needing to repaint it afterward.
+ */
+static void boot_splash_copy_row(uint32_t destination_y, uint32_t source_y)
+{
+	uint32_t *destination = g_display->framebuffer + (uint64_t)destination_y * g_display->stride;
+	uint32_t *source = g_display->framebuffer + (uint64_t)source_y * g_display->stride;
+	bool masked = (destination_y >= g_header_top && destination_y < g_header_bottom) ||
+		(source_y >= g_header_top && source_y < g_header_bottom);
+
+	for (uint32_t x = 0U; x < g_display->width; x++) {
+		if (masked && x >= g_header_left && x < g_header_right) continue;
+		destination[x] = source[x];
+	}
+}
+
+static void boot_splash_clear_row(uint32_t y)
+{
+	uint32_t *row = g_display->framebuffer + (uint64_t)y * g_display->stride;
+	bool masked = y >= g_header_top && y < g_header_bottom;
+
+	for (uint32_t x = 0U; x < g_display->width; x++) {
+		if (masked && x >= g_header_left && x < g_header_right) continue;
+		row[x] = BOOT_SPLASH_BACKGROUND;
+	}
+}
+
+/*
+ * Shift the whole console up by one cell height and clear the vacated last
+ * row, exactly like a terminal scroll -- across the full screen, since
+ * boot_splash_copy_row()/boot_splash_clear_row() already mask out the
+ * header's column range on any scanline that needs it.
  */
 static void boot_splash_text_scroll(void)
 {
-	uint32_t active_height = g_text_rows * BOOT_SPLASH_TEXT_CELL_HEIGHT;
-	uint32_t pixel_rows = active_height - BOOT_SPLASH_TEXT_CELL_HEIGHT;
+	uint32_t region_height = g_text_rows * BOOT_SPLASH_TEXT_CELL_HEIGHT;
+	uint32_t cell = BOOT_SPLASH_TEXT_CELL_HEIGHT;
+	if (region_height < cell) return;
 
+	uint32_t pixel_rows = region_height - cell;
 	for (uint32_t y = 0U; y < pixel_rows; y++) {
-		uint32_t *destination = g_display->framebuffer + (uint64_t)y * g_display->stride;
-		uint32_t *source = g_display->framebuffer + (uint64_t)(y + BOOT_SPLASH_TEXT_CELL_HEIGHT) * g_display->stride;
-		for (uint32_t x = 0U; x < g_display->width; x++) destination[x] = source[x];
+		boot_splash_copy_row(y, y + cell);
 	}
 
-	for (uint32_t y = pixel_rows; y < active_height; y++) {
-		uint32_t *row = g_display->framebuffer + (uint64_t)y * g_display->stride;
-		for (uint32_t x = 0U; x < g_display->width; x++) row[x] = BOOT_SPLASH_BACKGROUND;
+	for (uint32_t y = pixel_rows; y < region_height; y++) {
+		boot_splash_clear_row(y);
 	}
-
-	boot_splash_composite_overlay();
 }
 
 static void boot_splash_text_advance_line(void)
@@ -353,10 +431,49 @@ static void boot_splash_text_advance_line(void)
 }
 
 /* Present the full screen once if the text console has drawn since the last flush. */
+static uint64_t g_text_last_present_ticks;
+
+/*
+ * Rate-limit presents to BOOT_SPLASH_TEXT_PRESENT_HZ. A burst of log lines (e.g.
+ * the heap allocator debug spam, lines a fraction of a millisecond apart)
+ * would otherwise fire one full-screen present per line -- far faster than
+ * the host can composite -- and QEMU'''s cocoa backend visibly tears when
+ * hammered like that. Content that arrives between throttled calls stays
+ * marked dirty and is picked up by the next one, whether that'''s the next
+ * line'''s call here or the periodic tick in boot_splash_wait().
+ */
 static bool boot_splash_text_flush(void)
 {
 	if (!g_text_dirty || g_display == 0) return true;
+
+	uint64_t frequency = timer_get_frequency();
+	if (frequency != 0ULL) {
+		uint64_t interval = frequency / BOOT_SPLASH_TEXT_PRESENT_HZ;
+		if (interval == 0ULL) interval = 1ULL;
+		uint64_t now = timer_get_ticks();
+		if (g_text_last_present_ticks != 0ULL && now - g_text_last_present_ticks < interval) {
+			return true;
+		}
+		g_text_last_present_ticks = now;
+	}
+
 	g_text_dirty = false;
+
+	/*
+	 * Keep the bar visibly creeping forward for as long as the boot log is
+	 * still reaching the screen -- "loading the OS" -- instead of it
+	 * sitting frozen through the whole ipc/VFS/thread/scheduler bring-up
+	 * the way it did before. Capped below BOOT_SPLASH_PROGRESS_MAX so
+	 * boot_splash_finish() still has a visible amount left to close out
+	 * once the log actually stops.
+	 */
+	if (g_visible && g_progress < BOOT_SPLASH_LOG_PROGRESS_MAX) {
+		uint32_t remaining = BOOT_SPLASH_LOG_PROGRESS_MAX - g_progress;
+		uint32_t step = remaining / 16U;
+		g_progress += step != 0U ? step : 1U;
+		(void)boot_splash_paint_bar();
+	}
+
 	return display_present_full(g_display);
 }
 
@@ -379,13 +496,14 @@ static void boot_splash_text_putc(char character, void *context)
 		boot_splash_text_advance_line();
 		g_text_dirty = true;
 		/*
-		 * Flush immediately on every completed line. Most of the kernel's
-		 * boot log happens between boot_splash_wait() returning and
-		 * boot_splash_finish() running, a long synchronous stretch with no
-		 * timer-driven present of its own -- without this the scrolling log
-		 * would never actually reach the scanout during that window. Skipped
-		 * during the one-time history replay in boot_splash_show(), which
-		 * would otherwise fire one full-screen present per retained line.
+		 * Try to flush on every completed line (rate-limited inside
+		 * boot_splash_text_flush()). Most of the kernel's boot log happens
+		 * between boot_splash_wait() returning and boot_splash_finish()
+		 * running, a long synchronous stretch with no timer-driven present of
+		 * its own -- without this the scrolling log would never reach the
+		 * scanout during that window. Skipped during the one-time history
+		 * replay in boot_splash_show(), which has nothing to gain from
+		 * checking the clock per retained line.
 		 */
 		if (!g_text_replaying) (void)boot_splash_text_flush();
 		return;
@@ -404,11 +522,143 @@ static void boot_splash_text_putc(char character, void *context)
 	g_text_dirty = true;
 }
 
+/*
+ * Target number of presents for the whole replay, regardless of how much
+ * history there is: boot_splash_history_line_count() below picks a lines-
+ * per-present stride so a short history still gets one present per line
+ * (visibly scrolling from the very first retained line) while a long one
+ * gets multiple lines per present instead of a present per line -- keeping
+ * the present count, and so the real-world time a present costs under
+ * software-emulated QEMU (TCG), bounded independent of history size.
+ */
+#define BOOT_SPLASH_REPLAY_TARGET_PRESENTS 48ULL
+#define BOOT_SPLASH_REPLAY_STEP_MS 70ULL
+#define BOOT_SPLASH_REPLAY_MAX_MS 2500ULL
+
+/* Cheap probe: capacity 0 reads nothing but still clamps/advances *cursor. */
+static uint64_t boot_splash_history_oldest_cursor(void)
+{
+	uint64_t cursor = 0ULL;
+	uint64_t read_size;
+	char dummy;
+	(void)kconsole_history_read(&cursor, &dummy, 0ULL, &read_size);
+	return cursor;
+}
+
+/* Cheap forward scan (no rendering): total newline count in retained history. */
+static uint64_t boot_splash_history_line_count(void)
+{
+	uint64_t cursor = boot_splash_history_oldest_cursor();
+	uint64_t total_lines = 0ULL;
+	char scan_buffer[256];
+	uint64_t scan_read_size;
+
+	for (;;) {
+		if (!kconsole_history_read(&cursor, scan_buffer, sizeof(scan_buffer), &scan_read_size) || scan_read_size == 0ULL) break;
+		for (uint64_t index = 0ULL; index < scan_read_size; index++) {
+			if (scan_buffer[index] == '\n') total_lines++;
+		}
+	}
+
+	return total_lines;
+}
+
+/*
+ * Replay the retained console history from the very first line, through the
+ * same scrolling text path live boot output uses, presenting every
+ * lines_per_present lines with a short forced delay between presents -- so
+ * the splash visibly scrolls through the whole boot log seen so far instead
+ * of jumping straight to only its last screenful. g_text_replaying
+ * suppresses boot_splash_text_putc()'s own per-line flush attempt so this
+ * function alone controls pacing.
+ *
+ * Also bounded by BOOT_SPLASH_REPLAY_MAX_MS as a safety net: if presents are
+ * running unusually slowly (a heavily loaded or emulated host), remaining
+ * lines are drawn without presenting each one -- one final present at the
+ * end catches the screen up -- so this can never turn into a real stall.
+ */
+static void boot_splash_replay_history(display_device_t *display)
+{
+	uint64_t total_lines = boot_splash_history_line_count();
+	if (total_lines == 0ULL) return;
+
+	uint64_t lines_per_present = total_lines / BOOT_SPLASH_REPLAY_TARGET_PRESENTS;
+	if (lines_per_present == 0ULL) lines_per_present = 1ULL;
+
+	uint64_t cursor = boot_splash_history_oldest_cursor();
+
+	uint64_t frequency = timer_get_frequency();
+	uint64_t step_ticks = frequency != 0ULL ? (frequency * BOOT_SPLASH_REPLAY_STEP_MS) / 1000ULL : 0ULL;
+	uint64_t max_ticks = frequency != 0ULL ? (frequency * BOOT_SPLASH_REPLAY_MAX_MS) / 1000ULL : 0ULL;
+	uint64_t deadline = timer_get_ticks() + max_ticks;
+
+	char buffer[256];
+	uint64_t read_size;
+	bool animate = true;
+	uint64_t lines_since_present = 0ULL;
+
+	g_text_replaying = true;
+
+	for (;;) {
+		if (!kconsole_history_read(&cursor, buffer, sizeof(buffer), &read_size) || read_size == 0ULL) break;
+
+		for (uint64_t index = 0ULL; index < read_size; index++) {
+			char character = buffer[index];
+			boot_splash_text_putc(character, 0);
+
+			if (character != '\n' || !animate) continue;
+
+			lines_since_present++;
+			if (lines_since_present < lines_per_present) continue;
+			lines_since_present = 0ULL;
+
+			(void)display_present_full(display);
+
+			if (max_ticks != 0ULL && timer_get_ticks() >= deadline) {
+				animate = false;
+			} else if (step_ticks != 0ULL) {
+				uint64_t next = timer_get_ticks() + step_ticks;
+				while (timer_get_ticks() < next) __asm__ volatile("yield");
+			}
+		}
+	}
+
+	if (!animate || g_text_dirty) (void)display_present_full(display);
+
+	g_text_replaying = false;
+	g_text_dirty = false;
+	g_text_last_present_ticks = timer_get_ticks();
+}
+
 static void boot_splash_text_init(void)
 {
 	if (g_display == 0) {
 		g_text_active = false;
 		return;
+	}
+
+	/*
+	 * The console spans the full screen in both dimensions; only the header
+	 * rectangle itself (logo, widened to the progress bar's width where
+	 * that's wider) is off-limits to individual cells and scroll copies --
+	 * see boot_splash_rect_hits_header(). Rows above and below the header,
+	 * and columns to its left and right within the header's own rows, are
+	 * all fair game, so nothing about the header wastes the full row/column
+	 * it happens to sit in.
+	 */
+	g_header_top = g_top;
+	g_header_bottom = boot_splash_text_region_top();
+
+	uint32_t scaled_width = g_boot_splash_width * g_scale;
+	g_header_left = g_left;
+	g_header_right = g_left + scaled_width;
+
+	uint32_t bar_left;
+	uint32_t bar_top;
+	if (boot_splash_bar_rect(&bar_left, &bar_top)) {
+		if (bar_left < g_header_left) g_header_left = bar_left;
+		uint32_t bar_right = bar_left + BOOT_SPLASH_BAR_WIDTH;
+		if (bar_right > g_header_right) g_header_right = bar_right;
 	}
 
 	g_text_columns = g_display->width / BOOT_SPLASH_TEXT_CELL_WIDTH;
@@ -444,29 +694,29 @@ bool boot_splash_show(display_device_t *display)
 	g_status_active = false;
 
 	boot_splash_text_init();
+	boot_splash_paint_logo();
+
 	if (g_text_active) {
 		/*
-		 * Replay the retained console history so the splash appears with the
-		 * boot log already dense and scrolled behind the logo -- the "SRD"
-		 * look -- rather than starting blank and only filling in from here.
-		 * g_text_replaying suppresses the per-line present during replay
-		 * (see boot_splash_text_putc) so this doesn't fire one full-screen
-		 * present per retained line; the present below shows the end result.
+		 * Register for live output first (no auto-replay), then walk the
+		 * retained history ourselves so it plays back with visible motion
+		 * -- see boot_splash_replay_history() -- instead of appearing
+		 * already fully scrolled in one instant paint.
 		 */
-		g_text_replaying = true;
-		bool registered = kconsole_register_sink(boot_splash_text_putc, 0, true);
-		g_text_replaying = false;
-		if (!registered) g_text_active = false;
+		bool registered = kconsole_register_sink(boot_splash_text_putc, 0, false);
+		if (!registered) {
+			g_text_active = false;
+		} else {
+			boot_splash_replay_history(display);
+		}
 	}
-
-	boot_splash_paint_logo();
 
 	g_started_at = timer_get_ticks();
 	g_progress = 80U;
 	g_visible = true;
 	if (!boot_splash_draw_bar()) return false;
 	if (!display_present_full(display)) return false;
-	kprintf("boot_splash: shown %ux%u at %ux scale\n", g_boot_splash_width, g_boot_splash_height, g_scale);
+	kprintf("boot_splash_show: shown %ux%u at %ux scale\n", g_boot_splash_width, g_boot_splash_height, g_scale);
 	return true;
 }
 
@@ -507,6 +757,20 @@ bool boot_splash_finish(void)
 	if (frame_interval == 0ULL) frame_interval = 1ULL;
 
 	/*
+	 * By this point every line the rest of boot is ever going to print has
+	 * already been drawn into the console cells (boot_splash_text_putc()
+	 * runs synchronously from kputc()/kprintf()) -- but the last one or two
+	 * lines may still be sitting behind the BOOT_SPLASH_TEXT_PRESENT_HZ rate
+	 * gate, drawn but not yet actually presented to the screen. Force one
+	 * last present here, bypassing that gate, so "loading the OS" doesn't
+	 * finish a moment before its own final log lines became visible.
+	 */
+	if (g_text_dirty) {
+		g_text_dirty = false;
+		if (!display_present_full(g_display)) return false;
+	}
+
+	/*
 	 * Stop mirroring the serial log onto the scanout before UI takes it over;
 	 * the completion animation below finishes without further text scrolling.
 	 */
@@ -525,6 +789,6 @@ bool boot_splash_finish(void)
 		while (timer_get_ticks() < deadline) __asm__ volatile("yield");
 	}
 
-	kputln("boot_splash: progress complete");
+	kputln("boot_splash_finish: progress complete");
 	return true;
 }

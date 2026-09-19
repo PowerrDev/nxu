@@ -5,7 +5,13 @@
 #include <stdint.h>
 
 #define KCONSOLE_MAX_SINKS 4U
-#define KCONSOLE_HISTORY_SIZE 32768U
+/*
+ * Large enough to hold the full pre-splash boot log (PMM/VMM/heap/VFS/thread
+ * self-tests and their dumps easily exceed the old 32KiB), so the boot splash
+ * text overlay's history replay shows the log from the very first line
+ * instead of only whatever tail still fit in a smaller ring buffer.
+ */
+#define KCONSOLE_HISTORY_SIZE 262144U
 
 typedef void (*kconsole_sink_t)(char character, void *context);
 
