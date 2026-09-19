@@ -375,6 +375,9 @@ bool vm_kern_allocate(
 		!g_vm_kern.initialized ||
 		address == 0
 	) {
+		kprintf("vm_kern: DEBUG entry check failed, initialized=%lu address=%lu\n",
+			(unsigned long)g_vm_kern.initialized,
+			(unsigned long)(uintptr_t)address);
 		return false;
 	}
 
@@ -386,12 +389,14 @@ bool vm_kern_allocate(
 		size,
 		&page_count
 	)) {
+		kprintf("vm_kern: DEBUG vm_kern_size_to_pages failed for size=%lu\n", (unsigned long)size);
 		return false;
 	}
 
 	vm_kern_allocation_t *record = vm_kern_find_free_record();
 
 	if (record == 0) {
+		kputln("vm_kern: DEBUG no free allocation record");
 		return false;
 	}
 
@@ -401,6 +406,10 @@ bool vm_kern_allocate(
 		page_count,
 		&start_page
 	)) {
+		kprintf("vm_kern: DEBUG no free run of %lu page(s), used_pages=%lu allocation_count=%lu\n",
+			(unsigned long)page_count,
+			(unsigned long)g_vm_kern.used_pages,
+			(unsigned long)g_vm_kern.allocation_count);
 		return false;
 	}
 
@@ -408,6 +417,7 @@ bool vm_kern_allocate(
 		start_page,
 		page_count
 	)) {
+		kputln("vm_kern: DEBUG reserve_run failed");
 		return false;
 	}
 
@@ -423,6 +433,10 @@ bool vm_kern_allocate(
 		if (!pmm_allocate_page(
 			&physical_address
 		)) {
+			kprintf("vm_kern: DEBUG pmm_allocate_page failed, free=%lu used=%lu total=%lu\n",
+				(unsigned long)pmm_get_free_page_count(),
+				(unsigned long)pmm_get_used_page_count(),
+				(unsigned long)pmm_get_page_count());
 			if (vm_kern_rollback_mappings(
 				start_page,
 				mapped_pages
@@ -447,6 +461,7 @@ bool vm_kern_allocate(
 			VMM_MEMORY_NORMAL,
 			protection
 		)) {
+			kputln("vm_kern: DEBUG vmm_map_page failed");
 			(void)pmm_free_page(
 				physical_address
 			);
