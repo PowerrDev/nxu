@@ -1,4 +1,5 @@
 #include <kern/console/console.h>
+#include <kern/console/ioregistry.h>
 #include <drivers/virtio/virtio_input.h>
 
 #include <mach/arm64/gic.h>
@@ -49,6 +50,15 @@ _Static_assert(
 static virtio_input_device_t g_virtio_input_devices[VIRTIO_INPUT_MAX_DEVICES];
 static uint32_t g_virtio_input_device_count;
 static uint32_t g_next_input_device_id = 1U;
+static ioreg_id_t g_virtio_input_ioreg_family;
+
+static ioreg_id_t virtio_input_ioreg_family(void)
+{
+	if (g_virtio_input_ioreg_family == 0U) {
+		g_virtio_input_ioreg_family = ioreg_add(ioreg_family_hid(), "VirtIOInputFamily", "VirtIOInputFamily");
+	}
+	return g_virtio_input_ioreg_family;
+}
 
 /*
  * virtio_input_bitmap_test:
@@ -397,6 +407,19 @@ bool virtio_input_attach(const virtio_mmio_device_t *transport)
 
 	device->attached = true;
 	g_virtio_input_device_count++;
+
+	kprintf(
+		"VirtIOInputFamily: matched %s \"%s\" at 0x%llx\n",
+		device->device_class == INPUT_DEVICE_KEYBOARD ? "keyboard" : device->device_class == INPUT_DEVICE_MOUSE ? "mouse" : "input device",
+		device->name[0] != '\0' ? device->name : "unnamed",
+		(unsigned long long)device->transport.region.base
+	);
+
+	(void)ioreg_add(
+		virtio_input_ioreg_family(),
+		device->device_class == INPUT_DEVICE_KEYBOARD ? "Keyboard" : device->device_class == INPUT_DEVICE_MOUSE ? "Mouse" : "InputDevice",
+		"VirtIOInputDevice"
+	);
 
 	virtio_mmio_notify(&device->transport, VIRTIO_INPUT_EVENTQ);
 	return true;

@@ -1,4 +1,5 @@
 #include <kern/console/console.h>
+#include <kern/console/ioregistry.h>
 #include <drivers/virtio/virtio_block.h>
 
 #include <drivers/block/block_device.h>
@@ -39,6 +40,15 @@ static virtio_block_device_t
 	g_virtio_block_devices[VIRTIO_BLOCK_MAX_DEVICES];
 
 static uint32_t g_virtio_block_device_count;
+static ioreg_id_t g_virtio_block_ioreg_family;
+
+static ioreg_id_t virtio_block_ioreg_family(void)
+{
+	if (g_virtio_block_ioreg_family == 0U) {
+		g_virtio_block_ioreg_family = ioreg_add(ioreg_family_storage(), "VirtIOBlockFamily", "VirtIOBlockFamily");
+	}
+	return g_virtio_block_ioreg_family;
+}
 
 /*
  * virtio_block_lock:
@@ -893,6 +903,15 @@ bool virtio_block_attach(
 	}
 
 	g_virtio_block_device_count++;
+
+	kprintf(
+		"VirtIOBlockFamily: matched virtio-blk at 0x%llx, %llu MiB, %s\n",
+		(unsigned long long)device->transport.region.base,
+		(unsigned long long)((capacity * (uint64_t)BLOCK_SECTOR_SIZE) / (1024ULL * 1024ULL)),
+		device->read_only ? "read-only" : "read-write"
+	);
+
+	(void)ioreg_add(virtio_block_ioreg_family(), "disk0", "VirtIOBlockDevice");
 
 	return true;
 
