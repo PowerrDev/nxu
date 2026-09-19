@@ -1,6 +1,6 @@
 # ARM64 Architecture Layer
 
-`arch/arm64` contains the machine-dependent half of the NXU kernel.
+`mach/arm64` contains the machine-dependent half of the NXU kernel.
 Everything here would have to be rewritten for a different processor
 architecture; nothing here should encode machine (as opposed to architecture)
 knowledge.
@@ -114,12 +114,12 @@ the translation control registers rather than routing them through `system.h`.
 
 ## Source files
 
-- [`arch/arm64/start.S`](../../arch/arm64/start.S)
-- [`arch/arm64/system.h`](../../arch/arm64/system.h)
-- [`arch/arm64/exception.c`](../../arch/arm64/exception.c)
-- [`arch/arm64/gic.c`](../../arch/arm64/gic.c)
-- [`arch/arm64/timer.c`](../../arch/arm64/timer.c)
-- [`arch/arm64/cache.c`](../../arch/arm64/cache.c)
+- [`mach/arm64/start.S`](../../mach/arm64/start.S)
+- [`mach/arm64/system.h`](../../mach/arm64/system.h)
+- [`mach/arm64/exception.c`](../../mach/arm64/exception.c)
+- [`mach/arm64/gic.c`](../../mach/arm64/gic.c)
+- [`mach/arm64/timer.c`](../../mach/arm64/timer.c)
+- [`mach/arm64/cache.c`](../../mach/arm64/cache.c)
 
 ## Related documentation
 
@@ -137,7 +137,7 @@ the translation control registers rather than routing them through `system.h`.
 - Single core throughout. No per-CPU data, no SGI/IPI support, no secondary CPU
   release.
 - No FP/SIMD, no SVE, no pointer authentication, no MTE.
-- `arch/arm64/gic.c` hard-codes its MMIO bases instead of accepting them
+- `mach/arm64/gic.c` hard-codes its MMIO bases instead of accepting them
   from `platform_t`.
 - Duplicate system-register accessors exist in `system.h`, `vmm.c`, `cache.c`,
   `gic.c` and `timer.c`. There is no single accessor header.

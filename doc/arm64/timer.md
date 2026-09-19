@@ -227,9 +227,9 @@ fixed interval would avoid this; NXU does not do that.
 
 ## Source files
 
-- [`arch/arm64/timer.c`](../../arch/arm64/timer.c)
-- [`arch/arm64/timer.h`](../../arch/arm64/timer.h)
-- [`arch/arm64/exception.c`](../../arch/arm64/exception.c)
+- [`mach/arm64/timer.c`](../../mach/arm64/timer.c)
+- [`mach/arm64/timer.h`](../../mach/arm64/timer.h)
+- [`mach/arm64/exception.c`](../../mach/arm64/exception.c)
 - [`kern/kern_init.c`](../../kern/kern_init.c)
 
 ## Related documentation
