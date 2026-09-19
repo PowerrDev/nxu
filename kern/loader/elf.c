@@ -1,5 +1,6 @@
 #include <kern/loader/elf.h>
-#include <mach/arm64/cache.h>
+#include <kern/loader/elf_format.h>
+#include <mach/machine/cache.h>
 #include <kern/ipc/ipc_init.h>
 #include <kern/ipc/ipc_port.h>
 #include <kern/ipc/ipc_space.h>
@@ -14,67 +15,15 @@
 #include <stdint.h>
 #include <string.h>
 
-#define ELF_IDENT_SIZE 16U
-#define ELF_CLASS_64 2U
-#define ELF_DATA_LSB 1U
-#define ELF_VERSION_CURRENT 1U
-#define ELF_TYPE_EXEC 2U
-#define ELF_MACHINE_AARCH64 183U
-#define ELF_PT_LOAD 1U
-#define ELF_PF_X 0x1U
-#define ELF_PF_W 0x2U
-#define ELF_PROGRAM_HEADER_MAX 16U
-#define LOADER_USER_STACK_PAGES 4ULL
-#define LOADER_USER_STACK_TOP VM_USER_STACK_TOP
-#define LOADER_USER_STACK_BASE (LOADER_USER_STACK_TOP - LOADER_USER_STACK_PAGES * PMM_PAGE_SIZE)
+_Static_assert(LOADER_PAGE_SIZE == PMM_PAGE_SIZE, "loader page size must match the physical page size");
 
-typedef struct {
-	uint8_t ident[ELF_IDENT_SIZE];
-	uint16_t type;
-	uint16_t machine;
-	uint32_t version;
-	uint64_t entry;
-	uint64_t program_header_offset;
-	uint64_t section_header_offset;
-	uint32_t flags;
-	uint16_t header_size;
-	uint16_t program_header_entry_size;
-	uint16_t program_header_count;
-	uint16_t section_header_entry_size;
-	uint16_t section_header_count;
-	uint16_t section_header_string_index;
-} elf64_header_t;
-
-typedef struct {
-	uint32_t type;
-	uint32_t flags;
-	uint64_t offset;
-	uint64_t virtual_address;
-	uint64_t physical_address;
-	uint64_t file_size;
-	uint64_t memory_size;
-	uint64_t alignment;
-} elf64_program_header_t;
-
-_Static_assert(sizeof(elf64_header_t) == 64U, "ELF64 header layout mismatch");
-_Static_assert(sizeof(elf64_program_header_t) == 56U, "ELF64 program header layout mismatch");
-
-static bool
-loader_add_overflow(uint64_t left, uint64_t right, uint64_t *result)
-{
-	if (result == 0 || left > UINT64_MAX - right) return true;
-	*result = left + right;
-	return false;
-}
-
-static bool
-loader_align_up(uint64_t value, uint64_t alignment, uint64_t *result)
-{
-	if (result == 0 || alignment == 0ULL || (alignment & (alignment - 1ULL)) != 0ULL) return false;
-	if (value > UINT64_MAX - (alignment - 1ULL)) return false;
-	*result = (value + alignment - 1ULL) & ~(alignment - 1ULL);
-	return true;
-}
+/*
+ * Where a check has a LOADER_ELF_WIDEN branch below, the widened (i386) path
+ * calls the shared, self-tested helper from elf_format.h and the native path
+ * keeps the original inline spelling: it is the same test, but the arm64
+ * kernel image is compared byte for byte across this change, and re-spelling
+ * the checks perturbs its code layout.
+ */
 
 static loader_status_t
 loader_vnode_read_exact(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size)
@@ -93,22 +42,10 @@ loader_vnode_read_exact(vnode_t vnode, uint64_t offset, void *buffer, uint64_t s
 }
 
 static bool
-loader_header_valid(const elf64_header_t *header)
-{
-	if (header == 0) return false;
-	if (header->ident[0] != 0x7FU || header->ident[1] != 'E' || header->ident[2] != 'L' || header->ident[3] != 'F') return false;
-	if (header->ident[4] != ELF_CLASS_64 || header->ident[5] != ELF_DATA_LSB || header->ident[6] != ELF_VERSION_CURRENT) return false;
-	if (header->type != ELF_TYPE_EXEC || header->machine != ELF_MACHINE_AARCH64 || header->version != ELF_VERSION_CURRENT) return false;
-	if (header->header_size != sizeof(elf64_header_t) || header->program_header_entry_size != sizeof(elf64_program_header_t)) return false;
-	if (header->program_header_count == 0U || header->program_header_count > ELF_PROGRAM_HEADER_MAX) return false;
-	return header->entry != 0ULL;
-}
-
-static bool
-loader_segment_protection(const elf64_program_header_t *segment, vm_user_protection_t *protection)
+loader_segment_protection(const loader_segment_t *segment, vm_user_protection_t *protection)
 {
 	if (segment == 0 || protection == 0) return false;
-	if ((segment->flags & ELF_PF_W) != 0U && (segment->flags & ELF_PF_X) != 0U) return false;
+	if (!loader_segment_flags_valid(segment->flags)) return false;
 
 	if ((segment->flags & ELF_PF_X) != 0U) {
 		*protection = VM_USER_PROTECTION_READ_EXECUTE;
@@ -144,8 +81,15 @@ loader_map_zero_page(vm_address_space_t *map, uint64_t virtual_address, vm_user_
 }
 
 static loader_status_t
-loader_map_segment(vm_address_space_t *map, const elf64_program_header_t *segment)
+loader_map_segment(vm_address_space_t *map, const loader_segment_t *segment)
 {
+#if LOADER_ELF_WIDEN
+	if (!loader_segment_valid(segment)) return LOADER_STATUS_BAD_FORMAT;
+
+	uint64_t segment_end = segment->virtual_address + segment->memory_size;
+	uint64_t page_start = segment->virtual_address & ~(PMM_PAGE_SIZE - 1ULL);
+	uint64_t page_end = (segment_end + PMM_PAGE_SIZE - 1ULL) & ~(PMM_PAGE_SIZE - 1ULL);
+#else
 	if (segment->memory_size < segment->file_size || segment->memory_size == 0ULL) return LOADER_STATUS_BAD_FORMAT;
 	if ((segment->virtual_address & (PMM_PAGE_SIZE - 1ULL)) != (segment->offset & (PMM_PAGE_SIZE - 1ULL))) return LOADER_STATUS_BAD_FORMAT;
 
@@ -156,6 +100,8 @@ loader_map_segment(vm_address_space_t *map, const elf64_program_header_t *segmen
 	uint64_t page_start = segment->virtual_address & ~(PMM_PAGE_SIZE - 1ULL);
 	uint64_t page_end;
 	if (!loader_align_up(segment_end, PMM_PAGE_SIZE, &page_end)) return LOADER_STATUS_BAD_FORMAT;
+
+#endif
 
 	vm_user_protection_t protection;
 	if (!loader_segment_protection(segment, &protection)) return LOADER_STATUS_BAD_FORMAT;
@@ -172,7 +118,7 @@ loader_map_segment(vm_address_space_t *map, const elf64_program_header_t *segmen
 }
 
 static loader_status_t
-loader_copy_segment(vnode_t vnode, vm_address_space_t *map, const elf64_program_header_t *segment)
+loader_copy_segment(vnode_t vnode, vm_address_space_t *map, const loader_segment_t *segment)
 {
 	uint64_t copied = 0ULL;
 
@@ -361,22 +307,41 @@ loader_spawn(proc_t parent, const char *path, const char *name, proc_t *result)
 		return LOADER_STATUS_BAD_FORMAT;
 	}
 
-	elf64_header_t header;
+	loader_header_t header;
+#if LOADER_ELF_WIDEN
+	loader_disk_header_t disk_header;
+	loader_status_t status = loader_vnode_read_exact(vnode, 0ULL, &disk_header, sizeof(disk_header));
+	if (status == LOADER_STATUS_OK) loader_header_widen(&disk_header, &header);
+#else
 	loader_status_t status = loader_vnode_read_exact(vnode, 0ULL, &header, sizeof(header));
+#endif
 	if (status != LOADER_STATUS_OK || !loader_header_valid(&header)) {
 		vnode_rele(vnode);
 		return status == LOADER_STATUS_OK ? LOADER_STATUS_BAD_FORMAT : status;
 	}
 
+#if LOADER_ELF_WIDEN
+	uint64_t program_table_size;
+	if (!loader_program_table_valid(&header, vnode->v_size, &program_table_size)) {
+#else
 	uint64_t program_table_size = (uint64_t)header.program_header_count * sizeof(elf64_program_header_t);
 	uint64_t program_table_end;
 	if (loader_add_overflow(header.program_header_offset, program_table_size, &program_table_end) || program_table_end > vnode->v_size) {
+#endif
 		vnode_rele(vnode);
 		return LOADER_STATUS_BAD_FORMAT;
 	}
 
-	elf64_program_header_t programs[ELF_PROGRAM_HEADER_MAX];
+	loader_segment_t programs[ELF_PROGRAM_HEADER_MAX];
+#if LOADER_ELF_WIDEN
+	loader_disk_segment_t disk_programs[ELF_PROGRAM_HEADER_MAX];
+	status = loader_vnode_read_exact(vnode, header.program_header_offset, disk_programs, program_table_size);
+	for (uint32_t index = 0U; status == LOADER_STATUS_OK && index < header.program_header_count; index++) {
+		loader_segment_widen(&disk_programs[index], &programs[index]);
+	}
+#else
 	status = loader_vnode_read_exact(vnode, header.program_header_offset, programs, program_table_size);
+#endif
 	if (status != LOADER_STATUS_OK) {
 		vnode_rele(vnode);
 		return status;
@@ -384,11 +349,15 @@ loader_spawn(proc_t parent, const char *path, const char *name, proc_t *result)
 
 	bool loadable = false;
 	for (uint32_t index = 0U; index < header.program_header_count; index++) {
-		elf64_program_header_t *segment = &programs[index];
+		loader_segment_t *segment = &programs[index];
 		if (segment->type != ELF_PT_LOAD) continue;
 		loadable = true;
+#if LOADER_ELF_WIDEN
+		if (!loader_segment_in_file(segment, vnode->v_size)) {
+#else
 		uint64_t file_end;
 		if (loader_add_overflow(segment->offset, segment->file_size, &file_end) || file_end > vnode->v_size) {
+#endif
 			vnode_rele(vnode);
 			return LOADER_STATUS_BAD_FORMAT;
 		}
