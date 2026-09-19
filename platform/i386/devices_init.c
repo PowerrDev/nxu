@@ -17,6 +17,8 @@
  *   expect-input=<n>    drivers self-test: at least n input devices (default 0)
  *   input-wait=<sec>    drivers self-test: wait up to sec seconds for a
  *                       keyboard and a mouse event (polling)
+ *   block-keep=1        drivers self-test: leave the scratch pattern on disk
+ *                       (so the host can check the write arrived)
  *   virtio-irq=1        bind the VirtIO drivers to their PCI interrupt line
  *                       through irq_register() instead of polling
  */
@@ -377,6 +379,11 @@ static bool devices_selftest_block(void)
 	if (block_device_read(device, device->sector_count, 1U, g_selftest_readback)) {
 		kputln("i386_init_drivers_selftest: FAIL read past the end of the disk was accepted");
 		ok = false;
+	}
+
+	if (devices_arg_or("block-keep", 0ULL) != 0ULL) {
+		kputln("i386_init_drivers_selftest: block-keep set, scratch sectors left as written");
+		return ok;
 	}
 
 	if (!block_device_write(device, scratch, DEVICES_SELFTEST_SECTORS, g_selftest_original) || !block_device_flush(device)) {
