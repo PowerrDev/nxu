@@ -10,6 +10,7 @@
  * this architecture yet; this is the seam it will be entered from.
  */
 
+#include <mach/i386/boot_info.h>
 #include <mach/i386/gdt.h>
 #include <mach/i386/idt.h>
 #include <mach/i386/io.h>
@@ -68,13 +69,22 @@ static void i386_print_cpu(void)
 	);
 }
 
-/*
- * Copy the value of a "name=value" token from the Multiboot command line.
- * QEMU prefixes the line with the kernel's own path, so scan token by token.
- */
-static bool i386_cmdline_value(const char *cmdline, const char *name, char *value, uint32_t capacity)
+static i386_boot_info_t g_boot_info;
+
+const i386_boot_info_t *i386_boot_info(void)
 {
-	if (cmdline == 0) return false;
+	return &g_boot_info;
+}
+
+/*
+ * QEMU prefixes the command line with the kernel's own path, so scan token
+ * by token rather than assuming the arguments start at the beginning.
+ */
+bool i386_boot_arg(const char *name, char *value, uint32_t capacity)
+{
+	const char *cmdline = g_boot_info.cmdline;
+
+	if (cmdline == 0 || capacity == 0U) return false;
 
 	uint32_t name_length = 0U;
 
@@ -108,8 +118,84 @@ static bool i386_cmdline_value(const char *cmdline, const char *name, char *valu
 	return false;
 }
 
+bool i386_boot_test_requested(const char *name)
+{
+	char value[I386_CMDLINE_VALUE_MAX];
+
+	if (!i386_boot_arg("test", value, sizeof(value))) return false;
+
+	uint32_t index = 0U;
+
+	while (value[index] != '\0' && name[index] == value[index]) index++;
+	return value[index] == '\0' && name[index] == '\0';
+}
+
+void i386_shutdown(uint8_t code)
+{
+	/* QEMU's isa-debug-exit exits with (code << 1) | 1; harmless when absent. */
+	outb(0xF4U, code);
+
+	for (;;) {
+		__asm__ volatile("cli\n\thlt");
+	}
+}
+
+/* Weak defaults: an area that is not ported yet succeeds without doing anything. */
+#define I386_WEAK_PHASE(name) \
+	__attribute__((weak)) bool name(const i386_boot_info_t *boot) \
+	{ \
+		(void)boot; \
+		return true; \
+	}
+
+I386_WEAK_PHASE(i386_init_platform)
+I386_WEAK_PHASE(i386_init_interrupts)
+I386_WEAK_PHASE(i386_init_vm)
+I386_WEAK_PHASE(i386_init_kernel)
+I386_WEAK_PHASE(i386_init_threads)
+I386_WEAK_PHASE(i386_init_drivers)
+I386_WEAK_PHASE(i386_init_userland)
+
+I386_WEAK_PHASE(i386_init_platform_selftest)
+I386_WEAK_PHASE(i386_init_interrupts_selftest)
+I386_WEAK_PHASE(i386_init_vm_selftest)
+I386_WEAK_PHASE(i386_init_kernel_selftest)
+I386_WEAK_PHASE(i386_init_threads_selftest)
+I386_WEAK_PHASE(i386_init_drivers_selftest)
+I386_WEAK_PHASE(i386_init_userland_selftest)
+
+typedef struct {
+	const char *name;
+	bool (*run)(const i386_boot_info_t *boot);
+	bool (*selftest)(const i386_boot_info_t *boot);
+} i386_phase_t;
+
+static const i386_phase_t g_phases[] = {
+	{ "platform", i386_init_platform, i386_init_platform_selftest },
+	{ "interrupts", i386_init_interrupts, i386_init_interrupts_selftest },
+	{ "vm", i386_init_vm, i386_init_vm_selftest },
+	{ "kernel", i386_init_kernel, i386_init_kernel_selftest },
+	{ "threads", i386_init_threads, i386_init_threads_selftest },
+	{ "drivers", i386_init_drivers, i386_init_drivers_selftest },
+	{ "userland", i386_init_userland, i386_init_userland_selftest }
+};
+
+static void i386_fail(const char *phase, const char *what)
+{
+	kprintf("i386_init: %s %s failed\n", phase, what);
+	i386_shutdown(0x01U);
+}
+
 void i386_init(uint32_t magic, const multiboot_info_t *info)
 {
+	g_boot_info.magic = magic;
+	g_boot_info.multiboot = info;
+	g_boot_info.cmdline = 0;
+
+	if (magic == MULTIBOOT_BOOTLOADER_MAGIC && info != 0 && (info->flags & MULTIBOOT_INFO_CMDLINE) != 0U && info->cmdline != 0U) {
+		g_boot_info.cmdline = (const char *)(uintptr_t)info->cmdline;
+	}
+
 	uint64_t frequency = timer_calibrate();
 
 	kprintf("%s [%s]\n", NXU_KERNEL_VERSION, sizeof(void *) == 8U ? "x86_64" : "i386");
@@ -167,23 +253,33 @@ void i386_init(uint32_t magic, const multiboot_info_t *info)
 
 	kputln("i386_init: trap self-test passed (breakpoint resume, int 0x80 frame write-back)");
 
-	if (magic == MULTIBOOT_BOOTLOADER_MAGIC && info != 0 && (info->flags & MULTIBOOT_INFO_CMDLINE) != 0U) {
+	{
 		char test[I386_CMDLINE_VALUE_MAX];
 
-		if (i386_cmdline_value((const char *)(uintptr_t)info->cmdline, "trap-test", test, sizeof(test))) {
-			i386_trap_test(test);
+		if (i386_boot_arg("trap-test", test, sizeof(test))) i386_trap_test(test);
+	}
+
+	for (uint32_t index = 0U; index < sizeof(g_phases) / sizeof(g_phases[0]); index++) {
+		const i386_phase_t *phase = &g_phases[index];
+
+		if (!phase->run(&g_boot_info)) i386_fail(phase->name, "phase");
+
+		if (i386_boot_test_requested(phase->name)) {
+			kprintf("i386_init: running %s self-test\n", phase->name);
+
+			if (!phase->selftest(&g_boot_info)) i386_fail(phase->name, "self-test");
+
+			kprintf("i386_init: %s self-test passed\n", phase->name);
 		}
 	}
 
-	kputln("i386_init: machine layer online; vm, scheduler and userland are not ported yet");
+	kputln("i386_init: boot phases complete");
 
 	/* Lets an automated run end cleanly under QEMU's isa-debug-exit device. */
-	if (magic == MULTIBOOT_BOOTLOADER_MAGIC && info != 0 && (info->flags & MULTIBOOT_INFO_CMDLINE) != 0U) {
+	{
 		char exit_value[I386_CMDLINE_VALUE_MAX];
 
-		if (i386_cmdline_value((const char *)(uintptr_t)info->cmdline, "qemu-exit", exit_value, sizeof(exit_value))) {
-			outb(0xF4U, 0x00U);
-		}
+		if (i386_boot_arg("qemu-exit", exit_value, sizeof(exit_value))) i386_shutdown(0x00U);
 	}
 
 	for (;;) {

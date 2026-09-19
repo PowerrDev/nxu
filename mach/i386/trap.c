@@ -300,29 +300,73 @@ static void trap_panic(const x86_saved_state_t *state, uint32_t esp, const char 
 	trap_halt();
 }
 
+__attribute__((weak)) bool i386_trap_irq(x86_saved_state_t *state)
+{
+	(void)state;
+	return false;
+}
+
+__attribute__((weak)) void i386_trap_syscall(x86_saved_state_t *state)
+{
+	/*
+	 * No dispatcher yet. Returning a recognisable error through the frame
+	 * proves the register write-back path.
+	 */
+	g_syscall_count++;
+	state->eax = I386_SYSCALL_UNIMPLEMENTED;
+}
+
+__attribute__((weak)) bool i386_trap_user_exception(x86_saved_state_t *state)
+{
+	(void)state;
+	return false;
+}
+
+__attribute__((weak)) bool i386_trap_page_fault(x86_saved_state_t *state)
+{
+	(void)state;
+	return false;
+}
+
+__attribute__((weak)) void i386_trap_exit(x86_saved_state_t *state)
+{
+	(void)state;
+}
+
 void i386_trap_handler(x86_saved_state_t *state)
 {
 	uint32_t vector = state->trapno;
 
-	switch (vector) {
-	case T_BREAKPOINT:
-		/* A breakpoint resumes after the int3; nothing is wrong. */
+	if (vector == T_BREAKPOINT && !x86_saved_state_is_user(state)) {
+		/* A kernel breakpoint resumes after the int3; nothing is wrong. */
 		g_breakpoint_count++;
 		g_last_breakpoint_eip = state->eip;
 		g_last_breakpoint_cs = state->cs;
+		i386_trap_exit(state);
 		return;
+	}
 
-	case T_SYSCALL:
-		/*
-		 * The dispatcher is not ported yet. Returning a recognisable
-		 * error through the frame proves the register write-back path.
-		 */
-		g_syscall_count++;
-		state->eax = I386_SYSCALL_UNIMPLEMENTED;
+	if (vector == T_SYSCALL) {
+		i386_trap_syscall(state);
+		i386_trap_exit(state);
 		return;
+	}
 
-	default:
-		break;
+	if (vector >= T_IRQ_BASE && vector < T_IRQ_BASE + T_IRQ_COUNT) {
+		if (i386_trap_irq(state)) {
+			i386_trap_exit(state);
+			return;
+		}
+	} else if (vector < T_EXCEPTION_COUNT) {
+		if (vector == T_PAGE_FAULT && i386_trap_page_fault(state)) {
+			i386_trap_exit(state);
+			return;
+		}
+
+		if (x86_saved_state_is_user(state) && i386_trap_user_exception(state)) {
+			i386_trap_exit(state);
+			return;
+		}
 	}
 
 	/*

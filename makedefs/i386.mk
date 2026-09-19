@@ -51,9 +51,15 @@ I386_ASM_SOURCES := \
     mach/i386/start.S \
     mach/i386/trap_vectors.S
 
+# Each area of the port adds its own sources, flags and targets in a fragment
+# under makedefs/i386/, so two areas never edit the same lines of this file.
+# A fragment appends to I386_C_SOURCES / I386_ASM_SOURCES / I386_CFLAGS; any
+# source listed twice is built once.
+include $(sort $(wildcard makedefs/i386/*.mk))
+
 I386_OBJECTS := \
-    $(I386_C_SOURCES:%.c=$(I386_BUILD)/%.o) \
-    $(I386_ASM_SOURCES:%.S=$(I386_BUILD)/%.o)
+    $(sort $(I386_C_SOURCES:%.c=$(I386_BUILD)/%.o)) \
+    $(sort $(I386_ASM_SOURCES:%.S=$(I386_BUILD)/%.o))
 
 I386_QEMU_FLAGS ?= -display none -serial stdio -monitor none -no-reboot -device isa-debug-exit,iobase=0xf4,iosize=0x04
 

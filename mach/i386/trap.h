@@ -122,6 +122,36 @@ void i386_isr_syscall(void);
 void i386_trap_handler(x86_saved_state_t *state);
 
 /*
+ * Extension points. Each has a weak default in trap.c so the trap layer works
+ * on its own, and is overridden by the subsystem that owns the behaviour,
+ * which keeps trap.c itself out of every area's diff.
+ *
+ *   i386_trap_irq      A hardware interrupt (vectors T_IRQ_BASE ..
+ *                      T_IRQ_BASE + T_IRQ_COUNT - 1). Acknowledge the
+ *                      controller, dispatch the handler. Return false if the
+ *                      interrupt was not handled (it is then fatal).
+ *   i386_trap_syscall  An int 0x80 from any ring. Read the request from the
+ *                      frame, run it, and store the result in the frame.
+ *   i386_trap_user_exception
+ *                      A processor exception taken while the CPU was in
+ *                      ring 3. Return true if it was handled (the frame is
+ *                      resumed) or the offender was dealt with; false makes
+ *                      it a fatal panic report as for a kernel fault.
+ *   i386_trap_page_fault
+ *                      A #PF from either ring. Return true if it was
+ *                      resolved and the instruction should be retried.
+ *   i386_trap_exit     Called last on every path that resumes the frame,
+ *                      with interrupts still masked. Where preemption and
+ *                      deferred work run, before returning to the
+ *                      interrupted context.
+ */
+bool i386_trap_irq(x86_saved_state_t *state);
+void i386_trap_syscall(x86_saved_state_t *state);
+bool i386_trap_user_exception(x86_saved_state_t *state);
+bool i386_trap_page_fault(x86_saved_state_t *state);
+void i386_trap_exit(x86_saved_state_t *state);
+
+/*
  * Body of the double-fault task. Entered by a hardware task switch, never
  * called; it reports the state saved in the main TSS and does not return.
  */
