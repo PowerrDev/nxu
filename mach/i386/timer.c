@@ -4,14 +4,24 @@
 /*
  * File:        mach/i386/timer.c
  *
- * TSC-backed counter for x86. The TSC frequency is not architecturally
+ * Timekeeping for x86, in the shape of mach/arm64/timer.c.
+ *
+ * The free-running counter is the TSC. Its frequency is not architecturally
  * enumerable everywhere, so it is measured by timing a fixed PIT channel 2
  * countdown (the PIT always runs at 1193182 Hz).
+ *
+ * The periodic tick is PIT channel 0 in mode 2 (rate generator), which
+ * raises IRQ0 every divisor input clocks and reloads itself. Like the arm64
+ * physical timer it only produces interrupts; counting them and charging the
+ * scheduler is done from the IRQ0 handler (see irq.c).
  */
 
 #include <mach/i386/timer.h>
 
 #include <mach/i386/io.h>
+#include <mach/i386/pic.h>
+
+#include <mach/machine/machine_routines.h>
 
 #include <stdint.h>
 
@@ -20,9 +30,20 @@
 #define PIT_COMMAND 0x43U
 #define PIT_GATE_PORT 0x61U
 
+#define PIT_CHANNEL0_DATA 0x40U
+
+/* Channel 0, lobyte/hibyte access, mode 2 (rate generator), binary. */
+#define PIT_CMD_CHANNEL0_RATE 0x34U
+
 #define PIT_CALIBRATION_COUNT 11932U
 
+/* Mode 2 needs a reload of at least 2; a reload of 0 means 65536. */
+#define PIT_MIN_DIVISOR 2U
+#define PIT_MAX_DIVISOR 65536U
+
 static uint64_t g_tsc_frequency;
+static volatile uint64_t g_timer_interrupt_count;
+static uint32_t g_timer_interrupt_rate;
 
 static inline uint64_t timer_rdtsc(void)
 {
@@ -89,9 +110,58 @@ void timer_delay_ms(uint64_t milliseconds)
 {
 	if (g_tsc_frequency == 0ULL) return;
 
-	uint64_t deadline = timer_rdtsc() + milliseconds * (g_tsc_frequency / 1000ULL);
+	uint64_t wait_ticks =
+		milliseconds / 1000ULL * g_tsc_frequency +
+		milliseconds % 1000ULL * g_tsc_frequency / 1000ULL;
+	uint64_t start = timer_rdtsc();
 
-	while (timer_rdtsc() < deadline) {
+	while ((timer_rdtsc() - start) < wait_ticks) {
 		__asm__ volatile("pause");
 	}
+}
+
+void timer_start_periodic(uint32_t frequency_hz)
+{
+	if (frequency_hz == 0U) return;
+
+	uint64_t divisor = (PIT_FREQUENCY_HZ + frequency_hz / 2U) / frequency_hz;
+
+	if (divisor < PIT_MIN_DIVISOR) divisor = PIT_MIN_DIVISOR;
+	if (divisor > PIT_MAX_DIVISOR) divisor = PIT_MAX_DIVISOR;
+
+	uint64_t state = ml_irq_save();
+
+	g_timer_interrupt_count = 0ULL;
+	g_timer_interrupt_rate = frequency_hz;
+
+	/* A divisor of 65536 is written as 0. */
+	outb(PIT_COMMAND, PIT_CMD_CHANNEL0_RATE);
+	outb(PIT_CHANNEL0_DATA, (uint8_t)(divisor & 0xFFU));
+	outb(PIT_CHANNEL0_DATA, (uint8_t)((divisor >> 8U) & 0xFFU));
+
+	/* The PIT is only heard once its line is open at the controller. */
+	pic_unmask(0U);
+
+	ml_irq_restore(state);
+}
+
+void timer_handle_interrupt(void)
+{
+	/* The PIT reloads itself, so unlike arm64 there is nothing to rearm. */
+	g_timer_interrupt_count++;
+}
+
+uint64_t timer_get_interrupt_count(void)
+{
+	/* A 64-bit load is two instructions here; keep the handler out of it. */
+	uint64_t state = ml_irq_save();
+	uint64_t count = g_timer_interrupt_count;
+
+	ml_irq_restore(state);
+	return count;
+}
+
+uint32_t timer_get_interrupt_rate(void)
+{
+	return g_timer_interrupt_rate;
 }
