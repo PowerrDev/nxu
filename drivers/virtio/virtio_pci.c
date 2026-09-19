@@ -78,13 +78,23 @@ bool virtio_pci_irq_mode(void)
 }
 
 /*
+ * PIC hooks from the interrupts area (mach/i386/pic.h), weak so this file
+ * links before that area is merged. In that case irq_register() refuses too,
+ * so the drivers poll.
+ */
+extern void pic_unmask(uint32_t irq) __attribute__((weak));
+extern bool pic_set_level_triggered(uint32_t irq, bool level) __attribute__((weak));
+
+/*
  * virtio_pci_irq_attach:
  *
  * Shared by both PCI transports. Polling is the default and needs nothing
- * here. With interrupt delivery enabled the handler is bound to the PIC line
- * the firmware wrote into the PCI interrupt-line register; unmasking the line
- * is the interrupt controller's job (irq_register is expected to do it). A
- * failed registration is not fatal because the drivers can always poll.
+ * here. With interrupt delivery enabled the handler is chained onto the PIC
+ * line the firmware wrote into the PCI interrupt-line register (INTx lines
+ * are shared, so several devices may register on one line and each handler
+ * checks its own ISR byte), the line is switched to level triggering in the
+ * ELCR as PCI requires, and then unmasked. A line the PIC cannot serve or a
+ * refused registration is not fatal because the drivers can always poll.
  */
 static bool virtio_pci_irq_attach(virtio_device_t *device, irq_handler_t handler, void *context)
 {
@@ -102,6 +112,13 @@ static bool virtio_pci_irq_attach(virtio_device_t *device, irq_handler_t handler
 		return true;
 	}
 
+	if (pic_set_level_triggered != 0 && !pic_set_level_triggered(line, true)) {
+		kprintf("virtio_pci_irq_attach: line %u stays edge triggered\n", (unsigned int)line);
+	}
+
+	if (pic_unmask != 0) pic_unmask(line);
+
+	kprintf("virtio_pci_irq_attach: handler chained on IRQ %u\n", (unsigned int)line);
 	return true;
 }
 
