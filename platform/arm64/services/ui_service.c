@@ -5,8 +5,10 @@
 #include <drivers/video/display.h>
 #include <drivers/video/ramfb_console.h>
 #include <drivers/virtio/virtio_input.h>
+#include <kern/boot/boot_args.h>
 #include <kern/console/console.h>
 #include <kern/memory/heap.h>
+#include <platform/rtc.h>
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -15,6 +17,9 @@
 
 #if defined(NXU_UI_SERVICE)
 #include <UIService.h>
+#if defined(NXU_WINDOWSERVER)
+#include <WindowServer/WSPrivate.h>
+#endif
 #endif
 
 #define UI_SERVICE_FRAME_INTERVAL_US 16667ULL
@@ -30,9 +35,6 @@ typedef struct {
 	uint64_t last_present_us;
 	int32_t pointer_x;
 	int32_t pointer_y;
-	int64_t raw_x;
-	int64_t raw_y;
-	uint64_t packet_count;
 	uint32_t buttons;
 	uint32_t pending_down;
 	uint32_t pending_up;
@@ -152,34 +154,59 @@ static int32_t UIServiceClampPointer(int64_t value, uint32_t extent)
 }
 
 /*
- * Translate NXU's relative VirtIO mouse state into a stable absolute UI point.
+ * Translate NXU's relative VirtIO mouse state into a stable absolute UI
+ * point.
+ *
+ * Pops at most one queued packet's motion per call, not the net displacement
+ * since the last call: UIServicePollEvent (which calls this) is itself
+ * drained in a loop by the NXU bridge until nothing is left, so a burst of
+ * packets -- several arriving before the bridge gets around to polling, e.g.
+ * a shake gesture's rapid direction reversals -- still reaches WindowServer
+ * as that same sequence of discrete samples instead of collapsing into one
+ * net move. See mouse_take_delta()'s doc comment for the full reasoning.
  */
 static void UIServiceRefreshPointer(UIServiceContext *context)
 {
-	uint64_t packets = mouse_packet_count();
-	if (packets == context->packet_count) return;
+	int32_t dx = 0;
+	int32_t dy = 0;
 
-	int64_t raw_x = mouse_x();
-	int64_t raw_y = mouse_y();
-	int64_t next_x = (int64_t)context->pointer_x + (raw_x - context->raw_x);
-	int64_t next_y = (int64_t)context->pointer_y + (raw_y - context->raw_y);
-	int32_t pointer_x = UIServiceClampPointer(next_x, context->width);
-	int32_t pointer_y = UIServiceClampPointer(next_y, context->height);
-	uint32_t buttons = mouse_buttons();
-	uint32_t changed = buttons ^ context->buttons;
+	if (mouse_take_delta(&dx, &dy)) {
+		int64_t next_x = (int64_t)context->pointer_x + dx;
+		int64_t next_y = (int64_t)context->pointer_y + dy;
+		int32_t pointer_x = UIServiceClampPointer(next_x, context->width);
+		int32_t pointer_y = UIServiceClampPointer(next_y, context->height);
 
-	if (pointer_x != context->pointer_x || pointer_y != context->pointer_y) {
-		context->pending_move = true;
+		if (pointer_x != context->pointer_x || pointer_y != context->pointer_y) {
+			context->pending_move = true;
+		}
+
+		context->pointer_x = pointer_x;
+		context->pointer_y = pointer_y;
 	}
 
+	uint32_t buttons = mouse_buttons();
+	uint32_t changed = buttons ^ context->buttons;
 	context->pending_down |= changed & buttons;
 	context->pending_up |= changed & context->buttons;
-	context->pointer_x = pointer_x;
-	context->pointer_y = pointer_y;
-	context->raw_x = raw_x;
-	context->raw_y = raw_y;
-	context->packet_count = packets;
 	context->buttons = buttons;
+
+#if defined(NXU_WINDOWSERVER)
+	if (context->pending_move) {
+		(void)WS_Pointer_Move(context->pointer_x, context->pointer_y);
+	}
+	if (changed != 0U) {
+		uint32_t mask = changed;
+		if ((mask & MOUSE_BUTTON_LEFT) != 0U) {
+			(void)WS_Pointer_Button(context->pointer_x, context->pointer_y, 0U, (buttons & MOUSE_BUTTON_LEFT) != 0U);
+		}
+		if ((mask & MOUSE_BUTTON_RIGHT) != 0U) {
+			(void)WS_Pointer_Button(context->pointer_x, context->pointer_y, 1U, (buttons & MOUSE_BUTTON_RIGHT) != 0U);
+		}
+		if ((mask & MOUSE_BUTTON_MIDDLE) != 0U) {
+			(void)WS_Pointer_Button(context->pointer_x, context->pointer_y, 2U, (buttons & MOUSE_BUTTON_MIDDLE) != 0U);
+		}
+	}
+#endif
 }
 
 /*
@@ -247,12 +274,25 @@ static uint32_t UIServicePollEvent(void *opaque, UIServiceHostEvent *event)
 
 	return UI_SERVICE_STATUS_OK;
 }
+
+/*
+ * Report wall-clock time from the PL031 RTC so UIService can draw a live
+ * clock in its menu bar without owning any device itself.
+ */
+static uint32_t UIServiceGetTime(void *opaque, uint64_t *unix_seconds)
+{
+	(void)opaque;
+	if (unix_seconds == 0) return UI_SERVICE_STATUS_INVALID_ARGUMENT;
+
+	*unix_seconds = rtc_unix_time();
+	return UI_SERVICE_STATUS_OK;
+}
 #endif
 
 bool ui_service_bootstrap(void)
 {
 #if !defined(NXU_UI_SERVICE)
-	kputln("[com.butterscotch.uiservice]: NXU bridge is not linked");
+	kputln("[com.butterscotch.UIService.framework]: NXU bridge is not linked");
 	return false;
 #else
 	uint32_t *framebuffer = 0;
@@ -280,24 +320,24 @@ bool ui_service_bootstrap(void)
 	}
 
 	if (framebuffer == 0 || width == 0U || height == 0U || stride < width) {
-		kputln("[com.butterscotch.uiservice]: no scanout surface is available");
+		kputln("[com.butterscotch.UIService.framework]: no scanout surface is available");
 		return false;
 	}
 
 	if (UIServiceAPIVersion() != UI_SERVICE_API_VERSION) {
-		kprintf("[com.butterscotch.uiservice]: API mismatch, kernel expects %u but framework reported %u\n", UI_SERVICE_API_VERSION, UIServiceAPIVersion());
+		kprintf("[com.butterscotch.UIService.framework]: API mismatch, kernel expects %u but framework reported %u\n", UI_SERVICE_API_VERSION, UIServiceAPIVersion());
 		return false;
 	}
 
 	size_t pixel_count = (size_t)stride * (size_t)height;
 	if (height != 0U && pixel_count / (size_t)height != (size_t)stride) {
-		kputln("[com.butterscotch.uiservice]: framebuffer size overflow while allocating backbuffer");
+		kputln("[com.butterscotch.UIService.framework]: framebuffer size overflow while allocating backbuffer");
 		return false;
 	}
 
 	uint32_t *backbuffer = kcalloc(pixel_count, sizeof(uint32_t));
 	if (backbuffer == 0) {
-		kputln("[com.butterscotch.uiservice]: software backbuffer allocation failed");
+		kputln("[com.butterscotch.UIService.framework]: software backbuffer allocation failed");
 		return false;
 	}
 	memcpy(backbuffer, framebuffer, pixel_count * sizeof(uint32_t));
@@ -312,37 +352,46 @@ bool ui_service_bootstrap(void)
 		.last_present_us = 0ULL,
 		.pointer_x = (int32_t)(width / 2U),
 		.pointer_y = (int32_t)(height / 2U),
-		.raw_x = mouse_x(),
-		.raw_y = mouse_y(),
-		.packet_count = mouse_packet_count(),
 		.buttons = mouse_buttons(),
 		.pending_down = 0U,
 		.pending_up = 0U,
 		.pending_move = false
 	};
 
-	UIServiceHostV2 host = {
+	/*
+	 * Physical pixels per design point, as thousandths: the Makefile derives
+	 * this from the host's real backingScaleFactor (see QEMU_GPU_XRES/YRES's
+	 * doc comment) and always passes it, so UIService can size window
+	 * chrome, fonts and control metrics for the host's actual density
+	 * instead of assuming every canvas is a fixed 2x-Retina target. Falls
+	 * back to that historical 2x assumption if the boot arg is absent or
+	 * malformed.
+	 */
+	uint32_t content_scale_permille = boot_arg_uint32("ui.scale", 2000U);
+
+	UIServiceHostV5 host = {
 		.header = {
-			.struct_size = sizeof(UIServiceHostV2),
-			.abi_version = UI_SERVICE_ABI_VERSION_V2
+			.struct_size = sizeof(UIServiceHostV5),
+			.abi_version = UI_SERVICE_ABI_VERSION_V5
 		},
-		.capabilities = UI_SERVICE_HOST_CAPABILITIES_V2,
+		.capabilities = UI_SERVICE_HOST_CAPABILITIES_V3,
 		.context = &context,
 		.get_surface = UIServiceGetSurface,
 		.present = UIServicePresent,
-		.poll_event = UIServicePollEvent
+		.poll_event = UIServicePollEvent,
+		.get_time = UIServiceGetTime,
+		.content_scale_permille = content_scale_permille
 	};
 
-	if (UIServiceValidateHostV2(&host) != UI_SERVICE_STATUS_OK) {
-		kputln("[com.butterscotch.uiservice]: NXU host ABI v2 rejected");
+	if (UIServiceValidateHostV5(&host) != UI_SERVICE_STATUS_OK) {
+		kputln("[com.butterscotch.UIService.framework]: NXU host ABI v5 rejected");
 		(void)kfree(backbuffer);
 		return false;
 	}
 
-	kprintf("[com.butterscotch.uiservice]: ABI v%u, %ux%u XRGB8888, %s\n", UIServiceABIVersion(), width, height, using_ramfb ? "RAMFB" : "VirtIO GPU");
-	kputln(UIServiceHasInter() != 0U ? "[com.butterscotch.uiservice]: font renderer active" : "[com.butterscotch.uiservice]: bootstrap text renderer active");
-	if (using_ramfb) kputln("[com.butterscotch.uiservice]: RAMFB fallback active (no vblank synchronization)");
-	kputln("[com.butterscotch.uiservice]: starting About sevOS");
+	kprintf("[com.butterscotch.UIService.framework]: ABI v%u, %ux%u XRGB8888, %s\n", UIServiceABIVersion(), width, height, using_ramfb ? "RAMFB" : "VirtIO GPU");
+	kputln(UIServiceHasInter() != 0U ? "[com.butterscotch.UIService.framework.framework]: font renderer active" : "[com.butterscotch.UIService.framework]: bootstrap text renderer active");
+	if (using_ramfb) kputln("[com.butterscotch.UIService.framework]: RAMFB fallback active (no vblank synchronization)");
 
 	/*
 	 * Stop the emergency framebuffer console from writing underneath UI while
@@ -350,16 +399,22 @@ bool ui_service_bootstrap(void)
 	 */
 	if (using_ramfb) {
 		if (!ramfb_console_set_mirroring(false)) {
-			kputln("[com.butterscotch.uiservice]: failed to suspend RAMFB console mirroring");
+			kputln("[com.butterscotch.UIService.framework]: failed to suspend RAMFB console mirroring");
 			(void)kfree(backbuffer);
 			return false;
 		}
 	}
 
+#if defined(NXU_UI_SERVICE_APP_VOYAGER)
+	uint32_t status = UIServiceRunVoyager(&host);
+	const char *app_name = "Voyager.app";
+#else
 	uint32_t status = UIServiceRunAbout(&host);
+	const char *app_name = "About.app";
+#endif
 	if (using_ramfb) (void)ramfb_console_set_mirroring(true);
 
-	kprintf("[com.butterscotch.uiservice]: About.app exited unexpectedly with status %u\n", status);
+	kprintf("[com.butterscotch.UIService.framework]: %s exited unexpectedly with status %u\n", app_name, status);
 	(void)kfree(backbuffer);
 	return false;
 #endif
