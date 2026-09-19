@@ -10,6 +10,7 @@
 #include <kern/ipc/ipc_kmsg.h>
 
 #include <mach/arm64/system.h>
+#include <kern/ipc/ipc_port.h>
 #include <kern/memory/heap.h>
 
 #include <stddef.h>
@@ -37,9 +38,11 @@ ipc_kmsg_init(void)
  * Purpose:
  *              Copy one bounded inline payload into kernel-owned storage.
  *              The returned object has no queue owner until it is enqueued.
+ *              If xfer_port is not IPC_PORT_NULL, the message takes over the
+ *              caller's reference on it (the caller must already own one).
  */
 ipc_return_t
-ipc_kmsg_alloc(const void *data, size_t size, ipc_kmsg_t *kmsgp)
+ipc_kmsg_alloc(const void *data, size_t size, ipc_port_t xfer_port, ipc_kmsg_t *kmsgp)
 {
 	if (data == 0 || kmsgp == 0 || size == 0U) {
 		return IPC_INVALID_ARGUMENT;
@@ -59,7 +62,8 @@ ipc_kmsg_alloc(const void *data, size_t size, ipc_kmsg_t *kmsgp)
 	kmsg->ikm_next = IPC_KMSG_NULL;
 	kmsg->ikm_size = size;
 	kmsg->ikm_flags = 0U;
-	kmsg->ikm_reserved = 0U;
+	kmsg->ikm_xfer_type = xfer_port != IPC_PORT_NULL ? IPC_KMSG_XFER_PORT : IPC_KMSG_XFER_NONE;
+	kmsg->ikm_xfer_port = xfer_port;
 	memcpy(kmsg->ikm_data, data, size);
 
 	uint64_t irq_state = arm64_irq_save();
@@ -76,11 +80,20 @@ ipc_kmsg_alloc(const void *data, size_t size, ipc_kmsg_t *kmsgp)
  * Purpose:
  *              Release a message after it has left every port queue. Port
  *              destruction uses the same path while draining queued data.
+ *              Releases the message's own reference on a transferred port
+ *              that was never received (dropped with the port still active,
+ *              or the destination port destroyed while still queued).
  */
 void
 ipc_kmsg_free(ipc_kmsg_t kmsg)
 {
 	if (kmsg == IPC_KMSG_NULL) return;
+
+	if (kmsg->ikm_xfer_type == IPC_KMSG_XFER_PORT) {
+		ipc_port_release(kmsg->ikm_xfer_port);
+		kmsg->ikm_xfer_type = IPC_KMSG_XFER_NONE;
+		kmsg->ikm_xfer_port = IPC_PORT_NULL;
+	}
 
 	uint64_t irq_state = arm64_irq_save();
 
