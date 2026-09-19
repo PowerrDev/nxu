@@ -1,0 +1,5 @@
+subvolume: ID 256 gen 11 top level 5 path sub1
+subvolume: ID 257 gen 11 top level 256 path sub1/nested
+subvolume: ID 258 gen 9 top level 5 path snap1
+subvolume: ID 259 gen 10 top level 5 path dir/snap-ro
+subvolume: ID 260 gen 11 top level 5 path dir/sub2

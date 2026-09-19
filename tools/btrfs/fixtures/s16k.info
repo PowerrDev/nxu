@@ -1,0 +1,111 @@
+superblock: bytenr=65536, device=/work/s16k.img
+---------------------------------------------------------
+csum_type		0 (crc32c)
+csum_size		4
+csum			0x730d2b82 [match]
+bytenr			65536
+flags			0x1
+			( WRITTEN )
+magic			_BHRfS_M [match]
+fsid			a1933563-37be-59f0-adf4-ba8e69cf7f10
+metadata_uuid		00000000-0000-0000-0000-000000000000
+label			s16k
+generation		9
+root			30490624
+sys_array_size		129
+chunk_root_generation	9
+root_level		0
+chunk_root		22036480
+chunk_root_level	0
+log_root		0
+log_root_transid (deprecated)	0
+log_root_level		0
+total_bytes		134217728
+bytes_used		1409024
+sectorsize		16384
+nodesize		16384
+leafsize (deprecated)	16384
+stripesize		16384
+root_dir		6
+num_devices		1
+compat_flags		0x0
+compat_ro_flags		0x3
+			( FREE_SPACE_TREE |
+			  FREE_SPACE_TREE_VALID )
+incompat_flags		0x361
+			( MIXED_BACKREF |
+			  BIG_METADATA |
+			  EXTENDED_IREF |
+			  SKINNY_METADATA |
+			  NO_HOLES )
+cache_generation	0
+uuid_tree_generation	0
+dev_item.uuid		09b5e497-0856-4eb7-8e48-8dbe7a517c6c
+dev_item.fsid		a1933563-37be-59f0-adf4-ba8e69cf7f10 [match]
+dev_item.type		0
+dev_item.total_bytes	134217728
+dev_item.bytes_used	92274688
+dev_item.io_align	16384
+dev_item.io_width	16384
+dev_item.sector_size	16384
+dev_item.devid		1
+dev_item.dev_group	0
+dev_item.seek_speed	0
+dev_item.bandwidth	0
+dev_item.generation	0
+sys_chunk_array[2048]:
+	item 0 key (FIRST_CHUNK_TREE CHUNK_ITEM 22020096)
+		length 8388608 owner 2 stripe_len 65536 type SYSTEM|DUP
+		io_align 65536 io_width 65536 sector_size 16384
+		num_stripes 2 sub_stripes 1
+			stripe 0 devid 1 offset 22020096
+			dev_uuid 09b5e497-0856-4eb7-8e48-8dbe7a517c6c
+			stripe 1 devid 1 offset 30408704
+			dev_uuid 09b5e497-0856-4eb7-8e48-8dbe7a517c6c
+backup_roots[4]:
+	backup 0:
+		backup_tree_root:	30490624	gen: 9	level: 0
+		backup_chunk_root:	22036480	gen: 9	level: 0
+		backup_extent_root:	30425088	gen: 9	level: 0
+		backup_fs_root:		30408704	gen: 6	level: 0
+		backup_dev_root:	30441472	gen: 9	level: 0
+		csum_root:	30539776	gen: 6	level: 0
+		backup_total_bytes:	134217728
+		backup_bytes_used:	1409024
+		backup_num_devices:	1
+
+	backup 1:
+		backup_tree_root:	30588928	gen: 6	level: 0
+		backup_chunk_root:	22020096	gen: 5	level: 0
+		backup_extent_root:	30556160	gen: 6	level: 0
+		backup_fs_root:		30408704	gen: 6	level: 0
+		backup_dev_root:	30457856	gen: 5	level: 0
+		csum_root:	30539776	gen: 6	level: 0
+		backup_total_bytes:	134217728
+		backup_bytes_used:	1392640
+		backup_num_devices:	1
+
+	backup 2:
+		backup_tree_root:	30441472	gen: 7	level: 0
+		backup_chunk_root:	22020096	gen: 5	level: 0
+		backup_extent_root:	30474240	gen: 7	level: 0
+		backup_fs_root:		30408704	gen: 6	level: 0
+		backup_dev_root:	30457856	gen: 5	level: 0
+		csum_root:	30539776	gen: 6	level: 0
+		backup_total_bytes:	134217728
+		backup_bytes_used:	1409024
+		backup_num_devices:	1
+
+	backup 3:
+		backup_tree_root:	30588928	gen: 8	level: 0
+		backup_chunk_root:	22020096	gen: 5	level: 0
+		backup_extent_root:	30556160	gen: 8	level: 0
+		backup_fs_root:		30408704	gen: 6	level: 0
+		backup_dev_root:	30457856	gen: 5	level: 0
+		csum_root:	30539776	gen: 6	level: 0
+		backup_total_bytes:	134217728
+		backup_bytes_used:	1409024
+		backup_num_devices:	1
+
+
+fs_tree_level: 0
