@@ -50,7 +50,7 @@ SB_SIZE = 4096
 
 
 def read_info(path):
-    info = {"chunks": []}
+    info = {"chunk_list": []}
     for line in open(path):
         line = line.strip()
         if "=" not in line:
@@ -58,14 +58,14 @@ def read_info(path):
         k, v = line.split("=", 1)
         if k == "chunk":
             f = v.split(",")
-            info["chunks"].append((int(f[0]), int(f[1]), [int(x) for x in f[4:]]))
+            info["chunk_list"].append((int(f[0]), int(f[1]), [int(x) for x in f[4:]]))
         else:
             info[k] = v
     return info
 
 
 def physical(info, logical):
-    for start, length, stripes in info["chunks"]:
+    for start, length, stripes in info["chunk_list"]:
         if start <= logical < start + length:
             return [s + (logical - start) for s in stripes]
     raise SystemExit("corrupt.py: logical %d is not mapped" % logical)

@@ -222,6 +222,10 @@ if want compressed; then
 		mount_fs $name noatime,compress-force=$algo
 		python3 $GUESTDIR/pop.py compressible /mnt/$name
 		sync
+		# Switch compression off: the remaining files are plain extents in the same filesystem.
+		mount -o remount,compress=no /mnt/$name || fail "remount $name without compression"
+		python3 $GUESTDIR/pop.py plain /mnt/$name
+		sync
 		# Files that really are compressed on disk.
 		: > $WORK/flags
 		for f in comp_text comp_inline comp_big dir/comp_nested; do

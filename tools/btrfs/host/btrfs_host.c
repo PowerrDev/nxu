@@ -543,6 +543,13 @@ static void check_file_contents(walk_t *w, const btrfs_tree_t *tree, const btrfs
 		return;
 	}
 
+	if (rec == NULL && status == BTRFS_ERR_UNSUPPORTED_COMPRESSION) {
+		/* No manifest to say which files are compressed (sweeps, plain walks): a clean refusal is fine. */
+		digest_mix(w, path, strlen(path));
+		free(whole);
+		return;
+	}
+
 	if (status != BTRFS_OK || done != size) {
 		fail(w, path, "read failed: %s (%llu of %llu bytes)", btrfs_status_name(status), (unsigned long long)done, (unsigned long long)size);
 		free(whole);

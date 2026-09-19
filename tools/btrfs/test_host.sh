@@ -227,7 +227,7 @@ expect_open "empty device" "$(corrupt truncate:0 minimal)" "not a Btrfs filesyst
 echo "== damaged tree blocks =="
 expect_open "root tree block damaged (every copy)" "$(corrupt root-block:all minimal)" "checksum mismatch"
 expect_open "chunk tree block damaged (every copy)" "$(corrupt chunk-block:all minimal)" "checksum mismatch"
-expect_open "subvolume root block damaged (every copy)" "$(corrupt fs-block:all minimal)" "checksum mismatch"
+expect_walk_fails "subvolume root block damaged (every copy)" "$(corrupt fs-block:all minimal)" "checksum mismatch"
 expect_open "root tree damaged in the only copy (single metadata)" "$(corrupt root-block:first meta-single)" "checksum mismatch"
 expect_walk_fails "walk with the tree root damaged" "$(corrupt fs-block:all tree)" "checksum mismatch"
 

@@ -266,11 +266,20 @@ def compressible(root):
     put(root + "/comp_big", pat(22, 0, 1024 * 1024 + 12345))    # several 128 KiB compressed extents
     put(root + "/dir/comp_nested", pat(23, 0, 300000))
     os.symlink("comp_text", root + "/link")
-    put(root + "/hello.txt", b"hello\n")
     os.mkfifo(root + "/fifo")
 
 
-RECIPES = {"empty": empty, "minimal": minimal, "tree": tree, "deep": deep, "small": small, "compressible": compressible}
+def plain(root):
+    """Written after compression was switched off: plain extents in the same filesystem."""
+    put(root + "/hello.txt", b"hello\n")
+    put(root + "/plain_big", pat(24, 0, 300000))
+    put(root + "/dir/plain_nested", pat(25, 0, 5000))
+    with open(root + "/plain_sparse", "wb") as f:
+        f.truncate(200000)
+    pwrite_sync(root + "/plain_sparse", 100000, pat(26, 100000, 4096))
+
+
+RECIPES = {"plain": plain, "empty": empty, "minimal": minimal, "tree": tree, "deep": deep, "small": small, "compressible": compressible}
 
 
 def main():
