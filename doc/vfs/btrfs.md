@@ -1,0 +1,262 @@
+# Btrfs (read-only)
+
+A read-only Btrfs driver for arm64 and i386, structured so that write support,
+copy-on-write transactions, snapshots and subvolume creation can be added
+without reshaping it. It lives in `vfs/btrfs/`, mounts with
+`vfs_mount("btrfs", device, path)`, and is tested against images made by the
+real Linux stack (see [Fixtures](#fixtures-and-ground-truth)).
+
+## Layering
+
+```
+   VFS (vfs/vfs.c, vnode.c)            vnode ops: lookup readdir read getattr readlink
+        |                                      (create unlink write truncate -> READ_ONLY)
+   btrfs_vfs.c   <- the ONLY file that knows vnodes and mounts (kernel only)
+        |
+   ---- pure core: no kernel headers; allocator, reader and log are injected ----
+        |
+   btrfs_file     EXTENT_DATA -> bytes: inline, regular, prealloc, holes, compression hook,
+                  optional data checksums
+   btrfs_dir      DIR_ITEM lookup by crc32c name hash, DIR_INDEX cursor iteration
+   btrfs_inode    INODE_ITEM, INODE_REF / INODE_EXTREF
+   btrfs_root     ROOT_ITEM, subvolumes, "default", ROOT_REF / ROOT_BACKREF, subvolume points
+   btrfs_tree     verified tree blocks, LRU cache, search, cross-leaf iteration (paths)
+   btrfs_chunk    logical -> physical (sys_chunk_array, then the chunk tree); SINGLE, DUP
+   btrfs_super    three superblock copies, validation, feature/csum/device gating
+   btrfs_io       reader interface: read N bytes at a byte offset
+        |
+   btrfs_io_block.c (kernel block_device_t)   btrfs_io_host.c (a file; host tests only)
+```
+
+A layer only calls downwards. `btrfs_format.h` holds every on-disk constant and
+the parsed forms of every structure; all fields are read with explicit
+little-endian byte accessors and **no byte buffer is ever cast to a struct**
+(alignment and strict aliasing are safe on arm64 and i386). Every parser is
+told how many bytes it may look at and refuses to read past them.
+
+`btrfs_env_t` is the injected environment: `alloc` (zeroed), `release`, and
+`log` (one finished line). The kernel glue plugs in `kcalloc`/`kfree`/`kputs`;
+the host build plugs in a counting `malloc` so the tests can prove nothing
+leaks. Log lines start with the emitting function's name (`BTRFS_LOG`) and use a
+printf subset with no field widths, like `kprintf`.
+
+## Key algorithms
+
+**Superblock** (`btrfs_super.c`). Copies at 64 KiB, 64 MiB and 256 GiB, each
+considered only if it fits on the device. A copy is valid when the magic
+`_BHRfS_M`, its own byte number, its crc32c and its geometry (power-of-two
+sector/node sizes, levels < 8, aligned roots) are right; the valid copy with
+the highest generation wins, so a damaged primary falls back to a mirror. Other
+checksum types are recognised and refused with their own status, before the
+checksum is looked at.
+
+**Chunk map** (`btrfs_chunk.c`). Built from `sys_chunk_array`, then completed
+from the chunk tree. Sorted array, binary search, overlap and range checks
+(everything must lie inside the device). SINGLE has one stripe, DUP two: a
+tree block that fails verification on the first copy is re-read from the
+second (`mirror_fallbacks` counts it, the block is served only if the second
+copy verifies). RAID0/1/10/5/6, RAID1C3/4, any stripe on another device and
+any multi-device filesystem are parsed, then refused. `btrfs_mapping_t` and
+`btrfs_chunk_t` keep the general stripe list; a new profile only needs a case
+in `btrfs_map_logical`.
+
+**Tree blocks** (`btrfs_tree.c`). A block is accepted only if its crc32c, own
+address, fsid (metadata_uuid when set), level, generation (equal to what the
+parent recorded, never newer than the superblock), owner, item layout (item
+data tiles the block end to end and never reaches into the headers; keys
+strictly ascend; child pointers sector aligned) and first key (equal to the
+parent's key) are right. Blocks live in an LRU cache keyed by logical address
+(12 to 48 blocks, about 512 KiB), pinned while a path holds them. A search
+(`btrfs_tree_search*`) descends by binary search and leaves a
+`btrfs_path_t`; `btrfs_path_next/prev` step across leaves through the parent
+slots. Since child level is exactly parent level - 1 and iteration only moves
+to strictly larger (or smaller) keys, a corrupt image cannot loop or recurse
+without bound; no recursion exists in the core.
+
+**Subvolumes** (`btrfs_root.c`). `ROOT_ITEM` lookup takes the last item with the
+objectid; the default subvolume is the `default` DIR_ITEM of the root tree;
+`ROOT_REF`/`ROOT_BACKREF` give the tree of subvolumes. A directory entry whose
+location is a `ROOT_ITEM` is a subvolume point: the walk continues in that
+subvolume at its root inode. A point with no live subvolume behind it (a
+snapshot copies the entries of nested subvolumes but not the subvolumes) is an
+empty directory, as Linux shows it. Mount option: `subvol_id`.
+
+**Directories** (`btrfs_dir.c`). Lookup by `crc32c(~1, name)` into DIR_ITEM
+(hash collisions pack several names into one item; all are compared);
+enumeration by DIR_INDEX with a cursor that is "the next index to look at", so a
+saved cursor resumes exactly after the entry it came with. The VFS readdir
+offset is 0 for `.`, 1 for `..`, then that cursor.
+
+**File data** (`btrfs_file.c`). Position on the last EXTENT_DATA at or before
+the offset and walk forward: inline, regular (reading the slice
+`[offset, offset+num_bytes)` of a possibly larger disk extent), preallocated
+(zeros), explicit hole (zeros), implicit gap (zeros), tail up to `i_size`
+(zeros). Every iteration advances the position or moves to a strictly later
+item. Compressed extents go through `fs->decompressors[]` (zlib/lzo/zstd); none
+is registered, so they fail with `BTRFS_ERR_UNSUPPORTED_COMPRESSION`, never with
+garbage, and everything else in the volume stays readable. Optional data
+checksum verification (`verify_data`) checks every sector of a regular extent
+against the csum tree and falls back to the other DUP copy.
+
+## Feature matrix
+
+| Area | Status |
+|---|---|
+| crc32c checksums | supported (table driven, in the core) |
+| xxhash64 / sha256 / blake2b | refused at mount: `unsupported checksum type` |
+| SINGLE, DUP chunks (metadata and data) | supported |
+| RAID0/1/10/5/6, RAID1C3/4, multi-device | refused: `unsupported RAID or multi-device profile` |
+| Superblock mirrors, highest valid generation | supported |
+| mixed block groups, skinny/no skinny metadata, no-holes and explicit holes, free-space-tree, v1 space cache, block-group-tree, extended irefs, squota, metadata_uuid, big metadata | supported (only how metadata is written or accounted for changes) |
+| zoned, extent-tree-v2, raid-stripe-tree, unknown incompat bits | refused: `unsupported feature` |
+| unreplayed log tree | refused (`log-tree`); `ignore_log_tree` mounts anyway and may show stale data |
+| Subvolumes, snapshots, read-only snapshots, nested subvolumes, default subvolume, mount by id | supported, read-only |
+| Inline, regular, prealloc, hole, partial-extent reads | supported |
+| Compressed extents (zlib, lzo, zstd) | refused per file: `not supported`; decoder hook exists |
+| Encrypted extents, other encodings | refused per extent |
+| Data checksums | optional (`verify_data`), off by default |
+| Directories with thousands of entries, 255-byte names, unicode names, hard links (INODE_REF and EXTREF), symlinks (inline target up to 4095 bytes), fifo, socket, char and block devices | supported |
+| xattr items | skipped safely |
+| ACLs, quotas, send/receive, reflink-aware reads beyond plain extents | not interpreted (nothing is needed to read the bytes) |
+| Any mutation | `VFS_STATUS_READ_ONLY` |
+
+Sector sizes above the page size and nodesizes 4 KiB to 64 KiB are fine
+(`s16k`, `n4k`, `n64k` fixtures).
+
+## VFS integration
+
+`btrfs_register()` publishes the filesystem type; it does no I/O. The kernel
+registers it **only from the boot-argument test hooks** (arm64
+`kern/kern_init.c`, i386 `mach/i386/userland_init.c`), never at boot, so the
+arm64 `vfs_dump` line `filesystems: N` and the whole boot log are unchanged. To
+make Btrfs available in a normal boot, add `btrfs_register()` next to
+`ext4_register()` in the two boot paths (this changes that one log line).
+
+Options for the next mount go through `btrfs_set_next_mount_options()`
+(`subvol_id`, `verify_data`, `ignore_log_tree`) because `vfs_mount` has no
+options argument; `btrfs_last_mount_status()` keeps the precise cause of a
+failed mount, since VFS statuses are coarse (`UNSUPPORTED_*` map to
+`NOT_SUPPORTED`, magic to `INVALID`, corruption/checksum/truncation to
+`IO_ERROR`).
+
+Shared-header changes (additive): `vnode_operations_t` gained optional
+`getattr` and `readlink`, `vnode_attr_t` was added, and `VNODE_TYPE_SYMLINK`,
+`_FIFO`, `_SOCKET` were appended to `vnode_type_t`. Filesystems that do not set
+the new operations answer `NOT_SUPPORTED`.
+
+Vnodes are resident until unmount (like ext4): one per (subvolume, inode), found
+through a hash. `vfs_lookup` caps a path component at 63 bytes
+(`VFS_NAME_MAX`), so a 255-byte name is reachable through `vnode_lookup` and
+`readdir`, not through a path.
+
+`btrfs_dump()` prints, per mount, the superblock facts, chunk count, cache
+counters and I/O counters.
+
+## Tests
+
+```
+make test-btrfs-host BUILD_ROOT=<scratch>        # native, ASan + UBSan, 139 checks
+make test-i386-btrfs BUILD_ROOT=<scratch>        # in-kernel, second..fourth virtio-blk-pci
+make test-arm64-btrfs BUILD_ROOT=<scratch> CONFIG=base   # in-kernel, virtio-blk-device
+```
+
+Always pass a scratch `BUILD_ROOT`. None of them touches `disk.img` or
+`tools/DiskRoot` (the arm64 test copies `disk.img`).
+
+**Host** (`tools/btrfs/test_host.sh`, tool `tools/btrfs/host/btrfs_host.c`):
+superblock facts against `btrfs inspect-internal dump-super`; a full walk of
+each of 18 fixtures compared with the manifest Linux wrote (every path, type,
+mode, owner, size, nlink, inode, rdev, mtime, symlink target, crc32c and
+sha256 of every file), with and without data checksum verification; partial
+reads at random offsets, across and past EOF and in odd steps, all checked
+against the full read; readdir cursor resume; lookup of every name by hash and
+of a missing name; hard-link counts against INODE_REF/EXTREF; every subvolume
+mounted by id; subvolume list against `btrfs subvolume list`; the default
+subvolume; refusal fixtures (compression, checksum types, RAID); named
+corruptions (`tools/btrfs/corrupt.py`: superblock magic/checksum/features/log
+root/geometry, truncation at several sizes, root/chunk/subvolume tree blocks,
+DUP self-healing); and a seeded corruption sweep (bit flips, zeroing,
+scribbles, truncation, checksummed-but-lying superblocks and tree blocks,
+injected read errors, injected allocation failures) which may only produce
+errors or the good image's results, never a crash, hang (read budget and
+alarm), out-of-bounds access, leak or different data reported as success.
+
+**In-kernel** (`vfs/btrfs/btrfs_selftest.c`, both architectures): boot argument
+`btrfs-test=<spec>[,<spec>...]`, the Nth spec against the Nth block device
+after the root disk (the virtio-blk driver takes four devices in total, so
+three fixtures per boot). `NAME[@SUBVOLID][+verify]` mounts, walks through the
+public VFS interface against the expected listing generated from Linux's
+manifests (`btrfs_selftest_data.h`, `tools/btrfs/gen_selftest_data.py`), checks
+readdir resume, odd-offset and EOF reads, that every mutating operation
+returns `READ_ONLY` and the device write counter stays put, and unmounts (which
+also proves no vnode reference leaked). `!STATUS` requires a clean mount
+failure with exactly that status and a good mount afterwards. The host script
+also compares each fixture disk's sha256 before and after the boot. arm64
+notes: QEMU virt hands out virtio-mmio slots top-down while the kernel probes
+bottom-up, so `test_arm64.sh` defines the fixtures in reverse and the root disk
+last; the kernel also needs the gpu/keyboard/mouse devices of the normal boot
+command. The arm64 test ends with a PSCI `SYSTEM_OFF`.
+
+## Fixtures and ground truth
+
+See `tools/btrfs/fixtures/README.md`. Images and manifests come from an official
+Alpine Linux 3.24.2 guest (btrfs-progs 6.17.1, kernel 6.18.52) run under QEMU by
+`tools/btrfs/make_fixtures.sh`, so the driver is graded against Linux, not
+against itself.
+
+## Write-support extension points
+
+Nothing below is implemented; these are the seams and what already carries the
+needed information.
+
+- **Transaction / COW layer.** Insert between `btrfs_tree` and the layers above.
+  Reads go through `btrfs_block_get()` and `btrfs_path_t`, so a modifying layer
+  can hand out shadowed blocks from the same cache: `btrfs_block_t` already has
+  a `dirty` flag, its `generation` and `owner`, and the cache pins blocks by
+  reference count. A commit updates the root pointers held in `btrfs_tree_t`
+  (`bytenr`, `generation`, `level`), which every search takes as an argument,
+  then writes the new root tree and the superblock (all copies, highest
+  generation last) through a writer that mirrors `btrfs_reader_t`.
+- **Extent allocator.** Needs the extent tree and the block-group/free-space
+  information, which the driver already tolerates but does not read. The chunk
+  map (`btrfs_chunk_map_t`) already records type and profile per chunk and is
+  where new chunks would be added; `btrfs_map_logical` returns every stripe so
+  writes can fan out to DUP copies.
+- **Tree modification.** Insert/delete/split/merge belong beside
+  `btrfs_tree_search` and reuse its path (one pinned block and one slot per
+  level). Item accessors already validate offsets, and leaf verification
+  documents the packing invariants that a writer must maintain.
+- **Checksums.** `btrfs_csum_crc32c` is the single place a block checksum is
+  produced; the csum tree is opened on demand by the data path and would gain
+  insert/delete for new extents.
+- **Snapshots and subvolume creation.** A snapshot is a new ROOT_ITEM (with the
+  same `bytenr` and a bumped reference count) plus a ROOT_REF/ROOT_BACKREF pair
+  and a DIR_ITEM/DIR_INDEX in the parent; `btrfs_subvol_t` carries the
+  root item (generation, uuid, parent_uuid, flags), and `btrfs_root_*` already
+  reads every one of these items. Because a subvolume tree's blocks are
+  accepted for any fs-tree owner, blocks shared between a subvolume and its
+  snapshots already verify.
+- **Directory and inode changes.** `btrfs_dir` already models the paired
+  DIR_ITEM/DIR_INDEX entries and next-index allocation is "one past the last
+  DIR_INDEX"; INODE_REF/EXTREF handling exists for hard links.
+- **VFS.** The mutating vnode operations exist and return `READ_ONLY`; they are
+  the entry points a writable mount would fill in, together with the mount's
+  sync/unmount.
+- **Log tree.** Refused today; replay is a prerequisite for mounting a volume
+  that was not cleanly committed.
+
+## Not done / follow-ups
+
+- Compression decoders (zlib, lzo, zstd) behind `fs->decompressors[]`.
+- Data checksum verification on by default, and a policy for a bad extent.
+- Multi-device and RAID profiles (`btrfs_map_logical`, a multi-device reader).
+- Other checksum algorithms (xxhash64, sha256, blake2b).
+- Log tree replay.
+- Write support (above).
+
+## References
+
+- Linux `include/uapi/linux/btrfs_tree.h` and `btrfs.h` (constants, structures)
+- btrfs.readthedocs.io: On-disk format, Trees, Subvolumes, Btree items pages
+- btrfs-progs 6.17.1 (`mkfs.btrfs`, `btrfs inspect-internal dump-super/dump-tree`)
+- Alpine Linux 3.24.2 netboot (dl-cdn.alpinelinux.org), used only to build fixtures

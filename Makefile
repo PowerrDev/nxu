@@ -321,6 +321,19 @@ C_SOURCES := \
     kern/tests/about_sevos_process_test.c \
     kern/syscall/syscall.c \
     kern/process/thread.c \
+    vfs/btrfs/btrfs_chunk.c \
+    vfs/btrfs/btrfs_csum.c \
+    vfs/btrfs/btrfs_dir.c \
+    vfs/btrfs/btrfs_file.c \
+    vfs/btrfs/btrfs_fs.c \
+    vfs/btrfs/btrfs_inode.c \
+    vfs/btrfs/btrfs_io.c \
+    vfs/btrfs/btrfs_io_block.c \
+    vfs/btrfs/btrfs_root.c \
+    vfs/btrfs/btrfs_selftest.c \
+    vfs/btrfs/btrfs_super.c \
+    vfs/btrfs/btrfs_tree.c \
+    vfs/btrfs/btrfs_vfs.c \
     vfs/ext4.c \
     vfs/jbd2.c \
     vfs/file.c \
@@ -876,6 +889,60 @@ disk-check:
 	}
 
 	$(E2FSCK) -fn $(DISK)
+
+
+# =============================================================================
+# Btrfs (read-only driver): host and arm64 tests
+# =============================================================================
+#
+#   make test-btrfs-host    the pure core natively with ASan+UBSan over every
+#                           fixture (tools/btrfs/test_host.sh)
+#   make test-arm64-btrfs   boot the arm64 kernel headless with fixtures on
+#                           extra virtio-blk-device disks (tools/btrfs/test_arm64.sh)
+#   make test-i386-btrfs    the same on i386 (makedefs/i386/btrfs.mk)
+#
+# Nothing here touches disk.img or tools/DiskRoot; images are private copies.
+
+BTRFS_HOST_TOOL := $(BUILD_ROOT)/btrfs-host/btrfs_host
+
+BTRFS_CORE_SOURCES := \
+    vfs/btrfs/btrfs_chunk.c \
+    vfs/btrfs/btrfs_csum.c \
+    vfs/btrfs/btrfs_dir.c \
+    vfs/btrfs/btrfs_file.c \
+    vfs/btrfs/btrfs_fs.c \
+    vfs/btrfs/btrfs_inode.c \
+    vfs/btrfs/btrfs_io.c \
+    vfs/btrfs/btrfs_io_host.c \
+    vfs/btrfs/btrfs_root.c \
+    vfs/btrfs/btrfs_super.c \
+    vfs/btrfs/btrfs_tree.c
+
+BTRFS_HOST_CC ?= cc
+
+BTRFS_HOST_CFLAGS := -std=gnu11 -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=undefined -Wall -Wextra -Werror
+
+.PHONY: btrfs-host test-btrfs-host test-arm64-btrfs
+
+btrfs-host: $(BTRFS_HOST_TOOL)
+
+$(BTRFS_HOST_TOOL): tools/btrfs/host/btrfs_host.c $(BTRFS_CORE_SOURCES) $(wildcard vfs/btrfs/*.h)
+
+	@mkdir -p $(dir $@)
+
+	$(QUIET_PRINT) "CC" "$@"
+
+	$(Q)$(BTRFS_HOST_CC) $(BTRFS_HOST_CFLAGS) tools/btrfs/host/btrfs_host.c $(BTRFS_CORE_SOURCES) -o $@
+
+
+test-btrfs-host: $(BTRFS_HOST_TOOL)
+
+	tools/btrfs/test_host.sh $(BTRFS_HOST_TOOL) $(BUILD_ROOT)/btrfs-host/scratch
+
+
+test-arm64-btrfs: $(KERNEL_IMAGE) $(BTRFS_HOST_TOOL)
+
+	tools/btrfs/test_arm64.sh $(KERNEL_IMAGE) $(DISK) $(BUILD_ROOT)/btrfs-arm64 $(BTRFS_HOST_TOOL)
 
 
 include makedefs/tests.mk
