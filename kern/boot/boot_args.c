@@ -110,6 +110,22 @@ boot_arg_bool(const char *name, bool default_value)
 	return default_value;
 }
 
+uint32_t
+boot_arg_uint32(const char *name, uint32_t default_value)
+{
+	char value[16];
+	if (!boot_arg_value(name, value, sizeof(value))) return default_value;
+
+	uint32_t result = 0U;
+	for (uint32_t index = 0U; value[index] != '\0'; index++) {
+		char character = value[index];
+		if (character < '0' || character > '9') return default_value;
+		result = result * 10U + (uint32_t)(character - '0');
+	}
+
+	return result;
+}
+
 bool
 boot_args_verbose(void)
 {
