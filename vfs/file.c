@@ -96,9 +96,40 @@ vfs_status_t file_alloc(vnode_t vnode, uint32_t flags, file_t *result)
 
 		g_file_slot_used[slot] = true;
 		g_file_slots[slot] = (struct file) {
+			.f_type = FILE_TYPE_VNODE,
 			.f_vnode = vnode,
 			.f_offset = 0ULL,
 			.f_flags = flags,
+			.f_refcount = 1U,
+			.f_slot = slot,
+			.f_active = true
+		};
+
+		*result = &g_file_slots[slot];
+		file_unlock(&g_file_table_lock);
+		return VFS_STATUS_OK;
+	}
+
+	file_unlock(&g_file_table_lock);
+	return VFS_STATUS_NO_SPACE;
+}
+
+vfs_status_t file_alloc_socket(socket_t socket, file_t *result)
+{
+	if (result != 0) *result = 0;
+	if (!g_file_table_initialized || socket == SOCKET_NULL || result == 0) return VFS_STATUS_INVALID;
+
+	file_lock(&g_file_table_lock);
+
+	for (uint32_t slot = 0U; slot < VFS_FILE_MAX; slot++) {
+		if (g_file_slot_used[slot]) continue;
+
+		g_file_slot_used[slot] = true;
+		g_file_slots[slot] = (struct file) {
+			.f_type = FILE_TYPE_SOCKET,
+			.f_socket = socket,
+			.f_offset = 0ULL,
+			.f_flags = VFS_OPEN_READ | VFS_OPEN_WRITE,
 			.f_refcount = 1U,
 			.f_slot = slot,
 			.f_active = true
@@ -130,7 +161,9 @@ void file_rele(file_t file)
 {
 	if (file == 0) return;
 
+	file_type_t type = FILE_TYPE_VNODE;
 	vnode_t vnode = 0;
+	socket_t socket = SOCKET_NULL;
 
 	file_lock(&g_file_table_lock);
 
@@ -138,7 +171,12 @@ void file_rele(file_t file)
 		file->f_refcount--;
 
 		if (file->f_refcount == 0U) {
-			vnode = file->f_vnode;
+			type = file->f_type;
+			if (type == FILE_TYPE_VNODE) {
+				vnode = file->f_vnode;
+			} else {
+				socket = file->f_socket;
+			}
 			file->f_active = false;
 			file_free_locked(file);
 		}
@@ -146,7 +184,11 @@ void file_rele(file_t file)
 
 	file_unlock(&g_file_table_lock);
 
-	if (vnode != 0) vnode_rele(vnode);
+	if (type == FILE_TYPE_VNODE) {
+		if (vnode != 0) vnode_rele(vnode);
+	} else {
+		if (socket != SOCKET_NULL) socket_close(socket);
+	}
 }
 
 vfs_status_t filedesc_install(filedesc_t filedesc, file_t file, uint32_t *descriptor)
@@ -235,6 +277,13 @@ vfs_status_t file_read(file_t file, void *buffer, uint64_t size, uint64_t *read_
 
 	if ((file->f_flags & VFS_OPEN_READ) == 0U) return VFS_STATUS_INVALID;
 
+	if (file->f_type == FILE_TYPE_SOCKET) {
+		int64_t result = socket_read(file->f_socket, buffer, size);
+		if (result < 0) return VFS_STATUS_IO_ERROR;
+		*read_size = (uint64_t)result;
+		return VFS_STATUS_OK;
+	}
+
 	vfs_status_t status = vnode_read(file->f_vnode, file->f_offset, buffer, size, read_size);
 	if (status == VFS_STATUS_OK) file->f_offset += *read_size;
 	return status;
@@ -250,6 +299,7 @@ vfs_status_t
 file_readdir(file_t file, vfs_dirent_t *entry)
 {
 	if (file == 0 || entry == 0 || !file->f_active) return VFS_STATUS_INVALID;
+	if (file->f_type == FILE_TYPE_SOCKET) return VFS_STATUS_NOT_SUPPORTED;
 	if ((file->f_flags & VFS_OPEN_READ) == 0U) return VFS_STATUS_INVALID;
 
 	return vnode_readdir(file->f_vnode, &file->f_offset, entry);
@@ -261,6 +311,13 @@ vfs_status_t file_write(file_t file, const void *buffer, uint64_t size, uint64_t
 	if (file == 0 || buffer == 0 || written_size == 0 || !file->f_active) return VFS_STATUS_INVALID;
 
 	if ((file->f_flags & VFS_OPEN_WRITE) == 0U) return VFS_STATUS_INVALID;
+
+	if (file->f_type == FILE_TYPE_SOCKET) {
+		int64_t result = socket_write(file->f_socket, buffer, size);
+		if (result < 0) return VFS_STATUS_IO_ERROR;
+		*written_size = (uint64_t)result;
+		return VFS_STATUS_OK;
+	}
 
 	uint64_t offset = (file->f_flags & VFS_OPEN_APPEND) != 0U
 		? file->f_vnode->v_size
@@ -274,6 +331,7 @@ vfs_status_t file_write(file_t file, const void *buffer, uint64_t size, uint64_t
 vfs_status_t file_seek(file_t file, uint64_t offset)
 {
 	if (file == 0 || !file->f_active) return VFS_STATUS_INVALID;
+	if (file->f_type == FILE_TYPE_SOCKET) return VFS_STATUS_NOT_SUPPORTED;
 	file->f_offset = offset;
 	return VFS_STATUS_OK;
 }
