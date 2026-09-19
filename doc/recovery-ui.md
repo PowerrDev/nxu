@@ -86,7 +86,7 @@ recovery environment.
 
 ## UI assets
 
-Cursor resources inherited from the ArmOS UI tree live in `assets/UI/Cursors`.
+Cursor resources inherited from the ArmOS UI tree live in `tools/UI/Cursors`.
 They belong to the normal external UIService.framework asset pipeline, not to
 Recovery.framework. Apply them explicitly with:
 

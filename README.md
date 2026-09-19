@@ -6,7 +6,7 @@ The tree is split into subsystems, so that architecture-specific code, core
 kernel code and machine discovery never bleed into one another.
 
 ```text
-arch/arm64   ARM64-specific kernel code, including startup, exceptions,
+mach/arm64   ARM64-specific kernel code, including startup, exceptions,
              system registers, caches, GICv3 and the architectural timer.
 kern         Core kernel, split by subsystem; no implementation files live at its root.
 vfs          Virtual filesystem, vnodes, mounts, open files and ramfs.
@@ -14,14 +14,15 @@ vm           Physical and virtual memory management.
 platform     Device Tree parsing, platform discovery, early console and
              machine-specific hardware descriptions.
 libk         Freestanding C runtime and low-level kernel utility code.
-abi          Kernel/userspace ABI constants shared at compile time.
 user         Freestanding EL0 runtime and root daemons.
-makedefs     Linker and build definitions.
+makedefs     Linker scripts and build definitions, including the test registry.
+tools        Build inputs and host tooling: the DiskRoot image template, UI cursors,
+             generated Recovery fonts, the test menu and font generator.
 build        Object tree, mirroring the source tree.
 
 kern/boot       Boot arguments and firmware-variable backends.
 kern/console    Kernel console and boot-log presentation.
-kern/exec       Static userspace image loading.
+kern/loader     Static ELF userspace image loading.
 kern/init       Ordered kernel bootstrap and machine handoff.
 kern/interrupt  Machine-independent interrupt dispatch.
 kern/ipc        Kernel IPC objects, ports and messages.
@@ -29,14 +30,14 @@ kern/logging    Kernel identity and logging infrastructure.
 kern/memory     Core kernel allocation facilities.
 kern/process    Processes, tasks and threads.
 kern/sched      Processor state, run queues and scheduling policy.
-kern/syscall    EL0 system-call ABI and dispatch.
+kern/syscall    EL0 system-call ABI (syscall_defs.h, shared with userland) and dispatch.
 kern/tests      Kernel subsystem self-tests.
 ```
 
 Headers are included with a subsystem-qualified path, never a relative one:
 
 ```c
-#include <arch/arm64/cache.h>
+#include <mach/arm64/cache.h>
 #include <kern/memory/heap.h>
 #include <vm/pmm.h>
 #include <platform/uart.h>
@@ -44,7 +45,7 @@ Headers are included with a subsystem-qualified path, never a relative one:
 ```
 
 This works because the build uses two include roots: the repository root
-resolves `<arch/...>`, `<kern/...>`, `<vfs/...>`, `<vm/...>` and `<platform/...>`; and
+resolves `<mach/...>`, `<kern/...>`, `<vfs/...>`, `<vm/...>` and `<platform/...>`; and
 `libk` resolves the freestanding runtime headers.
 
 ## Root userspace
@@ -61,7 +62,7 @@ Recovery UI is deliberately isolated from the main sevOS UI stack: Shift+R selec
 sevOS continues to use the external UIService.framework. See `doc/recovery-ui.md`.
 
 Development boot arguments are passed with `BOOT_ARGS`, for example
-`make run BOOT_ARGS="-v -no-gpu"`. See `doc/boot-args.md` for the current
+`make run-console BOOT_ARGS="-v -no-gpu"`. See `doc/boot-args.md` for the current
 read-only Device Tree NVRAM backend and supported switches.
 
 # UART

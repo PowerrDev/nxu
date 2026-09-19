@@ -380,7 +380,7 @@ loop re-evaluates. `kern_init()` never returns.
 ## Source files
 
 - [`kern/kern_init.c`](../kern/kern_init.c)
-- [`arch/arm64/start.S`](../arch/arm64/start.S)
+- [`mach/arm64/start.S`](../mach/arm64/start.S)
 
 ## Related documentation
 

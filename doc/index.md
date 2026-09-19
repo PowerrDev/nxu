@@ -19,7 +19,7 @@ throughout.
 ## Source directory boundaries
 
 ```text
-arch/arm64   Machine-dependent AArch64 code: boot assembly, exception
+mach/arm64   Machine-dependent AArch64 code: boot assembly, exception
              vectors and dispatch, GICv3, generic timer, cache control,
              system-register accessors.
 kern         Machine-independent core kernel: initialization, process/task/
@@ -57,7 +57,7 @@ deviates from that rule in two places; both are recorded in
 - [Root services](root-services.md) — PID 1, logd, patchd and recovery behavior.
 - [Service property lists](service-plists.md) — declarative bootd job schema and plist parser limits.
 
-## ARM64 (`arch/arm64`)
+## ARM64 (`mach/arm64`)
 
 - [Overview](arm64/overview.md) — machine-dependent responsibilities.
 - [Exceptions](arm64/exceptions.md) — vector table, saved frame, dispatch,

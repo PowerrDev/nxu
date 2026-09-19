@@ -5,7 +5,7 @@ Tree `/chosen/bootargs` property. QEMU populates that property through `-append`
 The Makefile exposes it as `BOOT_ARGS`:
 
 ```sh
-make run BOOT_ARGS="-v -no-gpu"
+make run-console BOOT_ARGS="-v -no-gpu"
 ```
 
 ## Current firmware limitation

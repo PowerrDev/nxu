@@ -248,7 +248,7 @@ Two consumers that *should* be on this list are not:
   before discovery runs — but there is no later switch to the discovered
   address, so a machine with a differently placed PL011 would be mapped
   correctly and then written at the wrong address.
-- **`arch/arm64/gic.c`** hard-codes `GICD_BASE` and `GICR_BASE` despite
+- **`mach/arm64/gic.c`** hard-codes `GICD_BASE` and `GICR_BASE` despite
   running long after discovery. A source `TODO` records the intent to fix this.
 
 See [UART](uart.md) and

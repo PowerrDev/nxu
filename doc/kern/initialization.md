@@ -28,10 +28,10 @@ It is the only function in NXU that knows the full initialization order.
 ## Non-responsibilities
 
 - **Implementing any subsystem.** Every phase is a call into `platform`,
-  `vm`, `arch/arm64` or the heap.
+  `vm`, `mach/arm64` or the heap.
 - **Deciding machine addresses.** Those come from `platform_t`.
 - **Handling interrupts.** IRQs are dispatched by
-  [`exception.c`](../../arch/arm64/exception.c).
+  [`exception.c`](../../mach/arm64/exception.c).
 - **Machine context switching.** The scheduler core exists, but `kern_init()` still uses the bootstrap EL0 bridge until AArch64 thread context switching is wired.
 - **Providing a panic path.** Fatal exceptions are handled by
   `exception_handle()`. `kern_init()`'s halt loops are a different, simpler
@@ -230,7 +230,7 @@ the handler.
 ## Source files
 
 - [`kern/kern_init.c`](../../kern/kern_init.c)
-- [`arch/arm64/start.S`](../../arch/arm64/start.S)
+- [`mach/arm64/start.S`](../../mach/arm64/start.S)
 
 ## Related documentation
 

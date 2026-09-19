@@ -110,8 +110,8 @@ No manual subtraction of `0xFFFFFF8000000000` is needed.
 ## Source files
 
 - `makedefs/linker.ld`
-- `arch/arm64/start.S`
-- `arch/arm64/transition.S`
+- `mach/arm64/start.S`
+- `mach/arm64/transition.S`
 - `vm/vmm.c`
 - `vm/vmm_ttbr1.c`
 - `vm/vmm_debug.c`
