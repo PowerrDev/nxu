@@ -8,6 +8,7 @@
 #include <mach/arm64/exception.h>
 #include <mach/arm64/gic.h>
 #include <mach/arm64/system.h>
+#include <mach/machine/machine_routines.h>
 #include <mach/arm64/timer.h>
 #include <mach/arm64/transition.h>
 #include <drivers/input/input.h>
@@ -560,7 +561,7 @@ static void kern_run_jbd2_crash_test(void)
 	kputln("jbd2: durable commit verified before simulated power loss");
 	kputln("jbd2: home metadata intentionally not checkpointed");
 	kputln("jbd2: halt complete; close QEMU and run make run");
-	arm64_irq_disable();
+	ml_irq_disable();
 	for (;;) __asm__ volatile("wfe");
 }
 #endif

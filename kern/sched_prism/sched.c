@@ -1,6 +1,6 @@
 #include <kern/console/console.h>
 #include <kern/sched_prism/sched.h>
-#include <mach/arm64/system.h>
+#include <mach/machine/machine_routines.h>
 #include <mach/arm64/transition.h>
 #include <kern/process/proc.h>
 #include <platform/uart.h>
@@ -60,7 +60,7 @@ static void sched_unlock(sched_lock_t *lock)
 static __attribute__((noreturn))
 void sched_fatal(const char *message)
 {
-	arm64_irq_disable();
+	ml_irq_disable();
 	kputln(message);
 
 	for (;;) {
@@ -227,7 +227,7 @@ static bool sched_activate_thread(thread_t thread)
  */
 static void sched_finish_switch(void)
 {
-	uint64_t irq_state = arm64_irq_save();
+	uint64_t irq_state = ml_irq_save();
 	processor_t processor = current_processor();
 
 	sched_lock(&g_sched.lock);
@@ -245,7 +245,7 @@ static void sched_finish_switch(void)
 		(void)thread_reap(previous);
 	}
 
-	arm64_irq_restore(irq_state);
+	ml_irq_restore(irq_state);
 }
 
 /*
@@ -271,7 +271,7 @@ void sched_thread_continue(void)
 			sched_fatal("sched_thread_continue: kernel thread has no continuation");
 		}
 
-		arm64_irq_enable();
+		ml_irq_enable();
 		continuation(parameter);
 
 		if (!sched_thread_terminate(thread)) {
@@ -344,11 +344,11 @@ static bool sched_switch(sched_switch_reason_t reason)
 {
 	if (!g_sched.initialized) return false;
 
-	uint64_t irq_state = arm64_irq_save();
+	uint64_t irq_state = ml_irq_save();
 	processor_t processor = current_processor();
 
 	if (processor == 0) {
-		arm64_irq_restore(irq_state);
+		ml_irq_restore(irq_state);
 		return false;
 	}
 
@@ -358,7 +358,7 @@ static bool sched_switch(sched_switch_reason_t reason)
 
 	if (current == 0) {
 		sched_unlock(&g_sched.lock);
-		arm64_irq_restore(irq_state);
+		ml_irq_restore(irq_state);
 		return false;
 	}
 
@@ -373,7 +373,7 @@ static bool sched_switch(sched_switch_reason_t reason)
 			processor->preemption_pending = false;
 			sched_quantum_reset(current);
 			sched_unlock(&g_sched.lock);
-			arm64_irq_restore(irq_state);
+			ml_irq_restore(irq_state);
 			return true;
 		}
 	}
@@ -389,7 +389,7 @@ static bool sched_switch(sched_switch_reason_t reason)
 		!run_queue_enqueue(&processor->runq, current, RUN_QUEUE_TAIL)
 	) {
 		sched_unlock(&g_sched.lock);
-		arm64_irq_restore(irq_state);
+		ml_irq_restore(irq_state);
 		return false;
 	}
 
@@ -399,7 +399,7 @@ static bool sched_switch(sched_switch_reason_t reason)
 
 	if (next == 0) {
 		sched_unlock(&g_sched.lock);
-		arm64_irq_restore(irq_state);
+		ml_irq_restore(irq_state);
 		return false;
 	}
 
@@ -408,7 +408,7 @@ static bool sched_switch(sched_switch_reason_t reason)
 		processor->preemption_pending = false;
 		sched_quantum_reset(current);
 		sched_unlock(&g_sched.lock);
-		arm64_irq_restore(irq_state);
+		ml_irq_restore(irq_state);
 		return true;
 	}
 
@@ -455,7 +455,7 @@ static bool sched_switch(sched_switch_reason_t reason)
 	 * never-run incoming thread instead starts at sched_thread_continue().
 	 */
 	sched_finish_switch();
-	arm64_irq_restore(irq_state);
+	ml_irq_restore(irq_state);
 	return true;
 }
 
@@ -554,7 +554,7 @@ bool thread_setrun(thread_t thread, sched_queue_placement_t placement)
 		return false;
 	}
 
-	uint64_t irq_state = arm64_irq_save();
+	uint64_t irq_state = ml_irq_save();
 	processor_t processor = current_processor();
 
 	sched_lock(&g_sched.lock);
@@ -578,7 +578,7 @@ bool thread_setrun(thread_t thread, sched_queue_placement_t placement)
 	}
 
 	sched_unlock(&g_sched.lock);
-	arm64_irq_restore(irq_state);
+	ml_irq_restore(irq_state);
 	return valid;
 }
 
@@ -586,7 +586,7 @@ bool thread_run_queue_remove(thread_t thread)
 {
 	if (!g_sched.initialized || thread == 0) return false;
 
-	uint64_t irq_state = arm64_irq_save();
+	uint64_t irq_state = ml_irq_save();
 	sched_lock(&g_sched.lock);
 
 	bool result =
@@ -594,7 +594,7 @@ bool thread_run_queue_remove(thread_t thread)
 		run_queue_remove(thread->runq, thread);
 
 	sched_unlock(&g_sched.lock);
-	arm64_irq_restore(irq_state);
+	ml_irq_restore(irq_state);
 	return result;
 }
 
@@ -602,7 +602,7 @@ thread_t thread_select(processor_t processor)
 {
 	if (!g_sched.initialized || processor == 0) return 0;
 
-	uint64_t irq_state = arm64_irq_save();
+	uint64_t irq_state = ml_irq_save();
 	sched_lock(&g_sched.lock);
 
 	thread_t thread = run_queue_dequeue(&processor->runq);
@@ -616,7 +616,7 @@ thread_t thread_select(processor_t processor)
 	}
 
 	sched_unlock(&g_sched.lock);
-	arm64_irq_restore(irq_state);
+	ml_irq_restore(irq_state);
 	return thread;
 }
 
@@ -708,7 +708,7 @@ bool sched_thread_set_priority(thread_t thread, uint16_t priority)
 
 	if (queued) return thread_setrun(thread, SCHED_TAILQ);
 
-	uint64_t irq_state = arm64_irq_save();
+	uint64_t irq_state = ml_irq_save();
 	processor_t processor = current_processor();
 
 	sched_lock(&g_sched.lock);
@@ -724,7 +724,7 @@ bool sched_thread_set_priority(thread_t thread, uint16_t priority)
 	}
 
 	sched_unlock(&g_sched.lock);
-	arm64_irq_restore(irq_state);
+	ml_irq_restore(irq_state);
 	return true;
 }
 
@@ -768,7 +768,7 @@ void sched_tick(void)
 {
 	if (!g_sched.initialized) return;
 
-	uint64_t irq_state = arm64_irq_save();
+	uint64_t irq_state = ml_irq_save();
 	processor_t processor = current_processor();
 
 	sched_lock(&g_sched.lock);
@@ -815,7 +815,7 @@ void sched_tick(void)
 	}
 
 	sched_unlock(&g_sched.lock);
-	arm64_irq_restore(irq_state);
+	ml_irq_restore(irq_state);
 }
 
 bool sched_preempt(void)

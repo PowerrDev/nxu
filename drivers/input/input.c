@@ -1,7 +1,7 @@
 #include <kern/console/console.h>
 #include <drivers/input/input.h>
 
-#include <mach/arm64/system.h>
+#include <mach/machine/machine_routines.h>
 #include <drivers/input/keyboard.h>
 #include <drivers/input/mouse.h>
 #include <platform/uart.h>
@@ -47,11 +47,11 @@ bool input_publish(const input_event_t *event)
 {
 	if (!g_input.initialized || event == 0) return false;
 
-	uint64_t irq_state = arm64_irq_save();
+	uint64_t irq_state = ml_irq_save();
 
 	if (g_input.count == INPUT_EVENT_QUEUE_CAPACITY) {
 		g_input.dropped++;
-		arm64_irq_restore(irq_state);
+		ml_irq_restore(irq_state);
 		return false;
 	}
 
@@ -60,7 +60,7 @@ bool input_publish(const input_event_t *event)
 	g_input.count++;
 	g_input.published++;
 
-	arm64_irq_restore(irq_state);
+	ml_irq_restore(irq_state);
 	return true;
 }
 
@@ -74,10 +74,10 @@ bool input_read(input_event_t *event)
 {
 	if (!g_input.initialized || event == 0) return false;
 
-	uint64_t irq_state = arm64_irq_save();
+	uint64_t irq_state = ml_irq_save();
 
 	if (g_input.count == 0U) {
-		arm64_irq_restore(irq_state);
+		ml_irq_restore(irq_state);
 		return false;
 	}
 
@@ -85,7 +85,7 @@ bool input_read(input_event_t *event)
 	g_input.head = (g_input.head + 1U) % INPUT_EVENT_QUEUE_CAPACITY;
 	g_input.count--;
 
-	arm64_irq_restore(irq_state);
+	ml_irq_restore(irq_state);
 	return true;
 }
 

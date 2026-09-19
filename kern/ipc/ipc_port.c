@@ -10,7 +10,7 @@
 
 #include <kern/ipc/ipc_port.h>
 
-#include <mach/arm64/system.h>
+#include <mach/machine/machine_routines.h>
 #include <kern/memory/heap.h>
 
 #include <stdbool.h>
@@ -40,13 +40,13 @@ static uint64_t g_port_outstanding_count;
 static uint64_t
 ipc_port_lock(void)
 {
-	return arm64_irq_save();
+	return ml_irq_save();
 }
 
 static void
 ipc_port_unlock(uint64_t state)
 {
-	arm64_irq_restore(state);
+	ml_irq_restore(state);
 }
 
 /*

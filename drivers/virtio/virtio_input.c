@@ -3,7 +3,7 @@
 #include <drivers/virtio/virtio_input.h>
 
 #include <mach/arm64/gic.h>
-#include <mach/arm64/system.h>
+#include <mach/machine/machine_routines.h>
 #include <drivers/input/keyboard.h>
 #include <drivers/input/mouse.h>
 #include <kern/irq/irq.h>
@@ -440,7 +440,7 @@ fail:
  */
 void virtio_input_service(void)
 {
-	uint64_t irq_state = arm64_irq_save();
+	uint64_t irq_state = ml_irq_save();
 
 	for (uint32_t index = 0U; index < g_virtio_input_device_count; index++) {
 		virtio_input_device_t *device = &g_virtio_input_devices[index];
@@ -448,7 +448,7 @@ void virtio_input_service(void)
 		virtio_input_process_eventq(device);
 	}
 
-	arm64_irq_restore(irq_state);
+	ml_irq_restore(irq_state);
 }
 
 uint32_t virtio_input_device_count(void)

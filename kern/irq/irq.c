@@ -1,6 +1,6 @@
 #include <kern/irq/irq.h>
 
-#include <mach/arm64/system.h>
+#include <mach/machine/machine_routines.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -39,17 +39,17 @@ bool irq_register(uint32_t intid, irq_handler_t handler, void *context)
 {
 	if (!g_irq_initialized || intid > IRQ_MAX_INTID || handler == 0) return false;
 
-	uint64_t irq_state = arm64_irq_save();
+	uint64_t irq_state = ml_irq_save();
 	irq_entry_t *entry = &g_irq_table[intid];
 
 	if (entry->handler != 0) {
-		arm64_irq_restore(irq_state);
+		ml_irq_restore(irq_state);
 		return false;
 	}
 
 	entry->context = context;
 	__atomic_store_n(&entry->handler, handler, __ATOMIC_RELEASE);
-	arm64_irq_restore(irq_state);
+	ml_irq_restore(irq_state);
 	return true;
 }
 
@@ -63,17 +63,17 @@ bool irq_unregister(uint32_t intid, irq_handler_t handler, void *context)
 {
 	if (!g_irq_initialized || intid > IRQ_MAX_INTID || handler == 0) return false;
 
-	uint64_t irq_state = arm64_irq_save();
+	uint64_t irq_state = ml_irq_save();
 	irq_entry_t *entry = &g_irq_table[intid];
 
 	if (entry->handler != handler || entry->context != context) {
-		arm64_irq_restore(irq_state);
+		ml_irq_restore(irq_state);
 		return false;
 	}
 
 	__atomic_store_n(&entry->handler, 0, __ATOMIC_RELEASE);
 	entry->context = 0;
-	arm64_irq_restore(irq_state);
+	ml_irq_restore(irq_state);
 	return true;
 }
 

@@ -9,7 +9,7 @@
 
 #include <kern/ipc/ipc_kmsg.h>
 
-#include <mach/arm64/system.h>
+#include <mach/machine/machine_routines.h>
 #include <kern/ipc/ipc_port.h>
 #include <kern/memory/heap.h>
 
@@ -66,10 +66,10 @@ ipc_kmsg_alloc(const void *data, size_t size, ipc_port_t xfer_port, ipc_kmsg_t *
 	kmsg->ikm_xfer_port = xfer_port;
 	memcpy(kmsg->ikm_data, data, size);
 
-	uint64_t irq_state = arm64_irq_save();
+	uint64_t irq_state = ml_irq_save();
 	g_kmsg_outstanding_count++;
 	g_kmsg_outstanding_bytes += (uint64_t)size;
-	arm64_irq_restore(irq_state);
+	ml_irq_restore(irq_state);
 
 	*kmsgp = kmsg;
 	return IPC_SUCCESS;
@@ -95,7 +95,7 @@ ipc_kmsg_free(ipc_kmsg_t kmsg)
 		kmsg->ikm_xfer_port = IPC_PORT_NULL;
 	}
 
-	uint64_t irq_state = arm64_irq_save();
+	uint64_t irq_state = ml_irq_save();
 
 	if (g_kmsg_outstanding_count != 0ULL) {
 		g_kmsg_outstanding_count--;
@@ -107,24 +107,24 @@ ipc_kmsg_free(ipc_kmsg_t kmsg)
 		g_kmsg_outstanding_bytes = 0ULL;
 	}
 
-	arm64_irq_restore(irq_state);
+	ml_irq_restore(irq_state);
 	(void)kfree(kmsg);
 }
 
 uint64_t
 ipc_kmsg_outstanding_count(void)
 {
-	uint64_t irq_state = arm64_irq_save();
+	uint64_t irq_state = ml_irq_save();
 	uint64_t count = g_kmsg_outstanding_count;
-	arm64_irq_restore(irq_state);
+	ml_irq_restore(irq_state);
 	return count;
 }
 
 uint64_t
 ipc_kmsg_outstanding_bytes(void)
 {
-	uint64_t irq_state = arm64_irq_save();
+	uint64_t irq_state = ml_irq_save();
 	uint64_t bytes = g_kmsg_outstanding_bytes;
-	arm64_irq_restore(irq_state);
+	ml_irq_restore(irq_state);
 	return bytes;
 }
