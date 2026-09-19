@@ -184,3 +184,31 @@ vfs_status_t vnode_truncate(vnode_t vnode, uint64_t size)
 
 	return vnode->v_ops->truncate(vnode, size);
 }
+
+vfs_status_t vnode_getattr(vnode_t vnode, vnode_attr_t *attr)
+{
+	if (vnode == 0 || attr == 0 || !vnode->v_active) return VFS_STATUS_INVALID;
+
+	if (vnode->v_ops == 0 || vnode->v_ops->getattr == 0) return VFS_STATUS_NOT_SUPPORTED;
+
+	return vnode->v_ops->getattr(vnode, attr);
+}
+
+/*
+ * vnode_readlink:
+ *
+ * Copy the target of a symbolic link into buffer (not NUL terminated).
+ * *length receives the target length; a target longer than capacity fails
+ * with NAME_TOO_LONG rather than being truncated.
+ */
+vfs_status_t vnode_readlink(vnode_t vnode, char *buffer, uint64_t capacity, uint64_t *length)
+{
+	if (length != 0) *length = 0ULL;
+
+	if (vnode == 0 || buffer == 0 || length == 0 || !vnode->v_active) return VFS_STATUS_INVALID;
+	if (vnode->v_type != VNODE_TYPE_SYMLINK) return VFS_STATUS_INVALID;
+
+	if (vnode->v_ops == 0 || vnode->v_ops->readlink == 0) return VFS_STATUS_NOT_SUPPORTED;
+
+	return vnode->v_ops->readlink(vnode, buffer, capacity, length);
+}

@@ -17,7 +17,10 @@ typedef enum {
 	VNODE_TYPE_REGULAR,
 	VNODE_TYPE_DIRECTORY,
 	VNODE_TYPE_CHARACTER,
-	VNODE_TYPE_BLOCK
+	VNODE_TYPE_BLOCK,
+	VNODE_TYPE_SYMLINK,
+	VNODE_TYPE_FIFO,
+	VNODE_TYPE_SOCKET
 } vnode_type_t;
 
 typedef enum {
@@ -46,6 +49,30 @@ typedef struct {
 	char name[VFS_DIRENT_NAME_MAX + 1U];
 } vfs_dirent_t;
 
+/*
+ * vnode_attr_t
+ *
+ * What getattr reports about one vnode. va_mode carries the POSIX file type
+ * bits (S_IFMT) together with the permission bits; times are seconds and
+ * nanoseconds since the Unix epoch, zero when the filesystem records none.
+ */
+typedef struct {
+	uint64_t va_inode;
+	vnode_type_t va_type;
+	uint32_t va_mode;
+	uint32_t va_uid;
+	uint32_t va_gid;
+	uint32_t va_nlink;
+	uint64_t va_size;
+	uint64_t va_rdev;
+	uint64_t va_atime_sec;
+	uint32_t va_atime_nsec;
+	uint64_t va_mtime_sec;
+	uint32_t va_mtime_nsec;
+	uint64_t va_ctime_sec;
+	uint32_t va_ctime_nsec;
+} vnode_attr_t;
+
 typedef struct {
 	vfs_status_t (*lookup)(vnode_t directory, const char *name, vnode_t *result);
 	vfs_status_t (*create)(vnode_t directory, const char *name, vnode_type_t type, vnode_t *result);
@@ -54,6 +81,10 @@ typedef struct {
 	vfs_status_t (*read)(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint64_t *read_size);
 	vfs_status_t (*write)(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint64_t *written_size);
 	vfs_status_t (*truncate)(vnode_t vnode, uint64_t size);
+
+	/* Optional: filesystems that do not provide them answer NOT_SUPPORTED. */
+	vfs_status_t (*getattr)(vnode_t vnode, vnode_attr_t *attr);
+	vfs_status_t (*readlink)(vnode_t vnode, char *buffer, uint64_t capacity, uint64_t *length);
 } vnode_operations_t;
 
 /*
@@ -112,5 +143,7 @@ vfs_status_t vnode_readdir(vnode_t directory, uint64_t *offset, vfs_dirent_t *en
 vfs_status_t vnode_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint64_t *read_size);
 vfs_status_t vnode_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint64_t *written_size);
 vfs_status_t vnode_truncate(vnode_t vnode, uint64_t size);
+vfs_status_t vnode_getattr(vnode_t vnode, vnode_attr_t *attr);
+vfs_status_t vnode_readlink(vnode_t vnode, char *buffer, uint64_t capacity, uint64_t *length);
 
 #endif
