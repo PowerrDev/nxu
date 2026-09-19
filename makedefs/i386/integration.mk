@@ -21,7 +21,10 @@ I386_C_SOURCES += \
     kern/boot/nvram.c \
     kern/console/display_owner.c \
     kern/loader/elf.c \
+    kern/tests/ipc_process_test.c \
     kern/tests/ipc_test.c \
+    kern/tests/socket_process_test.c \
+    kern/tests/thread_process_test.c \
     libk/crc32c.c \
     vfs/ext4.c \
     vfs/file.c \
@@ -31,3 +34,11 @@ I386_C_SOURCES += \
     vfs/vfs.c \
     vfs/vfs_file.c \
     vfs/vnode.c
+
+# End-to-end boots of the whole kernel with userland from the ext4 image:
+# bootd as PID 1, and the cross-process IPC, thread and socket tests.
+.PHONY: test-i386-boot
+
+test-i386-boot: $(I386_KERNEL) i386-disk
+
+	tools/test_i386_boot.sh $(I386_KERNEL) $(BUILD_ROOT)/i386/disk.img
