@@ -59,6 +59,20 @@ bool i386_init_userland(const i386_boot_info_t *boot)
 {
 	(void)boot;
 
+	/*
+	 * A boot that asks for another phase's self-test (test=drivers, ...) is
+	 * exercising that phase in isolation, often on a scratch disk that is
+	 * not a filesystem at all. Launching userland from it would turn a
+	 * passing self-test into a fatal mount failure, so only test=userland
+	 * (or no test) goes on to mount and spawn.
+	 */
+	char selected[16];
+
+	if (i386_boot_arg("test", selected, sizeof(selected)) && strcmp(selected, "userland") != 0) {
+		kputln("i386_init_userland: self-test run for another phase, userland launch skipped");
+		return true;
+	}
+
 	if (block_device_count() == 0U) {
 		kputln("i386_init_userland: no block device, staying in kernel-only mode");
 		return true;
