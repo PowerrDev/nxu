@@ -33,10 +33,12 @@ I386_C_SOURCES += \
     mach/i386/threads_init.c \
     mach/i386/threads_selftest.c \
     kern/process/proc.c \
+    kern/process/signal.c \
     kern/process/task.c \
     kern/process/thread.c \
     kern/sched_prism/processor.c \
     kern/sched_prism/run_queue.c \
+    kern/sched_prism/waitq.c \
     kern/sched_prism/sched.c \
     kern/syscall/syscall.c \
     kern/ipc/ipc_init.c \

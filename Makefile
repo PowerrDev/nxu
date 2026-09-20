@@ -269,6 +269,7 @@ C_SOURCES := \
     mach/arm64/exception.c \
     mach/arm64/gic.c \
     mach/arm64/thread.c \
+    mach/arm64/user.c \
     mach/arm64/timer.c \
     drivers/input/input.c \
     drivers/input/keyboard.c \
@@ -298,8 +299,10 @@ C_SOURCES := \
     kern/irq/irq.c \
     kern/kern_init.c \
     kern/process/proc.c \
+    kern/process/signal.c \
     kern/sched_prism/processor.c \
     kern/sched_prism/run_queue.c \
+    kern/sched_prism/waitq.c \
     kern/sched_prism/sched.c \
     kern/process/task.c \
     kern/memory/heap.c \
@@ -311,10 +314,15 @@ C_SOURCES := \
     kern/ipc/socket.c \
     kern/console/display_owner.c \
     kern/tests/ipc_test.c \
+    kern/tests/post.c \
+    kern/tests/post_storage.c \
+    kern/tests/boot_test.c \
     kern/tests/vm_shm_test.c \
     kern/tests/vm_map_test.c \
     kern/tests/ipc_process_test.c \
     kern/tests/thread_process_test.c \
+    kern/tests/fault_process_test.c \
+    kern/tests/process_control_test.c \
     kern/tests/socket_process_test.c \
     kern/tests/xamethyst_process_test.c \
     kern/tests/windowserver_process_test.c \
@@ -347,11 +355,13 @@ C_SOURCES := \
     vm/address_space.c \
     vm/vm_shm.c \
     vm/vm_map.c \
+    vm/vm_fault.c \
     vm/vmm_tables.c \
     vm/vmm_ttbr1.c \
     vm/vmm_debug.c \
     vm/vm_kern.c \
     vm/user_copy.c \
+    platform/arm64/driverkit.c \
     platform/arm64/dtb.c \
     platform/dtb_chosen.c \
     platform/arm64/fw_cfg.c \
@@ -398,6 +408,9 @@ USER_C_SOURCES := \
     frameworks/BootDaemons.framework/ipctest_a.c \
     frameworks/BootDaemons.framework/ipctest_b.c \
     frameworks/BootDaemons.framework/threadtest.c \
+    frameworks/BootDaemons.framework/faulttest.c \
+    frameworks/BootDaemons.framework/proctest.c \
+    frameworks/BootDaemons.framework/execchild.c \
     frameworks/BootDaemons.framework/sockettest_server.c \
     frameworks/BootDaemons.framework/sockettest_client.c \
     frameworks/BootDaemons.framework/xamethyst.c \
@@ -458,6 +471,9 @@ USER_DAEMONS := \
     $(USER_BUILD)/ipctest_a \
     $(USER_BUILD)/ipctest_b \
     $(USER_BUILD)/threadtest \
+    $(USER_BUILD)/faulttest \
+    $(USER_BUILD)/proctest \
+    $(USER_BUILD)/execchild \
     $(USER_BUILD)/sockettest_server \
     $(USER_BUILD)/sockettest_client \
     $(USER_BUILD)/xamethyst \
@@ -605,6 +621,27 @@ $(USER_BUILD)/threadtest: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDa
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 
+$(USER_BUILD)/faulttest: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/faulttest.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+
+$(USER_BUILD)/proctest: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/proctest.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+
+$(USER_BUILD)/execchild: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/execchild.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+
 $(USER_BUILD)/sockettest_server: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/sockettest_server.o
 
 	$(QUIET_PRINT) "LD" "$@"
@@ -689,6 +726,12 @@ $(USER_STAGE_STAMP): $(USER_DAEMONS) $(USER_SERVICE_PLISTS)
 	$(Q)cp $(USER_BUILD)/ipctest_b $(DISK_ROOT)/System/Library/CoreServices/ipctest_b
 
 	$(Q)cp $(USER_BUILD)/threadtest $(DISK_ROOT)/System/Library/CoreServices/threadtest
+
+	$(Q)cp $(USER_BUILD)/faulttest $(DISK_ROOT)/System/Library/CoreServices/faulttest
+
+	$(Q)cp $(USER_BUILD)/proctest $(DISK_ROOT)/System/Library/CoreServices/proctest
+
+	$(Q)cp $(USER_BUILD)/execchild $(DISK_ROOT)/System/Library/CoreServices/execchild
 
 	$(Q)cp $(USER_BUILD)/sockettest_server $(DISK_ROOT)/System/Library/CoreServices/sockettest_server
 
