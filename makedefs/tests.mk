@@ -29,8 +29,8 @@
 
 TEST_GUI_STACK := UISERVICE=1 WINDOWSERVER=1
 
-# QEMU_DISPLAY is a full `-display <backend>` option; the rule adds the flag itself.
-TEST_GUI_DISPLAY := $(patsubst -display %,%,$(QEMU_DISPLAY))
+# The rule below adds the `-display` flag itself, so hand it just the backend.
+TEST_GUI_DISPLAY := $(QEMU_DISPLAY_BACKEND)
 
 TEST_IDS := \
     ui-about \
@@ -81,7 +81,7 @@ TEST_windowserver-about_RAMFB := $(QEMU_RAMFB_DEVICE)
 TEST_journal-crash_GROUP := Filesystem
 TEST_journal-crash_DESC := Crash mid-transaction; make run replays it
 TEST_journal-crash_CFLAGS := -DNXU_JOURNAL_CRASH_TEST
-TEST_journal-crash_DISPLAY := gtk
+TEST_journal-crash_DISPLAY := cocoa
 
 
 # -- Userland processes --------------------------------------------------------

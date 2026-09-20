@@ -60,7 +60,10 @@ QEMU_GPU_DEVICE := -device virtio-gpu-device,xres=$(QEMU_GPU_XRES),yres=$(QEMU_G
 DETECTED_SCALE_PERMILLE := $(shell osascript -l JavaScript -e 'ObjC.import("AppKit"); Math.round($$.NSScreen.mainScreen.backingScaleFactor * 1000);' 2>/dev/null)
 QEMU_UI_SCALE_PERMILLE ?= $(if $(DETECTED_SCALE_PERMILLE),$(DETECTED_SCALE_PERMILLE),2000)
 
-QEMU_DISPLAY := -display cocoa
+# Host display backend; run-console and the graphical tests both use it.
+QEMU_DISPLAY_BACKEND ?= cocoa
+
+QEMU_DISPLAY := -display $(QEMU_DISPLAY_BACKEND)
 
 RAMFB ?= 0
 
