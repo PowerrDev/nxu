@@ -560,14 +560,9 @@ void virtio_gpu_dump(void)
 {
 	for (uint32_t index = 0U; index < g_virtio_gpu_device_count; index++) {
 		const virtio_gpu_device_t *device = &g_virtio_gpu_devices[index];
-		kprintf(
-			"VirtIOGPUFamily: device %u, scanout %u, %ux%u, framebuffer %llu bytes, presents %llu\n",
-			index + 1U,
-			device->scanout_id,
-			device->width,
-			device->height,
-			(unsigned long long)device->framebuffer_bytes,
-			(unsigned long long)device->present_count
-		);
+		kprintf("VirtIOGPUFamily: device %u: %ux%u\n", index + 1U, device->width, device->height);
+		kverbosef("VirtIOGPUFamily: device %u: scanout %u\n", index + 1U, device->scanout_id);
+		kverbosef("VirtIOGPUFamily: device %u: framebuffer %llu bytes\n", index + 1U, (unsigned long long)device->framebuffer_bytes);
+		kverbosef("VirtIOGPUFamily: device %u: %llu presents\n", index + 1U, (unsigned long long)device->present_count);
 	}
 }

@@ -135,7 +135,8 @@ uint32_t virtio_gpu_count(void)
 
 void virtio_dump(void)
 {
-	kprintf("VirtIOFamily: %u device(s): %u input, %u block, %u GPU\n", g_virtio_device_count, g_virtio_input_count, g_virtio_block_count, g_virtio_gpu_count);
+	/* virtio_init() already printed the device count line. */
+	kverbosef("VirtIOFamily: %u device(s): %u input, %u block, %u GPU\n", g_virtio_device_count, g_virtio_input_count, g_virtio_block_count, g_virtio_gpu_count);
 	virtio_input_dump();
 	virtio_block_dump();
 	virtio_gpu_dump();

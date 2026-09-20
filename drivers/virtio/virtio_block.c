@@ -947,38 +947,8 @@ void virtio_block_dump(void)
 				index
 			];
 
-		kputs(
-			"VirtIOBlockFamily: device "
-		);
-
-		kputu64(
-			index + 1U
-		);
-
-		kputs(
-			", sectors "
-		);
-
-		kputu64(
-			device->block->sector_count
-		);
-
-		kputs(
-			", requests "
-		);
-
-		kputu64(
-			device->request_count
-		);
-
-		kputs(
-			", read-only "
-		);
-
-		kputln(
-			device->read_only
-				? "yes"
-				: "no"
-		);
+		kprintf("VirtIOBlockFamily: device %u: %llu sectors\n", index + 1U, (unsigned long long)device->block->sector_count);
+		kverbosef("VirtIOBlockFamily: device %u: %llu requests\n", index + 1U, (unsigned long long)device->request_count);
+		kverbosef("VirtIOBlockFamily: device %u: read-only %s\n", index + 1U, device->read_only ? "yes" : "no");
 	}
 }

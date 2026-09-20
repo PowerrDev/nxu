@@ -198,9 +198,7 @@ bool block_device_verify(block_device_t device)
  */
 void block_device_dump(void)
 {
-	kputs("VirtIOBlockFamily: devices: ");
-	kputu64(g_block_device_count);
-	kputc('\n');
+	kprintf("VirtIOBlockFamily: devices: %u\n", g_block_device_count);
 
 	for (
 		uint32_t index = 0U;
@@ -209,23 +207,9 @@ void block_device_dump(void)
 	) {
 		block_device_t device = g_block_devices[index];
 
-		kputs("VirtIOBlockFamily: ");
-		kputs(device->name);
-
-		kputs(", sectors: ");
-		kputu64(device->sector_count);
-
-		kputs(", sector size: ");
-		kputu64(device->sector_size);
-
-		kputs(", logical block size: ");
-		kputu64(device->logical_block_size);
-
-		kputs(", read-only: ");
-		kputln(
-			device->read_only
-				? "yes"
-				: "no"
-		);
+		kprintf("VirtIOBlockFamily: %s: %llu sectors\n", device->name, (unsigned long long)device->sector_count);
+		kverbosef("VirtIOBlockFamily: %s: sector size: %llu\n", device->name, (unsigned long long)device->sector_size);
+		kverbosef("VirtIOBlockFamily: %s: logical block size: %llu\n", device->name, (unsigned long long)device->logical_block_size);
+		kverbosef("VirtIOBlockFamily: %s: read-only: %s\n", device->name, device->read_only ? "yes" : "no");
 	}
 }

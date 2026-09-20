@@ -457,22 +457,12 @@ void virtio_input_dump(void)
 	for (uint32_t index = 0U; index < g_virtio_input_device_count; index++) {
 		const virtio_input_device_t *device = &g_virtio_input_devices[index];
 
-		kputs("VirtIOInputFamily: device ");
-		kputu64(device->input_device_id);
-		kputs(", class ");
+		const char *class_name = "unknown";
+		if (device->device_class == INPUT_DEVICE_KEYBOARD) class_name = "keyboard";
+		else if (device->device_class == INPUT_DEVICE_MOUSE) class_name = "mouse";
 
-		if (device->device_class == INPUT_DEVICE_KEYBOARD) {
-			kputs("keyboard");
-		} else if (device->device_class == INPUT_DEVICE_MOUSE) {
-			kputs("mouse");
-		} else {
-			kputs("unknown");
-		}
-
-		kputs(", name ");
-		kputs(device->name[0] != '\0' ? device->name : "unnamed");
-		kputs(", INTID ");
-		kputu64(device->transport.intid);
-		kputc('\n');
+		kprintf("VirtIOInputFamily: device %llu: %s\n", (unsigned long long)device->input_device_id, class_name);
+		kprintf("VirtIOInputFamily: device %llu: name %s\n", (unsigned long long)device->input_device_id, device->name[0] != '\0' ? device->name : "unnamed");
+		kverbosef("VirtIOInputFamily: device %llu: INTID %u\n", (unsigned long long)device->input_device_id, (unsigned)device->transport.intid);
 	}
 }
