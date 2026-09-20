@@ -50,6 +50,15 @@ void ipc_space_init(ipc_space_t space);
 void ipc_space_close_all(ipc_space_t space);
 
 /*
+ * fork: child (freshly initialised, empty) receives a name for every port
+ * parent holds, at the same name, each with its own reference. Ports are not
+ * split into send and receive rights here, so parent and child both hold the
+ * full capability -- like two processes sharing an inherited pipe. On
+ * failure child is left empty.
+ */
+bool ipc_space_fork(ipc_space_t child, ipc_space_t parent);
+
+/*
  * port must already be a reference the caller owns and is handing off to
  * the space (mirroring file_alloc's initial reference moving straight into
  * filedesc_install) -- ipc_space_insert_port does not take its own.

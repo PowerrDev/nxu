@@ -92,7 +92,10 @@ No descriptor-table lock is held while invoking vnode I/O.
 
 ## Current limitations
 
-Descriptors are not inherited because NXU does not yet implement `fork`.
+`fork` (arm64) gives the child every descriptor of the parent, each pointing at
+the same file object, so parent and child share file offsets
+(`filedesc_fork`). `exec` keeps all descriptors open. See
+[Process control](../kern/process-control.md).
 
 There is no `dup`, `fcntl`, close-on-exec state, credentials, advisory locking,
 or userspace open/read/close syscall interface yet.

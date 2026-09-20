@@ -1,5 +1,7 @@
 #include <kern/console/console.h>
 #include <kern/process/proc.h>
+#include <kern/process/signal.h>
+#include <kern/sched_prism/sched.h>
 
 #include <mach/machine/cpu.h>
 
@@ -543,6 +545,106 @@ bool proc_create_user(
 	return true;
 }
 
+bool proc_fork(proc_t parent, proc_t *result)
+{
+	if (parent == 0 || result == 0) return false;
+
+	*result = 0;
+
+	proc_lock(&g_proc_lock);
+
+	if (
+		!g_proc_initialized ||
+		parent == g_kernproc ||
+		parent->p_stat == PROC_STATE_ZOMBIE ||
+		parent->p_stat == PROC_STATE_DEAD
+	) {
+		proc_unlock(&g_proc_lock);
+		return false;
+	}
+
+	proc_t proc = proc_allocate_slot_locked();
+
+	if (proc == 0) {
+		proc_unlock(&g_proc_lock);
+		return false;
+	}
+
+	proc_id_t pid = proc_allocate_pid_locked();
+
+	if (pid == PROC_PID_INVALID) {
+		proc_release_slot_locked(proc);
+		proc_unlock(&g_proc_lock);
+		return false;
+	}
+
+	proc->p_ident.pid = pid;
+	proc->p_ident.uniqueid = proc_allocate_uniqueid_locked();
+	proc->p_ident.idversion = proc_allocate_idversion_locked();
+
+	proc->p_stat = PROC_STATE_EMBRYO;
+	proc->p_refcount = 1U;
+
+	proc_copy_name(proc->p_comm, parent->p_comm);
+
+	if (!task_fork(&proc->p_task, &parent->p_task, proc->p_ident.uniqueid, proc)) {
+		proc_release_slot_locked(proc);
+		proc_unlock(&g_proc_lock);
+		return false;
+	}
+
+	if (
+		!filedesc_fork(&proc->p_fd, &parent->p_fd) ||
+		!ipc_space_fork(&proc->p_ipc, &parent->p_ipc)
+	) {
+		/* Undo everything task_fork built; the embryo never became visible. */
+		(void)task_terminate(&proc->p_task);
+		filedesc_close_all(&proc->p_fd);
+		ipc_space_close_all(&proc->p_ipc);
+		proc_release_slot_locked(proc);
+		proc_unlock(&g_proc_lock);
+		return false;
+	}
+
+	proc->p_ipc_bootstrap_name = parent->p_ipc_bootstrap_name;
+	signal_inherit(proc, parent);
+
+	proc_child_insert_locked(parent, proc);
+	proc_all_insert_locked(proc);
+
+	g_proc_count++;
+
+	proc_unlock(&g_proc_lock);
+
+	/*
+	 * Start the child's first thread. Same steps as loader_start_process:
+	 * a kernel stack, then runnable, then handed to the scheduler.
+	 */
+	task_t task = proc_task(proc);
+	thread_t thread = task_first_thread_ref(task);
+	bool started = false;
+
+	if (thread != 0) {
+		started =
+			thread_stack_alloc(thread) &&
+			proc_make_runnable(proc) &&
+			proc_mark_running(proc) &&
+			sched_thread_start(thread);
+
+		thread_deallocate(thread);
+	}
+
+	if (!started) {
+		/* Already visible in the parent's child list: end it and let the
+		 * parent's next waitpid clean it up like any other exit. */
+		(void)proc_exit(proc, 127ULL);
+		return false;
+	}
+
+	*result = proc;
+	return true;
+}
+
 proc_t proc_find(proc_id_t pid)
 {
 	proc_lock(&g_proc_lock);
@@ -750,7 +852,17 @@ bool proc_exit(proc_t proc, uint64_t status)
 	proc_zombie_insert_locked(proc);
 	g_zombie_count++;
 
+	/* Let a parent that installed a SIGCHLD handler know. */
+	signal_notify_parent_of_exit_locked(proc->p_pptr);
+
+	proc_t parent = proc->p_pptr;
+
 	proc_unlock(&g_proc_lock);
+
+	/* A parent sleeping in wait() has something to look at now. Woken
+	 * outside the process lock: waking takes the scheduler's. */
+	if (parent != 0) waitq_wake_all(&parent->p_waitq);
+
 	return true;
 }
 
@@ -769,6 +881,52 @@ bool proc_exit_current(uint64_t status)
 		proc,
 		status
 	);
+}
+
+proc_wait_result_t proc_wait_child(
+	proc_t parent,
+	proc_id_t pid,
+	proc_id_t *reaped_pid,
+	uint64_t *status
+)
+{
+	if (parent == 0 || reaped_pid == 0) return PROC_WAIT_NO_CHILD;
+
+	bool any = pid == PROC_PID_INVALID;
+	bool has_child = false;
+	proc_t zombie = 0;
+
+	proc_lock(&g_proc_lock);
+
+	if (any) {
+		has_child = parent->p_children != 0;
+
+		for (proc_t candidate = g_zombproc_head; candidate != 0; candidate = candidate->p_list_next) {
+			if (candidate->p_pptr == parent) {
+				zombie = candidate;
+				break;
+			}
+		}
+	} else {
+		proc_t live = proc_find_live_locked(pid);
+		proc_t dead = proc_find_zombie_locked(pid);
+		proc_t target = live != 0 ? live : dead;
+
+		has_child = target != 0 && target->p_pptr == parent;
+		zombie = (dead != 0 && dead->p_pptr == parent) ? dead : 0;
+	}
+
+	proc_unlock(&g_proc_lock);
+
+	if (!has_child) return PROC_WAIT_NO_CHILD;
+	if (zombie == 0) return PROC_WAIT_NOT_YET;
+
+	proc_id_t zombie_pid = zombie->p_ident.pid;
+
+	if (!proc_reap(parent, zombie_pid, status)) return PROC_WAIT_NOT_YET;
+
+	*reaped_pid = zombie_pid;
+	return PROC_WAIT_REAPED;
 }
 
 bool proc_reap(

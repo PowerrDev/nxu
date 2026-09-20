@@ -45,7 +45,16 @@
 #define ELF_PROGRAM_HEADER_MAX 16U
 
 #define LOADER_PAGE_SIZE 4096ULL
+/*
+ * With demand paging the stack is only address space until it is touched, so
+ * it can be generous (256 KiB) at no cost to a process that never uses it.
+ * Without, every page is allocated up front and stays at 16 KiB.
+ */
+#if VM_DEMAND_PAGING
+#define LOADER_USER_STACK_PAGES 64ULL
+#else
 #define LOADER_USER_STACK_PAGES 4ULL
+#endif
 #define LOADER_USER_STACK_TOP VM_USER_STACK_TOP
 #define LOADER_USER_STACK_BASE (LOADER_USER_STACK_TOP - LOADER_USER_STACK_PAGES * LOADER_PAGE_SIZE)
 

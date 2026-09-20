@@ -2,6 +2,8 @@
 #define NXU_KERN_PROC_H
 
 #include <kern/ipc/ipc_space.h>
+#include <kern/sched_prism/waitq.h>
+#include <kern/syscall/syscall_defs.h>
 #include <kern/process/task.h>
 #include <vfs/file.h>
 
@@ -81,6 +83,15 @@ typedef struct {
  *     Name, within p_ipc, of the send right to the system bootstrap
  *     registry inherited at spawn (see loader_spawn). IPC_SPACE_NAME_INVALID
  *     until spawn-time handoff is wired up.
+ *
+ * p_waitq
+ *     Threads sleeping in wait() for one of this process's children to exit.
+ *     proc_exit wakes it.
+ *
+ * p_sigact / p_sigpending
+ *     Signal dispositions and the set of signals sent but not yet delivered
+ *     (bit n = signal n). All threads of a process share both; the blocked
+ *     mask is per thread. See kern/process/signal.h.
  */
 struct proc {
 	proc_t p_list_prev;
@@ -96,6 +107,10 @@ struct proc {
 	struct filedesc p_fd;
 	struct ipc_space p_ipc;
 	uint32_t p_ipc_bootstrap_name;
+
+	nxu_sigaction_t p_sigact[NXU_NSIG];
+	waitq_t p_waitq;
+	uint32_t p_sigpending;
 
 	proc_ident_t p_ident;
 
@@ -125,6 +140,19 @@ bool proc_create_user(
 	proc_t *result
 );
 
+/*
+ * proc_fork
+ *
+ * Create a child of parent that is a copy of it, as the fork system call
+ * does: a copy-on-write copy of the address space and region list, shared
+ * open files and port names, copied signal dispositions and the calling
+ * thread's blocked mask. The child's first thread resumes at the point
+ * fork() returns in the parent, with 0 as the result. Must be called by
+ * parent's own thread while it is inside the kernel for a system call.
+ * The child is left runnable and already scheduled.
+ */
+bool proc_fork(proc_t parent, proc_t *child);
+
 proc_t proc_find(proc_id_t pid);
 proc_t proc_find_zombie(proc_id_t pid);
 proc_t proc_find_ident(const proc_ident_t *ident);
@@ -140,6 +168,27 @@ bool proc_continue(proc_t proc);
 
 bool proc_exit(proc_t proc, uint64_t status);
 bool proc_exit_current(uint64_t status);
+
+typedef enum {
+	PROC_WAIT_REAPED,
+	PROC_WAIT_NOT_YET,
+	PROC_WAIT_NO_CHILD
+} proc_wait_result_t;
+
+/*
+ * proc_wait_child
+ *
+ * One non-blocking pass of wait(): reap a zombie child of parent -- the one
+ * named by pid, or any of them for PROC_PID_INVALID -- reporting its pid and
+ * exit status. PROC_WAIT_NOT_YET means the child (or every child) is still
+ * running; PROC_WAIT_NO_CHILD means there is nothing to wait for.
+ */
+proc_wait_result_t proc_wait_child(
+	proc_t parent,
+	proc_id_t pid,
+	proc_id_t *reaped_pid,
+	uint64_t *status
+);
 
 bool proc_reap(
 	proc_t parent,

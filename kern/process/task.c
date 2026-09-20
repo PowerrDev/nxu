@@ -1,6 +1,8 @@
 #include <kern/process/task.h>
 #include <kern/sched_prism/sched.h>
 #include <kern/process/thread.h>
+#include <mach/machine/user.h>
+#include <vm/pmm.h>
 #include <vm/vm_map.h>
 #include <vm/vm_shm.h>
 
@@ -126,6 +128,85 @@ bool task_init_user(
 }
 
 /*
+ * task_fork
+ *
+ * Initialize a userspace task as a copy of parent. See task.h.
+ */
+bool task_fork(
+	task_t task,
+	task_t parent,
+	uint64_t uniqueid,
+	struct proc *bsd_info
+)
+{
+	if (
+		task == 0 ||
+		parent == 0 ||
+		bsd_info == 0 ||
+		task_is_kernel(parent) ||
+		!task_is_active(parent)
+	) {
+		return false;
+	}
+
+	thread_t caller = current_thread();
+
+	if (caller == 0 || caller->task != parent) return false;
+
+	task_reset(task);
+
+	if (!vm_address_space_fork(&parent->map, &task->map)) return false;
+
+	if (!vm_map_fork(&parent->map, &task->map)) {
+		(void)vm_address_space_release_pages(&task->map);
+		(void)vm_address_space_destroy(&task->map);
+		return false;
+	}
+
+	task->shm_next_va = parent->shm_next_va;
+	task->task_uniqueid = uniqueid;
+	task->ref_count = 1U;
+	task->state = TASK_STATE_ACTIVE;
+	task->flags = TASK_FLAG_NONE;
+	task->active = true;
+	task->bsd_info = bsd_info;
+
+	/*
+	 * thread_create wants a user entry point and stack; the child never
+	 * runs at either -- machine_user_fork_state replaces them, and every
+	 * register, with the parent's. Any non-zero pair will do.
+	 */
+	thread_t initial_thread;
+
+	if (!thread_create(task, PMM_PAGE_SIZE, PMM_PAGE_SIZE, 0ULL, &initial_thread)) {
+		goto fail_address_space;
+	}
+
+	if (!machine_user_fork_state(&initial_thread->machine)) {
+		(void)thread_terminate(initial_thread);
+		(void)thread_reap(initial_thread);
+		thread_deallocate(initial_thread);
+		goto fail_address_space;
+	}
+
+	initial_thread->sig_blocked = caller->sig_blocked;
+
+	/* Task membership keeps the thread resident once this reference goes. */
+	thread_deallocate(initial_thread);
+
+	return true;
+
+fail_address_space:
+	vm_map_destroy_all(&task->map);
+	(void)vm_address_space_release_pages(&task->map);
+	(void)vm_address_space_destroy(&task->map);
+
+	task->active = false;
+	task->state = TASK_STATE_TERMINATED;
+	return false;
+}
+
+/*
  * task_reference
  */
 bool task_reference(task_t task)
@@ -221,6 +302,14 @@ bool task_terminate(task_t task)
 	 * concurrent access left to guard against; reclaim its mmap'd memory
 	 * before the address space itself goes away. */
 	vm_map_destroy_all(&task->map);
+
+	/* Give back every remaining page (the image, the stack, shared
+	 * mappings' references) and then the page tables themselves. When the
+	 * task is the one running this, the address space is deactivated first. */
+	if (!task_is_kernel(task)) {
+		(void)vm_address_space_release_pages(&task->map);
+		(void)vm_address_space_destroy(&task->map);
+	}
 
 	task->active = false;
 	task->halting = false;

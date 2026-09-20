@@ -4,12 +4,16 @@
 #include <kern/ipc/ipc_init.h>
 #include <kern/ipc/ipc_port.h>
 #include <kern/ipc/ipc_space.h>
+#include <kern/process/signal.h>
 #include <kern/process/task.h>
+#include <mach/machine/user.h>
 #include <kern/process/thread.h>
 #include <kern/sched_prism/sched.h>
 #include <vfs/vfs.h>
 #include <vm/address_space.h>
 #include <vm/pmm.h>
+#include <vm/vm_fault.h>
+#include <vm/vm_map.h>
 #include <vm/vmm.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -163,12 +167,21 @@ loader_copy_segment(vnode_t vnode, vm_address_space_t *map, const loader_segment
 static loader_status_t
 loader_map_stack(vm_address_space_t *map)
 {
+#if VM_DEMAND_PAGING
+	/* Reserve only: the first push onto each page faults it in. */
+	if (!vm_map_reserve(map, LOADER_USER_STACK_BASE, LOADER_USER_STACK_TOP, VM_USER_PROTECTION_READ_WRITE)) {
+		return LOADER_STATUS_PROCESS_ERROR;
+	}
+
+	return LOADER_STATUS_OK;
+#else
 	for (uint64_t address = LOADER_USER_STACK_BASE; address < LOADER_USER_STACK_TOP; address += PMM_PAGE_SIZE) {
 		loader_status_t status = loader_map_zero_page(map, address, VM_USER_PROTECTION_READ_WRITE);
 		if (status != LOADER_STATUS_OK) return status;
 	}
 
 	return LOADER_STATUS_OK;
+#endif
 }
 
 static loader_status_t
@@ -409,6 +422,234 @@ loader_spawn(proc_t parent, const char *path, const char *name, proc_t *result)
 	return LOADER_STATUS_OK;
 }
 
+#if !LOADER_ELF_WIDEN
+
+/*
+ * loader_stack_write
+ *
+ * Copy data onto the new program's stack. The stack is only reserved (see
+ * loader_map_stack), so each page is first faulted in through the same
+ * resolver the program's own first touch would use, then written through
+ * the kernel's direct map -- the new space is not the active one.
+ */
+static loader_status_t
+loader_stack_write(vm_address_space_t *map, uint64_t address, const void *data, uint64_t size)
+{
+	const uint8_t *bytes = data;
+	uint64_t written = 0ULL;
+
+	while (written < size) {
+		uint64_t current = address + written;
+		uint64_t page_address = current & ~(PMM_PAGE_SIZE - 1ULL);
+		uint64_t page_offset = current & (PMM_PAGE_SIZE - 1ULL);
+		uint64_t chunk = PMM_PAGE_SIZE - page_offset;
+		if (chunk > size - written) chunk = size - written;
+
+		vm_user_page_mapping_t mapping;
+		if (!vm_address_space_query_page(map, page_address, &mapping)) {
+			if (!vm_fault_user(map, page_address, VM_FAULT_WRITE)) return LOADER_STATUS_NO_MEMORY;
+			if (!vm_address_space_query_page(map, page_address, &mapping)) return LOADER_STATUS_PROCESS_ERROR;
+		}
+
+		uint64_t kernel_address;
+		if (!vmm_physical_to_higher_half(mapping.physical_address, &kernel_address)) return LOADER_STATUS_PROCESS_ERROR;
+
+		memcpy((void *)(kernel_address + page_offset), bytes + written, chunk);
+		written += chunk;
+	}
+
+	return LOADER_STATUS_OK;
+}
+
+/*
+ * loader_build_stack_args
+ *
+ * Lay argv out at the top of the new stack and return the initial stack
+ * pointer and the address of argv[0]:
+ *
+ *     top   +-----------------------+
+ *           | argument strings      |
+ *           +-----------------------+
+ *           | argv[argc] = NULL     |
+ *           | argv[argc-1] ...      |
+ *           | argv[0]               |  <- argv (x1)
+ *     sp -> +-----------------------+  (16-byte aligned)
+ */
+static loader_status_t
+loader_build_stack_args(vm_address_space_t *map, const loader_exec_args_t *args, uint64_t *out_sp, uint64_t *out_argv)
+{
+	uint64_t strings_base = (LOADER_USER_STACK_TOP - args->length) & ~0xFULL;
+	uint64_t array_size = ((uint64_t)args->argc + 1ULL) * sizeof(uint64_t);
+	uint64_t array_base = (strings_base - array_size) & ~0xFULL;
+
+	if (array_base < LOADER_USER_STACK_BASE) return LOADER_STATUS_BAD_FORMAT;
+
+	uint64_t pointers[NXU_EXEC_ARGV_MAX + 1U];
+	uint32_t offset = 0U;
+
+	for (uint32_t index = 0U; index < args->argc; index++) {
+		pointers[index] = strings_base + offset;
+
+		while (offset < args->length && args->strings[offset] != '\0') offset++;
+		offset++;
+	}
+
+	pointers[args->argc] = 0ULL;
+
+	loader_status_t status = loader_stack_write(map, strings_base, args->strings, args->length);
+	if (status != LOADER_STATUS_OK) return status;
+
+	status = loader_stack_write(map, array_base, pointers, array_size);
+	if (status != LOADER_STATUS_OK) return status;
+
+	*out_sp = array_base;
+	*out_argv = array_base;
+	return LOADER_STATUS_OK;
+}
+
+static void
+loader_discard_space(vm_address_space_t *space)
+{
+	vm_map_destroy_all(space);
+	(void)vm_address_space_release_pages(space);
+	(void)vm_address_space_destroy(space);
+}
+
+loader_status_t
+loader_exec(proc_t proc, const char *path, const loader_exec_args_t *args)
+{
+	if (proc == 0 || path == 0 || args == 0) return LOADER_STATUS_INVALID;
+	if (args->argc == 0U || args->argc > NXU_EXEC_ARGV_MAX || args->length > NXU_EXEC_ARGV_BYTES) return LOADER_STATUS_INVALID;
+
+	task_t task = proc_task(proc);
+	if (task == 0 || task_is_kernel(task) || !task_is_active(task)) return LOADER_STATUS_INVALID;
+
+	/* Replacing the image under a sibling thread is not supported. */
+	if (task->thread_count != 1U) return LOADER_STATUS_BUSY;
+
+	vnode_t vnode;
+	vfs_status_t lookup_status = vfs_lookup(path, &vnode);
+	if (lookup_status == VFS_STATUS_NOT_FOUND) return LOADER_STATUS_NOT_FOUND;
+	if (lookup_status != VFS_STATUS_OK) return LOADER_STATUS_IO_ERROR;
+	if (vnode->v_type != VNODE_TYPE_REGULAR) {
+		vnode_rele(vnode);
+		return LOADER_STATUS_BAD_FORMAT;
+	}
+
+	loader_header_t header;
+	loader_status_t status = loader_vnode_read_exact(vnode, 0ULL, &header, sizeof(header));
+	if (status != LOADER_STATUS_OK || !loader_header_valid(&header)) {
+		vnode_rele(vnode);
+		return status == LOADER_STATUS_OK ? LOADER_STATUS_BAD_FORMAT : status;
+	}
+
+	uint64_t program_table_size = (uint64_t)header.program_header_count * sizeof(elf64_program_header_t);
+	uint64_t program_table_end;
+	if (loader_add_overflow(header.program_header_offset, program_table_size, &program_table_end) || program_table_end > vnode->v_size) {
+		vnode_rele(vnode);
+		return LOADER_STATUS_BAD_FORMAT;
+	}
+
+	loader_segment_t programs[ELF_PROGRAM_HEADER_MAX];
+	status = loader_vnode_read_exact(vnode, header.program_header_offset, programs, program_table_size);
+	if (status != LOADER_STATUS_OK) {
+		vnode_rele(vnode);
+		return status;
+	}
+
+	bool loadable = false;
+	for (uint32_t index = 0U; index < header.program_header_count; index++) {
+		if (programs[index].type != ELF_PT_LOAD) continue;
+		loadable = true;
+
+		uint64_t file_end;
+		if (loader_add_overflow(programs[index].offset, programs[index].file_size, &file_end) || file_end > vnode->v_size) {
+			vnode_rele(vnode);
+			return LOADER_STATUS_BAD_FORMAT;
+		}
+	}
+
+	if (!loadable) {
+		vnode_rele(vnode);
+		return LOADER_STATUS_BAD_FORMAT;
+	}
+
+	/* Build the whole new image off to the side. */
+	vm_address_space_t staging = { 0 };
+	if (!vm_address_space_create(&staging)) {
+		vnode_rele(vnode);
+		return LOADER_STATUS_NO_MEMORY;
+	}
+
+	for (uint32_t index = 0U; status == LOADER_STATUS_OK && index < header.program_header_count; index++) {
+		if (programs[index].type != ELF_PT_LOAD) continue;
+		status = loader_map_segment(&staging, &programs[index]);
+	}
+
+	for (uint32_t index = 0U; status == LOADER_STATUS_OK && index < header.program_header_count; index++) {
+		if (programs[index].type != ELF_PT_LOAD) continue;
+		status = loader_copy_segment(vnode, &staging, &programs[index]);
+	}
+
+	if (status == LOADER_STATUS_OK) status = loader_map_stack(&staging);
+
+	if (status == LOADER_STATUS_OK) {
+		vm_user_page_mapping_t entry_mapping;
+		uint64_t entry_page = header.entry & ~(PMM_PAGE_SIZE - 1ULL);
+		if (!vm_address_space_query_page(&staging, entry_page, &entry_mapping) || entry_mapping.protection != VM_USER_PROTECTION_READ_EXECUTE) status = LOADER_STATUS_BAD_FORMAT;
+	}
+
+	vnode_rele(vnode);
+
+	uint64_t stack_pointer = 0ULL;
+	uint64_t argv_address = 0ULL;
+
+	if (status == LOADER_STATUS_OK) status = loader_build_stack_args(&staging, args, &stack_pointer, &argv_address);
+
+	/* Last thing that can fail: nothing of the old image has been touched. */
+	if (status == LOADER_STATUS_OK && !machine_user_exec_state(header.entry, stack_pointer, args->argc, argv_address)) {
+		status = LOADER_STATUS_PROCESS_ERROR;
+	}
+
+	if (status != LOADER_STATUS_OK) {
+		loader_discard_space(&staging);
+		return status;
+	}
+
+	/*
+	 * Commit. Detach the old space (deactivating syncs its table
+	 * accounting), move the new one into the task and make it the live one,
+	 * then discard the old image.
+	 */
+	(void)vm_address_space_deactivate();
+
+	vm_address_space_t old = task->map;
+
+	task->map = staging;
+	task->shm_next_va = VM_SHM_BASE;
+
+	if (!vm_address_space_activate(&task->map)) {
+		/* Nothing sensible is left to run: end the process. */
+		loader_discard_space(&old);
+		(void)proc_exit(proc, NXU_EXIT_KILLED_SIGNAL(NXU_SIGSEGV));
+		return LOADER_STATUS_PROCESS_ERROR;
+	}
+
+	loader_discard_space(&old);
+
+	signal_reset_for_exec(proc);
+
+	const char *name = path;
+	for (const char *cursor = path; *cursor != '\0'; cursor++) {
+		if (*cursor == '/' && cursor[1] != '\0') name = cursor + 1;
+	}
+	(void)proc_set_name(proc, name);
+
+	return LOADER_STATUS_OK;
+}
+
+#endif /* !LOADER_ELF_WIDEN */
+
 const char *
 loader_status_name(loader_status_t status)
 {
@@ -420,6 +661,7 @@ loader_status_name(loader_status_t status)
 	case LOADER_STATUS_NO_MEMORY: return "no memory";
 	case LOADER_STATUS_IO_ERROR: return "I/O error";
 	case LOADER_STATUS_PROCESS_ERROR: return "process error";
+	case LOADER_STATUS_BUSY: return "busy";
 	default: return "unknown";
 	}
 }

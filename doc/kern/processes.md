@@ -189,8 +189,9 @@ closes every installed descriptor before the proc enters zombie state. Zombie
 processes retain identity and exit status, but do not retain open-file
 references.
 
-The current kernel does not implement `fork`, so descriptor inheritance is not
-yet defined.
+On arm64, `fork` copies the table with `filedesc_fork`: the child's descriptors
+share the parent's file objects, offsets included. See
+[Process control](process-control.md).
 
 ## Tasks
 
@@ -239,11 +240,6 @@ As the kernel gains a blocking allocator, scheduler, signals and VFS operations,
 The process/task boundary is intended to support later additions without changing process identity:
 
 ```text
-AArch64 context switching and preemption
-fork()
-exec()
-wait()/waitpid()
-signals
 credentials
 process groups
 sessions

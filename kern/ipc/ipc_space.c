@@ -75,6 +75,37 @@ ipc_space_insert_port(ipc_space_t space, ipc_port_t port, uint32_t *name)
 	return IPC_SPACE_FULL;
 }
 
+bool
+ipc_space_fork(ipc_space_t child, ipc_space_t parent)
+{
+	if (child == 0 || parent == 0 || child->is_open_count != 0U) return false;
+
+	bool ok = true;
+
+	ipc_space_lock(parent);
+
+	child->is_freename = parent->is_freename;
+
+	for (uint32_t index = 0U; index < IPC_SPACE_MAX; index++) {
+		const ipc_space_entry_t *entry = &parent->is_entries[index];
+		if (entry->type != IPC_SPACE_ENTRY_PORT) continue;
+
+		if (!ipc_port_reference(entry->port)) {
+			ok = false;
+			break;
+		}
+
+		child->is_entries[index] = *entry;
+		child->is_open_count++;
+	}
+
+	ipc_space_unlock(parent);
+
+	if (!ok) ipc_space_close_all(child);
+
+	return ok;
+}
+
 ipc_return_t
 ipc_space_lookup_port(ipc_space_t space, uint32_t name, ipc_port_t *result)
 {

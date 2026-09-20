@@ -145,6 +145,36 @@ vfs_status_t file_alloc_socket(socket_t socket, file_t *result)
 	return VFS_STATUS_NO_SPACE;
 }
 
+bool filedesc_fork(filedesc_t child, filedesc_t parent)
+{
+	if (child == 0 || parent == 0 || child->fd_open_count != 0U) return false;
+
+	bool ok = true;
+
+	filedesc_lock(parent);
+
+	child->fd_freefile = parent->fd_freefile;
+
+	for (uint32_t index = 0U; index < VFS_FD_MAX; index++) {
+		file_t file = parent->fd_ofiles[index];
+		if (file == 0) continue;
+
+		if (!file_reference(file)) {
+			ok = false;
+			break;
+		}
+
+		child->fd_ofiles[index] = file;
+		child->fd_open_count++;
+	}
+
+	filedesc_unlock(parent);
+
+	if (!ok) filedesc_close_all(child);
+
+	return ok;
+}
+
 bool file_reference(file_t file)
 {
 	if (file == 0 || !file->f_active) return false;

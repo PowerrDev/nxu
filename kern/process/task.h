@@ -100,6 +100,20 @@ bool task_init_user(
 );
 
 /*
+ * Initialize a userspace task as a copy of parent, for fork: a copy-on-write
+ * copy of its address space and region list, and a first thread that resumes
+ * where the calling thread's current system call returns, with 0 in the
+ * result register. Must be called by a thread of parent while it is inside
+ * the kernel for a system call.
+ */
+bool task_fork(
+	task_t task,
+	task_t parent,
+	uint64_t uniqueid,
+	struct proc *bsd_info
+);
+
+/*
  * Task reference management.
  */
 bool task_reference(task_t task);

@@ -73,6 +73,13 @@ bool file_table_init(void);
 void filedesc_init(filedesc_t filedesc);
 void filedesc_close_all(filedesc_t filedesc);
 
+/*
+ * fork: child (freshly initialised, empty) receives every descriptor of
+ * parent, each pointing at the same file object -- so parent and child share
+ * file offsets, as after a UNIX fork. On failure child is left empty.
+ */
+bool filedesc_fork(filedesc_t child, filedesc_t parent);
+
 vfs_status_t file_alloc(vnode_t vnode, uint32_t flags, file_t *result);
 
 /*
