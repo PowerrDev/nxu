@@ -162,12 +162,13 @@ void i386_gdt_init(void)
 	);
 
 	kprintf(
-		"i386_gdt_init: %u descriptors at %p, main tss %p, double-fault tss %p\n",
+		"i386_gdt_init: found %u descriptors at address %p.\n",
 		GDT_ENTRY_COUNT,
-		(void *)g_gdt,
-		(void *)&g_main_tss,
-		(void *)&g_double_fault_tss
+		(void *)g_gdt
 	);
+
+	kprintf("i386_gdt_init: main tss at address %p\n", (void *)&g_main_tss);
+	kprintf("i386_gdt_init: double fault tss %p\n", (void *)&g_double_fault_tss);
 }
 
 void i386_gdt_set_kernel_stack(uint32_t esp0)

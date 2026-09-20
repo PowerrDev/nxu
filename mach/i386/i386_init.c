@@ -59,14 +59,11 @@ static void i386_print_cpu(void)
 
 	i386_cpuid(1U, &eax, &ebx, &ecx, &edx);
 
-	kprintf(
-		"i386_init: cpu vendor %s, max leaf %u, family %u model %u stepping %u\n",
-		vendor,
-		max_leaf,
-		(eax >> 8U) & 0xFU,
-		(eax >> 4U) & 0xFU,
-		eax & 0xFU
-	);
+	kprintf("i386_init: cpu vendor %s\n", vendor);
+	kprintf("i386_init: cpu max leaf %u\n", max_leaf);
+	kprintf("i386_init: cpu family %u\n", (eax >> 8U) & 0xFU);
+	kprintf("i386_init: cpu model %u\n", (eax >> 4U) & 0xFU);
+	kprintf("i386_init: cpu stepping %u\n", eax & 0xFU);
 }
 
 static i386_boot_info_t g_boot_info;
