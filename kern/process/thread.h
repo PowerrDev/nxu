@@ -41,6 +41,7 @@
 struct task;
 struct thread;
 struct run_queue;
+struct waitq;
 
 typedef struct task *task_t;
 typedef struct thread *thread_t;
@@ -125,6 +126,23 @@ struct thread {
 
 	uint32_t suspend_count;
 	uint32_t quantum_remaining;
+
+	/*
+	 * Signals this thread will not take (bit n set = signal n blocked). A
+	 * signal is process-directed -- pending on the proc -- and is delivered
+	 * by whichever of its threads next returns to user mode without blocking
+	 * it. See kern/process/signal.h.
+	 */
+	uint32_t sig_blocked;
+
+	/*
+	 * The wait queue this thread is sleeping on, or 0. wait_interruptible
+	 * says a signal may cut the wait short; wait_interrupted is how it tells
+	 * the sleeper it did. See kern/sched_prism/waitq.h.
+	 */
+	struct waitq *wait_queue;
+	bool wait_interruptible;
+	bool wait_interrupted;
 
 	thread_continue_t continuation;
 	void *parameter;

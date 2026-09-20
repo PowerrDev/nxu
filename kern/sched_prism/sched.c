@@ -1,5 +1,6 @@
 #include <kern/console/console.h>
 #include <kern/sched_prism/sched.h>
+#include <kern/sched_prism/waitq.h>
 #include <mach/machine/cpu.h>
 #include <mach/machine/machine_routines.h>
 #include <kern/process/proc.h>
@@ -675,6 +676,10 @@ bool sched_thread_release(thread_t thread)
 bool sched_thread_terminate(thread_t thread)
 {
 	if (thread == 0) return false;
+
+	/* Before thread_terminate clobbers the links they share with the run
+	 * queue: a sleeping thread must leave its wait queue first. */
+	(void)waitq_remove(thread);
 
 	if (thread->runq != 0 && !thread_run_queue_remove(thread)) return false;
 	return thread_terminate(thread);

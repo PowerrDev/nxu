@@ -31,6 +31,7 @@
 #include <kern/memory/heap.h>
 #include <kern/process/thread.h>
 #include <kern/sched_prism/sched.h>
+#include <kern/sched_prism/waitq.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -60,8 +61,7 @@ struct socket {
 	uint32_t ring_count;
 
 	/* Threads blocked in connect/accept/read/write on this object. */
-	thread_t waiters_head;
-	thread_t waiters_tail;
+	waitq_t waiters;
 
 	/* Listening-socket fields. */
 	struct socket *pending_head;
@@ -90,44 +90,21 @@ static nxu_spinlock_t g_socket_registry_lock;
 static void
 socket_waitq_push(socket_t s, thread_t thread)
 {
-	thread->sched_links.waitq.next = 0;
-	thread->sched_links.waitq.prev = 0;
-
-	if (s->waiters_tail != 0) {
-		s->waiters_tail->sched_links.waitq.next = thread;
-	} else {
-		s->waiters_head = thread;
-	}
-
-	s->waiters_tail = thread;
-}
-
-static thread_t
-socket_waitq_pop(socket_t s)
-{
-	thread_t thread = s->waiters_head;
-
-	if (thread != 0) {
-		s->waiters_head = thread->sched_links.waitq.next;
-		if (s->waiters_head == 0) s->waiters_tail = 0;
-		thread->sched_links.waitq.next = 0;
-	}
-
-	return thread;
+	/* Not interruptible: socket loops re-check their condition on every
+	 * wakeup but have no way to report "interrupted" to their callers. */
+	waitq_enqueue(&s->waiters, thread, false);
 }
 
 static void
 socket_wake_one(socket_t s)
 {
-	thread_t thread = socket_waitq_pop(s);
-	if (thread != 0) (void)sched_thread_wakeup(thread);
+	waitq_wake_one(&s->waiters);
 }
 
 static void
 socket_wake_all(socket_t s)
 {
-	thread_t thread;
-	while ((thread = socket_waitq_pop(s)) != 0) (void)sched_thread_wakeup(thread);
+	waitq_wake_all(&s->waiters);
 }
 
 static uint32_t

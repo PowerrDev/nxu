@@ -25,6 +25,13 @@ void ipc_port_release(ipc_port_t port);
 ipc_return_t ipc_port_enqueue(ipc_port_t port, ipc_kmsg_t kmsg);
 ipc_return_t ipc_port_dequeue(ipc_port_t port, ipc_kmsg_t *kmsgp);
 
+/*
+ * Sleep until a message may have arrived. The caller must hold a reference
+ * to port and retry ipc_port_dequeue afterwards. False means a signal
+ * interrupted the wait.
+ */
+bool ipc_port_wait(ipc_port_t port);
+
 ipc_object_id_t ipc_port_object_id(ipc_port_t port);
 uint32_t ipc_port_qlen(ipc_port_t port);
 uint32_t ipc_port_qlimit(ipc_port_t port);

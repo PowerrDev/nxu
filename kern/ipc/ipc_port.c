@@ -12,6 +12,7 @@
 
 #include <mach/machine/machine_routines.h>
 #include <kern/memory/heap.h>
+#include <kern/sched_prism/waitq.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -26,6 +27,9 @@ struct ipc_port {
 
 	ipc_kmsg_t ip_messages_head;
 	ipc_kmsg_t ip_messages_tail;
+
+	/* Threads sleeping in ipc_port_wait for a message. */
+	waitq_t ip_waiters;
 };
 
 static ipc_object_id_t g_next_port_object_id;
@@ -202,7 +206,27 @@ ipc_port_enqueue(ipc_port_t port, ipc_kmsg_t kmsg)
 	port->ip_messages_tail = kmsg;
 	port->ip_qlen++;
 	ipc_port_unlock(state);
+
+	/* A receiver may be asleep waiting for exactly this. */
+	waitq_wake_one(&port->ip_waiters);
+
 	return IPC_SUCCESS;
+}
+
+/*
+ * Routine:     ipc_port_wait
+ * Purpose:
+ *              Sleep until a message may have arrived on port. The caller
+ *              holds a reference (so the port cannot disappear under the
+ *              sleeper) and retries ipc_port_dequeue afterwards. Returns
+ *              false when a signal interrupted the wait.
+ */
+bool
+ipc_port_wait(ipc_port_t port)
+{
+	if (port == IPC_PORT_NULL) return false;
+
+	return waitq_block(&port->ip_waiters, true);
 }
 
 /*
