@@ -111,6 +111,9 @@ typedef struct virtio_device {
 	uint64_t driver_features;
 	bool initialized;
 	bool driver_ok;
+
+	/* Set by irq_attach when the handler really is on the device's interrupt line (a polled transport leaves it clear). */
+	bool irq_bound;
 	virtio_pci_state_t pci;
 } virtio_device_t;
 

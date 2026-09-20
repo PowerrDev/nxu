@@ -784,6 +784,7 @@ static bool virtio_mmio_irq_attach(
 		return false;
 	}
 
+	device->irq_bound = true;
 	return true;
 }
 

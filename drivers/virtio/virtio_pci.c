@@ -125,6 +125,7 @@ static bool virtio_pci_irq_attach(virtio_device_t *device, irq_handler_t handler
 	if (pic_unmask != 0) pic_unmask(line);
 
 	g_virtio_pci_irq_bound++;
+	device->irq_bound = true;
 	kprintf("virtio_pci_irq_attach: handler chained on IRQ %u\n", (unsigned int)line);
 	return true;
 }
