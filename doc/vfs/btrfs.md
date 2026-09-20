@@ -94,9 +94,35 @@ the offset and walk forward: inline, regular (reading the slice
 (zeros). Every iteration advances the position or moves to a strictly later
 item. Compressed extents go through `fs->decompressors[]` (zlib/lzo/zstd); none
 is registered, so they fail with `BTRFS_ERR_UNSUPPORTED_COMPRESSION`, never with
-garbage, and everything else in the volume stays readable. Optional data
-checksum verification (`verify_data`) checks every sector of a regular extent
-against the csum tree and falls back to the other DUP copy.
+garbage, and everything else in the volume stays readable. Data checksums are
+verified on every read (see [Bad extents](#bad-extents-and-data-checksums)).
+
+### Bad extents and data checksums
+
+Every sector of a regular extent is compared with the csum tree before its
+bytes reach the caller; `noverify` at mount is the only way out (metadata is
+always checked). The policy, in `btrfs_read_data_verified()`:
+
+- The range is widened to whole sectors and read in 64 KiB pieces; a piece is
+  copied out only after it verified, so a failing read never hands out
+  unverified bytes from that piece.
+- A piece must verify on some copy of its chunk. DUP (and later mirrored)
+  chunks are tried first copy first, then the next; each failed copy that has a
+  successor counts in `stats.mirror_fallbacks`, so a damaged first copy
+  self-heals for the reader (the device is never written).
+- If no copy verifies the whole read fails with `BTRFS_ERR_CSUM` (VFS: I/O
+  error) and no further piece is read. A read that stays clear of the bad sector
+  still works: verification is per sector, not per extent. `stats.csum_failures`
+  and `stats.data_bad_reads` count it, the log says which logical address.
+- No data checksum, no verification: preallocated extents and holes have no
+  data and no csum items; inodes with the NODATASUM flag (mount option
+  `nodatasum`, chattr +C) are read as they are.
+- A sector of a file that must carry checksums but has no csum item is treated
+  as a failure too (`stats.data_csum_missing`), because serving it would be
+  serving unverified data. (Linux serves it; the strict reading is deliberate.)
+- The csum tree is searched through a cursor that keeps the current
+  EXTENT_CSUM item pinned, so a run of extents needs one tree search per item,
+  and the leaves come from the tree-block cache.
 
 ## Feature matrix
 
@@ -114,7 +140,7 @@ against the csum tree and falls back to the other DUP copy.
 | Inline, regular, prealloc, hole, partial-extent reads | supported |
 | Compressed extents (zlib, lzo, zstd) | refused per file: `not supported`; decoder hook exists |
 | Encrypted extents, other encodings | refused per extent |
-| Data checksums | optional (`verify_data`), off by default |
+| Data checksums | verified on every read by default; `noverify` opts out (`verify_data` spells the default); NODATASUM files, holes and prealloc are exempt |
 | Directories with thousands of entries, 255-byte names, unicode names, hard links (INODE_REF and EXTREF), symlinks (inline target up to 4095 bytes), fifo, socket, char and block devices | supported |
 | xattr items | skipped safely |
 | ACLs, quotas, send/receive, reflink-aware reads beyond plain extents | not interpreted (nothing is needed to read the bytes) |
@@ -133,7 +159,7 @@ make Btrfs available in a normal boot, add `btrfs_register()` next to
 `ext4_register()` in the two boot paths (this changes that one log line).
 
 Options for the next mount go through `btrfs_set_next_mount_options()`
-(`subvol_id`, `verify_data`, `ignore_log_tree`) because `vfs_mount` has no
+(`subvol_id`, `verify_data`, `noverify`, `ignore_log_tree`) because `vfs_mount` has no
 options argument; `btrfs_last_mount_status()` keeps the precise cause of a
 failed mount, since VFS statuses are coarse (`UNSUPPORTED_*` map to
 `NOT_SUPPORTED`, magic to `INVALID`, corruption/checksum/truncation to
@@ -175,7 +201,10 @@ mounted by id; subvolume list against `btrfs subvolume list`; the default
 subvolume; refusal fixtures (compression, checksum types, RAID); named
 corruptions (`tools/btrfs/corrupt.py`: superblock magic/checksum/features/log
 root/geometry, truncation at several sizes, root/chunk/subvolume tree blocks,
-DUP self-healing); and a seeded corruption sweep (bit flips, zeroing,
+DUP self-healing); the data-checksum policy (a damaged data extent fails a
+read of it, DUP heals from the second copy, both copies bad fails, `noverify`
+and NODATASUM serve the bytes, a missing csum item refuses, verification
+cost stays bounded); and a seeded corruption sweep (bit flips, zeroing,
 scribbles, truncation, checksummed-but-lying superblocks and tree blocks,
 injected read errors, injected allocation failures) which may only produce
 errors or the good image's results, never a crash, hang (read budget and
@@ -184,7 +213,7 @@ alarm), out-of-bounds access, leak or different data reported as success.
 **In-kernel** (`vfs/btrfs/btrfs_selftest.c`, both architectures): boot argument
 `btrfs-test=<spec>[,<spec>...]`, the Nth spec against the Nth block device
 after the root disk (the virtio-blk driver takes four devices in total, so
-three fixtures per boot). `NAME[@SUBVOLID][+verify]` mounts, walks through the
+three fixtures per boot). `NAME[@SUBVOLID][+verify|+noverify]` mounts, walks through the
 public VFS interface against the expected listing generated from Linux's
 manifests (`btrfs_selftest_data.h`, `tools/btrfs/gen_selftest_data.py`), checks
 readdir resume, odd-offset and EOF reads, that every mutating operation
@@ -210,11 +239,11 @@ listings, this works on any image (`vfs/btrfs/btrfs_list.{c,h}`, arch-neutral).
 
 Options: `BTRFS_CAT=/path` prints that file (first 8 KiB, non-printable bytes as
 `.`), `BTRFS_LS=0` skips the tree, `BTRFS_SUBVOL=<id>` mounts that subvolume,
-`BTRFS_VERIFY=1` checks data checksums, `BTRFS_MAX=<n>` bounds the printed
+`BTRFS_NOVERIFY=1` skips data checksums, `BTRFS_MAX=<n>` bounds the printed
 entries (default 512; the summary still counts everything), `BTRFS_TIMEOUT=<s>`.
 The listing is `<type><rwx mode> <nlink> <size> <path>[ -> target]`. The script
 is `tools/btrfs/run_i386.sh`; the kernel side is the boot arguments `btrfs-ls`,
-`btrfs-cat=<path>`, `btrfs-dev=<n>`, `btrfs-subvol=<id>`, `btrfs-verify=1` and
+`btrfs-cat=<path>`, `btrfs-dev=<n>`, `btrfs-subvol=<id>`, `btrfs-noverify=1` and
 `btrfs-max=<n>`, handled in `kern/i386/userland_init.c` before the ext4 root is
 mounted, so no root disk is needed. arm64 has no equivalent yet. A non-Btrfs or
 damaged image fails the mount cleanly and the run exits nonzero.
@@ -270,7 +299,6 @@ needed information.
 ## Not done / follow-ups
 
 - Compression decoders (zlib, lzo, zstd) behind `fs->decompressors[]`.
-- Data checksum verification on by default, and a policy for a bad extent.
 - Multi-device and RAID profiles (`btrfs_map_logical`, a multi-device reader).
 - Other checksum algorithms (xxhash64, sha256, blake2b).
 - Log tree replay.
