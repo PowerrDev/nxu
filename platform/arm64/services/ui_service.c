@@ -390,7 +390,7 @@ bool ui_service_bootstrap(void)
 	}
 
 	kprintf("[com.butterscotch.UIService.framework]: ABI v%u, %ux%u XRGB8888, %s\n", UIServiceABIVersion(), width, height, using_ramfb ? "RAMFB" : "VirtIO GPU");
-	kputln(UIServiceHasInter() != 0U ? "[com.butterscotch.UIService.framework.framework]: font renderer active" : "[com.butterscotch.UIService.framework]: bootstrap text renderer active");
+	kputln(UIServiceHasInter() != 0U ? "[com.butterscotch.UIService.framework]: font renderer active" : "[com.butterscotch.UIService.framework]: bootstrap text renderer active");
 	if (using_ramfb) kputln("[com.butterscotch.UIService.framework]: RAMFB fallback active (no vblank synchronization)");
 
 	/*

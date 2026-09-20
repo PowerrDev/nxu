@@ -76,12 +76,12 @@ bool display_present_full(display_device_t *display)
 void display_dump(void)
 {
 	if (g_primary_display == 0) {
-		kputln("NXUDisplayDriverFamily: no primary display");
+		kputln("DriverKitDisplayFamily: no primary display");
 		return;
 	}
 
 	kprintf(
-		"NXUDisplayDriverFamily: primary %ux%u, stride %u pixels, %u Bpp\n",
+		"DriverKitDisplayFamily: primary %ux%u, stride %u pixels, %u Bpp\n",
 		g_primary_display->width,
 		g_primary_display->height,
 		g_primary_display->stride,

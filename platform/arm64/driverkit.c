@@ -154,15 +154,15 @@ bool driverkit_init(driverkit_config_t *config)
 
 	if (!config->input_enabled) kputln("input: disabled by boot-args");
 	if (!config->block_enabled) kputln("VirtIOBlockFamily: disabled by boot-args");
-	if (!config->gpu_enabled) kputln("NXUDisplayDriverFamily: VirtIO GPU disabled by boot-args");
+	if (!config->gpu_enabled) kputln("DriverKitDisplayFamily: VirtIO GPU disabled by boot-args");
 
 	if (config->gpu_enabled && (display_primary() == 0 || virtio_gpu_count() == 0U)) {
-		kputln("NXUDisplayDriverFamily: VirtIO GPU not found");
+		kputln("DriverKitDisplayFamily: VirtIO GPU not found");
 
 		if (ramfb_console_init(runtime_platform)) {
-			kputln("NXUDisplayDriverFamily: emergency ramfb console active");
+			kputln("DriverKitDisplayFamily: emergency ramfb console active");
 		} else {
-			kputln("NXUDisplayDriverFamily: emergency ramfb console unavailable");
+			kputln("DriverKitDisplayFamily: emergency ramfb console unavailable");
 		}
 	}
 
