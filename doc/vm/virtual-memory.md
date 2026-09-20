@@ -427,8 +427,11 @@ The VMM takes no locks and is not reentrant.
 - **No ASIDs yet.** TTBR1 permanently maps the kernel and TTBR0 can be replaced
   with a task-owned user address space, but address-space switching still uses
   global invalidation rather than ASID-scoped TLB maintenance.
-- **No page fault handling.** A fault reaches `exception_handle()` and panics.
-  There is no demand paging, no copy-on-write and no lazy mapping.
+- **Page faults on user memory are resolved, kernel faults are not.** A user
+  fault is offered to `vm_fault_user()` (demand-zero, copy-on-write) and
+  otherwise becomes a signal; a fault in the kernel itself reaches
+  `exception_handle()` and panics. See
+  [Demand paging and copy-on-write](demand-paging.md).
 - **Only 4 KiB live mappings.** `vmm_map_page()` cannot install a block, so
   large mappings after boot require one call per page.
 - **User mappings are explicit.** Task-owned address spaces can install EL0 R-X

@@ -23,6 +23,12 @@
 #define VM_SHM_BASE 0x0000006000000000ULL
 #define VM_SHM_WINDOW_SIZE 0x0000000040000000ULL
 
+/*
+ * The arm64 port resolves user page faults (vm/vm_fault.h), so anonymous
+ * regions may be populated lazily on first touch.
+ */
+#define VM_DEMAND_PAGING 1
+
 #define VM_USER_STACK_TOP 0x0000007FFFFFF000ULL
 #define VM_MAX_USER_ADDRESS 0x0000008000000000ULL
 

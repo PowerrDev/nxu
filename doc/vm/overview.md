@@ -157,14 +157,17 @@ under a scheduler or SMP.
 
 - Only `platform->memory_regions[0]` is managed by the PMM.
 - TTBR1 permanently owns the higher-half kernel; TTBR0 owns the active user address space.
-- Translation-table pages are never reclaimed.
+- Translation-table pages of a user address space are reclaimed when its task
+  terminates; those of the kernel map are not.
 - Existing block descriptors cannot be split, so live mapping only works in
   regions the identity map left at page granularity, or in previously unmapped
   regions such as the arena.
-- No page fault handling: a fault is fatal.
-- No demand paging, no copy-on-write, no swapping, no memory pressure handling.
-- No physical page reference counting, so a page cannot be shared by two
-  mappings with independent lifetimes.
+- Page faults on user memory are resolved (demand-zero and copy-on-write, see
+  [Demand paging and copy-on-write](demand-paging.md)); any other fault becomes a
+  signal for the faulting process. A fault in the kernel itself still panics.
+- No file-backed demand paging, no swapping, no memory pressure handling.
+- Physical pages carry an extra-owner count (`pmm_page_retain`), which is what
+  lets a page be shared by several mappings with independent lifetimes.
 
 ## Source files
 

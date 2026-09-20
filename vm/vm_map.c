@@ -64,6 +64,27 @@ bool vm_map_anon(
 
 	nxu_spin_unlock(&space->lock);
 
+#if VM_DEMAND_PAGING
+	/* Address space only: vm_fault_user populates each page on first touch. */
+	vm_map_entry_t lazy_entry = kmalloc(sizeof(struct vm_map_entry));
+	if (lazy_entry == 0) return false;
+
+	lazy_entry->next = 0;
+	lazy_entry->start_va = base_va;
+	lazy_entry->end_va = base_va + span;
+	lazy_entry->protection = protection;
+
+	nxu_spin_lock(&space->lock);
+
+	vm_map_entry_t *lazy_link = &space->mmap_entries;
+	while (*lazy_link != 0) lazy_link = &(*lazy_link)->next;
+	*lazy_link = lazy_entry;
+
+	nxu_spin_unlock(&space->lock);
+
+	*out_va = base_va;
+	return true;
+#else
 	uint64_t *pages = kmalloc(page_count * sizeof(uint64_t));
 	if (pages == 0) return false;
 
@@ -127,6 +148,131 @@ bool vm_map_anon(
 	nxu_spin_unlock(&space->lock);
 
 	*out_va = base_va;
+	return true;
+#endif
+}
+
+bool vm_map_reserve(
+	vm_address_space_t *space,
+	uint64_t start_va,
+	uint64_t end_va,
+	vm_user_protection_t protection
+)
+{
+	if (
+		space == 0 ||
+		start_va >= end_va ||
+		(start_va & (PMM_PAGE_SIZE - 1ULL)) != 0ULL ||
+		(end_va & (PMM_PAGE_SIZE - 1ULL)) != 0ULL ||
+		end_va > VM_MAX_USER_ADDRESS
+	) {
+		return false;
+	}
+
+	vm_map_entry_t entry = kmalloc(sizeof(struct vm_map_entry));
+	if (entry == 0) return false;
+
+	entry->next = 0;
+	entry->start_va = start_va;
+	entry->end_va = end_va;
+	entry->protection = protection;
+
+	nxu_spin_lock(&space->lock);
+
+	/* Keep the list sorted by address and refuse any overlap. */
+	vm_map_entry_t *link = &space->mmap_entries;
+	while (*link != 0 && (*link)->end_va <= start_va) link = &(*link)->next;
+
+	if (*link != 0 && (*link)->start_va < end_va) {
+		nxu_spin_unlock(&space->lock);
+		(void)kfree(entry);
+		return false;
+	}
+
+	entry->next = *link;
+	*link = entry;
+
+	nxu_spin_unlock(&space->lock);
+
+	return true;
+}
+
+bool vm_map_region_at(
+	const vm_address_space_t *space,
+	uint64_t va,
+	vm_user_protection_t *out_protection,
+	uint64_t *out_start_va,
+	uint64_t *out_end_va
+)
+{
+	if (space == 0) return false;
+
+	nxu_spinlock_t *lock = (nxu_spinlock_t *)&space->lock;
+
+	nxu_spin_lock(lock);
+
+	bool found = false;
+	for (vm_map_entry_t entry = space->mmap_entries; entry != 0; entry = entry->next) {
+		if (va >= entry->start_va && va < entry->end_va) {
+			if (out_protection != 0) *out_protection = entry->protection;
+			if (out_start_va != 0) *out_start_va = entry->start_va;
+			if (out_end_va != 0) *out_end_va = entry->end_va;
+			found = true;
+			break;
+		}
+	}
+
+	nxu_spin_unlock(lock);
+
+	return found;
+}
+
+bool vm_map_fork(
+	const vm_address_space_t *parent,
+	vm_address_space_t *child
+)
+{
+	if (parent == 0 || child == 0 || child->mmap_entries != 0) return false;
+
+	nxu_spinlock_t *lock = (nxu_spinlock_t *)&parent->lock;
+
+	nxu_spin_lock(lock);
+
+	vm_map_entry_t head = 0;
+	vm_map_entry_t *tail = &head;
+	bool ok = true;
+
+	for (vm_map_entry_t entry = parent->mmap_entries; entry != 0; entry = entry->next) {
+		vm_map_entry_t copy = kmalloc(sizeof(struct vm_map_entry));
+
+		if (copy == 0) {
+			ok = false;
+			break;
+		}
+
+		*copy = *entry;
+		copy->next = 0;
+		*tail = copy;
+		tail = &copy->next;
+	}
+
+	uint64_t next_va = parent->mmap_next_va;
+
+	nxu_spin_unlock(lock);
+
+	if (!ok) {
+		while (head != 0) {
+			vm_map_entry_t next = head->next;
+			(void)kfree(head);
+			head = next;
+		}
+
+		return false;
+	}
+
+	child->mmap_entries = head;
+	child->mmap_next_va = next_va;
+
 	return true;
 }
 

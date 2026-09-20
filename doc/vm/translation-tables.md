@@ -185,8 +185,9 @@ descriptor is corrupt, and reporting an error is more useful than decoding it.
 
 `AF` is set on every descriptor. With `AF` clear, the first access to a page
 raises an Access Flag fault, which an OS can use to track page usage for
-reclamation. NXU has no page-fault handler and no reclamation policy, so
-leaving `AF` clear would simply produce a fatal fault on first touch.
+reclamation. NXU's fault resolver does not track access flags and there is no
+reclamation policy, so leaving `AF` clear would simply produce a fault on first
+touch that nothing could fix.
 
 ### Shareability
 

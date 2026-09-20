@@ -6,11 +6,14 @@
  *
  * General-purpose anonymous memory: unlike vm/vm_shm.h's opaque, id-based,
  * 16MB-capped handle meant for cross-process sharing, this is a private,
- * per-address-space region list a task uses for its own heap growth and
- * thread stacks. Eagerly backed (every page is allocated and mapped up
- * front, exactly like vm_shm) rather than demand-paged -- there is no
- * page-fault handler in this kernel yet, and adding one is out of scope
- * for this milestone.
+ * per-address-space region list a task uses for its own heap growth,
+ * thread stacks and (with the initial user stack) demand-zero memory.
+ *
+ * Where the port resolves user page faults (VM_DEMAND_PAGING, see
+ * <mach/machine/vm_param.h>), a region only reserves address space: each
+ * page is allocated, zero-filled and mapped by vm/vm_fault.h the first time
+ * something touches it. Where it does not (i386), every page is allocated
+ * and mapped up front, exactly like vm_shm.
  *
  * Regions are tracked in a sorted, non-overlapping singly-linked list
  * (vm_address_space_t's mmap_entries) so vm_map_free can split, shrink, or
@@ -57,6 +60,43 @@ bool vm_map_anon(
 	uint64_t size_bytes,
 	vm_user_protection_t protection,
 	uint64_t *out_va
+);
+
+/*
+ * Records [start_va, end_va) as a region at a caller-chosen address without
+ * mapping any page (the initial user stack is reserved this way). Both
+ * bounds must be page-aligned, the range non-empty, below
+ * VM_MAX_USER_ADDRESS and clear of every existing region. On a port without
+ * demand paging the caller has to map the pages itself.
+ */
+bool vm_map_reserve(
+	vm_address_space_t *space,
+	uint64_t start_va,
+	uint64_t end_va,
+	vm_user_protection_t protection
+);
+
+/*
+ * Like vm_map_lookup, and also reports the region's protection -- what the
+ * fault handler needs to decide whether an untouched page may be populated.
+ */
+bool vm_map_region_at(
+	const vm_address_space_t *space,
+	uint64_t va,
+	vm_user_protection_t *out_protection,
+	uint64_t *out_start_va,
+	uint64_t *out_end_va
+);
+
+/*
+ * Copies parent's region list and placement cursor into child (an address
+ * space with no regions of its own yet) so a forked child sees the same
+ * anonymous mappings. Pages are not touched: vm_address_space_fork shares
+ * them copy-on-write, and untouched pages stay untouched in both.
+ */
+bool vm_map_fork(
+	const vm_address_space_t *parent,
+	vm_address_space_t *child
 );
 
 /*

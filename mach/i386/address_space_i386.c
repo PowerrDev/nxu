@@ -29,6 +29,7 @@
  */
 
 #include <vm/address_space.h>
+#include <vm/vm_fault.h>
 
 #include <mach/i386/pmap.h>
 
@@ -294,6 +295,7 @@ bool vm_address_space_query_page(
 	if (!vm_user_entry_protection(value, &mapping->protection)) return false;
 
 	mapping->physical_address = value & PTE_FRAME;
+	mapping->cow = false;
 	return true;
 }
 
@@ -370,4 +372,33 @@ bool vm_address_space_destroy(vm_address_space_t *space)
 
 	memset(space, 0, sizeof(*space));
 	return true;
+}
+
+/*
+ * The i386 port has no user page-fault resolver and no copy-on-write yet:
+ * anonymous memory is populated eagerly and fork is unavailable. These
+ * refuse cleanly so the machine-independent callers (user_copy, fork) fall
+ * back to failing the operation instead of misbehaving.
+ */
+
+bool vm_address_space_fork(vm_address_space_t *parent, vm_address_space_t *child)
+{
+	(void)parent;
+	(void)child;
+	return false;
+}
+
+bool vm_address_space_cow_break(vm_address_space_t *space, uint64_t virtual_address)
+{
+	(void)space;
+	(void)virtual_address;
+	return false;
+}
+
+bool vm_fault_user(vm_address_space_t *space, uint64_t virtual_address, vm_fault_access_t access)
+{
+	(void)space;
+	(void)virtual_address;
+	(void)access;
+	return false;
 }

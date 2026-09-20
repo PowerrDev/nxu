@@ -42,6 +42,12 @@
 #define VM_SHM_BASE 0x60000000ULL
 #define VM_SHM_WINDOW_SIZE 0x10000000ULL
 
+/*
+ * The i386 port has no user page-fault resolver yet, so anonymous regions
+ * are populated eagerly and fork is unavailable.
+ */
+#define VM_DEMAND_PAGING 0
+
 #define VM_USER_STACK_TOP 0xBFFFF000ULL
 #define VM_MAX_USER_ADDRESS 0xC0000000ULL
 

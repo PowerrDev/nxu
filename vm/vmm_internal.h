@@ -42,6 +42,13 @@ extern uint8_t __bss_end[];
 #define VMM_DESC_VALID (1ULL << 0U)
 #define VMM_DESC_TABLE (1ULL << 1U)
 #define VMM_DESC_AF (1ULL << 10U)
+/*
+ * Bits 58:55 of a stage-1 descriptor are reserved for software. NXU marks a
+ * page that is shared copy-on-write between address spaces with bit 55: the
+ * descriptor is read-only in hardware, and the first write fault gives the
+ * writer a private copy (vm_address_space_cow_break).
+ */
+#define VMM_DESC_SW_COW (1ULL << 55U)
 #define VMM_DESC_PXN (1ULL << 53U)
 #define VMM_DESC_UXN (1ULL << 54U)
 

@@ -2,9 +2,45 @@
 
 #include <vm/address_space.h>
 #include <vm/pmm.h>
+#include <vm/vm_fault.h>
 #include <vm/vmm.h>
 
 #include <stdint.h>
+
+/*
+ * vm_user_copy_page
+ *
+ * Find the page backing page_address for a read or a write, first resolving
+ * the fault a demand-zero page or a copy-on-write page would raise -- the
+ * kernel reaches user memory through this software walk, so it has to do
+ * what the MMU would have asked the fault handler to do.
+ */
+static bool vm_user_copy_page(
+	const vm_address_space_t *space,
+	uint64_t page_address,
+	bool write,
+	vm_user_page_mapping_t *mapping
+)
+{
+	if (
+		vm_address_space_query_page(space, page_address, mapping) &&
+		(!write || mapping->protection == VM_USER_PROTECTION_READ_WRITE)
+	) {
+		return true;
+	}
+
+	if (!vm_fault_user(
+		(vm_address_space_t *)space,
+		page_address,
+		write ? VM_FAULT_WRITE : VM_FAULT_READ
+	)) {
+		return false;
+	}
+
+	return
+		vm_address_space_query_page(space, page_address, mapping) &&
+		(!write || mapping->protection == VM_USER_PROTECTION_READ_WRITE);
+}
 
 bool vm_copy_from_user(
 	void *destination,
@@ -52,11 +88,7 @@ bool vm_copy_from_user(
 
 		vm_user_page_mapping_t mapping;
 
-		if (!vm_address_space_query_page(
-			space,
-			page_address,
-			&mapping
-		)) {
+		if (!vm_user_copy_page(space, page_address, false, &mapping)) {
 			return false;
 		}
 
@@ -127,18 +159,7 @@ bool vm_copy_to_user(
 
 		vm_user_page_mapping_t mapping;
 
-		if (!vm_address_space_query_page(
-			space,
-			page_address,
-			&mapping
-		)) {
-			return false;
-		}
-
-		if (
-			mapping.protection !=
-			VM_USER_PROTECTION_READ_WRITE
-		) {
+		if (!vm_user_copy_page(space, page_address, true, &mapping)) {
 			return false;
 		}
 

@@ -10,6 +10,13 @@
  * pages still translate with their original contents while the freed
  * middle page no longer does.
  *
+ * On a port with demand paging (VM_DEMAND_PAGING) a region costs nothing
+ * until it is touched, so the test first proves that -- a 3-page and a
+ * 32 MiB region both leave the used-page count unchanged -- and then touches
+ * exactly the pages it goes on to count. The kernel's own accesses to those
+ * user addresses fault and are resolved by vm/vm_fault.h, the same path a
+ * syscall dereferencing a user pointer takes.
+ *
  * Every free is checked against the exact number of *data* pages it should
  * return to the free bitmap. This deliberately does not check the total
  * page count against a pre-mapping baseline: mapping a never-before-touched
@@ -27,6 +34,7 @@
 #include <vm/address_space.h>
 #include <vm/pmm.h>
 #include <vm/vm_map.h>
+#include <mach/machine/vm_param.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -49,11 +57,33 @@ bool vm_map_self_test(void)
 	if (!vm_address_space_activate(&space)) goto cleanup;
 	activated = true;
 
+#if VM_DEMAND_PAGING
+	{
+		/* Reserving address space must not allocate a single page. */
+		uint64_t used_before_reserve = pmm_get_used_page_count();
+		uint64_t big_va = 0ULL;
+
+		if (!vm_map_anon(&space, 32ULL * 1024ULL * 1024ULL, VM_USER_PROTECTION_READ_WRITE, &big_va)) goto cleanup;
+		if (pmm_get_used_page_count() != used_before_reserve) goto cleanup;
+		if (!vm_map_free(&space, big_va, 32ULL * 1024ULL * 1024ULL)) goto cleanup;
+		if (pmm_get_used_page_count() != used_before_reserve) goto cleanup;
+	}
+
+	uint64_t used_before_region = pmm_get_used_page_count();
+#endif
+
 	if (!vm_map_anon(&space, 3ULL * PMM_PAGE_SIZE, VM_USER_PROTECTION_READ_WRITE, &region_va)) goto cleanup;
+
+#if VM_DEMAND_PAGING
+	if (pmm_get_used_page_count() != used_before_region) goto cleanup;
+#endif
 
 	prefix_va = region_va;
 	middle_va = region_va + PMM_PAGE_SIZE;
 	suffix_va = region_va + 2ULL * PMM_PAGE_SIZE;
+
+	/* First touch of each page: with demand paging this faults it in. */
+	if (*(volatile uint32_t *)prefix_va != 0U) goto cleanup;
 
 	*(volatile uint32_t *)prefix_va = VM_MAP_TEST_PATTERN_PREFIX;
 	*(volatile uint32_t *)middle_va = VM_MAP_TEST_PATTERN_MIDDLE;
@@ -95,6 +125,7 @@ bool vm_map_self_test(void)
 	 * split) leaves the rest of the address space untouched too. */
 	uint64_t second_va = 0ULL;
 	if (!vm_map_anon(&space, PMM_PAGE_SIZE, VM_USER_PROTECTION_READ_WRITE, &second_va)) goto cleanup;
+	*(volatile uint32_t *)second_va = VM_MAP_TEST_PATTERN_MIDDLE;
 
 	uint64_t used_before_second_free = pmm_get_used_page_count();
 	if (!vm_map_free(&space, second_va, PMM_PAGE_SIZE)) goto cleanup;

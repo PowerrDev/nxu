@@ -43,9 +43,16 @@ typedef enum {
 	VM_USER_PROTECTION_READ_EXECUTE
 } vm_user_protection_t;
 
+/*
+ * cow is set for a page shared copy-on-write. Its hardware permission is
+ * read-only, so protection reads VM_USER_PROTECTION_READ_ONLY -- code that
+ * writes through physical_address must therefore refuse it (or break the
+ * sharing first with vm_address_space_cow_break), never write blindly.
+ */
 typedef struct {
 	uint64_t physical_address;
 	vm_user_protection_t protection;
+	bool cow;
 } vm_user_page_mapping_t;
 
 typedef struct {
@@ -120,8 +127,40 @@ uint64_t vm_address_space_table_count(
 );
 
 /*
- * Optional teardown, implemented by ports that reclaim address spaces (the
- * i386 port; the arm64 one still leaks them, see kern/process/task.c).
+ * vm_address_space_fork
+ *
+ * Give child (a zeroed struct) a copy of parent's user mappings. Every
+ * private writable page becomes copy-on-write in BOTH spaces -- read-only in
+ * hardware, one more pmm reference each -- and is copied only when one side
+ * writes to it. Read-only and executable pages are shared as they are.
+ * Pages in the shared-memory window (VM_SHM_BASE) stay genuinely shared and
+ * writable in both. The region list is not copied; see vm_map_fork().
+ *
+ * On failure child is left zeroed and parent is unchanged in meaning (any
+ * page already marked copy-on-write simply copies, or reclaims, on its next
+ * write). Returns false on ports that cannot fork.
+ */
+bool vm_address_space_fork(
+	vm_address_space_t *parent,
+	vm_address_space_t *child
+);
+
+/*
+ * vm_address_space_cow_break
+ *
+ * Make the copy-on-write page at virtual_address private and writable:
+ * reclaim it in place when this space is its only owner, otherwise copy it
+ * to a fresh page. Returns false when the page is absent or not
+ * copy-on-write.
+ */
+bool vm_address_space_cow_break(
+	vm_address_space_t *space,
+	uint64_t virtual_address
+);
+
+/*
+ * Teardown, implemented by every port that reclaims address spaces (the
+ * i386 port and, since fork needs it, arm64).
  *
  * vm_address_space_release_pages() unmaps every user page in space and drops
  * one pmm reference per mapping (pmm_free_page), so a page shared through

@@ -2,12 +2,17 @@
 #include <vm/vmm_internal.h>
 
 #include <kern/lock.h>
+#include <mach/machine/vm_param.h>
+#include <vm/pmm.h>
 
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
 #define VM_USER_NULL_GUARD_SIZE VMM_L3_SIZE
+
+/* Every level of the 39-bit walk holds 512 descriptors. */
+#define VM_TABLE_ENTRIES 512U
 
 /*
  * AP[2:1] values used by EL0 mappings:
@@ -453,6 +458,7 @@ bool vm_address_space_query_page(
 	}
 
 	mapping->physical_address = descriptor & VMM_DESC_ADDRESS_MASK;
+	mapping->cow = (descriptor & VMM_DESC_SW_COW) != 0ULL;
 
 	return true;
 }
@@ -514,4 +520,293 @@ uint64_t vm_address_space_table_count(
 	}
 
 	return space->table_count;
+}
+
+/*
+ * Page-table walking for fork and teardown. A user address space is a
+ * three-level tree (L1 root, L2, L3), every table one page, every user
+ * mapping a 4 KiB leaf.
+ */
+
+static bool vm_table_from_descriptor(uint64_t descriptor, uint64_t **table)
+{
+	if ((descriptor & VMM_DESC_TYPE_MASK) != VMM_DESC_TABLE_PAGE) return false;
+
+	return vmm_table_pointer_from_physical(descriptor & VMM_DESC_ADDRESS_MASK, table);
+}
+
+static bool vm_address_in_shm_window(uint64_t virtual_address)
+{
+	return
+		virtual_address >= VM_SHM_BASE &&
+		virtual_address < VM_SHM_BASE + VM_SHM_WINDOW_SIZE;
+}
+
+/* Make the CPU forget every cached translation if space is the live one. */
+static void vm_address_space_flush_if_active(const vm_address_space_t *space)
+{
+	if (space != g_active_address_space) {
+		__asm__ volatile("dsb ish" ::: "memory");
+		return;
+	}
+
+	__asm__ volatile(
+		"dsb ishst\n"
+		"tlbi vmalle1is\n"
+		"dsb ish\n"
+		"isb\n"
+		::: "memory"
+	);
+}
+
+bool vm_address_space_cow_break(
+	vm_address_space_t *space,
+	uint64_t virtual_address
+)
+{
+	if (
+		space == 0 ||
+		space->root == 0 ||
+		virtual_address < VM_USER_NULL_GUARD_SIZE ||
+		!vmm_lower_page_valid(virtual_address)
+	) {
+		return false;
+	}
+
+	uint64_t page_va = virtual_address & ~(VMM_L3_SIZE - 1ULL);
+
+	nxu_spin_lock(&space->lock);
+
+	uint64_t table_count = space->table_count;
+	uint64_t *entry;
+
+	if (!vmm_root_get_l3_entry(space->root, page_va, false, &table_count, &entry)) {
+		nxu_spin_unlock(&space->lock);
+		return false;
+	}
+
+	uint64_t descriptor = *entry;
+
+	if (
+		(descriptor & VMM_DESC_TYPE_MASK) != VMM_DESC_TABLE_PAGE ||
+		(descriptor & VMM_DESC_SW_COW) == 0ULL
+	) {
+		nxu_spin_unlock(&space->lock);
+		return false;
+	}
+
+	uint64_t old_physical = descriptor & VMM_DESC_ADDRESS_MASK;
+	uint64_t writable_attributes =
+		(descriptor & ~(VMM_DESC_AP_MASK | VMM_DESC_SW_COW)) |
+		VM_USER_AP_READ_WRITE;
+
+	/* The other owner is gone: nothing to copy, just take the page back. */
+	if (pmm_page_refcount(old_physical) == 1U) {
+		*entry = writable_attributes;
+
+		if (space == g_active_address_space) {
+			vmm_invalidate_page(page_va);
+		} else {
+			__asm__ volatile("dsb ish" ::: "memory");
+		}
+
+		nxu_spin_unlock(&space->lock);
+		return true;
+	}
+
+	nxu_spin_unlock(&space->lock);
+
+	uint64_t new_physical;
+
+	if (!pmm_allocate_page(&new_physical)) return false;
+
+	uint64_t old_kernel;
+	uint64_t new_kernel;
+
+	if (
+		!vmm_physical_to_higher_half(old_physical, &old_kernel) ||
+		!vmm_physical_to_higher_half(new_physical, &new_kernel)
+	) {
+		(void)pmm_free_page(new_physical);
+		return false;
+	}
+
+	memcpy((void *)new_kernel, (const void *)old_kernel, VMM_L3_SIZE);
+
+	nxu_spin_lock(&space->lock);
+
+	table_count = space->table_count;
+
+	/* Nothing else runs on this CPU between the two critical sections, but
+	 * re-checking keeps the copy from landing on a page that changed. */
+	if (
+		!vmm_root_get_l3_entry(space->root, page_va, false, &table_count, &entry) ||
+		*entry != descriptor
+	) {
+		nxu_spin_unlock(&space->lock);
+		(void)pmm_free_page(new_physical);
+		return false;
+	}
+
+	*entry = (writable_attributes & ~VMM_DESC_ADDRESS_MASK) | (new_physical & VMM_DESC_ADDRESS_MASK);
+
+	if (space == g_active_address_space) {
+		vmm_invalidate_page(page_va);
+	} else {
+		__asm__ volatile("dsb ish" ::: "memory");
+	}
+
+	nxu_spin_unlock(&space->lock);
+
+	/* This space's mapping no longer refers to the shared page. */
+	(void)pmm_free_page(old_physical);
+
+	return true;
+}
+
+uint64_t vm_address_space_release_pages(vm_address_space_t *space)
+{
+	if (space == 0 || space->root == 0) return 0ULL;
+
+	uint64_t released = 0ULL;
+
+	nxu_spin_lock(&space->lock);
+
+	for (uint32_t l1 = 0U; l1 < VM_TABLE_ENTRIES; l1++) {
+		uint64_t *level2;
+		if (!vm_table_from_descriptor(space->root[l1], &level2)) continue;
+
+		for (uint32_t l2 = 0U; l2 < VM_TABLE_ENTRIES; l2++) {
+			uint64_t *level3;
+			if (!vm_table_from_descriptor(level2[l2], &level3)) continue;
+
+			for (uint32_t l3 = 0U; l3 < VM_TABLE_ENTRIES; l3++) {
+				if ((level3[l3] & VMM_DESC_TYPE_MASK) != VMM_DESC_TABLE_PAGE) continue;
+
+				(void)pmm_free_page(level3[l3] & VMM_DESC_ADDRESS_MASK);
+				level3[l3] = 0ULL;
+				released++;
+			}
+		}
+	}
+
+	vm_address_space_flush_if_active(space);
+
+	nxu_spin_unlock(&space->lock);
+
+	return released;
+}
+
+bool vm_address_space_destroy(vm_address_space_t *space)
+{
+	if (space == 0 || space->root == 0) return false;
+
+	/* Never free the tables the CPU is still walking. */
+	if (space == g_active_address_space && !vm_address_space_deactivate()) return false;
+
+	for (uint32_t l1 = 0U; l1 < VM_TABLE_ENTRIES; l1++) {
+		uint64_t *level2;
+		if (!vm_table_from_descriptor(space->root[l1], &level2)) continue;
+
+		for (uint32_t l2 = 0U; l2 < VM_TABLE_ENTRIES; l2++) {
+			if ((level2[l2] & VMM_DESC_TYPE_MASK) != VMM_DESC_TABLE_PAGE) continue;
+
+			(void)pmm_free_page(level2[l2] & VMM_DESC_ADDRESS_MASK);
+		}
+
+		(void)pmm_free_page(space->root[l1] & VMM_DESC_ADDRESS_MASK);
+	}
+
+	(void)pmm_free_page(space->root_physical);
+
+	memset(space, 0, sizeof(*space));
+
+	return true;
+}
+
+bool vm_address_space_fork(
+	vm_address_space_t *parent,
+	vm_address_space_t *child
+)
+{
+	if (parent == 0 || child == 0 || parent->root == 0) return false;
+	if (!vm_address_space_create(child)) return false;
+
+	bool ok = true;
+	bool parent_changed = false;
+
+	nxu_spin_lock(&parent->lock);
+
+	for (uint32_t l1 = 0U; ok && l1 < VM_TABLE_ENTRIES; l1++) {
+		uint64_t *level2;
+		if (!vm_table_from_descriptor(parent->root[l1], &level2)) continue;
+
+		for (uint32_t l2 = 0U; ok && l2 < VM_TABLE_ENTRIES; l2++) {
+			uint64_t *level3;
+			if (!vm_table_from_descriptor(level2[l2], &level3)) continue;
+
+			for (uint32_t l3 = 0U; ok && l3 < VM_TABLE_ENTRIES; l3++) {
+				uint64_t descriptor = level3[l3];
+				if ((descriptor & VMM_DESC_TYPE_MASK) != VMM_DESC_TABLE_PAGE) continue;
+
+				uint64_t virtual_address =
+					((uint64_t)l1 << VMM_L1_SHIFT) |
+					((uint64_t)l2 << VMM_L2_SHIFT) |
+					((uint64_t)l3 << VMM_L3_SHIFT);
+
+				uint64_t physical = descriptor & VMM_DESC_ADDRESS_MASK;
+				uint64_t child_descriptor = descriptor;
+
+				/* Private writable memory becomes copy-on-write on both
+				 * sides; everything else is shared exactly as it is. */
+				if (
+					!vm_address_in_shm_window(virtual_address) &&
+					(descriptor & VMM_DESC_AP_MASK) == VM_USER_AP_READ_WRITE
+				) {
+					child_descriptor =
+						(descriptor & ~VMM_DESC_AP_MASK) |
+						VM_USER_AP_READ_ONLY |
+						VMM_DESC_SW_COW;
+				}
+
+				if (!pmm_page_retain(physical)) {
+					ok = false;
+					break;
+				}
+
+				uint64_t *entry;
+
+				if (!vmm_root_get_l3_entry(
+					child->root,
+					virtual_address,
+					true,
+					&child->table_count,
+					&entry
+				)) {
+					(void)pmm_free_page(physical);
+					ok = false;
+					break;
+				}
+
+				*entry = child_descriptor;
+
+				if (child_descriptor != descriptor) {
+					level3[l3] = child_descriptor;
+					parent_changed = true;
+				}
+			}
+		}
+	}
+
+	if (parent_changed) vm_address_space_flush_if_active(parent);
+
+	nxu_spin_unlock(&parent->lock);
+
+	if (!ok) {
+		(void)vm_address_space_release_pages(child);
+		(void)vm_address_space_destroy(child);
+		return false;
+	}
+
+	return true;
 }
