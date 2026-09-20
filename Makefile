@@ -411,6 +411,7 @@ USER_C_SOURCES := \
     frameworks/BootDaemons.framework/faulttest.c \
     frameworks/BootDaemons.framework/proctest.c \
     frameworks/BootDaemons.framework/execchild.c \
+    frameworks/BootDaemons.framework/privtest.c \
     frameworks/BootDaemons.framework/sockettest_server.c \
     frameworks/BootDaemons.framework/sockettest_client.c \
     frameworks/BootDaemons.framework/xamethyst.c \
@@ -474,6 +475,7 @@ USER_DAEMONS := \
     $(USER_BUILD)/faulttest \
     $(USER_BUILD)/proctest \
     $(USER_BUILD)/execchild \
+    $(USER_BUILD)/privtest \
     $(USER_BUILD)/sockettest_server \
     $(USER_BUILD)/sockettest_client \
     $(USER_BUILD)/xamethyst \
@@ -642,6 +644,13 @@ $(USER_BUILD)/execchild: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDae
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 
+$(USER_BUILD)/privtest: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/privtest.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+
 $(USER_BUILD)/sockettest_server: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/sockettest_server.o
 
 	$(QUIET_PRINT) "LD" "$@"
@@ -732,6 +741,8 @@ $(USER_STAGE_STAMP): $(USER_DAEMONS) $(USER_SERVICE_PLISTS)
 	$(Q)cp $(USER_BUILD)/proctest $(DISK_ROOT)/System/Library/CoreServices/proctest
 
 	$(Q)cp $(USER_BUILD)/execchild $(DISK_ROOT)/System/Library/CoreServices/execchild
+
+	$(Q)cp $(USER_BUILD)/privtest $(DISK_ROOT)/System/Library/CoreServices/privtest
 
 	$(Q)cp $(USER_BUILD)/sockettest_server $(DISK_ROOT)/System/Library/CoreServices/sockettest_server
 

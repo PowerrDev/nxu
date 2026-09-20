@@ -42,6 +42,38 @@ process_control_test_wait(proc_t parent, proc_id_t pid, uint64_t *status)
 	return false;
 }
 
+/*
+ * The positive half of the capability tests. The kernel, not bootd, starts
+ * privtest, so it holds nothing until it is granted what it exercises: writing
+ * the filesystem and claiming the display, but not resetting the machine.
+ */
+static bool
+process_control_test_privileges(void)
+{
+	proc_t proc = 0;
+	loader_status_t loaded = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/privtest", "privtest", &proc);
+	if (loaded != LOADER_STATUS_OK) {
+		kputs("process_control_test: spawning privtest failed: ");
+		kputln(loader_status_name(loaded));
+		return false;
+	}
+
+	proc_set_caps(proc, NXU_CAP_FS_WRITE | NXU_CAP_DISPLAY);
+
+	uint64_t exit_status = 0ULL;
+	if (!process_control_test_wait(proc_kernel(), proc->p_ident.pid, &exit_status)) {
+		kputln("process_control_test: privtest did not exit in time");
+		return false;
+	}
+
+	if (exit_status != 0ULL) {
+		kprintf("process_control_test: privtest failed with status 0x%llx (check number, or a kill)\n", (unsigned long long)exit_status);
+		return false;
+	}
+
+	return true;
+}
+
 bool
 process_control_test(void)
 {
@@ -55,6 +87,13 @@ process_control_test(void)
 		return false;
 	}
 
+	/*
+	 * Nothing else was started, so proctest is PID 1 and would hold every
+	 * capability. It checks that an ordinary process is refused, so take them
+	 * away before it runs.
+	 */
+	proc_set_caps(proc, 0U);
+
 	uint64_t exit_status = 0ULL;
 	if (!process_control_test_wait(proc_kernel(), proc->p_ident.pid, &exit_status)) {
 		kputln("process_control_test: proctest did not exit in time");
@@ -66,6 +105,8 @@ process_control_test(void)
 		return false;
 	}
 
+	if (!process_control_test_privileges()) return false;
+
 	uint64_t used_after = pmm_get_used_page_count();
 	uint64_t leaked = used_after > used_before ? used_after - used_before : 0ULL;
 
@@ -76,6 +117,6 @@ process_control_test(void)
 		return false;
 	}
 
-	kputln("process_control_test: fork, exec, signals, copy-on-write and demand paging all worked and every page was reclaimed");
+	kputln("process_control_test: fork, exec, signals, copy-on-write, demand paging and capabilities all worked and every page was reclaimed");
 	return true;
 }

@@ -458,6 +458,26 @@ main(void)
 		(void)nxu_ipc_port_deallocate((uint32_t)port);
 	}
 
-	say("proctest: fork, exec, signals, copy-on-write, demand paging and blocking waits all behaved\n");
+	/*
+	 * 19. Capabilities. The kernel started us, not bootd, so we hold none: the
+	 * calls that change the system are refused, and reading still works.
+	 * (privtest.c covers a process that was granted some.)
+	 */
+	{
+		if (nxu_get_caps() != 0) return fail(86, "a process the kernel started holds capabilities");
+		if (nxu_open("/disk/var/proctest.tmp", NXU_O_WRITE | NXU_O_CREATE) != -NXU_SYS_E_DENIED) return fail(87, "open for write was not refused");
+		if (nxu_unlink("/disk/var/proctest.tmp") != -NXU_SYS_E_DENIED) return fail(88, "unlink was not refused");
+		if (nxu_mkdir("/disk/var/proctest.d") != -NXU_SYS_E_DENIED) return fail(89, "mkdir was not refused");
+		if (nxu_display_claim() != -NXU_SYS_E_DENIED) return fail(90, "display_claim was not refused");
+		if (nxu_system_reset() != -NXU_SYS_E_DENIED) return fail(91, "system_reset was not refused");
+
+		int64_t reading = nxu_open(PROCTEST_EXEC_PATH, NXU_O_READ);
+		if (reading < 0) return fail(92, "reading a file was refused");
+		(void)nxu_close((uint64_t)reading);
+
+		if (nxu_spawn_caps(PROCTEST_EXEC_PATH, "execchild", NXU_CAP_FS_WRITE) != -NXU_SYS_E_DENIED) return fail(93, "spawn passed on a capability the caller lacks");
+	}
+
+	say("proctest: fork, exec, signals, copy-on-write, demand paging, blocking waits and capabilities all behaved\n");
 	return 0;
 }
