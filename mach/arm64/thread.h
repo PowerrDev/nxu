@@ -1,6 +1,7 @@
 #ifndef NXU_ARCH_ARM64_THREAD_H
 #define NXU_ARCH_ARM64_THREAD_H
 
+#include <mach/arm64/exception.h>
 #include <mach/arm64/transition.h>
 
 #include <stdbool.h>
@@ -48,6 +49,15 @@ typedef struct {
 	uint64_t spsr;
 	uint64_t x0;
 	bool valid;
+
+	/*
+	 * A forked child does not start at an entry point with one argument: it
+	 * resumes exactly where its parent's fork() returned, with the parent's
+	 * whole register file. When full is set, x holds x0-x30 and is used
+	 * instead of x0 above.
+	 */
+	bool full;
+	uint64_t x[31];
 } arm64_user_state_t;
 
 /*
@@ -58,6 +68,15 @@ typedef struct {
 typedef struct machine_thread {
 	arm64_kernel_context_t context;
 	arm64_user_state_t user;
+
+	/*
+	 * The exception frame of the EL0 trap this thread is currently handling
+	 * in the kernel, or 0 when it is not inside one. It lives on the
+	 * thread's own kernel stack, so it stays valid across a preemption;
+	 * fork, exec and signal delivery read and rewrite the user's registers
+	 * through it.
+	 */
+	arm64_exception_frame_t *user_frame;
 } machine_thread_t;
 
 /*
@@ -165,6 +184,16 @@ static inline void machine_thread_switch_context(
  */
 static inline void machine_thread_enter_user(machine_thread_t *machine)
 {
+	if (machine->user.full) {
+		arm64_enter_el0_regs(
+			machine->user.x,
+			machine->user.pc,
+			machine->user.sp,
+			machine->user.spsr
+		);
+		return;
+	}
+
 	arm64_enter_el0(
 		machine->user.pc,
 		machine->user.sp,

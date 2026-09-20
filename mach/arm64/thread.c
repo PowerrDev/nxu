@@ -56,8 +56,11 @@ static void machine_thread_zero(machine_thread_t *machine)
 			.sp = 0ULL,
 			.spsr = ARM64_THREAD_SPSR_EL0T,
 			.x0 = 0ULL,
-			.valid = false
-		}
+			.valid = false,
+			.full = false,
+			.x = { 0 }
+		},
+		.user_frame = 0
 	};
 }
 
@@ -103,6 +106,7 @@ bool machine_thread_set_user_state(
 	machine->user.spsr = ARM64_THREAD_SPSR_EL0T;
 	machine->user.x0 = arg;
 	machine->user.valid = true;
+	machine->user.full = false;
 
 	return true;
 }

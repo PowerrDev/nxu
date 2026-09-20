@@ -50,6 +50,13 @@ static inline uint64_t arm64_read_vector_base(void)
 
 void arm64_enter_el0(uint64_t entry, uint64_t stack, uint64_t spsr, uint64_t arg);
 
+/*
+ * Like arm64_enter_el0, but resumes EL0 with a complete register file: x
+ * points at x0-x30 (31 words). A forked child enters this way. Returns to
+ * the caller the same way arm64_enter_el0 does, when the program exits.
+ */
+void arm64_enter_el0_regs(const uint64_t *x, uint64_t pc, uint64_t sp, uint64_t spsr);
+
 uint64_t arm64_el0_return_address(void);
 
 #endif
