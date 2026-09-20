@@ -15,14 +15,16 @@ real Linux stack (see [Fixtures](#fixtures-and-ground-truth)).
         |
    ---- pure core: no kernel headers; allocator, reader and log are injected ----
         |
-   btrfs_file     EXTENT_DATA -> bytes: inline, regular, prealloc, holes, compression hook,
-                  optional data checksums
+   btrfs_file     EXTENT_DATA -> bytes: inline, regular, prealloc, holes, compressed extents,
+                  data checksums
+   btrfs_codec    zlib, LZO and ZSTD decoders (btrfs_zlib.c, btrfs_lzo.c, btrfs_zstd.c)
    btrfs_dir      DIR_ITEM lookup by crc32c name hash, DIR_INDEX cursor iteration
    btrfs_inode    INODE_ITEM, INODE_REF / INODE_EXTREF
    btrfs_root     ROOT_ITEM, subvolumes, "default", ROOT_REF / ROOT_BACKREF, subvolume points
    btrfs_tree     verified tree blocks, LRU cache, search, cross-leaf iteration (paths)
    btrfs_chunk    logical -> physical (sys_chunk_array, then the chunk tree); SINGLE, DUP
-   btrfs_super    three superblock copies, validation, feature/csum/device gating
+   btrfs_super    three superblock copies, validation, feature/device gating
+   btrfs_csum     crc32c, xxh64; btrfs_hash: sha256, blake2b-256 (the four csum types)
    btrfs_io       reader interface: read N bytes at a byte offset
         |
    btrfs_io_block.c (kernel block_device_t)   btrfs_io_host.c (a file; host tests only)
@@ -46,9 +48,9 @@ printf subset with no field widths, like `kprintf`.
 considered only if it fits on the device. A copy is valid when the magic
 `_BHRfS_M`, its own byte number, its crc32c and its geometry (power-of-two
 sector/node sizes, levels < 8, aligned roots) are right; the valid copy with
-the highest generation wins, so a damaged primary falls back to a mirror. Other
-checksum types are recognised and refused with their own status, before the
-checksum is looked at.
+the highest generation wins, so a damaged primary falls back to a mirror. The superblock names its
+own checksum type, which then covers every tree block and every data sector;
+an unknown type number is corruption, not a feature.
 
 **Chunk map** (`btrfs_chunk.c`). Built from `sys_chunk_array`, then completed
 from the chunk tree. Sorted array, binary search, overlap and range checks
@@ -92,10 +94,50 @@ the offset and walk forward: inline, regular (reading the slice
 `[offset, offset+num_bytes)` of a possibly larger disk extent), preallocated
 (zeros), explicit hole (zeros), implicit gap (zeros), tail up to `i_size`
 (zeros). Every iteration advances the position or moves to a strictly later
-item. Compressed extents go through `fs->decompressors[]` (zlib/lzo/zstd); none
-is registered, so they fail with `BTRFS_ERR_UNSUPPORTED_COMPRESSION`, never with
-garbage, and everything else in the volume stays readable. Data checksums are
-verified on every read (see [Bad extents](#bad-extents-and-data-checksums)).
+item. Data checksums are verified on every read (see
+[Bad extents](#bad-extents-and-data-checksums)); compressed extents are decoded
+(see [Compression](#compression)).
+
+### Compression
+
+`btrfs_fs_open()` registers the three decoders in `fs->decompressors[]`; a
+method without a decoder (only a damaged image can name one) fails the read with
+`BTRFS_ERR_UNSUPPORTED_COMPRESSION`, never with garbage. The decoders are
+freestanding (`btrfs_codec.h`) and share one contract: they get the on-disk
+extent (`disk_num_bytes`, possibly with zero sector padding) and a buffer of
+exactly `ram_bytes`, write at most that many bytes, and return `BTRFS_OK` only
+for a complete, well-formed stream; a stream that decodes to fewer bytes is
+zero filled (Linux does the same for the rounded-up last extent), anything else
+is `BTRFS_ERR_CORRUPT`. `ram_bytes` above 128 KiB (what Btrfs writes) is refused
+before any decoder runs, so a decompression bomb cannot grow past the extent's
+stated size.
+
+- **zlib** (`btrfs_zlib.c`): RFC 1950/1951 inflate in the style of puff.c; the
+  output is the window, no allocation; Adler-32 verified.
+- **LZO** (`btrfs_lzo.c`): LZO1X with `lzo1x_decompress_safe` semantics inside
+  Btrfs' framing (total length, then per-sector segments, headers never
+  straddling a sector, every segment its own stream, so distances are checked
+  against the segment).
+- **ZSTD** (`btrfs_zstd.c`): RFC 8878 frames: raw/RLE/compressed blocks, raw/RLE/
+  Huffman literals (1 and 4 streams, direct and FSE weights, treeless), all four
+  sequence table modes, repeat offsets, content checksum verified. No
+  dictionaries, windows above 128 KiB refused. Work memory (about 11 KiB of
+  tables plus one block of literals) is one allocation through the injected
+  `btrfs_env_t`.
+
+Reads: the compressed bytes are read through the normal data path (so they are
+verified against the csum tree, which covers what is on disk, and DUP falls
+back), decoded, and the requested slice of the decoded extent is copied out;
+partial-extent reads (`offset` inside the decoded extent, several files or
+ranges referring to different parts of one extent) fall out of that. Inline
+compressed extents decode from the item. **Memory:** decoded data lives in
+`fs->extent_cache`, one buffer of at most 128 KiB allocated on first use and
+freed at close, holding the last decoded extent, so reading a file in small
+steps decodes each extent once (`extents_decoded`, `extent_cache_hits` in the
+stats). While a decode runs there is also the compressed copy (at most 128 KiB)
+and the decoder's work memory; both are freed before the read returns. Peak is
+therefore about 300 KiB per mounted filesystem, and a failed decode leaves the
+cache empty.
 
 ### Bad extents and data checksums
 
@@ -129,7 +171,7 @@ always checked). The policy, in `btrfs_read_data_verified()`:
 | Area | Status |
 |---|---|
 | crc32c checksums | supported (table driven, in the core) |
-| xxhash64 / sha256 / blake2b | refused at mount: `unsupported checksum type` |
+| xxhash64, sha256, blake2b checksums | supported (tree blocks, superblock, data) |
 | SINGLE, DUP chunks (metadata and data) | supported |
 | RAID0/1/10/5/6, RAID1C3/4, multi-device | refused: `unsupported RAID or multi-device profile` |
 | Superblock mirrors, highest valid generation | supported |
@@ -138,7 +180,7 @@ always checked). The policy, in `btrfs_read_data_verified()`:
 | unreplayed log tree | refused (`log-tree`); `ignore_log_tree` mounts anyway and may show stale data |
 | Subvolumes, snapshots, read-only snapshots, nested subvolumes, default subvolume, mount by id | supported, read-only |
 | Inline, regular, prealloc, hole, partial-extent reads | supported |
-| Compressed extents (zlib, lzo, zstd) | refused per file: `not supported`; decoder hook exists |
+| Compressed extents (zlib, lzo, zstd; any level; inline, partial references, sparse) | supported |
 | Encrypted extents, other encodings | refused per extent |
 | Data checksums | verified on every read by default; `noverify` opts out (`verify_data` spells the default); NODATASUM files, holes and prealloc are exempt |
 | Directories with thousands of entries, 255-byte names, unicode names, hard links (INODE_REF and EXTREF), symlinks (inline target up to 4095 bytes), fifo, socket, char and block devices | supported |
@@ -181,7 +223,7 @@ counters and I/O counters.
 ## Tests
 
 ```
-make test-btrfs-host BUILD_ROOT=<scratch>        # native, ASan + UBSan, 139 checks
+make test-btrfs-host BUILD_ROOT=<scratch>        # native, ASan + UBSan, 236 checks
 make test-i386-btrfs BUILD_ROOT=<scratch>        # in-kernel, second..fourth virtio-blk-pci
 make test-arm64-btrfs BUILD_ROOT=<scratch> CONFIG=base   # in-kernel, virtio-blk-device
 ```
@@ -198,7 +240,13 @@ reads at random offsets, across and past EOF and in odd steps, all checked
 against the full read; readdir cursor resume; lookup of every name by hash and
 of a missing name; hard-link counts against INODE_REF/EXTREF; every subvolume
 mounted by id; subvolume list against `btrfs subvolume list`; the default
-subvolume; refusal fixtures (compression, checksum types, RAID); named
+subvolume; compressed extents of every algorithm and shape (`mix-*`, `comp-*`:
+zlib 1/9, LZO, ZSTD 1/3/15, the 128 KiB extent boundary, sparse files, extents
+only partly referenced, incompressible data) and all four checksum types, each
+walked against Linux; the decoders alone (`tools/btrfs/test_codec.sh`: streams from
+python zlib and the zstd command and an LZO generator, output cap, truncation,
+bombs, mutation sweeps under ASan/UBSan, sha256/blake2b against hashlib); refusal
+fixtures (RAID); named
 corruptions (`tools/btrfs/corrupt.py`: superblock magic/checksum/features/log
 root/geometry, truncation at several sizes, root/chunk/subvolume tree blocks,
 DUP self-healing); the data-checksum policy (a damaged data extent fails a
@@ -298,9 +346,7 @@ needed information.
 
 ## Not done / follow-ups
 
-- Compression decoders (zlib, lzo, zstd) behind `fs->decompressors[]`.
 - Multi-device and RAID profiles (`btrfs_map_logical`, a multi-device reader).
-- Other checksum algorithms (xxhash64, sha256, blake2b).
 - Log tree replay.
 - Write support (above).
 
