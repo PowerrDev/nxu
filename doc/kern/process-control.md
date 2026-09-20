@@ -122,6 +122,53 @@ for (;;) {
   the queue are atomic only because the kernel is not preemptible and wakeups come
   from thread context. SMP will need a real lock in `waitq.c`.
 
+## Capabilities
+
+NXU has no credentials (no UID/GID, no file owners or modes), so the system calls
+that change the machine are gated by a per-process capability mask,
+`proc->p_caps`. It is default-deny.
+
+| Capability | Allows |
+| --- | --- |
+| `NXU_CAP_FS_WRITE` | `open` with write, create, truncate or append; `unlink`; `mkdir` |
+| `NXU_CAP_DISPLAY` | `display_claim` |
+| `NXU_CAP_RESET` | `system_reset` (which still also requires triage mode) |
+
+A refused call returns `-NXU_SYS_E_DENIED`. Reading is never gated. `open` is
+checked on the same 32 flag bits `vfs_open` receives, so a high bit cannot get
+past the check.
+
+Where a process's set comes from:
+
+- **PID 1** (bootd, or triageOS in recovery) and the kernel process hold all of
+  them. Every other process starts with none.
+- **`nxu_spawn_caps(path, name, caps)`** gives the child exactly `caps`. That must
+  be a subset of the caller's own: asking for more fails with `DENIED` rather than
+  being silently narrowed, so a misconfigured service fails loudly, and a bit
+  that is not a capability is `INVALID_ARGUMENT`. Plain `nxu_spawn` passes none.
+- **`fork` and `exec`** keep the caller's set.
+- **bootd** passes what a service's plist asks for, `AllowFilesystemWrite` and
+  `AllowDisplay` (see [service plists](../service-plists.md)). `logd` and `patchd`
+  have the first, `windowserver` the second; nothing else can write the
+  filesystem or claim the display.
+- **Kernel-started test processes** hold none until the test grants some with
+  `proc_set_caps`.
+- **`nxu_get_caps()`** returns the caller's set.
+
+What this is not:
+
+- It is not per-file authorization. A process with `FS_WRITE` may write any file.
+- A process cannot shed capabilities it holds; it can only give a child less at
+  spawn.
+- Signals still use the descendants-only rule above, not capabilities.
+- PID 1 is identified by its PID number, as `ipc_register_bootstrap` already does.
+  Nothing reuses it while bootd is alive.
+
+`proctest` checks 86-93 (an ordinary process is refused each call, and can still
+read) and `privtest` (a granted parent uses what it holds and is refused the
+rest; a child gets exactly the subset passed; `fork` and `exec` keep the set)
+cover it.
+
 ## `fork`
 
 `proc_fork()` makes a child that is a copy of the caller.
@@ -179,4 +226,4 @@ spaces at exit.
 | Test | Proves |
 | --- | --- |
 | `make test TEST=fault-process` | Eight faulting and clean programs; the kernel survives all of them. |
-| `make test TEST=process-control` | `proctest` (85 checks): fork, copy-on-write both ways, shared memory across fork, demand paging, lazy stack, exec with argv, handlers, masks, ignore, kill, `SIGCHLD`, a `SIGSEGV` handler, the descendants-only rule, blocking `wait` and `ipc_receive_wait`, `EINTR`, and killing a process that is asleep in the kernel. Afterwards the kernel checks that the physical pages in use returned to within 24 of where they started, across 17 forks and an exec. |
+| `make test TEST=process-control` | `proctest` (93 checks): fork, copy-on-write both ways, shared memory across fork, demand paging, lazy stack, exec with argv, handlers, masks, ignore, kill, `SIGCHLD`, a `SIGSEGV` handler, the descendants-only rule, blocking `wait` and `ipc_receive_wait`, `EINTR`, killing a process that is asleep in the kernel, and an ordinary process being refused the calls that need a capability. `privtest` then covers a process that was granted some. Afterwards the kernel checks that the physical pages in use returned to within 24 of where they started, across 17 forks and an exec. |

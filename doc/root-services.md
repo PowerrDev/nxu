@@ -50,3 +50,10 @@ are isolated by process address spaces, but they are not yet separated by a
 Unix root/non-root permission boundary. `root` and `sudo` should be added only
 after credentials and VFS authorization exist; this implementation does not
 fake them.
+
+What does exist is a capability mask on each process that gates the system calls
+that change the machine: writing the filesystem, claiming the display and
+resetting. Only PID 1 holds all of them; bootd grants each service what its plist
+asks for, so `logd` and `patchd` can write and nothing else can. It is
+default-deny and per process, not per file. See
+[Capabilities](kern/process-control.md#capabilities).

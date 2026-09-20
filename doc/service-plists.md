@@ -23,6 +23,12 @@ lifecycle and restart policy remain private to `bootd`.
 | `DisabledInSafeMode` | boolean | no | Prevents activation when `-x` is present. |
 | `DisabledBootArgument` | string | no | Prevents activation when the named boot argument is present. |
 | `StartOnLogin` | boolean | no | Parsed and retained for the future login-session activation path. |
+| `AllowFilesystemWrite` | boolean | no | Capability `NXU_CAP_FS_WRITE` for the job's process: open for write/create/truncate/append, `unlink`, `mkdir`. Default false. |
+| `AllowDisplay` | boolean | no | Capability `NXU_CAP_DISPLAY` for the job's process: `display_claim`. Default false. |
+
+A job's process holds only the capabilities its plist asks for; bootd passes them
+to `nxu_spawn_caps`. `logd` and `patchd` set `AllowFilesystemWrite`, and
+`windowserver` sets `AllowDisplay`. See [process control](kern/process-control.md#capabilities).
 
 `StartOnLogin` does **not** launch anything yet. NXU has no login-session event
 or bootd IPC control path today, so claiming that behavior would be false. A
