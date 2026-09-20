@@ -330,6 +330,7 @@ C_SOURCES := \
     kern/tests/fault_process_test.c \
     kern/tests/process_control_test.c \
     kern/tests/socket_process_test.c \
+    kern/tests/sound_test.c \
     kern/tests/xamethyst_process_test.c \
     kern/tests/windowserver_process_test.c \
     kern/tests/about_sevos_process_test.c \
