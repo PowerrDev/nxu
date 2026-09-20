@@ -288,6 +288,8 @@ C_SOURCES := \
     drivers/virtio/virtio_gpu.c \
     drivers/virtio/virtio_input.c \
     drivers/virtio/virtio_mmio.c \
+    drivers/virtio/virtio_sound.c \
+    drivers/virtio/virtio_sound_core.c \
     drivers/virtio/virtqueue.c \
     kern/boot/boot_args.c \
     kern/boot/boot_mode.c \

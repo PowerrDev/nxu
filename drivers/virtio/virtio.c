@@ -5,6 +5,7 @@
 #include <drivers/virtio/virtio_gpu.h>
 #include <drivers/virtio/virtio_input.h>
 #include <drivers/virtio/virtio_mmio.h>
+#include <drivers/virtio/virtio_sound.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -13,6 +14,7 @@ static uint32_t g_virtio_device_count;
 static uint32_t g_virtio_input_count;
 static uint32_t g_virtio_block_count;
 static uint32_t g_virtio_gpu_count;
+static uint32_t g_virtio_sound_count;
 static bool g_virtio_initialized;
 
 #define VIRTIO_MAX_BUS_SCANNERS 4U
@@ -82,6 +84,18 @@ bool virtio_bind_device(const virtio_device_t *device, const virtio_probe_policy
 		return true;
 	}
 
+	if (device->device_id == VIRTIO_DEVICE_ID_SOUND) {
+		if (!policy->sound) return true;
+
+		if (!virtio_snd_attach(device)) {
+			kprintf("VirtIOFamily: sound device at 0x%llx failed to attach\n", (unsigned long long)device->region.base);
+			return true;
+		}
+
+		g_virtio_sound_count++;
+		return true;
+	}
+
 	kprintf("VirtIOFamily: unclaimed device ID %u at 0x%llx\n", device->device_id, (unsigned long long)device->region.base);
 	return true;
 }
@@ -109,7 +123,8 @@ bool virtio_init(const platform_t *platform, const virtio_probe_policy_t *policy
 	}
 
 	g_virtio_initialized = true;
-	kprintf("VirtIOFamily: %u device(s): %u input, %u block, %u GPU\n", g_virtio_device_count, g_virtio_input_count, g_virtio_block_count, g_virtio_gpu_count);
+	virtio_snd_probe();
+	kprintf("VirtIOFamily: %u device(s): %u input, %u block, %u GPU, %u sound\n", g_virtio_device_count, g_virtio_input_count, g_virtio_block_count, g_virtio_gpu_count, g_virtio_sound_count);
 	return true;
 }
 
@@ -133,11 +148,17 @@ uint32_t virtio_gpu_count(void)
 	return g_virtio_gpu_count;
 }
 
+uint32_t virtio_sound_count(void)
+{
+	return g_virtio_sound_count;
+}
+
 void virtio_dump(void)
 {
 	/* virtio_init() already printed the device count line. */
-	kverbosef("VirtIOFamily: %u device(s): %u input, %u block, %u GPU\n", g_virtio_device_count, g_virtio_input_count, g_virtio_block_count, g_virtio_gpu_count);
+	kverbosef("VirtIOFamily: %u device(s): %u input, %u block, %u GPU, %u sound\n", g_virtio_device_count, g_virtio_input_count, g_virtio_block_count, g_virtio_gpu_count, g_virtio_sound_count);
 	virtio_input_dump();
 	virtio_block_dump();
 	virtio_gpu_dump();
+	virtio_snd_dump();
 }

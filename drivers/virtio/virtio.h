@@ -11,6 +11,7 @@ typedef struct {
 	bool input;
 	bool block;
 	bool gpu;
+	bool sound;
 	/*
 	 * Optional: invoked the instant a GPU attaches, mid-scan, before the
 	 * remaining MMIO slots (input, block) are probed. Lets a caller paint
@@ -43,7 +44,8 @@ bool virtio_bus_register(virtio_bus_scan_t scan);
  *
  * Bind the class driver matching a probed device, whatever transport it uses.
  * Returns false when a block or input device fails to attach (the bus scan
- * must stop); unsupported and policy-disabled devices return true.
+ * must stop); unsupported and policy-disabled devices return true, and so
+ * do a GPU or sound device that fails to attach.
  */
 bool virtio_bind_device(
 	const virtio_device_t *device,
@@ -73,6 +75,7 @@ uint32_t virtio_device_count(void);
 uint32_t virtio_input_count(void);
 uint32_t virtio_block_count(void);
 uint32_t virtio_gpu_count(void);
+uint32_t virtio_sound_count(void);
 
 void virtio_dump(void);
 
