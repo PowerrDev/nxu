@@ -529,26 +529,8 @@ static void check_file_contents(walk_t *w, const btrfs_tree_t *tree, const btrfs
 	btrfs_status_t status = btrfs_file_read(w->fs, tree, inode, 0, whole, size, &done);
 	if (w->image != NULL) w->image->tag = 0;
 
-	if (rec != NULL && rec->flag != NULL && strcmp(rec->flag, "compressed") == 0) {
-		/* The manifest says this file is compressed: it must be refused, cleanly. */
-		if (status != BTRFS_ERR_UNSUPPORTED_COMPRESSION) fail(w, path, "compressed file read returned %s, expected unsupported compression", btrfs_status_name(status));
-		else if (done != 0) fail(w, path, "a refused read still reported %llu bytes", (unsigned long long)done);
-
-		/* Partial reads must be refused too, never served with garbage. */
-		if (size > 0) {
-			uint8_t probe[64];
-			uint64_t got = 0;
-			btrfs_status_t partial = btrfs_file_read(w->fs, tree, inode, size / 2, probe, sizeof(probe), &got);
-			if (partial != BTRFS_ERR_UNSUPPORTED_COMPRESSION || got != 0) fail(w, path, "partial read of a compressed file returned %s", btrfs_status_name(partial));
-		}
-
-		digest_mix(w, path, strlen(path));
-		free(whole);
-		return;
-	}
-
 	if (rec == NULL && status == BTRFS_ERR_UNSUPPORTED_COMPRESSION) {
-		/* No manifest to say which files are compressed (sweeps, plain walks): a clean refusal is fine. */
+		/* A damaged image can name a compression method nobody knows (sweeps, plain walks): a clean refusal is fine. */
 		digest_mix(w, path, strlen(path));
 		free(whole);
 		return;

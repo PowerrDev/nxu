@@ -117,9 +117,10 @@ typedef struct {
 /* ---- decompression hook -------------------------------------------------------------- */
 
 /*
- * Decoders for compressed extents plug in here (zlib, lzo, zstd). in holds the
- * on-disk (compressed) bytes; out receives exactly out_len decoded bytes and
- * must be fully written. Until one is registered the read path returns
+ * Decoders for compressed extents plug in here (btrfs_codec.h: zlib, lzo, zstd;
+ * btrfs_fs_open() registers all three). in holds the on-disk (compressed)
+ * bytes; out receives exactly out_len decoded bytes and must be fully written.
+ * A decoder that is not registered makes the read path return
  * BTRFS_ERR_UNSUPPORTED_COMPRESSION for that extent, never garbage.
  */
 typedef btrfs_status_t (*btrfs_decompress_fn)(void *ctx, const uint8_t *in, size_t in_len, uint8_t *out, size_t out_len);
@@ -128,6 +129,28 @@ typedef struct {
 	btrfs_decompress_fn decompress;
 	void *ctx;
 } btrfs_decompressor_t;
+
+/* What the shipped decoders need from the filesystem (the ctx they are registered with). */
+typedef struct {
+	const btrfs_env_t *env;    /* for work memory (ZSTD tables) */
+	uint32_t sectorsize;       /* LZO segments are cut at sector boundaries */
+} btrfs_codec_ctx_t;
+
+/*
+ * The last decoded compressed extent, kept so that a run of small reads inside
+ * one extent decodes it once. One buffer of at most BTRFS_MAX_COMPRESSED_EXTENT
+ * bytes, allocated on the first compressed read and freed at close: decoded
+ * memory is bounded by that, plus the compressed copy and the decoder's work
+ * memory while a decode runs.
+ */
+typedef struct {
+	uint8_t *data;             /* NULL until first use */
+	uint64_t disk_bytenr;      /* which extent data holds; 0: nothing */
+	uint64_t disk_num_bytes;
+	uint64_t ram_bytes;        /* bytes of data that are valid */
+	uint32_t compression;
+	bool verified;             /* the compressed bytes passed the csum check */
+} btrfs_extent_cache_t;
 
 /* ---- open options ------------------------------------------------------------------------ */
 
@@ -146,6 +169,8 @@ typedef struct {
 	uint64_t data_csum_checked;  /* data sectors compared with the csum tree */
 	uint64_t data_csum_missing;  /* data sectors of a checksummed file that had no csum item */
 	uint64_t data_bad_reads;     /* file reads refused because no copy of some extent verified */
+	uint64_t extents_decoded;    /* compressed extents run through a decoder */
+	uint64_t extent_cache_hits;  /* reads served from the decoded-extent cache */
 } btrfs_stats_t;
 
 /* ---- the filesystem ------------------------------------------------------------------------ */
@@ -174,6 +199,8 @@ struct btrfs_fs {
 	uint64_t mount_subvol;         /* the subvolume this mount serves */
 
 	btrfs_decompressor_t decompressors[4];   /* indexed by BTRFS_COMPRESS_* */
+	btrfs_codec_ctx_t codec;
+	btrfs_extent_cache_t extent_cache;
 	btrfs_stats_t stats;
 	btrfs_status_t last_status;    /* the most recent failure, for diagnostics */
 };

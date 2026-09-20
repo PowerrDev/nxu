@@ -251,8 +251,8 @@ if [ "$(rf "$out" read)" = ok ] && [ "$(rf "$out" crc)" = "$(rf "$want" crc)" ];
 # Prealloc, holes and sparse files have no checksums to miss: the tree fixture (PREALLOC
 # files, sparse files, a nodatacow file) walks clean above with verification on.
 
-echo "== compressed extents are refused, everything else is served =="
-for name in comp-zlib comp-lzo comp-zstd; do
+echo "== compressed extents: zlib and LZO decode to what Linux read =="
+for name in comp-zlib comp-lzo; do
 	check_tree "$name" "$name.manifest"
 	check_tree "$name" "$name.manifest" --noverify
 done

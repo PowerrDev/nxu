@@ -720,5 +720,6 @@ uint64_t btrfs_extref_hash(uint64_t parent_objectid, const uint8_t *name, size_t
 /* Number of checksum bytes for a csum type, or 0 for an unknown type. */
 uint32_t btrfs_csum_type_size(uint32_t type);
 const char *btrfs_csum_type_name(uint32_t type);
+const char *btrfs_compression_name(uint32_t compression);
 
 #endif

@@ -152,6 +152,17 @@ const char *btrfs_csum_type_name(uint32_t type)
 	}
 }
 
+const char *btrfs_compression_name(uint32_t compression)
+{
+	switch (compression) {
+	case BTRFS_COMPRESS_NONE: return "uncompressed";
+	case BTRFS_COMPRESS_ZLIB: return "zlib";
+	case BTRFS_COMPRESS_LZO: return "lzo";
+	case BTRFS_COMPRESS_ZSTD: return "zstd";
+	default: return "unknown compression";
+	}
+}
+
 const char *btrfs_status_name(btrfs_status_t status)
 {
 	switch (status) {

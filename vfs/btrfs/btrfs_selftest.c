@@ -142,15 +142,6 @@ static void st_check_file(selftest_t *t, vnode_t vnode, const btrfs_expect_t *ex
 	uint64_t done = 0ULL;
 	uint64_t size = expect->size;
 
-	if (expect->compressed) {
-		/* Compressed extents must be refused cleanly, never served as garbage. */
-		vfs_status_t status = vnode_read(vnode, 0ULL, t->buffer, 64U, &done);
-
-		if (status != VFS_STATUS_NOT_SUPPORTED || done != 0ULL) st_fail(t, path, "a compressed file was not refused", (uint64_t)status, (uint64_t)VFS_STATUS_NOT_SUPPORTED);
-		t->refusals++;
-		return;
-	}
-
 	if (!st_read_crc(t, vnode, size, SELFTEST_CHUNK, &crc, path)) return;
 	if (crc != expect->crc) st_fail(t, path, "crc32c of the contents", crc, expect->crc);
 
@@ -207,7 +198,7 @@ static void st_check_node(selftest_t *t, vnode_t vnode, const char *path, vnode_
 
 	if (attr.va_type == VNODE_TYPE_REGULAR) {
 		st_check_file(t, vnode, expect, path);
-		if (t->first_file[0] == '\0' && expect->size != 0ULL && !expect->compressed) {
+		if (t->first_file[0] == '\0' && expect->size != 0ULL) {
 			st_strcpy(t->first_file, path);
 		}
 	} else if (attr.va_type == VNODE_TYPE_SYMLINK) {

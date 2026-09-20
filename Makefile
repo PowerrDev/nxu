@@ -354,11 +354,13 @@ C_SOURCES := \
     vfs/btrfs/btrfs_inode.c \
     vfs/btrfs/btrfs_io.c \
     vfs/btrfs/btrfs_io_block.c \
+    vfs/btrfs/btrfs_lzo.c \
     vfs/btrfs/btrfs_root.c \
     vfs/btrfs/btrfs_selftest.c \
     vfs/btrfs/btrfs_super.c \
     vfs/btrfs/btrfs_tree.c \
     vfs/btrfs/btrfs_vfs.c \
+    vfs/btrfs/btrfs_zlib.c \
     vfs/devfs.c \
     vfs/ext4.c \
     vfs/jbd2.c \
@@ -1016,9 +1018,11 @@ BTRFS_CORE_SOURCES := \
     vfs/btrfs/btrfs_inode.c \
     vfs/btrfs/btrfs_io.c \
     vfs/btrfs/btrfs_io_host.c \
+    vfs/btrfs/btrfs_lzo.c \
     vfs/btrfs/btrfs_root.c \
     vfs/btrfs/btrfs_super.c \
-    vfs/btrfs/btrfs_tree.c
+    vfs/btrfs/btrfs_tree.c \
+    vfs/btrfs/btrfs_zlib.c
 
 BTRFS_HOST_CC ?= cc
 

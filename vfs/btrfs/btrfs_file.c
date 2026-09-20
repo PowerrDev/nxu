@@ -13,13 +13,13 @@
  * corrupt extent list cannot make it loop.
  */
 
+#include "btrfs_codec.h"
 #include "btrfs_file.h"
 #include "btrfs_root.h"
 #include "btrfs_tree.h"
 
 #include <string.h>
 
-#define BTRFS_MAX_EXTENT_BYTES (1U << 20U)   /* sanity bound for decoded/compressed extents */
 #define BTRFS_VERIFY_CHUNK 65536U
 
 /* ---- data checksums ---------------------------------------------------------------------- */
@@ -273,7 +273,7 @@ static btrfs_status_t btrfs_extent_parse(btrfs_fs_t *fs, const btrfs_key_t *key,
 	if (e->type == BTRFS_FILE_EXTENT_INLINE) {
 		/* An inline extent is the file's first bytes; the decoded length is ram_bytes. */
 		if (key->offset != 0ULL) return BTRFS_ERR_CORRUPT;
-		if (e->ram_bytes == 0ULL || e->ram_bytes > BTRFS_MAX_EXTENT_BYTES) return BTRFS_ERR_CORRUPT;
+		if (e->ram_bytes == 0ULL || e->ram_bytes > BTRFS_MAX_COMPRESSED_EXTENT) return BTRFS_ERR_CORRUPT;
 		if (e->compression == BTRFS_COMPRESS_NONE && e->ram_bytes != e->inline_size) return BTRFS_ERR_CORRUPT;
 		view->length = e->ram_bytes;
 		return BTRFS_OK;
@@ -291,8 +291,8 @@ static btrfs_status_t btrfs_extent_parse(btrfs_fs_t *fs, const btrfs_key_t *key,
 			if (e->offset > e->disk_num_bytes || e->num_bytes > e->disk_num_bytes - e->offset) return BTRFS_ERR_CORRUPT;
 		} else {
 			/* Inside the decoded extent instead. */
-			if (e->ram_bytes == 0ULL || e->ram_bytes > BTRFS_MAX_EXTENT_BYTES) return BTRFS_ERR_CORRUPT;
-			if (e->disk_num_bytes > BTRFS_MAX_EXTENT_BYTES) return BTRFS_ERR_CORRUPT;
+			if (e->ram_bytes == 0ULL || e->ram_bytes > BTRFS_MAX_COMPRESSED_EXTENT) return BTRFS_ERR_CORRUPT;
+			if (e->disk_num_bytes > BTRFS_MAX_COMPRESSED_EXTENT) return BTRFS_ERR_CORRUPT;
 			if (e->offset > e->ram_bytes || e->num_bytes > e->ram_bytes - e->offset) return BTRFS_ERR_CORRUPT;
 		}
 	}
@@ -300,51 +300,110 @@ static btrfs_status_t btrfs_extent_parse(btrfs_fs_t *fs, const btrfs_key_t *key,
 	return BTRFS_OK;
 }
 
-/* Decode a compressed extent (or inline data) and copy the slice out of it. */
-static btrfs_status_t btrfs_read_compressed(btrfs_fs_t *fs, const btrfs_extent_view_t *view, uint64_t skip, uint8_t *buffer, size_t amount)
+/*
+ * Read the extent's compressed bytes: the same policy as any data read (checksums
+ * unless the file or the mount says otherwise; the csum covers what is on disk,
+ * so the compressed form is what gets verified).
+ */
+static btrfs_status_t btrfs_read_data(btrfs_fs_t *fs, const btrfs_inode_t *inode, uint64_t logical, uint8_t *buffer, size_t length, bool *verified)
+{
+	*verified = !fs->options.skip_data_csums && (inode->item.flags & BTRFS_INODE_NODATASUM) == 0ULL;
+
+	if (*verified) return btrfs_read_data_verified(fs, logical, buffer, length);
+	return btrfs_read_data_plain(fs, logical, buffer, length);
+}
+
+/*
+ * Decode a compressed extent (or inline data) and copy the slice out of it.
+ *
+ * Memory: the decoded extent is at most BTRFS_MAX_COMPRESSED_EXTENT bytes and
+ * lives in fs->extent_cache, the one decoded extent that is kept, so reading a
+ * file in small steps decodes each extent once. The cache buffer is allocated on
+ * first use and released at close. While a decode runs there is also the
+ * compressed copy (at most the same size) and the decoder's work memory (ZSTD:
+ * tables plus one block of literals); both are freed before returning.
+ * A failed decode leaves the cache empty. Inline extents are small: decoded
+ * into a temporary buffer, not cached.
+ */
+static btrfs_status_t btrfs_read_compressed(btrfs_fs_t *fs, const btrfs_inode_t *inode, const btrfs_extent_view_t *view, uint64_t skip, uint8_t *buffer, size_t amount)
 {
 	const btrfs_file_extent_t *e = &view->extent;
+	btrfs_extent_cache_t *cache = &fs->extent_cache;
 
 	if (e->compression >= 4U || fs->decompressors[e->compression].decompress == 0) return BTRFS_ERR_UNSUPPORTED_COMPRESSION;
+	if (e->ram_bytes == 0ULL || e->ram_bytes > BTRFS_MAX_COMPRESSED_EXTENT) return BTRFS_ERR_CORRUPT;
 
 	size_t decoded = (size_t)e->ram_bytes;
+	uint64_t start = (e->type == BTRFS_FILE_EXTENT_INLINE ? 0ULL : e->offset) + skip;
+	bool inline_extent = e->type == BTRFS_FILE_EXTENT_INLINE;
+
+	if (start > decoded || amount > decoded - (size_t)start) return BTRFS_ERR_CORRUPT;
+
+	bool need_verified = !fs->options.skip_data_csums && (inode->item.flags & BTRFS_INODE_NODATASUM) == 0ULL;
+
+	if (!inline_extent && cache->data != 0 && cache->disk_bytenr == e->disk_bytenr && cache->disk_num_bytes == e->disk_num_bytes && cache->ram_bytes == e->ram_bytes && cache->compression == e->compression && (cache->verified || !need_verified)) {
+		fs->stats.extent_cache_hits++;
+		memcpy(buffer, cache->data + (size_t)start, amount);
+		return BTRFS_OK;
+	}
+
 	const uint8_t *packed;
 	uint8_t *packed_copy = 0;
+	uint8_t *out;
 	size_t packed_size;
+	bool verified = false;
+	btrfs_status_t status;
 
-	uint8_t *out = btrfs_alloc(fs, decoded);
-	if (out == 0) return BTRFS_ERR_NOMEM;
+	if (inline_extent) {
+		out = btrfs_alloc(fs, decoded);
+		if (out == 0) return BTRFS_ERR_NOMEM;
 
-	if (e->type == BTRFS_FILE_EXTENT_INLINE) {
 		packed = view->item + BTRFS_FILE_EXTENT_INLINE_HEADER;
 		packed_size = e->inline_size;
 	} else {
-		packed_size = (size_t)e->disk_num_bytes;
-		packed_copy = btrfs_alloc(fs, packed_size);
-		if (packed_copy == 0) {
-			btrfs_free(fs, out);
-			return BTRFS_ERR_NOMEM;
+		if (cache->data == 0) {
+			cache->data = btrfs_alloc(fs, BTRFS_MAX_COMPRESSED_EXTENT);
+			if (cache->data == 0) return BTRFS_ERR_NOMEM;
 		}
 
-		btrfs_status_t status = btrfs_read_data_plain(fs, e->disk_bytenr, packed_copy, packed_size);
+		cache->disk_bytenr = 0ULL;
+		out = cache->data;
+
+		packed_size = (size_t)e->disk_num_bytes;
+		packed_copy = btrfs_alloc(fs, packed_size);
+		if (packed_copy == 0) return BTRFS_ERR_NOMEM;
+
+		status = btrfs_read_data(fs, inode, e->disk_bytenr, packed_copy, packed_size, &verified);
 		if (status != BTRFS_OK) {
 			btrfs_free(fs, packed_copy);
-			btrfs_free(fs, out);
 			return status;
 		}
 		packed = packed_copy;
 	}
 
-	btrfs_status_t status = fs->decompressors[e->compression].decompress(fs->decompressors[e->compression].ctx, packed, packed_size, out, decoded);
-	if (status == BTRFS_OK) {
-		uint64_t start = (e->type == BTRFS_FILE_EXTENT_INLINE ? 0ULL : e->offset) + skip;
-		if (start > decoded || amount > decoded - (size_t)start) status = BTRFS_ERR_CORRUPT;
-		else memcpy(buffer, out + (size_t)start, amount);
+	status = fs->decompressors[e->compression].decompress(fs->decompressors[e->compression].ctx, packed, packed_size, out, decoded);
+	btrfs_free(fs, packed_copy);
+
+	if (status != BTRFS_OK) {
+		BTRFS_LOG(fs, "inode %llu: %s extent at %llu does not decode: %s", BTRFS_U64(inode->ino), btrfs_compression_name(e->compression), BTRFS_U64(e->disk_bytenr), btrfs_status_name(status));
+		if (inline_extent) btrfs_free(fs, out);
+		return status == BTRFS_ERR_NOMEM ? status : BTRFS_ERR_CORRUPT;
 	}
 
-	btrfs_free(fs, packed_copy);
-	btrfs_free(fs, out);
-	return status;
+	fs->stats.extents_decoded++;
+	memcpy(buffer, out + (size_t)start, amount);
+
+	if (inline_extent) {
+		btrfs_free(fs, out);
+	} else {
+		cache->disk_bytenr = e->disk_bytenr;
+		cache->disk_num_bytes = e->disk_num_bytes;
+		cache->ram_bytes = e->ram_bytes;
+		cache->compression = e->compression;
+		cache->verified = verified;
+	}
+
+	return BTRFS_OK;
 }
 
 /*
@@ -357,7 +416,7 @@ static btrfs_status_t btrfs_read_extent(btrfs_fs_t *fs, const btrfs_inode_t *ino
 	if (e->encryption != 0U || e->other_encoding != 0U) return BTRFS_ERR_UNSUPPORTED_ENCRYPTION;
 
 	if (e->type == BTRFS_FILE_EXTENT_INLINE) {
-		if (e->compression != BTRFS_COMPRESS_NONE) return btrfs_read_compressed(fs, view, skip, buffer, amount);
+		if (e->compression != BTRFS_COMPRESS_NONE) return btrfs_read_compressed(fs, inode, view, skip, buffer, amount);
 		if (skip > e->inline_size || amount > e->inline_size - skip) return BTRFS_ERR_CORRUPT;
 		memcpy(buffer, view->item + BTRFS_FILE_EXTENT_INLINE_HEADER + skip, amount);
 		return BTRFS_OK;
@@ -369,15 +428,13 @@ static btrfs_status_t btrfs_read_extent(btrfs_fs_t *fs, const btrfs_inode_t *ino
 		return BTRFS_OK;
 	}
 
-	if (e->compression != BTRFS_COMPRESS_NONE) return btrfs_read_compressed(fs, view, skip, buffer, amount);
+	if (e->compression != BTRFS_COMPRESS_NONE) return btrfs_read_compressed(fs, inode, view, skip, buffer, amount);
 
 	uint64_t logical = e->disk_bytenr + e->offset + skip;
 
-	if (!fs->options.skip_data_csums && (inode->item.flags & BTRFS_INODE_NODATASUM) == 0ULL) {
-		return btrfs_read_data_verified(fs, logical, buffer, amount);
-	}
+	bool verified;
 
-	return btrfs_read_data_plain(fs, logical, buffer, amount);
+	return btrfs_read_data(fs, inode, logical, buffer, amount, &verified);
 }
 
 /* ---- the read loop ---------------------------------------------------------------------------- */

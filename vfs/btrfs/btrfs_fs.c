@@ -14,6 +14,7 @@
  *   5. the subvolume to mount (option, else the "default" directory item)
  */
 
+#include "btrfs_codec.h"
 #include "btrfs_fs.h"
 #include "btrfs_root.h"
 #include "btrfs_tree.h"
@@ -185,6 +186,13 @@ btrfs_fs_t *btrfs_fs_open(const btrfs_env_t *env, const btrfs_reader_t *reader, 
 	fs->nodesize = fs->super.nodesize;
 	fs->csum_type = fs->super.csum_type;
 	fs->csum_size = btrfs_csum_type_size(fs->super.csum_type);
+
+	fs->codec.env = &fs->env;
+	fs->codec.sectorsize = fs->sectorsize;
+	fs->decompressors[BTRFS_COMPRESS_ZLIB].decompress = btrfs_zlib_decompress;
+	fs->decompressors[BTRFS_COMPRESS_ZLIB].ctx = &fs->codec;
+	fs->decompressors[BTRFS_COMPRESS_LZO].decompress = btrfs_lzo_decompress;
+	fs->decompressors[BTRFS_COMPRESS_LZO].ctx = &fs->codec;
 	memcpy(fs->header_fsid, (fs->super.incompat_flags & BTRFS_FEATURE_INCOMPAT_METADATA_UUID) != 0ULL ? fs->super.metadata_uuid : fs->super.fsid, BTRFS_FSID_SIZE);
 
 	if (fs->super.log_root != 0ULL && !fs->options.ignore_log_tree) {
@@ -231,6 +239,7 @@ void btrfs_fs_close(btrfs_fs_t *fs)
 	btrfs_chunks_release(fs);
 
 	btrfs_env_t env = fs->env;
+	if (fs->extent_cache.data != 0) env.release(env.ctx, fs->extent_cache.data);
 	env.release(env.ctx, fs);
 }
 
