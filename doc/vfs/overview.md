@@ -39,7 +39,8 @@ not create filesystem state and it does not attach storage.
 
 The registry currently holds at most eight filesystem types.
 
-`ramfs` and writable `ext4` are currently registered filesystem types.
+`ramfs`, writable `ext4` and `devfs` (the device nodes, mounted at `/dev`; see
+[devfs](devfs.md)) are the filesystem types registered at boot.
 
 ## Mounts
 
@@ -65,6 +66,7 @@ The bootstrap namespace is:
 
 ```text
 /      -> ramfs
+/dev   -> devfs
 /disk  -> ext4 on disk0
 ```
 
