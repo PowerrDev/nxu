@@ -581,6 +581,8 @@ bool virtio_snd_attach(const virtio_device_t *transport)
 	device->ioreg_node = ioreg_add(device->ioreg_family, "Audio0", "VirtIOSoundDevice");
 	VIRTIO_SND_LOG("registered Audio0 under DriverKitAudioFamily in the I/O registry\n");
 
+	if (device->playback_stream != VIRTIO_SND_NO_STREAM) (void)virtio_snd_dev_register(device);
+
 	device->attached = true;
 	g_virtio_snd_device_count++;
 	return true;

@@ -208,6 +208,9 @@ virtio_snd_error_t virtio_snd_pcm_request(virtio_snd_device_t *device, uint32_t 
  */
 virtio_snd_error_t virtio_snd_set_params_request(virtio_snd_device_t *device, uint32_t stream_id, uint32_t buffer_bytes, uint32_t period_bytes, const virtio_snd_pcm_format_t *format);
 
+/* /dev/audio0 (virtio_sound_dev.c): publish the playback stream as a character device. */
+bool virtio_snd_dev_register(virtio_snd_device_t *device);
+
 /*
  * The event queue and the interrupt (virtio_sound_pcm.c).
  *

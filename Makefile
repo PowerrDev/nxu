@@ -290,6 +290,7 @@ C_SOURCES := \
     drivers/virtio/virtio_mmio.c \
     drivers/virtio/virtio_sound.c \
     drivers/virtio/virtio_sound_core.c \
+    drivers/virtio/virtio_sound_dev.c \
     drivers/virtio/virtio_sound_pcm.c \
     drivers/virtio/virtqueue.c \
     kern/boot/boot_args.c \
