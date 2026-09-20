@@ -238,6 +238,40 @@ if want compressed; then
 	done
 fi
 
+# ---- (f2) compressed extents of every shape ---------------------------------
+# One fixture per algorithm and level, all with the compress_mix recipe (see pop.py), plus
+# incompressible data. The manifest flags the files that were compressed for the record;
+# the tests do not depend on it, the driver must read every file as Linux does.
+if want compressed2; then
+	for spec in zlib1:zlib:1 zlib9:zlib:9 lzo:lzo: zstd1:zstd:1 zstd3:zstd:3 zstd15:zstd:15; do
+		label=${spec%%:*}
+		rest=${spec#*:}
+		algo=${rest%%:*}
+		level=${rest##*:}
+		name=mix-$label
+		new_fs $name 128
+		mount_fs $name noatime,compress-force=$algo${level:+:$level}
+		python3 $GUESTDIR/pop.py compress_mix /mnt/$name
+		sync
+		: > $WORK/flags
+		for f in e128k e128k_m1 e128k_p1 e256k text dir/big sparse overwritten island; do
+			printf '/%s\tcompressed\n' "$f" >> $WORK/flags
+		done
+		manifest /mnt/$name "$name.manifest" --flags $WORK/flags
+		btrfs inspect-internal dump-tree -t 5 "$WORK/$name.img" 2>/dev/null | grep -c "compression $(case $algo in zlib) echo 1;; lzo) echo 2;; zstd) echo 3;; esac)" > "$WORK/ncomp" || true
+		say "$name: $(cat $WORK/ncomp) compressed extents"
+		finish $name
+	done
+
+	name=mix-random
+	new_fs $name 128
+	mount_fs $name noatime,compress-force=zstd:3
+	python3 $GUESTDIR/pop.py compress_random /mnt/$name
+	sync
+	manifest /mnt/$name "$name.manifest"
+	finish $name
+fi
+
 # ---- (g) refusal fixtures ---------------------------------------------------
 if want refusal; then
 	simple csum-xxhash 128 small --csum xxhash

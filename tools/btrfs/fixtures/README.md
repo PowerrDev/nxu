@@ -26,7 +26,7 @@ Each image is formatted with `mkfs.btrfs`, populated through the Linux driver
 `mkfs.btrfs --rootdir`.
 
 To regenerate: `tools/btrfs/make_fixtures.sh` (about 6 minutes), or
-`--only <group>` for one of `basic tree deep subvols variants compressed refusal`.
+`--only <group>` for one of `basic tree deep subvols variants compressed compressed2 refusal`.
 `tools/btrfs/make_fixtures.sh --smoke` only prints what the lab has. After
 regenerating, run `python3 tools/btrfs/gen_selftest_data.py >
 vfs/btrfs/btrfs_selftest_data.h` so the in-kernel expected listings follow.
@@ -56,10 +56,12 @@ timestamps are whenever the images were built.
 | `no-holes-off`, `no-skinny`, `space-cache-v1`, `block-group-tree`, `squota` | feature variants (`-O`) |
 | `nodatasum` | mounted with `nodatasum`: no data checksums |
 | `comp-zlib`, `comp-lzo`, `comp-zstd` | files written under `compress-force=...` (flagged `compressed` in the manifest) next to plain files written after compression was switched off |
-| `csum-xxhash`, `csum-sha256`, `csum-blake2` | `--csum`: refused at mount |
+| `mix-zlib1`, `mix-zlib9`, `mix-lzo`, `mix-zstd1`, `mix-zstd3`, `mix-zstd15` | the `compress_mix` recipe under each algorithm and level: files of exactly 128 KiB, one byte less and more, 256 KiB, sector-sized and tiny (inline) files, a sparse file with compressed extents between holes, a file overwritten in the middle so old compressed extents are only partly referenced, one with an incompressible island |
+| `mix-random` | incompressible data written with `compress-force=zstd:3` (Btrfs keeps it as plain extents) next to compressed text |
+| `csum-xxhash`, `csum-sha256`, `csum-blake2` | `mkfs.btrfs --csum`: every tree block and data sector uses that algorithm |
 | `raid1`, `raid0`, `raid5`, `single2dev` | the FIRST device only of a 2/2/3/2-device filesystem: refused at mount |
 
-Whole set: the 28 images are about 855 KB compressed; the manifests add 1.6 MB (1.3 MB of it is `deep`, 9000 files); the directory is 2.7 MB. Extent-tree-v2 and raid-stripe-tree cannot
+Whole set: the 35 images are about 1.4 MB compressed (`mix-random` is 340 KB of it); the manifests add 1.6 MB (1.3 MB of it is `deep`, 9000 files); the directory is 3.3 MB. Extent-tree-v2 and raid-stripe-tree cannot
 be built (this btrfs-progs has no experimental features); they and the damaged
 variants (bad superblock magic/checksum, bad tree-block checksum, chunk-tree
 corruption, truncated device, unknown incompat bits, log tree) are made from good
