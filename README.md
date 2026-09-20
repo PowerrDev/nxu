@@ -196,8 +196,8 @@ The target output is something like:
 ```plaintext
 panic(cpu 0 caller 0x0000000000000000): "Kernel trap type 1 -- Undefined Instruction"
 Debugger message: panic
-OS version: NXU 0.1.0-dev
-Kernel version: NXU Kernel Version 0.1.0-dev (NXU-ARM64-QEMU-001)
+OS version: NXU 0.2.87-dev
+Kernel version: NXU Kernel Version 0.2.87-dev (NXU-2I7A)
 
 ARM Thread State (64-bit):
     x0: 0x0000000000000000       x1: 0x0000000000000000       x2: 0x0000000000000000
