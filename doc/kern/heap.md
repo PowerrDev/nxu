@@ -33,7 +33,7 @@ maximum_size = PMM_PAGE_SIZE
 ```
 
 On the current build that is **4016 bytes**, and `heap_dump()` prints the
-computed value rather than a literal. Code that needs the threshold should
+computed value (with `-v`) rather than a literal. Code that needs the threshold should
 derive it the same way; changing either header structure changes it.
 
 The comparison uses the *aligned* size, so a request of 4010 bytes rounds to

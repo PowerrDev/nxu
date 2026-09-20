@@ -378,8 +378,9 @@ fails.
 ### `vmm_is_enabled()` and `vmm_dump()`
 
 `vmm_is_enabled()` returns whether `vmm_init()` completed; `vm_kern_init()` uses
-it as its precondition. `vmm_dump()` prints the root table address, table count,
-address sizes, the four control registers and the four section ranges.
+it as its precondition. `vmm_dump()` prints whether stage-1 translation is
+enabled and the four section ranges; with `-v` it also prints the root table
+address, table count, address sizes and the four control registers.
 
 ## TLB maintenance
 

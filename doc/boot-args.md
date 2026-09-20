@@ -21,7 +21,10 @@ changing boot-argument consumers.
 
 ## Supported arguments
 
-- `-v` enables verbose-boot policy for the future splash/console handoff.
+- `-v` turns on the verbose log tier: the `kverbosef()` detail lines (register
+  values, per-slot tables, allocator and scheduler statistics; see
+  `doc/kern/console.md`) are printed to the serial console and the boot splash
+  in addition to the milestone log.
 - `-x` enables safe mode and suppresses optional root daemons.
 - `-no-gpu` prevents VirtIO GPU attachment.
 - `-no-input` prevents VirtIO keyboard/mouse attachment.

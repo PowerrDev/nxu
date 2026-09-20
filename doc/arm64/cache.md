@@ -234,8 +234,8 @@ acknowledgements could be reordered or coalesced.
 `I` is clear, rather than assuming the write took effect. Only then does it set
 `g_cache.initialized`.
 
-`cache_dump()` prints `CLIDR_EL1`, `CTR_EL0`, both line sizes, the enable state
-of each cache and the final `SCTLR_EL1` value.
+`cache_dump()` prints the enable state of each cache; with `-v` it also prints
+`CLIDR_EL1`, `CTR_EL0`, both line sizes and the final `SCTLR_EL1` value.
 
 ## Concurrency and interrupt context
 

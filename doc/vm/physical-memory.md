@@ -206,7 +206,7 @@ deliberately *not* by the padding-bit loop, which touches bits outside the real
 page range.
 
 `pmm_get_page_count()`, `pmm_get_free_page_count()` and
-`pmm_get_used_page_count()` expose these; `pmm_dump()` prints them along with the
+`pmm_get_used_page_count()` expose these; `pmm_dump()` prints them and, with `-v`, the
 RAM range, bitmap location and kernel bounds.
 
 On the observed boot: 131072 total, 406 used (146 kernel and below, 4 bitmap,
