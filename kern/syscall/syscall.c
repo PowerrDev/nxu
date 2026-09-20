@@ -24,7 +24,10 @@
 #include <kern/logging/version.h>
 #include <kern/memory/heap.h>
 #include <kern/process/proc.h>
+#include <kern/process/signal.h>
 #include <kern/process/thread.h>
+#include <kern/sched_prism/waitq.h>
+#include <mach/machine/user.h>
 #include <kern/sched_prism/sched.h>
 #include <vfs/vfs.h>
 #include <vm/user_copy.h>
@@ -104,6 +107,229 @@ syscall_exit(uint64_t status)
 		.action = SYSCALL_ACTION_EXIT,
 		.value = status
 	};
+}
+
+static syscall_result_t
+syscall_getppid(void)
+{
+	return syscall_return((uint64_t)proc_ppid(current_proc()));
+}
+
+/*
+ * fork: a copy-on-write copy of the calling process. The child resumes right
+ * after this system call with 0 in the result register; the parent gets the
+ * child's PID.
+ */
+static syscall_result_t
+syscall_fork(void)
+{
+#if MACHINE_USER_CONTEXT
+	proc_t child = 0;
+
+	if (!proc_fork(current_proc(), &child)) return syscall_error(SYSCALL_ERROR_NO_MEMORY);
+
+	return syscall_return((uint64_t)child->p_ident.pid);
+#else
+	return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+#endif
+}
+
+#if MACHINE_USER_CONTEXT
+
+/*
+ * syscall_copy_exec_args
+ *
+ * Read argv (a NULL-terminated array of string pointers) out of user memory
+ * into args, packed as loader_exec_args_t wants it. A missing argv becomes
+ * {path}, so a program always sees argc >= 1.
+ */
+static syscall_error_t
+syscall_copy_exec_args(loader_exec_args_t *args, const char *path, uint64_t user_argv)
+{
+	args->argc = 0U;
+	args->length = 0U;
+
+	if (user_argv == 0ULL) {
+		uint32_t length = (uint32_t)strlen(path) + 1U;
+		if (length > sizeof(args->strings)) return SYSCALL_ERROR_INVALID_ARGUMENT;
+
+		memcpy(args->strings, path, length);
+		args->argc = 1U;
+		args->length = length;
+		return (syscall_error_t)0;
+	}
+
+	for (uint32_t index = 0U; ; index++) {
+		if (index >= NXU_EXEC_ARGV_MAX) return SYSCALL_ERROR_INVALID_ARGUMENT;
+
+		uint64_t user_string;
+		if (!vm_copy_from_user(&user_string, user_argv + (uint64_t)index * sizeof(uint64_t), sizeof(user_string))) return SYSCALL_ERROR_BAD_ADDRESS;
+		if (user_string == 0ULL) break;
+
+		uint64_t remaining = sizeof(args->strings) - args->length;
+		if (remaining == 0ULL) return SYSCALL_ERROR_INVALID_ARGUMENT;
+
+		if (!vm_copy_string_from_user(args->strings + args->length, user_string, remaining)) return SYSCALL_ERROR_BAD_ADDRESS;
+
+		args->length += (uint32_t)strlen(args->strings + args->length) + 1U;
+		args->argc++;
+	}
+
+	if (args->argc == 0U) return SYSCALL_ERROR_INVALID_ARGUMENT;
+
+	return (syscall_error_t)0;
+}
+
+#endif
+
+/*
+ * exec: replace the calling program with the executable at path, passing
+ * argv (NULL for just {path}). Does not return on success -- the caller's
+ * registers now describe the new program's entry.
+ */
+static syscall_result_t
+syscall_exec(uint64_t user_path, uint64_t user_argv)
+{
+#if MACHINE_USER_CONTEXT
+	char path[VFS_PATH_MAX];
+	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
+	loader_exec_args_t *args = kmalloc(sizeof(*args));
+	if (args == 0) return syscall_error(SYSCALL_ERROR_NO_MEMORY);
+
+	syscall_error_t error = syscall_copy_exec_args(args, path, user_argv);
+	if (error != (syscall_error_t)0) {
+		(void)kfree(args);
+		return syscall_error(error);
+	}
+
+	loader_status_t status = loader_exec(current_proc(), path, args);
+	(void)kfree(args);
+
+	switch (status) {
+	case LOADER_STATUS_OK:
+		return (syscall_result_t) { .action = SYSCALL_ACTION_KEEP_FRAME, .value = 0ULL };
+	case LOADER_STATUS_NOT_FOUND: return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+	case LOADER_STATUS_NO_MEMORY: return syscall_error(SYSCALL_ERROR_NO_MEMORY);
+	case LOADER_STATUS_BUSY: return syscall_error(SYSCALL_ERROR_BUSY);
+	case LOADER_STATUS_INVALID: return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	default: return syscall_error(SYSCALL_ERROR_IO);
+	}
+#else
+	(void)user_path;
+	(void)user_argv;
+	return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+#endif
+}
+
+static syscall_result_t
+syscall_kill(uint64_t pid, uint64_t signal)
+{
+#if MACHINE_USER_CONTEXT
+	if (pid > PROC_PID_MAX || signal >= NXU_NSIG) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
+	switch (signal_send(current_proc(), (proc_id_t)pid, (uint32_t)signal)) {
+	case SIGNAL_SEND_OK: return syscall_return(0ULL);
+	case SIGNAL_SEND_NO_SUCH_PROCESS: return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+	case SIGNAL_SEND_DENIED: return syscall_error(SYSCALL_ERROR_DENIED);
+	case SIGNAL_SEND_NOT_SUPPORTED: return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+	default: return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	}
+#else
+	(void)pid;
+	(void)signal;
+	return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+#endif
+}
+
+/*
+ * sigaction: read (old_action) and/or replace (action) the disposition of a
+ * signal. Either pointer may be NULL.
+ */
+static syscall_result_t
+syscall_sigaction(uint64_t signal, uint64_t user_action, uint64_t user_old_action)
+{
+#if MACHINE_USER_CONTEXT
+	if (!signal_valid((uint32_t)signal) || signal >= NXU_NSIG) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
+	proc_t proc = current_proc();
+	nxu_sigaction_t previous;
+	nxu_sigaction_t replacement;
+
+	if (!signal_get_action(proc, (uint32_t)signal, &previous)) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
+	if (user_action != 0ULL) {
+		if (!vm_copy_from_user(&replacement, user_action, sizeof(replacement))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+		if (!signal_set_action(proc, (uint32_t)signal, &replacement)) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	}
+
+	if (user_old_action != 0ULL && !vm_copy_to_user(user_old_action, &previous, sizeof(previous))) {
+		return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	}
+
+	return syscall_return(0ULL);
+#else
+	(void)signal;
+	(void)user_action;
+	(void)user_old_action;
+	return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+#endif
+}
+
+/*
+ * sigprocmask: change the calling thread's blocked-signal mask and return the
+ * previous one. SIGKILL cannot be blocked.
+ */
+static syscall_result_t
+syscall_sigprocmask(uint64_t how, uint64_t set)
+{
+#if MACHINE_USER_CONTEXT
+	thread_t thread = current_thread();
+	if (thread == 0) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
+	uint32_t previous = thread->sig_blocked;
+	uint32_t change = signal_sanitize_mask((uint32_t)set);
+
+	switch (how) {
+	case NXU_SIG_BLOCK: thread->sig_blocked = previous | change; break;
+	case NXU_SIG_UNBLOCK: thread->sig_blocked = previous & ~change; break;
+	case NXU_SIG_SETMASK: thread->sig_blocked = change; break;
+	default: return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	}
+
+	return syscall_return((uint64_t)previous);
+#else
+	(void)how;
+	(void)set;
+	return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+#endif
+}
+
+/*
+ * sigreturn: the tail of every signal handler. Restores the context the
+ * handler interrupted. A frame that does not check out is a program bug (or
+ * an attack), and ends the process.
+ */
+static syscall_result_t
+syscall_sigreturn(void)
+{
+#if MACHINE_USER_CONTEXT
+	uint32_t saved_mask;
+
+	if (!machine_user_signal_pop(&saved_mask)) {
+		if (proc_exit_current(NXU_EXIT_KILLED_SIGNAL(NXU_SIGSEGV))) {
+			return (syscall_result_t) { .action = SYSCALL_ACTION_EXIT, .value = NXU_EXIT_KILLED_SIGNAL(NXU_SIGSEGV) };
+		}
+
+		return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	}
+
+	current_thread()->sig_blocked = signal_sanitize_mask(saved_mask);
+
+	return (syscall_result_t) { .action = SYSCALL_ACTION_KEEP_FRAME, .value = 0ULL };
+#else
+	return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+#endif
 }
 
 static syscall_result_t
@@ -720,8 +946,14 @@ syscall_ipc_send(uint64_t dest_name, uint64_t user_buffer, uint64_t length, uint
  * nxu_yield() loop, the same pattern bootd already uses for nxu_waitpid.
  * user_out_xfer_name/user_out_xfer_type may be 0 to ignore a transfer.
  */
+/*
+ * Receive one message. With wait set the caller sleeps until one arrives
+ * (interruptible by a signal, which returns SYSCALL_ERROR_INTERRUPTED);
+ * without it an empty queue returns SYSCALL_ERROR_AGAIN immediately, the
+ * poll-and-yield behaviour every existing service is written against.
+ */
 static syscall_result_t
-syscall_ipc_receive(uint64_t port_name, uint64_t user_buffer, uint64_t capacity, uint64_t user_out_xfer_name, uint64_t user_out_xfer_type)
+syscall_ipc_receive_impl(uint64_t port_name, uint64_t user_buffer, uint64_t capacity, uint64_t user_out_xfer_name, uint64_t user_out_xfer_type, bool wait)
 {
 	if (port_name == 0ULL || port_name > IPC_SPACE_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
@@ -732,8 +964,21 @@ syscall_ipc_receive(uint64_t port_name, uint64_t user_buffer, uint64_t capacity,
 	if (status != IPC_SUCCESS) return syscall_error(syscall_ipc_error(status));
 
 	ipc_kmsg_t kmsg;
-	status = ipc_port_dequeue(port, &kmsg);
+	bool interrupted = false;
+
+	for (;;) {
+		status = ipc_port_dequeue(port, &kmsg);
+		if (status != IPC_QUEUE_EMPTY || !wait) break;
+
+		/* Never sleep through a signal that is already waiting. */
+		if (signal_pending_for(proc, current_thread()) || !ipc_port_wait(port)) {
+			interrupted = true;
+			break;
+		}
+	}
+
 	ipc_port_release(port);
+	if (interrupted) return syscall_error(SYSCALL_ERROR_INTERRUPTED);
 	if (status != IPC_SUCCESS) return syscall_error(syscall_ipc_error(status));
 
 	if ((uint64_t)kmsg->ikm_size > capacity) {
@@ -774,6 +1019,57 @@ syscall_ipc_receive(uint64_t port_name, uint64_t user_buffer, uint64_t capacity,
 	if (user_out_xfer_type != 0ULL && !vm_copy_to_user(user_out_xfer_type, &xfer_type, sizeof(xfer_type))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 
 	return syscall_return(received_size);
+}
+
+static syscall_result_t
+syscall_ipc_receive(uint64_t port_name, uint64_t user_buffer, uint64_t capacity, uint64_t user_out_xfer_name, uint64_t user_out_xfer_type)
+{
+	return syscall_ipc_receive_impl(port_name, user_buffer, capacity, user_out_xfer_name, user_out_xfer_type, false);
+}
+
+static syscall_result_t
+syscall_ipc_receive_wait(uint64_t port_name, uint64_t user_buffer, uint64_t capacity, uint64_t user_out_xfer_name, uint64_t user_out_xfer_type)
+{
+	return syscall_ipc_receive_impl(port_name, user_buffer, capacity, user_out_xfer_name, user_out_xfer_type, true);
+}
+
+/*
+ * wait: sleep until a child exits and reap it. pid names one child, or is
+ * NXU_WAIT_ANY for whichever exits first. Returns the child's pid and stores
+ * its exit status; fails with NOT_FOUND when there is nothing to wait for and
+ * with INTERRUPTED when a signal arrives first. waitpid remains the polling
+ * form (AGAIN while the child runs).
+ */
+static syscall_result_t
+syscall_wait(uint64_t pid, uint64_t user_status)
+{
+	proc_t self = current_proc();
+	thread_t thread = current_thread();
+	proc_id_t target = pid == NXU_WAIT_ANY ? PROC_PID_INVALID : (proc_id_t)pid;
+
+	if (pid != NXU_WAIT_ANY && pid > PROC_PID_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
+	for (;;) {
+		proc_id_t reaped = 0U;
+		uint64_t status = 0ULL;
+
+		switch (proc_wait_child(self, target, &reaped, &status)) {
+		case PROC_WAIT_REAPED:
+			if (user_status != 0ULL && !vm_copy_to_user(user_status, &status, sizeof(status))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+			return syscall_return((uint64_t)reaped);
+
+		case PROC_WAIT_NO_CHILD:
+			return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+
+		case PROC_WAIT_NOT_YET:
+			break;
+		}
+
+		/* Never sleep through a signal that is already waiting. */
+		if (signal_pending_for(self, thread) || !waitq_block(&self->p_waitq, true)) {
+			return syscall_error(SYSCALL_ERROR_INTERRUPTED);
+		}
+	}
 }
 
 static syscall_result_t
@@ -1076,6 +1372,15 @@ syscall_dispatch(const syscall_request_t *request)
 	case SYSCALL_SOCKET_LISTEN: return syscall_socket_listen(request->arguments[0], request->arguments[1]);
 	case SYSCALL_SOCKET_CONNECT: return syscall_socket_connect(request->arguments[0]);
 	case SYSCALL_SOCKET_ACCEPT: return syscall_socket_accept(request->arguments[0]);
+	case SYSCALL_FORK: return syscall_fork();
+	case SYSCALL_EXEC: return syscall_exec(request->arguments[0], request->arguments[1]);
+	case SYSCALL_KILL: return syscall_kill(request->arguments[0], request->arguments[1]);
+	case SYSCALL_SIGACTION: return syscall_sigaction(request->arguments[0], request->arguments[1], request->arguments[2]);
+	case SYSCALL_SIGPROCMASK: return syscall_sigprocmask(request->arguments[0], request->arguments[1]);
+	case SYSCALL_SIGRETURN: return syscall_sigreturn();
+	case SYSCALL_GETPPID: return syscall_getppid();
+	case SYSCALL_WAIT: return syscall_wait(request->arguments[0], request->arguments[1]);
+	case SYSCALL_IPC_RECEIVE_WAIT: return syscall_ipc_receive_wait(request->arguments[0], request->arguments[1], request->arguments[2], request->arguments[3], request->arguments[4]);
 	default: return syscall_error(SYSCALL_ERROR_UNKNOWN);
 	}
 }

@@ -129,3 +129,43 @@ int64_t nxu_thread_self(void) { return nxu_syscall0(NXU_SYS_THREAD_SELF); }
 int64_t nxu_socket_listen(const char *name, uint32_t backlog) { return nxu_syscall2(NXU_SYS_SOCKET_LISTEN, (uint64_t)name, backlog); }
 int64_t nxu_socket_connect(const char *name) { return nxu_syscall1(NXU_SYS_SOCKET_CONNECT, (uint64_t)name); }
 int64_t nxu_socket_accept(uint64_t listen_descriptor) { return nxu_syscall1(NXU_SYS_SOCKET_ACCEPT, listen_descriptor); }
+
+int64_t nxu_fork(void) { return nxu_syscall0(NXU_SYS_FORK); }
+int64_t nxu_exec(const char *path, const char *const *argv) { return nxu_syscall2(NXU_SYS_EXEC, (uint64_t)path, (uint64_t)argv); }
+int64_t nxu_getppid(void) { return nxu_syscall0(NXU_SYS_GETPPID); }
+int64_t nxu_kill(uint64_t pid, uint32_t signal) { return nxu_syscall2(NXU_SYS_KILL, pid, signal); }
+int64_t nxu_sigaction(uint32_t signal, const nxu_sigaction_t *action, nxu_sigaction_t *old_action) { return nxu_syscall3(NXU_SYS_SIGACTION, signal, (uint64_t)action, (uint64_t)old_action); }
+int64_t nxu_sigprocmask(uint32_t how, uint32_t set) { return nxu_syscall2(NXU_SYS_SIGPROCMASK, how, set); }
+
+/*
+ * The kernel points a handler's return address here. It is never called: the
+ * handler's "ret" lands on it, and it hands the interrupted context back to
+ * the kernel with sigreturn.
+ */
+__asm__(
+	".text\n"
+	".global nxu_sigreturn_trampoline\n"
+	".type nxu_sigreturn_trampoline, %function\n"
+	"nxu_sigreturn_trampoline:\n"
+	"\tmov x8, #56\n"
+	"\tsvc #0\n"
+	".size nxu_sigreturn_trampoline, . - nxu_sigreturn_trampoline\n"
+);
+
+_Static_assert(NXU_SYS_SIGRETURN == 56ULL, "nxu_sigreturn_trampoline hard-codes the sigreturn number");
+
+int64_t
+nxu_signal(uint32_t signal, void (*handler)(int))
+{
+	nxu_sigaction_t action = {
+		.handler = (uint64_t)handler,
+		.restorer = (uint64_t)nxu_sigreturn_trampoline,
+		.mask = 0U,
+		.flags = 0U
+	};
+
+	return nxu_sigaction(signal, &action, 0);
+}
+
+int64_t nxu_wait(uint64_t pid, uint64_t *status) { return nxu_syscall2(NXU_SYS_WAIT, pid, (uint64_t)status); }
+int64_t nxu_ipc_receive_wait(uint32_t port_name, void *buffer, uint64_t capacity, uint32_t *out_xfer_name, uint32_t *out_xfer_type) { return nxu_syscall5(NXU_SYS_IPC_RECEIVE_WAIT, port_name, (uint64_t)buffer, capacity, (uint64_t)out_xfer_name, (uint64_t)out_xfer_type); }

@@ -52,6 +52,82 @@
 #define NXU_SYS_SOCKET_LISTEN 48ULL
 #define NXU_SYS_SOCKET_CONNECT 49ULL
 #define NXU_SYS_SOCKET_ACCEPT 50ULL
+#define NXU_SYS_FORK 51ULL
+#define NXU_SYS_EXEC 52ULL
+#define NXU_SYS_KILL 53ULL
+#define NXU_SYS_SIGACTION 54ULL
+#define NXU_SYS_SIGPROCMASK 55ULL
+#define NXU_SYS_SIGRETURN 56ULL
+#define NXU_SYS_GETPPID 57ULL
+#define NXU_SYS_WAIT 58ULL
+#define NXU_SYS_IPC_RECEIVE_WAIT 59ULL
+
+/* wait(): pass as the pid to wait for any child. */
+#define NXU_WAIT_ANY UINT64_MAX
+
+/*
+ * Exit status recorded for a process the kernel terminated (waitpid reports
+ * it verbatim). A normal exit(n) leaves this bit clear. On arm64 the low
+ * 8 bits are the NXU_SIG* number that killed the process; the i386 port
+ * still stores the CPU trap vector there until it grows signals.
+ */
+#define NXU_EXIT_KILLED 0x80000000ULL
+#define NXU_EXIT_KILLED_SIGNAL(signal) (NXU_EXIT_KILLED | ((uint64_t)(signal) & 0xFFULL))
+#define NXU_EXIT_WAS_KILLED(status) (((status) & NXU_EXIT_KILLED) != 0ULL)
+#define NXU_EXIT_TERMSIG(status) ((uint32_t)((status) & 0xFFULL))
+
+/* Signal numbers (Linux numbering, so the values look familiar). */
+#define NXU_SIGHUP 1U
+#define NXU_SIGINT 2U
+#define NXU_SIGQUIT 3U
+#define NXU_SIGILL 4U
+#define NXU_SIGTRAP 5U
+#define NXU_SIGABRT 6U
+#define NXU_SIGBUS 7U
+#define NXU_SIGFPE 8U
+#define NXU_SIGKILL 9U
+#define NXU_SIGUSR1 10U
+#define NXU_SIGSEGV 11U
+#define NXU_SIGUSR2 12U
+#define NXU_SIGPIPE 13U
+#define NXU_SIGALRM 14U
+#define NXU_SIGTERM 15U
+#define NXU_SIGCHLD 17U
+#define NXU_SIGCONT 18U
+#define NXU_SIGSTOP 19U
+#define NXU_NSIG 32U
+
+/* sigaction handler values other than a user function address. */
+#define NXU_SIG_DFL 0ULL
+#define NXU_SIG_IGN 1ULL
+
+/* sigaction flags. */
+#define NXU_SA_NODEFER (1U << 0U) /* do not block the signal while its handler runs */
+
+/* sigprocmask "how". */
+#define NXU_SIG_BLOCK 0U
+#define NXU_SIG_UNBLOCK 1U
+#define NXU_SIG_SETMASK 2U
+
+/* Signals that can be neither caught, blocked nor ignored. */
+#define NXU_SIG_UNCATCHABLE_MASK (1U << NXU_SIGKILL)
+
+/*
+ * sigaction ABI. restorer is the address of a tiny user routine that ends in
+ * the sigreturn syscall; the kernel points the handler's return address at it
+ * (userland's libnxu supplies one). mask lists further signals to block while
+ * the handler runs, on top of the signal itself.
+ */
+typedef struct {
+	uint64_t handler;
+	uint64_t restorer;
+	uint32_t mask;
+	uint32_t flags;
+} nxu_sigaction_t;
+
+/* exec accepts at most this many argv strings, this many bytes in all. */
+#define NXU_EXEC_ARGV_MAX 16U
+#define NXU_EXEC_ARGV_BYTES 1024U
 
 /* Mirrors vm_user_protection_t (vm/address_space.h) numerically. */
 #define NXU_MMAP_PROT_READ_WRITE 0U
@@ -70,6 +146,8 @@
 #define NXU_SYS_E_BAD_FD 10LL
 #define NXU_SYS_E_EXISTS 11LL
 #define NXU_SYS_E_BUSY 12LL
+#define NXU_SYS_E_DENIED 13LL
+#define NXU_SYS_E_INTERRUPTED 14LL
 
 /* Mirrors kern/ipc/ipc_types.h's ipc_kmsg_xfer_type_t numerically. */
 #define NXU_IPC_XFER_NONE 0U

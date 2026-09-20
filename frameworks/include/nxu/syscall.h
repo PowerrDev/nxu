@@ -53,6 +53,16 @@ int64_t nxu_ipc_receive(uint32_t port_name, void *buffer, uint64_t capacity, uin
 
 int64_t nxu_ipc_register_bootstrap(uint32_t port_name);
 
+/*
+ * Blocking forms of nxu_waitpid and nxu_ipc_receive: the caller sleeps in the
+ * kernel (no CPU, no yield loop) until a child exits / a message arrives.
+ * pid is NXU_WAIT_ANY for any child. Both return -NXU_SYS_E_INTERRUPTED when
+ * a signal arrives first -- its handler runs, then the call can be retried --
+ * and nxu_wait returns -NXU_SYS_E_NOT_FOUND when there is nothing to wait for.
+ */
+int64_t nxu_wait(uint64_t pid, uint64_t *status);
+int64_t nxu_ipc_receive_wait(uint32_t port_name, void *buffer, uint64_t capacity, uint32_t *out_xfer_name, uint32_t *out_xfer_type);
+
 /* First-come-first-served claim on NXU_SYS_RECOVERY_PRESENT/_DISPLAY_INFO/
  * _INPUT outside triageOS/recovery boot -- see kern/console/display_owner.h. */
 int64_t nxu_display_claim(void);
@@ -100,5 +110,32 @@ int64_t nxu_thread_self(void);
 int64_t nxu_socket_listen(const char *name, uint32_t backlog);
 int64_t nxu_socket_connect(const char *name);
 int64_t nxu_socket_accept(uint64_t listen_descriptor);
+
+/*
+ * Processes and signals (see kern/process/signal.h for the model).
+ *
+ * nxu_fork returns the child's PID in the parent and 0 in the child, whose
+ * writable memory is a copy-on-write copy of the parent's; shared-memory
+ * mappings stay shared. nxu_exec replaces the caller with the executable at
+ * path and does not return on success. argv is a NULL-terminated array (NULL
+ * for just {path}), at most NXU_EXEC_ARGV_MAX strings and NXU_EXEC_ARGV_BYTES
+ * bytes; the program sees it through main(argc, argv).
+ *
+ * nxu_signal installs handler for signal (use NXU_SIG_DFL / NXU_SIG_IGN, cast
+ * to a pointer, to restore or ignore) with the library's sigreturn
+ * trampoline, and returns 0 or a negative error. The handler runs with the
+ * signal number as its argument and returns normally. nxu_sigprocmask
+ * changes the calling thread's blocked set (NXU_SIG_BLOCK / _UNBLOCK /
+ * _SETMASK) and returns the previous mask. nxu_kill signals yourself or one
+ * of your descendants; signal 0 only checks that the process exists.
+ */
+int64_t nxu_fork(void);
+int64_t nxu_exec(const char *path, const char *const *argv);
+int64_t nxu_getppid(void);
+int64_t nxu_kill(uint64_t pid, uint32_t signal);
+int64_t nxu_sigaction(uint32_t signal, const nxu_sigaction_t *action, nxu_sigaction_t *old_action);
+int64_t nxu_sigprocmask(uint32_t how, uint32_t set);
+int64_t nxu_signal(uint32_t signal, void (*handler)(int));
+void nxu_sigreturn_trampoline(void);
 
 #endif
