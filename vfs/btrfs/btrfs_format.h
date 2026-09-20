@@ -711,6 +711,9 @@ uint32_t btrfs_csum_crc32c(const void *data, size_t length);
  */
 bool btrfs_csum_data(uint32_t type, const void *data, size_t length, uint8_t out[BTRFS_CSUM_SIZE]);
 
+/* XXH64 (Yann Collet's xxHash, 64-bit) of data with the given seed: Btrfs' xxhash checksum and the ZSTD content checksum. */
+uint64_t btrfs_xxh64(const void *data, size_t length, uint64_t seed);
+
 /* The DIR_ITEM key offset for a name: crc32c(~1, name). */
 uint32_t btrfs_name_hash(const uint8_t *name, size_t length);
 

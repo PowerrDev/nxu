@@ -28,7 +28,8 @@ I386_C_SOURCES += \
     vfs/btrfs/btrfs_super.c \
     vfs/btrfs/btrfs_tree.c \
     vfs/btrfs/btrfs_vfs.c \
-    vfs/btrfs/btrfs_zlib.c
+    vfs/btrfs/btrfs_zlib.c \
+    vfs/btrfs/btrfs_zstd.c
 
 .PHONY: test-i386-btrfs
 

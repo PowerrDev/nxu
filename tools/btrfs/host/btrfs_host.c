@@ -18,6 +18,7 @@
  *   btrfs_host check IMAGE MANIFEST [options]    walk the whole tree and compare
  *                                                with the ground-truth manifest
  *   btrfs_host sweep IMAGE --seed N --iters N    corruption sweep
+ *   btrfs_host codec ...                         decoder tests (btrfs_codec_test.c)
  *
  * options:  --subvol ID  --verify-data (the default)  --noverify  --ignore-log  --seed N  -v
  *
@@ -1425,11 +1426,15 @@ static int cmd_sweep(const char *path, const options_t *opt)
 	return stats.bad == 0 ? 0 : 1;
 }
 
+int codec_main(int argc, char **argv);   /* btrfs_codec_test.c */
+
 int main(int argc, char **argv)
 {
 	options_t opt;
 	const char *positional[4];
 	int npos = 0;
+
+	if (argc >= 2 && strcmp(argv[1], "codec") == 0) return codec_main(argc - 2, argv + 2);
 
 	memset(&opt, 0, sizeof(opt));
 	opt.iterations = 200;

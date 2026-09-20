@@ -362,6 +362,7 @@ C_SOURCES := \
     vfs/btrfs/btrfs_vfs.c \
     vfs/btrfs/btrfs_zlib.c \
     vfs/devfs.c \
+    vfs/btrfs/btrfs_zstd.c \
     vfs/ext4.c \
     vfs/jbd2.c \
     vfs/file.c \
@@ -1022,7 +1023,8 @@ BTRFS_CORE_SOURCES := \
     vfs/btrfs/btrfs_root.c \
     vfs/btrfs/btrfs_super.c \
     vfs/btrfs/btrfs_tree.c \
-    vfs/btrfs/btrfs_zlib.c
+    vfs/btrfs/btrfs_zlib.c \
+    vfs/btrfs/btrfs_zstd.c
 
 BTRFS_HOST_CC ?= cc
 
@@ -1032,13 +1034,13 @@ BTRFS_HOST_CFLAGS := -std=gnu11 -O1 -g -fsanitize=address,undefined -fno-sanitiz
 
 btrfs-host: $(BTRFS_HOST_TOOL)
 
-$(BTRFS_HOST_TOOL): tools/btrfs/host/btrfs_host.c $(BTRFS_CORE_SOURCES) $(wildcard vfs/btrfs/*.h)
+$(BTRFS_HOST_TOOL): tools/btrfs/host/btrfs_host.c tools/btrfs/host/btrfs_codec_test.c $(BTRFS_CORE_SOURCES) $(wildcard vfs/btrfs/*.h)
 
 	@mkdir -p $(dir $@)
 
 	$(QUIET_PRINT) "CC" "$@"
 
-	$(Q)$(BTRFS_HOST_CC) $(BTRFS_HOST_CFLAGS) tools/btrfs/host/btrfs_host.c $(BTRFS_CORE_SOURCES) -o $@
+	$(Q)$(BTRFS_HOST_CC) $(BTRFS_HOST_CFLAGS) tools/btrfs/host/btrfs_host.c tools/btrfs/host/btrfs_codec_test.c $(BTRFS_CORE_SOURCES) -o $@
 
 
 test-btrfs-host: $(BTRFS_HOST_TOOL)

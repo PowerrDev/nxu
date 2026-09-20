@@ -39,6 +39,7 @@
 
 btrfs_status_t btrfs_zlib_decompress(void *ctx, const uint8_t *in, size_t in_len, uint8_t *out, size_t out_len);
 btrfs_status_t btrfs_lzo_decompress(void *ctx, const uint8_t *in, size_t in_len, uint8_t *out, size_t out_len);
+btrfs_status_t btrfs_zstd_decompress(void *ctx, const uint8_t *in, size_t in_len, uint8_t *out, size_t out_len);
 
 /* One LZO1X stream (no btrfs framing) into out[0..out_cap): the number of bytes produced in *produced. */
 btrfs_status_t btrfs_lzo1x_decompress_safe(const uint8_t *in, size_t in_len, uint8_t *out, size_t out_cap, size_t *produced);

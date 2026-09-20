@@ -102,6 +102,77 @@ uint32_t btrfs_csum_crc32c(const void *data, size_t length)
 	return ~btrfs_crc32c(~0U, data, length);
 }
 
+static uint64_t btrfs_rotl64(uint64_t value, unsigned bits)
+{
+	return (value << bits) | (value >> (64U - bits));
+}
+
+static uint64_t btrfs_xxh_round(uint64_t acc, uint64_t input)
+{
+	return btrfs_rotl64(acc + input * 14029467366897019727ULL, 31U) * 11400714785074694791ULL;
+}
+
+static uint64_t btrfs_xxh_merge(uint64_t acc, uint64_t value)
+{
+	return (acc ^ btrfs_xxh_round(0ULL, value)) * 11400714785074694791ULL + 9650029242287828579ULL;
+}
+
+uint64_t btrfs_xxh64(const void *data, size_t length, uint64_t seed)
+{
+	const uint8_t *p = data;
+	const uint8_t *end = p + length;
+	uint64_t h;
+
+	if (length >= 32U) {
+		uint64_t v1 = seed + 11400714785074694791ULL + 14029467366897019727ULL;
+		uint64_t v2 = seed + 14029467366897019727ULL;
+		uint64_t v3 = seed;
+		uint64_t v4 = seed - 11400714785074694791ULL;
+
+		do {
+			v1 = btrfs_xxh_round(v1, btrfs_get_le64(p));
+			v2 = btrfs_xxh_round(v2, btrfs_get_le64(p + 8));
+			v3 = btrfs_xxh_round(v3, btrfs_get_le64(p + 16));
+			v4 = btrfs_xxh_round(v4, btrfs_get_le64(p + 24));
+			p += 32;
+		} while ((size_t)(end - p) >= 32U);
+
+		h = btrfs_rotl64(v1, 1U) + btrfs_rotl64(v2, 7U) + btrfs_rotl64(v3, 12U) + btrfs_rotl64(v4, 18U);
+		h = btrfs_xxh_merge(h, v1);
+		h = btrfs_xxh_merge(h, v2);
+		h = btrfs_xxh_merge(h, v3);
+		h = btrfs_xxh_merge(h, v4);
+	} else {
+		h = seed + 2870177450012600261ULL;
+	}
+
+	h += (uint64_t)length;
+
+	while ((size_t)(end - p) >= 8U) {
+		h ^= btrfs_xxh_round(0ULL, btrfs_get_le64(p));
+		h = btrfs_rotl64(h, 27U) * 11400714785074694791ULL + 9650029242287828579ULL;
+		p += 8;
+	}
+
+	if ((size_t)(end - p) >= 4U) {
+		h ^= (uint64_t)btrfs_get_le32(p) * 11400714785074694791ULL;
+		h = btrfs_rotl64(h, 23U) * 14029467366897019727ULL + 1609587929392839161ULL;
+		p += 4;
+	}
+
+	while (p < end) {
+		h ^= (uint64_t)*p++ * 2870177450012600261ULL;
+		h = btrfs_rotl64(h, 11U) * 11400714785074694791ULL;
+	}
+
+	h ^= h >> 33U;
+	h *= 14029467366897019727ULL;
+	h ^= h >> 29U;
+	h *= 1609587929392839161ULL;
+	h ^= h >> 32U;
+	return h;
+}
+
 bool btrfs_csum_data(uint32_t type, const void *data, size_t length, uint8_t out[BTRFS_CSUM_SIZE])
 {
 	for (uint32_t index = 0U; index < BTRFS_CSUM_SIZE; index++) out[index] = 0U;
