@@ -99,7 +99,7 @@ static btrfs_status_t btrfs_block_verify(const btrfs_fs_t *fs, btrfs_block_t *bl
 	const uint8_t *data = block->data;
 	uint32_t size = fs->nodesize;
 
-	if (btrfs_get_le32(data + BTRFS_HDR_CSUM) != btrfs_csum_crc32c(data + BTRFS_CSUM_SIZE, size - BTRFS_CSUM_SIZE)) {
+	if (!btrfs_csum_matches(fs->csum_type, data + BTRFS_HDR_CSUM, data + BTRFS_CSUM_SIZE, size - BTRFS_CSUM_SIZE)) {
 		return BTRFS_ERR_CSUM;
 	}
 

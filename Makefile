@@ -351,6 +351,7 @@ C_SOURCES := \
     vfs/btrfs/btrfs_dir.c \
     vfs/btrfs/btrfs_file.c \
     vfs/btrfs/btrfs_fs.c \
+    vfs/btrfs/btrfs_hash.c \
     vfs/btrfs/btrfs_inode.c \
     vfs/btrfs/btrfs_io.c \
     vfs/btrfs/btrfs_io_block.c \
@@ -1016,6 +1017,7 @@ BTRFS_CORE_SOURCES := \
     vfs/btrfs/btrfs_dir.c \
     vfs/btrfs/btrfs_file.c \
     vfs/btrfs/btrfs_fs.c \
+    vfs/btrfs/btrfs_hash.c \
     vfs/btrfs/btrfs_inode.c \
     vfs/btrfs/btrfs_io.c \
     vfs/btrfs/btrfs_io_host.c \

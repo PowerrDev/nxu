@@ -41,6 +41,20 @@ done
 out=$("$HOST" codec xxh64 2>&1)
 if [ "$out" = "xxh64=ok" ]; then pass "xxh64 known-answer vectors"; else fail "xxh64 vectors" "$out"; fi
 
+# SHA-256 and BLAKE2b-256 against python's hashlib at every length around the block sizes
+# (64 for SHA-256, 128 for BLAKE2b) and the checksum sizes Btrfs uses (a 4 KiB sector, a
+# 16 KiB node), for input that is not just zeros.
+LENS="0 1 2 3 31 32 33 54 55 56 57 63 64 65 111 112 113 119 120 127 128 129 130 191 192 193 255 256 257 4095 4096 4097 16384 70001 131072"
+"$HOST" codec digests "$C/mixed.bin" $LENS > "$C/digests.ours" 2>&1
+python3 - "$C/mixed.bin" $LENS > "$C/digests.want" <<'PY'
+import hashlib, sys
+data = open(sys.argv[1], "rb").read()
+for n in sys.argv[2:]:
+    d = data[:int(n)]
+    print(len(d), hashlib.sha256(d).hexdigest(), hashlib.blake2b(d, digest_size=32).hexdigest())
+PY
+if cmp -s "$C/digests.ours" "$C/digests.want"; then pass "sha256 and blake2b-256 match hashlib at $(echo $LENS | wc -w | tr -d ' ') lengths"; else fail "sha256/blake2b differ from hashlib" "$(diff "$C/digests.ours" "$C/digests.want" | head -6)"; fi
+
 # ---- decode: every stream must give back exactly its plaintext -------------------------
 
 echo "== decoders against real compressors' streams =="

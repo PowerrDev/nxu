@@ -37,6 +37,13 @@ damaged_image() {
 	local kind=$1 name=$2
 	local out=$SCRATCH/bad/$name.$(printf '%s' "$kind" | tr ':/' '__').img
 	"$HOST" info "$(fixture_image "$name")" > "$SCRATCH/bad/$name.info" 2>&1
+	case "$kind" in
+	data-extent:*|nodatasum-off:*)
+		# The kind names a file: add where its extents and inode item are.
+		local file=${kind#*:}
+		"$HOST" extents "$(fixture_image "$name")" "${file%%:*}" >> "$SCRATCH/bad/$name.info" 2>&1
+		;;
+	esac
 	python3 "$HERE/corrupt.py" "$kind" "$(fixture_image "$name")" "$out" "$SCRATCH/bad/$name.info" || { echo "corrupt.py failed: $kind" >&2; exit 2; }
 	printf '%s' "$out"
 }
@@ -116,12 +123,18 @@ run_all_groups() {
 	run_group "positive-3" "comp-zlib=comp-zlib" "nodatasum=nodatasum" "no-holes-off=no-holes-off"
 	run_group "positive-4" "n64k=n64k" "minimal=minimal" "n4k=n4k"
 
+	echo "== compressed extents and every checksum type =="
+	run_group "compressed-1" "comp-lzo=comp-lzo" "comp-zstd=comp-zstd" "mix-zlib9=mix-zlib9"
+	run_group "compressed-2" "mix-lzo=mix-lzo" "mix-zstd15=mix-zstd15" "mix-random=mix-random"
+	run_group "checksums-1" "csum-xxhash=csum-xxhash" "csum-sha256=csum-sha256" "csum-blake2=csum-blake2"
+	run_group "checksums-2" "mix-zstd15+noverify=mix-zstd15" "data-dup=@data-extent:/dir/sub/data.bin:first@data-dup" "data-dup+verify=data-dup"
+
 	echo "== unsupported and damaged images: clean refusal, kernel keeps running (a good mount follows) =="
-	run_group "refusal-1" "!unsupported-csum=csum-xxhash" "!unsupported-profile=raid1" "n4k=n4k"
-	run_group "refusal-2" "!unsupported-csum=csum-sha256" "!unsupported-profile=raid5" "minimal=minimal"
+	run_group "refusal-1" "!unsupported-profile=raid1" "!unsupported-profile=raid0" "n4k=n4k"
+	run_group "refusal-2" "!unsupported-profile=raid5" "minimal=minimal"
 	run_group "refusal-3" "!bad-magic=@super-magic-all@minimal" "!csum=@super-csum-all@minimal" "n4k=n4k"
 	run_group "refusal-4" "!truncated=@truncate:41943040@minimal" "!corrupt=@sys-array-garbage@minimal" "n4k=n4k"
 	run_group "refusal-5" "!log-tree=@log-root@minimal" "!unsupported-feature=@incompat-bit:14@minimal" "minimal=minimal"
 	run_group "refusal-6" "!csum=@root-block:all@minimal" "!corrupt=@nodesize:12345@minimal" "n4k=n4k"
-	run_group "refusal-7" "!unsupported-csum=csum-blake2" "!unsupported-profile=single2dev" "!bad-magic=@truncate:1024@minimal"
+	run_group "refusal-7" "!unsupported-profile=single2dev" "!bad-magic=@truncate:1024@minimal" "n4k=n4k"
 }

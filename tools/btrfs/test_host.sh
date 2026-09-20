@@ -16,7 +16,7 @@
 #                subvolume, every subvolume mounted by id
 #   compression  zlib, LZO and ZSTD extents read byte-identically to Linux's view; the
 #                decoders alone (test_codec.sh): real streams, limits, mutation sweeps
-#   refusals     unsupported checksums, RAID/multi-device
+#   refusals     RAID/multi-device
 #   damage       named corruptions of good images: each must give a clean status
 #   sweep        seeded random corruption: only errors, or the good image's results
 #
@@ -143,7 +143,7 @@ corrupt() {
 }
 
 echo "== superblocks =="
-for name in empty minimal tree deep n4k n64k s16k meta-single data-dup mixed no-holes-off no-skinny space-cache-v1 block-group-tree squota nodatasum subvols subvols-default comp-zlib comp-lzo comp-zstd; do
+for name in empty minimal tree deep n4k n64k s16k meta-single data-dup mixed no-holes-off no-skinny space-cache-v1 block-group-tree squota nodatasum subvols subvols-default comp-zlib comp-lzo comp-zstd csum-xxhash csum-sha256 csum-blake2 mix-zlib1 mix-zlib9 mix-lzo mix-zstd1 mix-zstd3 mix-zstd15 mix-random; do
 	check_info "$name"
 done
 
@@ -253,16 +253,30 @@ if [ "$(rf "$out" read)" = ok ] && [ "$(rf "$out" crc)" = "$(rf "$want" crc)" ];
 # Prealloc, holes and sparse files have no checksums to miss: the tree fixture (PREALLOC
 # files, sparse files, a nodatacow file) walks clean above with verification on.
 
-echo "== compressed extents are refused, everything else is served =="
-for name in comp-zlib comp-lzo comp-zstd; do
+# Compressed extents are verified too: the csum covers the bytes on disk, so damage is
+# caught before any decoder sees them; noverify hands the damaged bytes to the decoder,
+# which may only decode or refuse cleanly.
+for name in mix-zlib9 mix-lzo mix-zstd3; do
+	want=$("$HOST" read "$(image $name)" /e128k)
+	out=$("$HOST" read "$(corrupt "data-extent:/e128k:all" $name)" /e128k); rc=$?
+	if [ "$(rf "$want" read)" = ok ] && [ $rc -eq 1 ] && [ "$(rf "$out" read)" = "checksum mismatch" ] && [ "$(rf "$out" done)" = 0 ]; then pass "$name: a damaged compressed extent fails the read with a checksum mismatch"; else fail "$name: damaged compressed extent (rc $rc)" "$out"; fi
+	out=$("$HOST" read "$(corrupt "data-extent:/e128k:all" $name)" /e128k --noverify)
+	case "$(rf "$out" read)" in ok|"corrupt metadata") pass "$name: noverify hands the damaged extent to the decoder: $(rf "$out" read)" ;; *) fail "$name: noverify on a damaged compressed extent" "$out" ;; esac
+done
+
+echo "== compressed extents (zlib levels, LZO, ZSTD levels, boundaries, sparse, partial references, incompressible) read as Linux read them =="
+for name in comp-zlib comp-lzo comp-zstd mix-zlib1 mix-zlib9 mix-lzo mix-zstd1 mix-zstd3 mix-zstd15 mix-random; do
+	check_tree "$name" "$name.manifest"
+	check_tree "$name" "$name.manifest" --noverify
+done
+
+echo "== every checksum type: metadata and data verified, compared with Linux's view =="
+for name in csum-xxhash csum-sha256 csum-blake2; do
 	check_tree "$name" "$name.manifest"
 	check_tree "$name" "$name.manifest" --noverify
 done
 
 echo "== unsupported images are refused cleanly =="
-expect_open "csum-xxhash" "$(image csum-xxhash)" "unsupported checksum type"
-expect_open "csum-sha256" "$(image csum-sha256)" "unsupported checksum type"
-expect_open "csum-blake2" "$(image csum-blake2)" "unsupported checksum type"
 expect_open "raid1 (device 0 of 2)" "$(image raid1)" "unsupported RAID or multi-device profile"
 expect_open "raid0 (device 0 of 2)" "$(image raid0)" "unsupported RAID or multi-device profile"
 expect_open "raid5 (device 0 of 3)" "$(image raid5)" "unsupported RAID or multi-device profile"
@@ -280,7 +294,7 @@ expect_open "unknown incompat bit 40" "$(corrupt incompat-bit:40 minimal)" "unsu
 expect_open "extent-tree-v2 (incompat bit 13)" "$(corrupt incompat-bit:13 minimal)" "unsupported feature"
 expect_open "raid-stripe-tree (incompat bit 14)" "$(corrupt incompat-bit:14 minimal)" "unsupported feature"
 expect_open "zoned (incompat bit 12)" "$(corrupt incompat-bit:12 minimal)" "unsupported feature"
-expect_open "checksum type 1 in a crc32c image" "$(corrupt csum-type:1 minimal)" "unsupported checksum type"
+expect_open "checksum type 1 (xxhash) claimed by a crc32c image" "$(corrupt csum-type:1 minimal)" "checksum mismatch"
 expect_open "checksum type 9" "$(corrupt csum-type:9 minimal)" "corrupt metadata"
 expect_open "unreplayed log tree" "$(corrupt log-root minimal)" "unreplayed log tree"
 expect_open "unreplayed log tree, told to ignore it" "$(corrupt log-root minimal)" "ok" --ignore-log
@@ -310,7 +324,7 @@ out=$("$HOST" walk "$(corrupt fs-block:first tree)" 2>&1)
 if printf '%s\n' "$out" | grep -q 'walk=ok' && printf '%s\n' "$out" | grep -qE 'mirror_fallbacks=[1-9]'; then pass "DUP heals a damaged subvolume root block (mirror fallback used)"; else fail "DUP did not heal the subvolume root" "$out"; fi
 
 echo "== corruption sweeps (seeded, ${ITERS} iterations x ${SEEDS} seeds) =="
-for name in empty minimal n4k meta-single data-dup mixed no-holes-off subvols nodatasum comp-zlib; do
+for name in empty minimal n4k meta-single data-dup mixed no-holes-off subvols nodatasum comp-zlib mix-zstd3 mix-lzo csum-blake2 csum-xxhash; do
 	seed=1
 	while [ $seed -le "$SEEDS" ]; do
 		out=$("$HOST" sweep "$(image "$name")" --seed $seed --iters "$ITERS" 2>&1)

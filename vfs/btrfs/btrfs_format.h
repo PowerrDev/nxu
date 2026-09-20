@@ -51,7 +51,7 @@ typedef enum {
 	BTRFS_ERR_NAME_TOO_LONG,
 	BTRFS_ERR_UNSUPPORTED,         /* generic: valid but not implemented */
 	BTRFS_ERR_UNSUPPORTED_FEATURE, /* unknown or unsupported incompat/compat_ro bits */
-	BTRFS_ERR_UNSUPPORTED_CSUM,    /* checksum algorithm other than crc32c */
+	BTRFS_ERR_UNSUPPORTED_CSUM,    /* checksum algorithm this driver does not know (none today) */
 	BTRFS_ERR_UNSUPPORTED_PROFILE, /* RAID / multi-device chunk or filesystem */
 	BTRFS_ERR_UNSUPPORTED_COMPRESSION,
 	BTRFS_ERR_UNSUPPORTED_ENCRYPTION,
@@ -710,6 +710,17 @@ uint32_t btrfs_csum_crc32c(const void *data, size_t length);
  * does not know.
  */
 bool btrfs_csum_data(uint32_t type, const void *data, size_t length, uint8_t out[BTRFS_CSUM_SIZE]);
+
+/*
+ * True if the checksum of `data` under `type` equals the csum_size(type) bytes
+ * at stored (the first bytes of a header's csum field, or one csum item entry).
+ * False for a mismatch and for a type this driver does not know.
+ */
+bool btrfs_csum_matches(uint32_t type, const uint8_t *stored, const void *data, size_t length);
+
+/* SHA-256 and BLAKE2b with a 32-byte digest (btrfs_hash.c): the 32-byte checksum types. */
+void btrfs_sha256(const void *data, size_t length, uint8_t out[32]);
+void btrfs_blake2b_256(const void *data, size_t length, uint8_t out[32]);
 
 /* XXH64 (Yann Collet's xxHash, 64-bit) of data with the given seed: Btrfs' xxhash checksum and the ZSTD content checksum. */
 uint64_t btrfs_xxh64(const void *data, size_t length, uint64_t seed);

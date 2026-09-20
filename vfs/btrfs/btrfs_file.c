@@ -131,8 +131,6 @@ static btrfs_status_t btrfs_verify_sectors(btrfs_fs_t *fs, btrfs_csum_scan_t *sc
 	for (size_t position = 0U; position < length; position += sector) {
 		uint64_t address = logical + position;
 		const uint8_t *expected;
-		uint8_t actual[BTRFS_CSUM_SIZE];
-
 		btrfs_status_t status = btrfs_csum_scan_find(fs, scan, address, &expected);
 		if (status != BTRFS_OK) return status;
 
@@ -145,7 +143,7 @@ static btrfs_status_t btrfs_verify_sectors(btrfs_fs_t *fs, btrfs_csum_scan_t *sc
 
 		fs->stats.data_csum_checked++;
 
-		if (!btrfs_csum_data(fs->csum_type, data + position, sector, actual) || memcmp(actual, expected, fs->csum_size) != 0) {
+		if (!btrfs_csum_matches(fs->csum_type, expected, data + position, sector)) {
 			fs->stats.csum_failures++;
 			BTRFS_LOG(fs, "data checksum mismatch at logical %llu", BTRFS_U64(address));
 			return BTRFS_ERR_CSUM;

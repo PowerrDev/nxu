@@ -23,6 +23,9 @@
  *       that exercises every instruction form (a real compressor never would)
  *   codec xxh64
  *       xxh64 known-answer vectors
+ *   codec digests FILE LEN...
+ *       "LEN sha256 blake2b-256" of the first LEN bytes of FILE, one line per LEN
+ *       (test_codec.sh compares them with python's hashlib)
  *
  * KIND is zlib, lzo or zstd. Every decode runs with a counting allocator; a
  * leak is a failure.
@@ -559,12 +562,38 @@ static int cmd_hash(void)
 	return bad == 0 ? 0 : 1;
 }
 
+/* codec digests FILE: sha256 and blake2b-256 of the file and of each prefix length listed after it. */
+static int cmd_digests(int argc, char **argv)
+{
+	size_t n;
+	uint8_t *data = slurp(argv[0], &n);
+
+	for (int i = 1; i < argc; i++) {
+		size_t len = (size_t)strtoull(argv[i], NULL, 0);
+		uint8_t sha[32];
+		uint8_t blake[32];
+
+		if (len > n) len = n;
+		btrfs_sha256(data, len, sha);
+		btrfs_blake2b_256(data, len, blake);
+		printf("%zu ", len);
+		for (int k = 0; k < 32; k++) printf("%02x", sha[k]);
+		printf(" ");
+		for (int k = 0; k < 32; k++) printf("%02x", blake[k]);
+		printf("\n");
+	}
+
+	free(data);
+	return 0;
+}
+
 int codec_main(int argc, char **argv)
 {
 	if (argc >= 4 && strcmp(argv[0], "decode") == 0) return cmd_decode(argc - 1, argv + 1);
 	if (argc >= 4 && strcmp(argv[0], "fuzz") == 0) return cmd_fuzz(argc - 1, argv + 1);
 	if (argc >= 3 && strcmp(argv[0], "lzo") == 0) return cmd_lzo(argc - 1, argv + 1);
 	if (argc >= 1 && strcmp(argv[0], "xxh64") == 0) return cmd_hash();
+	if (argc >= 2 && strcmp(argv[0], "digests") == 0) return cmd_digests(argc - 1, argv + 1);
 
 	fprintf(stderr, "usage: btrfs_host codec decode|fuzz|lzo|xxh64 ...\n");
 	return 2;

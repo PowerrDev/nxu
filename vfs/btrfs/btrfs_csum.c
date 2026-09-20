@@ -19,6 +19,8 @@
 
 #include "btrfs_format.h"
 
+#include <string.h>
+
 static const uint32_t g_crc32c_table[256] = {
 	0x00000000U, 0xF26B8303U, 0xE13B70F7U, 0x1350F3F4U,
 	0xC79A971FU, 0x35F1141CU, 0x26A1E7E8U, 0xD4CA64EBU,
@@ -181,9 +183,28 @@ bool btrfs_csum_data(uint32_t type, const void *data, size_t length, uint8_t out
 	case BTRFS_CSUM_TYPE_CRC32:
 		btrfs_put_le32(out, btrfs_csum_crc32c(data, length));
 		return true;
+	case BTRFS_CSUM_TYPE_XXHASH:
+		btrfs_put_le64(out, btrfs_xxh64(data, length, 0ULL));
+		return true;
+	case BTRFS_CSUM_TYPE_SHA256:
+		btrfs_sha256(data, length, out);
+		return true;
+	case BTRFS_CSUM_TYPE_BLAKE2:
+		btrfs_blake2b_256(data, length, out);
+		return true;
 	default:
 		return false;
 	}
+}
+
+bool btrfs_csum_matches(uint32_t type, const uint8_t *stored, const void *data, size_t length)
+{
+	uint8_t actual[BTRFS_CSUM_SIZE];
+	uint32_t size = btrfs_csum_type_size(type);
+
+	if (size == 0U || !btrfs_csum_data(type, data, length, actual)) return false;
+
+	return memcmp(actual, stored, size) == 0;
 }
 
 uint32_t btrfs_name_hash(const uint8_t *name, size_t length)

@@ -60,16 +60,10 @@ btrfs_status_t btrfs_super_parse(const uint8_t *raw, uint64_t expected_bytenr, u
 	memset(out, 0, sizeof(*out));
 	out->csum_type = btrfs_get_le16(raw + BTRFS_SB_CSUM_TYPE);
 
-	/*
-	 * Only crc32c can be verified here. Any other type is a valid filesystem
-	 * this driver cannot read, which is a different answer from "corrupt", so
-	 * report it before looking at the checksum.
-	 */
-	if (out->csum_type != BTRFS_CSUM_TYPE_CRC32) {
-		return btrfs_csum_type_size(out->csum_type) != 0U ? BTRFS_ERR_UNSUPPORTED_CSUM : BTRFS_ERR_CORRUPT;
-	}
+	/* The superblock names its own checksum algorithm; a type nobody knows is damage, not a feature. */
+	if (btrfs_csum_type_size(out->csum_type) == 0U) return BTRFS_ERR_CORRUPT;
 
-	if (btrfs_get_le32(raw + BTRFS_SB_CSUM) != btrfs_csum_crc32c(raw + BTRFS_CSUM_SIZE, BTRFS_SUPER_INFO_SIZE - BTRFS_CSUM_SIZE)) {
+	if (!btrfs_csum_matches(out->csum_type, raw + BTRFS_SB_CSUM, raw + BTRFS_CSUM_SIZE, BTRFS_SUPER_INFO_SIZE - BTRFS_CSUM_SIZE)) {
 		return BTRFS_ERR_CSUM;
 	}
 
@@ -287,11 +281,6 @@ void btrfs_feature_names(uint64_t incompat, uint64_t compat_ro, char *out, size_
 btrfs_status_t btrfs_super_check_support(const btrfs_fs_t *fs, const btrfs_super_t *super)
 {
 	char names[128];
-
-	if (super->csum_type != BTRFS_CSUM_TYPE_CRC32) {
-		BTRFS_LOG(fs, "checksum type %s is not supported, only crc32c", btrfs_csum_type_name(super->csum_type));
-		return BTRFS_ERR_UNSUPPORTED_CSUM;
-	}
 
 	uint64_t unsupported = super->incompat_flags & ~BTRFS_INCOMPAT_SUPPORTED;
 	if (unsupported != 0ULL) {
