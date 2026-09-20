@@ -77,6 +77,10 @@ about_sevos_process_test(void)
 		return false;
 	}
 
+	/* Started by the kernel, not by bootd's plist, so it has no capabilities
+	 * until we grant the one it needs: it claims the display. */
+	proc_set_caps(proc_windowserver, NXU_CAP_DISPLAY);
+
 	for (uint32_t spin = 0U; spin < ABOUT_SEVOS_PROCESS_TEST_SERVICE_WAIT_ITERATIONS; spin++) {
 		if (!sched_yield()) {
 			kputln("about_sevos_process_test: scheduler dispatch failed while waiting for windowserver_service");

@@ -61,9 +61,26 @@
 #define NXU_SYS_GETPPID 57ULL
 #define NXU_SYS_WAIT 58ULL
 #define NXU_SYS_IPC_RECEIVE_WAIT 59ULL
+#define NXU_SYS_GET_CAPS 60ULL
 
 /* wait(): pass as the pid to wait for any child. */
 #define NXU_WAIT_ANY UINT64_MAX
+
+/*
+ * Capabilities: what a process may do to the system beyond computing and
+ * talking over IPC. Default-deny -- a process has none unless it is PID 1
+ * (which has all of them) or its parent granted a subset when it spawned it
+ * (nxu_spawn_caps). fork and exec keep the caller's set. See p_caps in
+ * kern/process/proc.h.
+ *
+ *   FS_WRITE   open for write/create/truncate/append, unlink, mkdir
+ *   DISPLAY    claim the display (display_claim)
+ *   RESET      reset the machine (system_reset)
+ */
+#define NXU_CAP_FS_WRITE (1U << 0U)
+#define NXU_CAP_DISPLAY (1U << 1U)
+#define NXU_CAP_RESET (1U << 2U)
+#define NXU_CAP_ALL (NXU_CAP_FS_WRITE | NXU_CAP_DISPLAY | NXU_CAP_RESET)
 
 /*
  * Exit status recorded for a process the kernel terminated (waitpid reports
@@ -159,6 +176,9 @@ typedef struct {
 #define NXU_O_CREATE (1U << 2U)
 #define NXU_O_TRUNCATE (1U << 3U)
 #define NXU_O_APPEND (1U << 4U)
+
+/* The open flags that can change a file or create one: they need NXU_CAP_FS_WRITE. */
+#define NXU_O_MODIFYING (NXU_O_WRITE | NXU_O_CREATE | NXU_O_TRUNCATE | NXU_O_APPEND)
 
 #define NXU_DIRENT_NAME_MAX 255U
 

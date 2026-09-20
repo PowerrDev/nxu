@@ -64,6 +64,13 @@ syscall_error(syscall_error_t error)
 	return syscall_return(0ULL - (uint64_t)error);
 }
 
+/* True when the calling process holds every capability in caps (NXU_CAP_*). */
+static bool
+syscall_has_caps(uint32_t caps)
+{
+	return proc_has_caps(current_proc(), caps);
+}
+
 static syscall_error_t
 syscall_vfs_error(vfs_status_t status)
 {
@@ -393,6 +400,9 @@ syscall_read(uint64_t file_descriptor, uint64_t user_buffer, uint64_t length)
 static syscall_result_t
 syscall_open(uint64_t user_path, uint64_t flags)
 {
+	/* The same 32 bits vfs_open sees, so a high bit cannot get past the check. */
+	if (((uint32_t)flags & NXU_O_MODIFYING) != 0U && !syscall_has_caps(NXU_CAP_FS_WRITE)) return syscall_error(SYSCALL_ERROR_DENIED);
+
 	char path[SYSCALL_PATH_BUFFER_SIZE];
 	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 
@@ -411,8 +421,16 @@ syscall_close(uint64_t descriptor)
 }
 
 static syscall_result_t
-syscall_spawn(uint64_t user_path, uint64_t user_name)
+syscall_spawn(uint64_t user_path, uint64_t user_name, uint64_t caps)
 {
+	/*
+	 * A parent can pass on only what it holds: asking for more is an error,
+	 * not a silent narrowing, so a misconfigured service fails loudly. Bits
+	 * that are not capabilities are an invalid argument.
+	 */
+	if (caps > (uint64_t)NXU_CAP_ALL) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	if (!syscall_has_caps((uint32_t)caps)) return syscall_error(SYSCALL_ERROR_DENIED);
+
 	char path[VFS_PATH_MAX];
 	char name[PROC_NAME_MAX];
 	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
@@ -423,6 +441,10 @@ syscall_spawn(uint64_t user_path, uint64_t user_name)
 	if (status == LOADER_STATUS_NOT_FOUND) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
 	if (status == LOADER_STATUS_NO_MEMORY) return syscall_error(SYSCALL_ERROR_NO_MEMORY);
 	if (status != LOADER_STATUS_OK || child == 0) return syscall_error(SYSCALL_ERROR_IO);
+
+	/* The child has not run yet: nothing is preemptible, so it cannot act
+	 * with the (empty) default set before this. */
+	proc_set_caps(child, (uint32_t)caps);
 	return syscall_return(child->p_ident.pid);
 }
 
@@ -530,6 +552,8 @@ syscall_stat(uint64_t user_path, uint64_t user_stat)
 static syscall_result_t
 syscall_mkdir(uint64_t user_path)
 {
+	if (!syscall_has_caps(NXU_CAP_FS_WRITE)) return syscall_error(SYSCALL_ERROR_DENIED);
+
 	char path[VFS_PATH_MAX];
 	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 	vfs_status_t status = vfs_mkdir(path);
@@ -817,6 +841,7 @@ syscall_recovery_input(uint64_t user_event)
 static syscall_result_t
 syscall_system_reset(void)
 {
+	if (!syscall_has_caps(NXU_CAP_RESET)) return syscall_error(SYSCALL_ERROR_DENIED);
 	if (!boot_mode_is_triage_os()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
 	machine_system_reset();
 	return syscall_error(SYSCALL_ERROR_IO);
@@ -825,6 +850,8 @@ syscall_system_reset(void)
 static syscall_result_t
 syscall_unlink(uint64_t user_path)
 {
+	if (!syscall_has_caps(NXU_CAP_FS_WRITE)) return syscall_error(SYSCALL_ERROR_DENIED);
+
 	char path[VFS_PATH_MAX];
 	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 	vfs_status_t status = vfs_unlink(path);
@@ -1089,6 +1116,8 @@ syscall_ipc_register_bootstrap(uint64_t port_name)
 static syscall_result_t
 syscall_display_claim(void)
 {
+	if (!syscall_has_caps(NXU_CAP_DISPLAY)) return syscall_error(SYSCALL_ERROR_DENIED);
+
 	return display_owner_claim(proc_selfpid()) ? syscall_return(0ULL) : syscall_error(SYSCALL_ERROR_BUSY);
 }
 
@@ -1329,7 +1358,7 @@ syscall_dispatch(const syscall_request_t *request)
 	case SYSCALL_OPEN: return syscall_open(request->arguments[0], request->arguments[1]);
 	case SYSCALL_READ: return syscall_read(request->arguments[0], request->arguments[1], request->arguments[2]);
 	case SYSCALL_CLOSE: return syscall_close(request->arguments[0]);
-	case SYSCALL_SPAWN: return syscall_spawn(request->arguments[0], request->arguments[1]);
+	case SYSCALL_SPAWN: return syscall_spawn(request->arguments[0], request->arguments[1], request->arguments[2]);
 	case SYSCALL_WAITPID: return syscall_waitpid(request->arguments[0], request->arguments[1]);
 	case SYSCALL_GETPID: return syscall_return(proc_selfpid());
 	case SYSCALL_YIELD: return sched_yield() ? syscall_return(0ULL) : syscall_error(SYSCALL_ERROR_IO);
@@ -1380,6 +1409,7 @@ syscall_dispatch(const syscall_request_t *request)
 	case SYSCALL_SIGRETURN: return syscall_sigreturn();
 	case SYSCALL_GETPPID: return syscall_getppid();
 	case SYSCALL_WAIT: return syscall_wait(request->arguments[0], request->arguments[1]);
+	case SYSCALL_GET_CAPS: return syscall_return(current_proc() != 0 ? current_proc()->p_caps : 0ULL);
 	case SYSCALL_IPC_RECEIVE_WAIT: return syscall_ipc_receive_wait(request->arguments[0], request->arguments[1], request->arguments[2], request->arguments[3], request->arguments[4]);
 	default: return syscall_error(SYSCALL_ERROR_UNKNOWN);
 	}

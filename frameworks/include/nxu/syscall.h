@@ -12,6 +12,20 @@ int64_t nxu_open(const char *path, uint64_t flags);
 int64_t nxu_read(uint64_t descriptor, void *buffer, uint64_t length);
 int64_t nxu_close(uint64_t descriptor);
 int64_t nxu_spawn(const char *path, const char *name);
+
+/*
+ * Capabilities (NXU_CAP_*, see syscall_defs.h). A process has none unless it is
+ * PID 1 or its parent granted some when it spawned it. nxu_spawn passes none;
+ * nxu_spawn_caps passes caps, which must be a subset of the caller's own
+ * (-NXU_SYS_E_DENIED otherwise, -NXU_SYS_E_INVALID_ARGUMENT for a bit that is
+ * not a capability). fork and exec keep the caller's set. nxu_get_caps returns
+ * the caller's set. Without NXU_CAP_FS_WRITE, nxu_open for write/create/
+ * truncate/append, nxu_unlink and nxu_mkdir return -NXU_SYS_E_DENIED; without
+ * NXU_CAP_DISPLAY so does nxu_display_claim, and without NXU_CAP_RESET so does
+ * nxu_system_reset.
+ */
+int64_t nxu_spawn_caps(const char *path, const char *name, uint64_t caps);
+int64_t nxu_get_caps(void);
 int64_t nxu_waitpid(uint64_t pid, uint64_t *status);
 int64_t nxu_getpid(void);
 int64_t nxu_yield(void);

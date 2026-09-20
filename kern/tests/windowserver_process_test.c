@@ -76,6 +76,10 @@ windowserver_process_test(void)
 		return false;
 	}
 
+	/* Started by the kernel, not by bootd's plist, so it has no capabilities
+	 * until we grant the one it needs: it claims the display. */
+	proc_set_caps(proc_windowserver, NXU_CAP_DISPLAY);
+
 	/*
 	 * windowserver_service registers itself with the bootstrap registry
 	 * only after claiming the display and initializing the compositor;

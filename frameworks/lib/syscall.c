@@ -84,7 +84,9 @@ int64_t nxu_get_version(void *buffer, uint64_t capacity) { return nxu_syscall2(N
 int64_t nxu_open(const char *path, uint64_t flags) { return nxu_syscall2(NXU_SYS_OPEN, (uint64_t)path, flags); }
 int64_t nxu_read(uint64_t descriptor, void *buffer, uint64_t length) { return nxu_syscall3(NXU_SYS_READ, descriptor, (uint64_t)buffer, length); }
 int64_t nxu_close(uint64_t descriptor) { return nxu_syscall1(NXU_SYS_CLOSE, descriptor); }
-int64_t nxu_spawn(const char *path, const char *name) { return nxu_syscall2(NXU_SYS_SPAWN, (uint64_t)path, (uint64_t)name); }
+int64_t nxu_spawn(const char *path, const char *name) { return nxu_syscall3(NXU_SYS_SPAWN, (uint64_t)path, (uint64_t)name, 0ULL); }
+int64_t nxu_spawn_caps(const char *path, const char *name, uint64_t caps) { return nxu_syscall3(NXU_SYS_SPAWN, (uint64_t)path, (uint64_t)name, caps); }
+int64_t nxu_get_caps(void) { return nxu_syscall0(NXU_SYS_GET_CAPS); }
 int64_t nxu_waitpid(uint64_t pid, uint64_t *status) { return nxu_syscall2(NXU_SYS_WAITPID, pid, (uint64_t)status); }
 int64_t nxu_getpid(void) { return nxu_syscall0(NXU_SYS_GETPID); }
 int64_t nxu_yield(void) { return nxu_syscall0(NXU_SYS_YIELD); }

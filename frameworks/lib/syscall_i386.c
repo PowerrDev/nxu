@@ -198,7 +198,19 @@ nxu_close(uint64_t descriptor)
 int64_t
 nxu_spawn(const char *path, const char *name)
 {
-	return nxu_syscall2(NXU_SYS_SPAWN, NXU_PTR(path), NXU_PTR(name));
+	return nxu_syscall3(NXU_SYS_SPAWN, NXU_PTR(path), NXU_PTR(name), 0U);
+}
+
+int64_t
+nxu_spawn_caps(const char *path, const char *name, uint64_t caps)
+{
+	return nxu_syscall3(NXU_SYS_SPAWN, NXU_PTR(path), NXU_PTR(name), (uint32_t)caps);
+}
+
+int64_t
+nxu_get_caps(void)
+{
+	return nxu_syscall0(NXU_SYS_GET_CAPS);
 }
 
 int64_t

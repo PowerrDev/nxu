@@ -92,6 +92,14 @@ typedef struct {
  *     Signal dispositions and the set of signals sent but not yet delivered
  *     (bit n = signal n). All threads of a process share both; the blocked
  *     mask is per thread. See kern/process/signal.h.
+ *
+ * p_caps
+ *     What this process may do to the system beyond computing and IPC: a mask
+ *     of NXU_CAP_* (kern/syscall/syscall_defs.h). Default-deny: none, unless
+ *     it is PID 1 (all of them), its parent granted a subset when spawning it,
+ *     or the kernel set them on a test process (proc_set_caps). fork and exec
+ *     keep the caller's mask. There are no credentials; this mask is the whole
+ *     security model for the system calls that change the machine.
  */
 struct proc {
 	proc_t p_list_prev;
@@ -111,6 +119,7 @@ struct proc {
 	nxu_sigaction_t p_sigact[NXU_NSIG];
 	waitq_t p_waitq;
 	uint32_t p_sigpending;
+	uint32_t p_caps;
 
 	proc_ident_t p_ident;
 
@@ -201,6 +210,14 @@ proc_t current_proc(void);
 
 proc_id_t proc_selfpid(void);
 proc_id_t proc_ppid(proc_t proc);
+
+/* True when proc holds every capability in caps (NXU_CAP_*). */
+bool proc_has_caps(proc_t proc, uint32_t caps);
+
+/* Replace proc's capability mask. Only for the kernel setting up a process
+ * that has not run yet (a test spawn) and for the spawn system call, which
+ * checks the mask against the parent's first. */
+void proc_set_caps(proc_t proc, uint32_t caps);
 
 proc_t proc_parent_ref(proc_t proc);
 proc_t proc_first_child_ref(proc_t proc);

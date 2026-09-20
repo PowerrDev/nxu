@@ -108,6 +108,7 @@ static proc_t proc_allocate_slot_locked(void)
 			.p_fd = { 0 },
 			.p_ipc = { 0 },
 			.p_ipc_bootstrap_name = IPC_SPACE_NAME_INVALID,
+			.p_caps = 0U,
 			.p_ident = {
 				.pid = PROC_PID_INVALID,
 				.uniqueid = 0ULL,
@@ -407,6 +408,8 @@ bool proc_bootstrap(void)
 
 	kernel_proc->p_flag = PROC_FLAG_SYSTEM;
 
+	kernel_proc->p_caps = NXU_CAP_ALL;
+
 	kernel_proc->p_refcount = 1U;
 
 	proc_copy_name(
@@ -498,6 +501,10 @@ bool proc_create_user(
 	}
 
 	proc->p_ident.pid = pid;
+
+	/* Default-deny: only PID 1 (bootd, or triageOS in recovery) starts with
+	 * every capability; everything else is granted a subset by its parent. */
+	proc->p_caps = pid == 1U ? NXU_CAP_ALL : 0U;
 
 	proc->p_ident.uniqueid = proc_allocate_uniqueid_locked();
 
@@ -607,6 +614,7 @@ bool proc_fork(proc_t parent, proc_t *result)
 	}
 
 	proc->p_ipc_bootstrap_name = parent->p_ipc_bootstrap_name;
+	proc->p_caps = parent->p_caps;
 	signal_inherit(proc, parent);
 
 	proc_child_insert_locked(parent, proc);
@@ -1018,6 +1026,16 @@ proc_id_t proc_selfpid(void)
 	}
 
 	return proc->p_ident.pid;
+}
+
+bool proc_has_caps(proc_t proc, uint32_t caps)
+{
+	return proc != 0 && (proc->p_caps & caps) == caps;
+}
+
+void proc_set_caps(proc_t proc, uint32_t caps)
+{
+	if (proc != 0) proc->p_caps = caps & NXU_CAP_ALL;
 }
 
 proc_id_t proc_ppid(proc_t proc)

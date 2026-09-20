@@ -49,6 +49,10 @@ xamethyst_process_test(void)
 		return false;
 	}
 
+	/* Started by the kernel, not by bootd's plist, so it has no capabilities
+	 * until we grant the one it needs: it claims the display. */
+	proc_set_caps(proc_xamethyst, NXU_CAP_DISPLAY);
+
 	/*
 	 * XAmethyst registers its listening socket only after claiming the
 	 * display and allocating the shadow framebuffer; x11test_handshake
