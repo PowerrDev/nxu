@@ -9,6 +9,8 @@
 #   sound core   feature negotiation (a device without VERSION_1 is refused),
 #                the stream state machine (every state against every request),
 #                names, sample widths and the parameter negotiation
+#   mp3          the MP3 recogniser on the real boot chime and on hand-made
+#                headers, tags and noise
 #   wav          the RIFF/WAVE reader and the conversion to 16-bit stereo:
 #                every accepted encoding, extensible headers, odd chunks and
 #                padding, sizes that lie, every refusal, every prefix of four
@@ -31,7 +33,7 @@ mkdir -p "$SCRATCH"
 
 failures=0
 
-# build_and_run <name> <sources...>
+# build_and_run <name> <sources...>; RUN_ARGS, if set, is what the test is run with
 build_and_run() {
 	local name=$1
 	shift
@@ -43,7 +45,7 @@ build_and_run() {
 		return
 	fi
 
-	if "$SCRATCH/$name"; then
+	if "$SCRATCH/$name" ${RUN_ARGS:-}; then
 		echo "ok    $name"
 	else
 		echo "FAIL  $name"
@@ -53,6 +55,7 @@ build_and_run() {
 
 build_and_run test_sound_core "$HERE/host/test_sound_core.c" "$ROOT/drivers/virtio/virtio_sound_core.c"
 build_and_run test_wav "$HERE/host/test_wav.c" "$ROOT/libk/wav.c"
+RUN_ARGS="$ROOT/tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.mp3" build_and_run test_mp3 "$HERE/host/test_mp3.c" "$ROOT/libk/mp3.c"
 
 echo
 echo "audio host tests: $failures failure(s)"
