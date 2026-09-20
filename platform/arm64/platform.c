@@ -691,13 +691,8 @@ static void platform_dump_region(
 	const platform_region_t *region
 )
 {
-	kputs("platform: ");
-	kputs(name);
-	kputs(" base: ");
-	kputhex64(region->base);
-	kputs(", size: ");
-	kputu64(region->size);
-	kputln(" bytes");
+	kprintf("platform: %s base: %p\n", name, (void *)region->base);
+	kverbosef("platform: %s size: %llu bytes\n", name, (unsigned long long)region->size);
 }
 
 void platform_dump(const platform_t *platform)
@@ -706,26 +701,15 @@ void platform_dump(const platform_t *platform)
 		return;
 	}
 
-	kputs("platform: memory regions: ");
-	kputu64(platform->memory_region_count);
-	kputc('\n');
+	kprintf("platform: memory regions: %u\n", platform->memory_region_count);
 
 	for (
 		uint32_t index = 0;
 		index < platform->memory_region_count;
 		index++
 	) {
-		kputs("platform: RAM[");
-		kputu64(index);
-		kputs("] base: ");
-		kputhex64(
-			platform->memory_regions[index].base
-		);
-		kputs(", size: ");
-		kputu64(
-			platform->memory_regions[index].size
-		);
-		kputln(" bytes");
+		kprintf("platform: RAM[%u] base: %p\n", index, (void *)platform->memory_regions[index].base);
+		kverbosef("platform: RAM[%u] size: %llu bytes\n", index, (unsigned long long)platform->memory_regions[index].size);
 	}
 
 	platform_dump_region("UART", &platform->uart);
@@ -754,32 +738,22 @@ void platform_dump(const platform_t *platform)
 			&platform->pcie_ecam
 		);
 
-		kputs("platform: PCI bus range: ");
-		kputu64(platform->pcie_bus_start);
-		kputs("-");
-		kputu64(platform->pcie_bus_end);
-		kputc('\n');
+		kprintf("platform: PCI bus range: %u-%u\n", (unsigned)platform->pcie_bus_start, (unsigned)platform->pcie_bus_end);
 	}
 
-	kputs("platform: VirtIO MMIO transports: ");
-	kputu64(platform->virtio_mmio_count);
-	kputc('\n');
+	kprintf("platform: VirtIO MMIO transports: %u\n", platform->virtio_mmio_count);
 
+	/* One line per transport slot: a table for `-v`, noise otherwise. */
 	for (
 		uint32_t index = 0;
 		index < platform->virtio_mmio_count;
 		index++
 	) {
-		kputs("platform: VirtIO[");
-		kputu64(index);
-		kputs("] base: ");
-		kputhex64(
-			platform->virtio_mmio[index].base
+		kverbosef(
+			"platform: VirtIO[%u] base: %p, INTID: %u\n",
+			index,
+			(void *)platform->virtio_mmio[index].base,
+			(unsigned)platform->virtio_mmio_intid[index]
 		);
-		kputs(", size: ");
-		kputu64(platform->virtio_mmio[index].size);
-		kputs(" bytes, INTID: ");
-		kputu64(platform->virtio_mmio_intid[index]);
-		kputc('\n');
 	}
 }
