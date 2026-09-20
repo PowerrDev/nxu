@@ -512,25 +512,13 @@ static bool kern_validate_higher_half_state(void)
 
 static void kern_dump_higher_half_state(void)
 {
-	kputs("kern_init: higher-half PC: ");
-	kputhex64(arm64_read_program_counter());
-	kputc('\n');
+	if (!kconsole_verbose()) return;
 
-	kputs("kern_init: higher-half SP: ");
-	kputhex64(arm64_read_stack_pointer());
-	kputc('\n');
-
-	kputs("kern_init: higher-half VBAR_EL1: ");
-	kputhex64(arm64_read_vector_base());
-	kputc('\n');
-
-	kputs("kern_init: platform state: ");
-	kputhex64((uint64_t)platform_get());
-	kputc('\n');
-
-	kputs("kern_init: Device Tree state: ");
-	kputhex64((uint64_t)dtb_get_boot());
-	kputc('\n');
+	kprintf("kern_init: higher-half PC: %p\n", (void *)arm64_read_program_counter());
+	kprintf("kern_init: higher-half SP: %p\n", (void *)arm64_read_stack_pointer());
+	kprintf("kern_init: higher-half VBAR_EL1: %p\n", (void *)arm64_read_vector_base());
+	kprintf("kern_init: platform state: %p\n", (void *)platform_get());
+	kprintf("kern_init: Device Tree state: %p\n", (void *)dtb_get_boot());
 }
 
 /* Rebase every long-lived kernel pointer before TTBR0 is removed. */

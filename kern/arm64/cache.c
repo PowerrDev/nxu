@@ -510,43 +510,16 @@ uint32_t cache_data_line_size(void)
 
 void cache_dump(void)
 {
-	kputs("cache: CLIDR_EL1: ");
-	kputhex64(g_cache.clidr);
-	kputc('\n');
+	kprintf("cache: instruction cache: %s\n", cache_instruction_enabled() ? "enabled" : "disabled");
+	kprintf("cache: data cache: %s\n", cache_data_enabled() ? "enabled" : "disabled");
 
-	kputs("cache: CTR_EL0: ");
-	kputhex64(g_cache.ctr);
-	kputc('\n');
+	if (!kconsole_verbose()) return;
 
-	kputs("cache: instruction line size: ");
-	kputu64(
-		g_cache.instruction_line_size
-	);
-	kputln(" bytes");
-
-	kputs("cache: data line size: ");
-	kputu64(
-		g_cache.data_line_size
-	);
-	kputln(" bytes");
-
-	kputs("cache: instruction cache: ");
-	kputln(
-		cache_instruction_enabled()
-			? "enabled"
-			: "disabled"
-	);
-
-	kputs("cache: data cache: ");
-	kputln(
-		cache_data_enabled()
-			? "enabled"
-			: "disabled"
-	);
-
-	kputs("cache: SCTLR_EL1: ");
-	kputhex64(cache_read_sctlr());
-	kputc('\n');
+	kprintf("cache: CLIDR_EL1: %p\n", (void *)g_cache.clidr);
+	kprintf("cache: CTR_EL0: %p\n", (void *)g_cache.ctr);
+	kprintf("cache: instruction line size: %llu bytes\n", (unsigned long long)g_cache.instruction_line_size);
+	kprintf("cache: data line size: %llu bytes\n", (unsigned long long)g_cache.data_line_size);
+	kprintf("cache: SCTLR_EL1: %p\n", (void *)cache_read_sctlr());
 }
 
 void
