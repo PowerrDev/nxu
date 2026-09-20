@@ -19,6 +19,7 @@ static uint32_t g_kconsole_history_head;
 static uint32_t g_kconsole_history_count;
 static uint64_t g_kconsole_history_sequence;
 static bool g_kconsole_line_start = true;
+static bool g_kconsole_verbose;
 static bool g_kconsole_clock_started;
 static uint64_t g_kconsole_boot_ticks;
 static uint64_t g_kconsole_counter_frequency;
@@ -281,12 +282,10 @@ static int kprintf_signed(int64_t value)
 	return 1 + kprintf_unsigned(magnitude, 10U, false);
 }
 
-int kprintf(const char *format, ...)
+int kvprintf(const char *format, va_list arguments)
 {
 	if (format == 0) return 0;
 
-	va_list arguments;
-	va_start(arguments, format);
 	int written = 0;
 
 	while (*format != '\0') {
@@ -367,6 +366,35 @@ int kprintf(const char *format, ...)
 		}
 	}
 
+	return written;
+}
+
+int kprintf(const char *format, ...)
+{
+	va_list arguments;
+	va_start(arguments, format);
+	int written = kvprintf(format, arguments);
+	va_end(arguments);
+	return written;
+}
+
+void kconsole_set_verbose(bool verbose)
+{
+	g_kconsole_verbose = verbose;
+}
+
+bool kconsole_verbose(void)
+{
+	return g_kconsole_verbose;
+}
+
+int kverbosef(const char *format, ...)
+{
+	if (!g_kconsole_verbose) return 0;
+
+	va_list arguments;
+	va_start(arguments, format);
+	int written = kvprintf(format, arguments);
 	va_end(arguments);
 	return written;
 }

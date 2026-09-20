@@ -45,6 +45,7 @@ boot_args_init(void)
 	}
 
 	g_boot_args_initialized = true;
+	kconsole_set_verbose(boot_args_verbose());
 	return true;
 }
 

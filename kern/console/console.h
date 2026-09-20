@@ -1,6 +1,7 @@
 #ifndef NXU_KERN_CONSOLE_H
 #define NXU_KERN_CONSOLE_H
 
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -37,5 +38,18 @@ void kputu64(uint64_t value);
 void kputi64(int64_t value);
 
 int kprintf(const char *format, ...);
+int kvprintf(const char *format, va_list arguments);
+
+/*
+ * Two tiers of boot output. kprintf() is the milestone log: what happened
+ * and whether it passed, one fact per line, prefixed with the function that
+ * printed it. kverbosef() is the detail behind it -- register values, per-slot
+ * tables, allocator statistics -- and prints only when the `-v` boot-arg is
+ * set (`make run BOOT_ARGS=-v`), so a normal boot, and the boot splash that
+ * mirrors it, is not buried in state dumps. Both take the same formats.
+ */
+void kconsole_set_verbose(bool verbose);
+bool kconsole_verbose(void);
+int kverbosef(const char *format, ...);
 
 #endif
