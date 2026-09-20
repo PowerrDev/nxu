@@ -744,6 +744,7 @@ void virtio_snd_playback_close(virtio_snd_device_t *device)
 	VIRTIO_SND_LOG("stream %u: %llu underrun(s)\n", stream, (unsigned long long)playback->xruns);
 	VIRTIO_SND_LOG("stream %u: %llu I/O error(s)\n", stream, (unsigned long long)playback->io_errors);
 	VIRTIO_SND_LOG("stream %u: device latency %u byte(s)\n", stream, playback->latency_bytes);
+	VIRTIO_SND_LOG("stream %u: %llu interrupt(s) taken since attach\n", stream, (unsigned long long)device->irq_count);
 	VIRTIO_SND_LOG("stream %u: playback took %llu ms\n", stream, (unsigned long long)milliseconds);
 }
 

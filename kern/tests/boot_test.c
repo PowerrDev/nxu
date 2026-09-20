@@ -215,9 +215,6 @@ void boot_test_storage(display_device_t *boot_display)
 #endif
 
 #if defined(NXU_SOUND_TEST)
-	/* Nothing has enabled interrupts yet, and the driver's completions arrive by interrupt. */
-	arm64_enable_irqs();
-
 	if (!sound_test_run()) boot_test_fail("sound_test: failed");
 	kputln("sound_test: passed; halting (test build, no bootd)");
 	for (;;) __asm__ volatile("wfe");

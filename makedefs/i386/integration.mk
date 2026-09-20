@@ -25,6 +25,7 @@ I386_C_SOURCES += \
     kern/tests/ipc_process_test.c \
     kern/tests/ipc_test.c \
     kern/tests/socket_process_test.c \
+    kern/tests/sound_test.c \
     kern/tests/thread_process_test.c \
     libk/crc32c.c \
     vfs/ext4.c \

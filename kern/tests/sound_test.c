@@ -11,6 +11,7 @@
 
 #include <drivers/virtio/virtio_sound.h>
 #include <kern/console/console.h>
+#include <kern/machine/machine_routines.h>
 #include <kern/machine/timer.h>
 #include <kern/process/proc.h>
 #include <kern/process/thread.h>
@@ -133,6 +134,9 @@ bool sound_test_run(void)
 {
 	g_sound_test_done = false;
 	g_sound_test_ok = false;
+
+	/* The driver's completions arrive by interrupt; nothing has enabled them yet at this point of a boot. */
+	ml_irq_enable();
 
 	thread_t thread;
 
