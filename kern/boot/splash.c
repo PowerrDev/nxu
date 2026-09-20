@@ -1,6 +1,6 @@
 #include <kern/boot/splash.h>
 
-#include <mach/arm64/timer.h>
+#include <kern/arm64/timer.h>
 #include <kern/boot/splash_asset.h>
 #include <kern/console/console.h>
 #include <kern/console/font8x16.h>

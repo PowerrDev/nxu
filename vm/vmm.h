@@ -6,7 +6,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include <mach/machine/vm_param.h>
+#include <kern/machine/vm_param.h>
 
 typedef enum {
 	VMM_MEMORY_NORMAL,

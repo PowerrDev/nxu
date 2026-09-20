@@ -17,7 +17,7 @@
  * i386_init_userland is deliberately left at its weak default until then.
  */
 
-#include <mach/i386/boot_info.h>
+#include <kern/i386/boot_info.h>
 
 #include <kern/console/console.h>
 #include <kern/loader/elf_format.h>

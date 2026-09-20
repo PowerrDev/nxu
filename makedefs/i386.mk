@@ -37,19 +37,19 @@ I386_CFLAGS := \
 I386_ASFLAGS := --target=i386-none-elf
 
 I386_C_SOURCES := \
-    mach/i386/gdt.c \
-    mach/i386/i386_init.c \
-    mach/i386/idt.c \
-    mach/i386/timer.c \
-    mach/i386/trap.c \
+    kern/i386/gdt.c \
+    kern/i386/i386_init.c \
+    kern/i386/idt.c \
+    kern/i386/timer.c \
+    kern/i386/trap.c \
     platform/i386/uart.c \
     kern/console/console.c \
     libk/string.c \
     libk/udivmoddi4.c
 
 I386_ASM_SOURCES := \
-    mach/i386/start.S \
-    mach/i386/trap_vectors.S
+    kern/i386/start.S \
+    kern/i386/trap_vectors.S
 
 # Each area of the port adds its own sources, flags and targets in a fragment
 # under makedefs/i386/, so two areas never edit the same lines of this file.

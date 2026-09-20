@@ -34,7 +34,7 @@
 #include <vm/address_space.h>
 #include <vm/pmm.h>
 #include <vm/vm_map.h>
-#include <mach/machine/vm_param.h>
+#include <kern/machine/vm_param.h>
 
 #include <stdbool.h>
 #include <stdint.h>

@@ -24,8 +24,8 @@
 #include <kern/console/console.h>
 #include <kern/console/ioregistry.h>
 #include <kern/irq/irq.h>
-#include <mach/arm64/gic.h>
-#include <mach/arm64/system.h>
+#include <kern/arm64/gic.h>
+#include <kern/arm64/system.h>
 #include <platform/platform.h>
 #include <platform/rtc.h>
 

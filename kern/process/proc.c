@@ -3,7 +3,7 @@
 #include <kern/process/signal.h>
 #include <kern/sched_prism/sched.h>
 
-#include <mach/machine/cpu.h>
+#include <kern/machine/cpu.h>
 
 #include <platform/uart.h>
 

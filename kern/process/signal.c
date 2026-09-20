@@ -10,7 +10,7 @@
 #include <kern/process/signal.h>
 
 #include <kern/sched_prism/waitq.h>
-#include <mach/machine/vm_param.h>
+#include <kern/machine/vm_param.h>
 
 #include <stdbool.h>
 #include <stdint.h>

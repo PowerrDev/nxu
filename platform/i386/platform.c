@@ -23,8 +23,8 @@
 #include <platform/i386/pci.h>
 
 #include <kern/console/console.h>
-#include <mach/i386/boot_info.h>
-#include <mach/i386/multiboot.h>
+#include <kern/i386/boot_info.h>
+#include <kern/i386/multiboot.h>
 
 #include <stdbool.h>
 #include <stdint.h>

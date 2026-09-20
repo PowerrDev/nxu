@@ -2,7 +2,7 @@
 #include <vm/vmm_internal.h>
 
 #include <kern/lock.h>
-#include <mach/machine/vm_param.h>
+#include <kern/machine/vm_param.h>
 #include <vm/pmm.h>
 
 #include <stdbool.h>

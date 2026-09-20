@@ -21,17 +21,17 @@
 # (vm), vm_address_space_* and the user-copy routines (vm), the VFS, block,
 # input and display drivers (devices), loader_spawn (userland). With none of
 # them present the link needs the weak, TEST-ONLY stand-ins in
-# mach/i386/threads_standins.c. Real definitions elsewhere in the link
+# kern/i386/threads_standins.c. Real definitions elsewhere in the link
 # override them automatically; set I386_THREADS_STANDINS=0 to drop the file
 # once everything it stands in for exists.
 
 I386_THREADS_STANDINS ?= 1
 
 I386_C_SOURCES += \
-    mach/i386/thread.c \
-    mach/i386/syscall_trap.c \
-    mach/i386/threads_init.c \
-    mach/i386/threads_selftest.c \
+    kern/i386/thread.c \
+    kern/i386/syscall_trap.c \
+    kern/i386/threads_init.c \
+    kern/i386/threads_selftest.c \
     kern/process/proc.c \
     kern/process/signal.c \
     kern/process/task.c \
@@ -49,11 +49,11 @@ I386_C_SOURCES += \
     kern/ipc/socket.c
 
 I386_ASM_SOURCES += \
-    mach/i386/context_switch.S \
-    mach/i386/transition.S
+    kern/i386/context_switch.S \
+    kern/i386/transition.S
 
 ifneq ($(I386_THREADS_STANDINS),0)
-I386_C_SOURCES += mach/i386/threads_standins.c
+I386_C_SOURCES += kern/i386/threads_standins.c
 endif
 
 .PHONY: test-i386-threads

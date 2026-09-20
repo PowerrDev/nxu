@@ -25,7 +25,7 @@
 
 #include <kern/console/console.h>
 #include <kern/irq/irq.h>
-#include <mach/machine/barrier.h>
+#include <kern/machine/barrier.h>
 #include <platform/i386/portio.h>
 
 #include <stdbool.h>
@@ -84,7 +84,7 @@ uint32_t virtio_pci_irq_bound_count(void)
 }
 
 /*
- * PIC hooks from the interrupts area (mach/i386/pic.h), weak so this file
+ * PIC hooks from the interrupts area (kern/i386/pic.h), weak so this file
  * links before that area is merged. In that case irq_register() refuses too,
  * so the drivers poll.
  */

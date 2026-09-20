@@ -7,7 +7,7 @@
 
 #include <kern/ipc/shm_registry.h>
 
-#include <mach/machine/cpu.h>
+#include <kern/machine/cpu.h>
 
 #include <stdbool.h>
 #include <stdint.h>

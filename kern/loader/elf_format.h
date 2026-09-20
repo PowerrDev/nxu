@@ -26,7 +26,7 @@
 #ifndef NXU_KERN_LOADER_ELF_FORMAT_H
 #define NXU_KERN_LOADER_ELF_FORMAT_H
 
-#include <mach/machine/vm_param.h>
+#include <kern/machine/vm_param.h>
 
 #include <stdbool.h>
 #include <stdint.h>

@@ -1,7 +1,7 @@
 #include <kern/syscall/syscall.h>
 
-#include <mach/machine/system.h>
-#include <mach/machine/timer.h>
+#include <kern/machine/system.h>
+#include <kern/machine/timer.h>
 #include <kern/boot/boot_args.h>
 #include <kern/boot/boot_mode.h>
 #include <drivers/block/block_device.h>
@@ -27,7 +27,7 @@
 #include <kern/process/signal.h>
 #include <kern/process/thread.h>
 #include <kern/sched_prism/waitq.h>
-#include <mach/machine/user.h>
+#include <kern/machine/user.h>
 #include <kern/sched_prism/sched.h>
 #include <vfs/vfs.h>
 #include <vm/user_copy.h>

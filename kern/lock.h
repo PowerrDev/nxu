@@ -1,7 +1,7 @@
 #ifndef NXU_KERN_LOCK_H
 #define NXU_KERN_LOCK_H
 
-#include <mach/machine/cpu.h>
+#include <kern/machine/cpu.h>
 
 #include <stdint.h>
 

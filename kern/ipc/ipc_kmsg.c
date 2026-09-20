@@ -9,7 +9,7 @@
 
 #include <kern/ipc/ipc_kmsg.h>
 
-#include <mach/machine/machine_routines.h>
+#include <kern/machine/machine_routines.h>
 #include <kern/ipc/ipc_port.h>
 #include <kern/memory/heap.h>
 

@@ -16,7 +16,7 @@
 
 #include <platform/rtc.h>
 
-#include <mach/i386/io.h>
+#include <kern/i386/io.h>
 
 #include <stdbool.h>
 #include <stdint.h>

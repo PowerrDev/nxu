@@ -23,7 +23,7 @@
  *                       through irq_register() instead of polling
  */
 
-#include <mach/i386/boot_info.h>
+#include <kern/i386/boot_info.h>
 #include <platform/i386/pci.h>
 #include <platform/platform.h>
 #include <platform/rtc.h>
@@ -38,9 +38,9 @@
 #include <drivers/virtio/virtio_pci.h>
 
 #include <kern/console/console.h>
-#include <mach/machine/barrier.h>
-#include <mach/machine/machine_routines.h>
-#include <mach/machine/timer.h>
+#include <kern/machine/barrier.h>
+#include <kern/machine/machine_routines.h>
+#include <kern/machine/timer.h>
 
 #include <stdbool.h>
 #include <stdint.h>

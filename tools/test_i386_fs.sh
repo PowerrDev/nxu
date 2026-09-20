@@ -2,7 +2,7 @@
 #
 # ext4 write and journal tests for the i386 kernel, behind `make test-i386-fs`.
 #
-# The guest does the work (fs-test=<mode>, see mach/i386/fs_test.h) and the
+# The guest does the work (fs-test=<mode>, see kern/i386/fs_test.h) and the
 # HOST checks the disk image independently with e2fsck and debugfs, so the
 # kernel is never only grading itself. One disk image is carried through the
 # cases in order, because the later ones depend on what the earlier left:

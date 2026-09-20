@@ -7,7 +7,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <mach/machine/vm_param.h>
+#include <kern/machine/vm_param.h>
 
 #define VM_KERN_END (VM_KERN_BASE + VM_KERN_SIZE)
 

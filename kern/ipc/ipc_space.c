@@ -15,7 +15,7 @@
 
 #include <kern/ipc/ipc_port.h>
 
-#include <mach/machine/cpu.h>
+#include <kern/machine/cpu.h>
 
 #include <stdbool.h>
 #include <stdint.h>

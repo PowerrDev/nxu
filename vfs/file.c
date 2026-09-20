@@ -1,5 +1,5 @@
 #include <vfs/file.h>
-#include <mach/machine/cpu.h>
+#include <kern/machine/cpu.h>
 
 #include <stdbool.h>
 #include <stdint.h>

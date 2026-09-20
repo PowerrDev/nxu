@@ -5,7 +5,7 @@
  * File:        vfs/btrfs/btrfs_selftest.h
  *
  * The in-kernel Btrfs test, shared by arm64 (kern/kern_init.c) and i386
- * (mach/i386/userland_init.c), selected by the boot argument
+ * (kern/i386/userland_init.c), selected by the boot argument
  *
  *     btrfs-test=<spec>[,<spec>...]
  *

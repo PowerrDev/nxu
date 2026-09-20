@@ -9,7 +9,7 @@
 
 #include <vm/vm_fault.h>
 
-#include <mach/machine/vm_param.h>
+#include <kern/machine/vm_param.h>
 #include <vm/pmm.h>
 #include <vm/vm_map.h>
 

@@ -7,7 +7,7 @@
  * POSIX-flavoured signals, machine-independent half: dispositions, pending
  * and blocked sets, who may signal whom, and the default actions. The
  * machine-dependent half -- pushing a handler frame onto the user stack and
- * restoring it -- is <mach/machine/user.h>, driven from the trap return path.
+ * restoring it -- is <kern/machine/user.h>, driven from the trap return path.
  *
  * Model:
  *

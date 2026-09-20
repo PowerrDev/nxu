@@ -25,8 +25,8 @@
 #include <kern/tests/windowserver_process_test.h>
 #include <kern/tests/xamethyst_process_test.h>
 #include <drivers/video/ui_service_host.h>
-#include <mach/arm64/gic.h>
-#include <mach/machine/machine_routines.h>
+#include <kern/arm64/gic.h>
+#include <kern/machine/machine_routines.h>
 #include <vfs/btrfs/btrfs_selftest.h>
 #include <vfs/ext4.h>
 #include <vfs/vfs.h>

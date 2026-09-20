@@ -10,7 +10,7 @@
 
 #include <kern/ipc/ipc_port.h>
 
-#include <mach/machine/machine_routines.h>
+#include <kern/machine/machine_routines.h>
 #include <kern/memory/heap.h>
 #include <kern/sched_prism/waitq.h>
 

@@ -1,8 +1,8 @@
 #include <kern/console/console.h>
 #include <kern/sched_prism/sched.h>
 #include <kern/sched_prism/waitq.h>
-#include <mach/machine/cpu.h>
-#include <mach/machine/machine_routines.h>
+#include <kern/machine/cpu.h>
+#include <kern/machine/machine_routines.h>
 #include <kern/process/proc.h>
 #include <platform/uart.h>
 #include <vm/address_space.h>

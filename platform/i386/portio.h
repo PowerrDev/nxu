@@ -5,13 +5,13 @@
  * File:        platform/i386/portio.h
  *
  * The 16- and 32-bit I/O-port accessors that legacy PCI configuration and
- * VirtIO-PCI need, next to the byte accessors in <mach/i386/io.h>.
+ * VirtIO-PCI need, next to the byte accessors in <kern/i386/io.h>.
  */
 
 #ifndef NXU_PLATFORM_I386_PORTIO_H
 #define NXU_PLATFORM_I386_PORTIO_H
 
-#include <mach/i386/io.h>
+#include <kern/i386/io.h>
 
 #include <stdint.h>
 

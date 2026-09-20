@@ -1,6 +1,6 @@
 #include <drivers/virtio/virtqueue.h>
 
-#include <mach/machine/barrier.h>
+#include <kern/machine/barrier.h>
 #include <vm/pmm.h>
 #include <vm/vmm.h>
 

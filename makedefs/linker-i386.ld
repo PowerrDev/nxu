@@ -15,7 +15,7 @@ ENTRY(_start)
  * The whole image is therefore one contiguous range in both address forms:
  * physical [0x100000, __kernel_phys_end) and virtual [__kernel_start,
  * __kernel_end) = physical + KERNEL_VIRT_OFFSET. The boot stub builds the
- * page tables that make the second form valid; see mach/i386/start.S.
+ * page tables that make the second form valid; see kern/i386/start.S.
  *
  * Sections are page aligned so the VM layer can give text and rodata
  * read-only mappings and everything else read-write.

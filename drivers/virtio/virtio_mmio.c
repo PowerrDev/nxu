@@ -1,7 +1,7 @@
 #include <drivers/virtio/virtio_mmio.h>
 
 #include <kern/irq/irq.h>
-#include <mach/arm64/gic.h>
+#include <kern/arm64/gic.h>
 #include <vm/vmm.h>
 
 #include <stdbool.h>

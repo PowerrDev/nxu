@@ -2,7 +2,7 @@
 #include <kern/process/thread.h>
 #include <kern/process/task.h>
 
-#include <mach/machine/cpu.h>
+#include <kern/machine/cpu.h>
 
 #include <platform/uart.h>
 #include <vm/vm_kern.h>

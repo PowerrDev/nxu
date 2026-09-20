@@ -3,7 +3,7 @@
 #include <drivers/video/display.h>
 #include <kern/console/console.h>
 #include <kern/console/ioregistry.h>
-#include <mach/machine/barrier.h>
+#include <kern/machine/barrier.h>
 #include <vm/pmm.h>
 #include <vm/vmm.h>
 

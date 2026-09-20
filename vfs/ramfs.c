@@ -1,5 +1,5 @@
 #include <vfs/ramfs.h>
-#include <mach/machine/cpu.h>
+#include <kern/machine/cpu.h>
 
 #include <kern/memory/heap.h>
 #include <vfs/vfs.h>

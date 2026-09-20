@@ -1,12 +1,12 @@
 #include <kern/loader/elf.h>
 #include <kern/loader/elf_format.h>
-#include <mach/machine/cache.h>
+#include <kern/machine/cache.h>
 #include <kern/ipc/ipc_init.h>
 #include <kern/ipc/ipc_port.h>
 #include <kern/ipc/ipc_space.h>
 #include <kern/process/signal.h>
 #include <kern/process/task.h>
-#include <mach/machine/user.h>
+#include <kern/machine/user.h>
 #include <kern/process/thread.h>
 #include <kern/sched_prism/sched.h>
 #include <vfs/vfs.h>

@@ -1,6 +1,6 @@
 #include <kern/irq/irq.h>
 
-#include <mach/machine/machine_routines.h>
+#include <kern/machine/machine_routines.h>
 
 #include <stdbool.h>
 #include <stdint.h>

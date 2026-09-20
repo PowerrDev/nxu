@@ -7,9 +7,9 @@
 
 I386_C_SOURCES += \
     kern/irq/irq.c \
-    mach/i386/interrupts_test.c \
-    mach/i386/irq.c \
-    mach/i386/pic.c
+    kern/i386/interrupts_test.c \
+    kern/i386/irq.c \
+    kern/i386/pic.c
 
 .PHONY: test-i386-interrupts
 

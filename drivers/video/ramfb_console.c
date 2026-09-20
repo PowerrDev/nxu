@@ -1,6 +1,6 @@
 #include <drivers/video/ramfb_console.h>
 
-#include <mach/arm64/timer.h>
+#include <kern/arm64/timer.h>
 #include <kern/console/console.h>
 #include <kern/console/font8x16.h>
 #include <platform/fw_cfg.h>

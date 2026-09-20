@@ -5,7 +5,7 @@
  * the loader can give them different permissions with no page shared.
  *
  * The image is based at 0x00400000. The user window below the VM_MAP window
- * (mach/i386/vm_param.h) is [0x1000, 0x40000000); a program has to stay
+ * (kern/i386/vm_param.h) is [0x1000, 0x40000000); a program has to stay
  * inside it, and tools/check_i386_user.sh verifies that it does.
  *
  * No ELF header or program header table is placed in a segment, so the first

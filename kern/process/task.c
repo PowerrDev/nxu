@@ -1,7 +1,7 @@
 #include <kern/process/task.h>
 #include <kern/sched_prism/sched.h>
 #include <kern/process/thread.h>
-#include <mach/machine/user.h>
+#include <kern/machine/user.h>
 #include <vm/pmm.h>
 #include <vm/vm_map.h>
 #include <vm/vm_shm.h>

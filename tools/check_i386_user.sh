@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Checks the i386 user programs against what the kernel's ELF loader accepts
-# (kern/loader/elf_format.h) and the user address map (mach/i386/vm_param.h).
+# (kern/loader/elf_format.h) and the user address map (kern/i386/vm_param.h).
 # Behind `make test-i386-userland`.
 #
 # For every program in the build directory it verifies, with llvm-readelf:
@@ -40,9 +40,9 @@ if ! command -v "$READELF" >/dev/null 2>&1; then
 fi
 
 # VM_MAP_BASE is where the image window ends; take it from the kernel header.
-MAP_BASE=$(sed -n 's/^#define VM_MAP_BASE[[:space:]]*\(0x[0-9A-Fa-f]*\).*/\1/p' "$ROOT/mach/i386/vm_param.h" | head -1)
+MAP_BASE=$(sed -n 's/^#define VM_MAP_BASE[[:space:]]*\(0x[0-9A-Fa-f]*\).*/\1/p' "$ROOT/kern/i386/vm_param.h" | head -1)
 if [ -z "$MAP_BASE" ]; then
-	echo "check_i386_user: cannot read VM_MAP_BASE from mach/i386/vm_param.h" >&2
+	echo "check_i386_user: cannot read VM_MAP_BASE from kern/i386/vm_param.h" >&2
 	exit 2
 fi
 MAP_BASE=$((MAP_BASE))

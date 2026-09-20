@@ -1,7 +1,7 @@
 #include <kern/console/console.h>
 #include <drivers/input/input.h>
 
-#include <mach/machine/machine_routines.h>
+#include <kern/machine/machine_routines.h>
 #include <drivers/input/keyboard.h>
 #include <drivers/input/mouse.h>
 #include <platform/uart.h>

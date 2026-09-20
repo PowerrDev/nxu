@@ -489,7 +489,7 @@ bool pmm_init(
 
 /*
  * x86 has no device tree. The platform hands over RAM as a sorted list of
- * regions (mach/i386/memory_map.h), the kernel is a known physical range,
+ * regions (kern/i386/memory_map.h), the kernel is a known physical range,
  * and everything else that must survive (the bootloader's information
  * structure and command line) is registered with pmm_reserve_boot_range()
  * before pmm_init(). All of physical memory is reachable through the

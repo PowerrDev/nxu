@@ -1,5 +1,5 @@
 #include <kern/console/console.h>
-#include <mach/machine/cpu.h>
+#include <kern/machine/cpu.h>
 #include <vfs/vfs.h>
 #include <vfs/vfs_internal.h>
 

@@ -6,16 +6,16 @@
 # port is brought up end to end) the shared kernel sources every area assumed
 # someone else would link. Included by makedefs/i386.mk.
 
-# The threads area's weak stand-ins (mach/i386/threads_standins.c) are only
+# The threads area's weak stand-ins (kern/i386/threads_standins.c) are only
 # for booting that area alone; with the VFS, loader and the rest linked here,
 # every one of them has a real definition.
 I386_THREADS_STANDINS := 0
 
 I386_C_SOURCES += \
-    mach/i386/fs_test.c \
-    mach/i386/kernel_init.c \
-    mach/i386/mmio_map.c \
-    mach/i386/userland_init.c \
+    kern/i386/fs_test.c \
+    kern/i386/kernel_init.c \
+    kern/i386/mmio_map.c \
+    kern/i386/userland_init.c \
     kern/boot/boot_args.c \
     kern/boot/boot_mode.c \
     drivers/video/display.c \

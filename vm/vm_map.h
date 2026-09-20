@@ -10,7 +10,7 @@
  * thread stacks and (with the initial user stack) demand-zero memory.
  *
  * Where the port resolves user page faults (VM_DEMAND_PAGING, see
- * <mach/machine/vm_param.h>), a region only reserves address space: each
+ * <kern/machine/vm_param.h>), a region only reserves address space: each
  * page is allocated, zero-filled and mapped by vm/vm_fault.h the first time
  * something touches it. Where it does not (i386), every page is allocated
  * and mapped up front, exactly like vm_shm.
@@ -37,7 +37,7 @@
  * vm/vm_shm.h's VM_SHM_BASE window and from kern/loader/elf.c's
  * LOADER_USER_STACK_BASE/TOP.
  */
-#include <mach/machine/vm_param.h>
+#include <kern/machine/vm_param.h>
 
 /* Per-call cap, eager-backed like vm_shm's own cap, just larger since this
  * is meant for general-purpose heap/stack use rather than one framebuffer. */

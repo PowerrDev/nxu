@@ -2,8 +2,8 @@
 #include <kern/console/ioregistry.h>
 #include <drivers/virtio/virtio_input.h>
 
-#include <mach/machine/barrier.h>
-#include <mach/machine/machine_routines.h>
+#include <kern/machine/barrier.h>
+#include <kern/machine/machine_routines.h>
 #include <drivers/input/keyboard.h>
 #include <drivers/input/mouse.h>
 #include <kern/irq/irq.h>

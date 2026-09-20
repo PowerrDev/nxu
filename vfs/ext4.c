@@ -1,5 +1,5 @@
 #include <kern/console/console.h>
-#include <mach/machine/cpu.h>
+#include <kern/machine/cpu.h>
 #include <vfs/ext4.h>
 
 #include <drivers/block/block_device.h>

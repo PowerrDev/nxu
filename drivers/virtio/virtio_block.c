@@ -3,7 +3,7 @@
 #include <drivers/virtio/virtio_block.h>
 
 #include <drivers/block/block_device.h>
-#include <mach/machine/barrier.h>
+#include <kern/machine/barrier.h>
 #include <platform/uart.h>
 #include <vm/pmm.h>
 #include <vm/vmm.h>

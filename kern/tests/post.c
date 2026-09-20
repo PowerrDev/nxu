@@ -18,7 +18,7 @@
 #include <kern/tests/ipc_test.h>
 #include <kern/tests/vm_map_test.h>
 #include <kern/tests/vm_shm_test.h>
-#include <mach/arm64/exception.h>
+#include <kern/arm64/exception.h>
 #include <vfs/vfs.h>
 #include <vm/pmm.h>
 #include <vm/vm_kern.h>
