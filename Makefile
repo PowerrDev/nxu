@@ -378,7 +378,8 @@ C_SOURCES := \
     platform/arm64/rtc.c \
     platform/arm64/uart.c \
     libk/crc32c.c \
-    libk/string.c
+    libk/string.c \
+    libk/wav.c
 
 
 ASM_SOURCES := \

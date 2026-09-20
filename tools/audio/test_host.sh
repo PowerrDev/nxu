@@ -9,6 +9,12 @@
 #   sound core   feature negotiation (a device without VERSION_1 is refused),
 #                the stream state machine (every state against every request),
 #                names, sample widths and the parameter negotiation
+#   wav          the RIFF/WAVE reader and the conversion to 16-bit stereo:
+#                every accepted encoding, extensible headers, odd chunks and
+#                padding, sizes that lie, every refusal, every prefix of four
+#                files, every byte set to interesting values, 60000 random
+#                mutations of each and pure noise (never a crash, an
+#                out-of-bounds read, an overflow or a hang)
 #
 # usage: test_host.sh <scratch dir>
 # Plain bash 3.2 (what macOS ships).
@@ -46,6 +52,7 @@ build_and_run() {
 }
 
 build_and_run test_sound_core "$HERE/host/test_sound_core.c" "$ROOT/drivers/virtio/virtio_sound_core.c"
+build_and_run test_wav "$HERE/host/test_wav.c" "$ROOT/libk/wav.c"
 
 echo
 echo "audio host tests: $failures failure(s)"
