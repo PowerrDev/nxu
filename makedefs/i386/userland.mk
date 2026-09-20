@@ -121,7 +121,9 @@ I386_USER_PLISTS := \
 # arm64 DiskRoot without modifying it.
 I386_DISK_STATIC_FILES := \
     tools/DiskRoot/hello.txt \
-    tools/DiskRoot/System/README.txt
+    tools/DiskRoot/System/README.txt \
+    tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.mp3 \
+    tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.wav
 
 I386_DISK_SIZE ?= 16M
 
@@ -204,11 +206,13 @@ $(I386_USER_STAMP): $(I386_USER_BINARIES) $(I386_USER_PLISTS) $(I386_DISK_STATIC
 
 	$(Q)rm -rf $(I386_DISKROOT)
 
-	$(Q)mkdir -p $(I386_DISKROOT)/System/Library/CoreServices $(I386_DISKROOT)/System/Library/BootDaemons $(I386_DISKROOT)/System/Recovery $(I386_DISKROOT)/var/log $(I386_DISKROOT)/var/db/patchd
+	$(Q)mkdir -p $(I386_DISKROOT)/System/Library/CoreServices $(I386_DISKROOT)/System/Library/BootDaemons $(I386_DISKROOT)/System/Recovery $(I386_DISKROOT)/System/Library/Resources/Audio $(I386_DISKROOT)/var/log $(I386_DISKROOT)/var/db/patchd
 
 	$(Q)cp tools/DiskRoot/hello.txt $(I386_DISKROOT)/hello.txt
 
 	$(Q)cp tools/DiskRoot/System/README.txt $(I386_DISKROOT)/System/README.txt
+
+	$(Q)cp tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.mp3 tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.wav $(I386_DISKROOT)/System/Library/Resources/Audio/
 
 	$(Q)cp $(I386_USER_BUILD)/bootd $(I386_DISKROOT)/System/Library/CoreServices/bootd
 
