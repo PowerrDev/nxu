@@ -4,6 +4,7 @@
 #include <drivers/virtio/virtio_snd.h>
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 /*
@@ -67,6 +68,28 @@ uint32_t virtio_snd_pcm_op_request(virtio_snd_pcm_op_t op);
  */
 bool virtio_snd_negotiate(uint64_t offered, uint64_t *accepted);
 
+/*
+ * What a request to the device came to. The device reports OK, BAD_MSG,
+ * NOT_SUPP or IO_ERR; the driver adds the ways a request can fail before the
+ * device has a say (no answer, a device already given up on, a request the
+ * state machine forbids, a parameter no stream accepts).
+ */
+typedef enum {
+	VIRTIO_SND_E_NONE,
+	VIRTIO_SND_E_BAD_MSG,
+	VIRTIO_SND_E_NOT_SUPP,
+	VIRTIO_SND_E_IO,
+	VIRTIO_SND_E_TIMEOUT,
+	VIRTIO_SND_E_DEAD,
+	VIRTIO_SND_E_ILLEGAL,
+	VIRTIO_SND_E_INVALID,
+	VIRTIO_SND_E_NO_MEMORY
+} virtio_snd_error_t;
+
+/* The outcome a response status code stands for; a code outside the specification is an I/O error. */
+virtio_snd_error_t virtio_snd_error_from_status(uint32_t status);
+const char *virtio_snd_error_name(virtio_snd_error_t error);
+
 /* Names, "?" for a value outside the specification. */
 const char *virtio_snd_feature_name(uint32_t bit);
 const char *virtio_snd_status_name(uint32_t status);
@@ -78,6 +101,16 @@ const char *virtio_snd_chmap_name(uint32_t position);
 const char *virtio_snd_direction_name(uint32_t direction);
 const char *virtio_snd_pcm_state_name(virtio_snd_pcm_state_t state);
 const char *virtio_snd_pcm_op_name(virtio_snd_pcm_op_t op);
+
+/*
+ * Human-readable lists for the log: the names of the formats or rates set in
+ * a bit map, or the channel positions of a map, separated by spaces, into
+ * buffer (always NUL terminated, truncated to fit). A bit outside the
+ * specification is shown as "?<bit>". Return the length written.
+ */
+size_t virtio_snd_describe_formats(uint64_t formats, char *buffer, size_t capacity);
+size_t virtio_snd_describe_rates(uint64_t rates, char *buffer, size_t capacity);
+size_t virtio_snd_describe_positions(const uint8_t *positions, uint32_t channels, char *buffer, size_t capacity);
 
 /* Width in bytes of one sample of `format`, or 0 for a format the driver cannot stream (compressed, 18/20-bit, DSD). */
 uint32_t virtio_snd_format_bytes(uint32_t format);

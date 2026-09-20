@@ -1,32 +1,53 @@
 #include <drivers/virtio/virtio_sound.h>
 
-#include <drivers/virtio/virtio_snd.h>
-#include <drivers/virtio/virtio_sound_core.h>
-#include <kern/console/console.h>
-#include <kern/console/ioregistry.h>
+#include <drivers/virtio/virtio_sound_internal.h>
+#include <kern/machine/barrier.h>
+#include <kern/machine/machine_routines.h>
+#include <kern/machine/timer.h>
+#include <vm/pmm.h>
+#include <vm/vmm.h>
 
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
-/* Every line the driver logs starts with the name of the function that prints it. */
-#define VIRTIO_SND_LOG(format, ...) kprintf("%s: " format, __func__, ##__VA_ARGS__)
+#define VIRTQ_AVAIL_F_NO_INTERRUPT 1U
 
-typedef struct {
-	virtio_device_t transport;
-	ioreg_id_t ioreg_family;
-	ioreg_id_t ioreg_node;
-
-	/* The device configuration space (section 5.14.4). */
-	uint32_t jacks;
-	uint32_t streams;
-	uint32_t chmaps;
-
-	bool attached;
-} virtio_snd_device_t;
+/* Spins a control request may take when the clock is not running yet (i386 before calibration). */
+#define VIRTIO_SND_CONTROL_SPINS 200000000ULL
 
 static virtio_snd_device_t g_virtio_snd_devices[VIRTIO_SND_MAX_DEVICES];
 static uint32_t g_virtio_snd_device_count;
+
+/* ---- DMA memory -------------------------------------------------------- */
+
+static bool virtio_snd_allocate_page(virtio_snd_page_t *page)
+{
+	uint64_t physical;
+	uint64_t higher_half;
+
+	if (!pmm_allocate_page(&physical)) return false;
+
+	if (!vmm_physical_to_higher_half(physical, &higher_half)) {
+		(void)pmm_free_page(physical);
+		return false;
+	}
+
+	page->physical = physical;
+	page->virtual_address = (uint8_t *)higher_half;
+	memset(page->virtual_address, 0, PMM_PAGE_SIZE);
+	return true;
+}
+
+static void virtio_snd_free_page(virtio_snd_page_t *page)
+{
+	if (page->physical != 0ULL) (void)pmm_free_page(page->physical);
+
+	page->physical = 0ULL;
+	page->virtual_address = 0;
+}
+
+/* ---- where the device is ---------------------------------------------- */
 
 /*
  * virtio_snd_describe_transport:
@@ -45,6 +66,8 @@ static void virtio_snd_describe_transport(const virtio_device_t *transport)
 	VIRTIO_SND_LOG("transport %s, MMIO frame 0x%llx (%llu bytes)\n", transport->ops->name, (unsigned long long)transport->region.base, (unsigned long long)transport->region.size);
 	VIRTIO_SND_LOG("interrupt INTID %u (GIC SPI)\n", transport->intid);
 }
+
+/* ---- feature negotiation ---------------------------------------------- */
 
 /*
  * virtio_snd_log_features:
@@ -76,22 +99,6 @@ static void virtio_snd_log_features(const virtio_snd_device_t *device)
 	VIRTIO_SND_LOG("%u feature bit(s) accepted\n", accepted_count);
 	kverbosef("virtio_snd_log_features: features offered 0x%llx\n", (unsigned long long)offered);
 	kverbosef("virtio_snd_log_features: features accepted 0x%llx\n", (unsigned long long)accepted);
-}
-
-/*
- * virtio_snd_read_config:
- *
- * Read the three counters of the device configuration space, one line each.
- */
-static void virtio_snd_read_config(virtio_snd_device_t *device)
-{
-	device->jacks = virtio_device_config_read32(&device->transport, VIRTIO_SND_CONFIG_JACKS);
-	device->streams = virtio_device_config_read32(&device->transport, VIRTIO_SND_CONFIG_STREAMS);
-	device->chmaps = virtio_device_config_read32(&device->transport, VIRTIO_SND_CONFIG_CHMAPS);
-
-	VIRTIO_SND_LOG("config: %u jack(s)\n", device->jacks);
-	VIRTIO_SND_LOG("config: %u PCM stream(s)\n", device->streams);
-	VIRTIO_SND_LOG("config: %u channel map(s)\n", device->chmaps);
 }
 
 /*
@@ -133,6 +140,367 @@ static bool virtio_snd_negotiate_features(virtio_snd_device_t *device)
 	return false;
 }
 
+/*
+ * virtio_snd_read_config:
+ *
+ * Read the three counters of the device configuration space, one line each.
+ */
+static void virtio_snd_read_config(virtio_snd_device_t *device)
+{
+	device->jacks = virtio_device_config_read32(&device->transport, VIRTIO_SND_CONFIG_JACKS);
+	device->streams = virtio_device_config_read32(&device->transport, VIRTIO_SND_CONFIG_STREAMS);
+	device->chmaps = virtio_device_config_read32(&device->transport, VIRTIO_SND_CONFIG_CHMAPS);
+
+	VIRTIO_SND_LOG("config: %u jack(s)\n", device->jacks);
+	VIRTIO_SND_LOG("config: %u PCM stream(s)\n", device->streams);
+	VIRTIO_SND_LOG("config: %u channel map(s)\n", device->chmaps);
+}
+
+/* ---- queues ------------------------------------------------------------ */
+
+/*
+ * virtio_snd_setup_queues:
+ *
+ * Create and publish the control, event and tx queues. The rx queue is only
+ * for capture, which the driver does not do, so it is left unconfigured.
+ * Control completions are polled, so that queue never interrupts.
+ */
+static bool virtio_snd_setup_queues(virtio_snd_device_t *device)
+{
+	struct {
+		uint16_t index;
+		uint16_t size;
+		virtqueue_t *queue;
+		const char *name;
+	} queues[] = {
+		{ VIRTIO_SND_VQ_CONTROL, VIRTIO_SND_CONTROL_QUEUE_SIZE, &device->controlq, "controlq" },
+		{ VIRTIO_SND_VQ_EVENT, VIRTIO_SND_EVENT_QUEUE_SIZE, &device->eventq, "eventq" },
+		{ VIRTIO_SND_VQ_TX, VIRTIO_SND_TX_QUEUE_SIZE, &device->txq, "txq" }
+	};
+	const uint32_t count = sizeof(queues) / sizeof(queues[0]);
+
+	for (uint32_t index = 0U; index < count; index++) {
+		if (!virtio_device_queue_init(&device->transport, queues[index].index, queues[index].size, queues[index].queue)) {
+			VIRTIO_SND_LOG("virtqueue %u (%s) could not be created\n", queues[index].index, queues[index].name);
+			return false;
+		}
+
+		VIRTIO_SND_LOG("virtqueue %u (%s): %u descriptors\n", queues[index].index, queues[index].name, (unsigned int)queues[index].queue->size);
+	}
+
+	VIRTIO_SND_LOG("virtqueue %u (rxq): not used, the driver does not capture\n", VIRTIO_SND_VQ_RX);
+
+	*device->controlq.available_flags = VIRTQ_AVAIL_F_NO_INTERRUPT;
+
+	for (uint32_t index = 0U; index < count; index++) {
+		if (!virtio_device_setup_queue(&device->transport, queues[index].index, queues[index].queue)) {
+			VIRTIO_SND_LOG("virtqueue %u (%s) was refused by the device\n", queues[index].index, queues[index].name);
+			return false;
+		}
+	}
+
+	return true;
+}
+
+/*
+ * virtio_snd_cleanup:
+ *
+ * Give back what a device that failed to attach holds. The reset comes first:
+ * once it is done the device no longer reads the rings.
+ */
+static void virtio_snd_cleanup(virtio_snd_device_t *device)
+{
+	if (virtio_device_live(&device->transport)) (void)virtio_device_reset(&device->transport);
+
+	if (device->controlq.initialized) (void)virtqueue_destroy(&device->controlq);
+	if (device->eventq.initialized) (void)virtqueue_destroy(&device->eventq);
+	if (device->txq.initialized) (void)virtqueue_destroy(&device->txq);
+
+	virtio_snd_free_page(&device->control_page);
+	memset(device, 0, sizeof(*device));
+}
+
+/* ---- the control queue ------------------------------------------------- */
+
+virtio_snd_error_t virtio_snd_control(virtio_snd_device_t *device, uint32_t request_bytes, uint32_t response_capacity, uint32_t *response_bytes)
+{
+	if (response_bytes != 0) *response_bytes = 0U;
+
+	if (device->control_dead) return VIRTIO_SND_E_DEAD;
+	if (request_bytes == 0U || request_bytes > VIRTIO_SND_CONTROL_RESPONSE_OFFSET || response_capacity < sizeof(virtio_snd_hdr_t) || response_capacity > VIRTIO_SND_CONTROL_RESPONSE_MAX) return VIRTIO_SND_E_INVALID;
+
+	uint8_t *request = device->control_page.virtual_address;
+	uint8_t *response = request + VIRTIO_SND_CONTROL_RESPONSE_OFFSET;
+	uint16_t request_desc;
+	uint16_t response_desc;
+
+	if (!virtqueue_alloc_descriptor(&device->controlq, &request_desc)) return VIRTIO_SND_E_NO_MEMORY;
+
+	if (!virtqueue_alloc_descriptor(&device->controlq, &response_desc)) {
+		(void)virtqueue_free_descriptor(&device->controlq, request_desc);
+		return VIRTIO_SND_E_NO_MEMORY;
+	}
+
+	memset(response, 0, response_capacity);
+
+	virtq_desc_t *out = &device->controlq.descriptors[request_desc];
+
+	out->address = device->control_page.physical;
+	out->length = request_bytes;
+	out->flags = VIRTQ_DESC_F_NEXT;
+	out->next = response_desc;
+
+	virtq_desc_t *in = &device->controlq.descriptors[response_desc];
+
+	in->address = device->control_page.physical + VIRTIO_SND_CONTROL_RESPONSE_OFFSET;
+	in->length = response_capacity;
+	in->flags = VIRTQ_DESC_F_WRITE;
+	in->next = 0U;
+
+	ml_dma_wmb();
+
+	if (!virtqueue_submit(&device->controlq, request_desc)) {
+		(void)virtqueue_free_descriptor(&device->controlq, response_desc);
+		(void)virtqueue_free_descriptor(&device->controlq, request_desc);
+		return VIRTIO_SND_E_IO;
+	}
+
+	device->control_requests++;
+	virtio_device_notify(&device->transport, VIRTIO_SND_VQ_CONTROL);
+
+	uint64_t deadline = timer_get_microseconds() + VIRTIO_SND_CONTROL_TIMEOUT_US;
+	uint64_t spins = 0ULL;
+	uint32_t id;
+	uint32_t length;
+
+	while (!virtqueue_pop_used(&device->controlq, &id, &length)) {
+		spins++;
+
+		if (timer_get_microseconds() > deadline || spins > VIRTIO_SND_CONTROL_SPINS) {
+			/* The device may still write the response: the descriptors and the page stay theirs. */
+			device->control_dead = true;
+			device->control_failures++;
+			VIRTIO_SND_LOG("request 0x%x (%s) was not answered, giving up on the device\n", ((const virtio_snd_hdr_t *)(const void *)request)->code, virtio_snd_request_name(((const virtio_snd_hdr_t *)(const void *)request)->code));
+			return VIRTIO_SND_E_TIMEOUT;
+		}
+
+		ml_cpu_relax();
+	}
+
+	ml_dma_rmb();
+
+	uint32_t request_code = ((const virtio_snd_hdr_t *)(const void *)request)->code;
+	uint32_t status = ((const virtio_snd_hdr_t *)(const void *)response)->code;
+
+	(void)virtqueue_free_descriptor(&device->controlq, response_desc);
+	(void)virtqueue_free_descriptor(&device->controlq, request_desc);
+
+	if (id != request_desc) {
+		device->control_dead = true;
+		device->control_failures++;
+		VIRTIO_SND_LOG("request 0x%x (%s) was answered with descriptor %u, expected %u: giving up on the device\n", request_code, virtio_snd_request_name(request_code), id, (unsigned int)request_desc);
+		return VIRTIO_SND_E_IO;
+	}
+
+	if (response_bytes != 0) *response_bytes = length;
+
+	virtio_snd_error_t error = virtio_snd_error_from_status(status);
+
+	if (error != VIRTIO_SND_E_NONE) {
+		device->control_failures++;
+		kverbosef("virtio_snd_control: request 0x%x (%s) answered %s (0x%x)\n", request_code, virtio_snd_request_name(request_code), virtio_snd_status_name(status), status);
+	} else {
+		kverbosef("virtio_snd_control: request 0x%x (%s) answered OK, %u byte(s)\n", request_code, virtio_snd_request_name(request_code), length);
+	}
+
+	return error;
+}
+
+virtio_snd_error_t virtio_snd_pcm_request(virtio_snd_device_t *device, uint32_t request, uint32_t stream_id)
+{
+	virtio_snd_pcm_hdr_t *message = (virtio_snd_pcm_hdr_t *)(void *)device->control_page.virtual_address;
+
+	message->hdr.code = request;
+	message->stream_id = stream_id;
+
+	uint32_t response_bytes;
+
+	return virtio_snd_control(device, sizeof(*message), sizeof(virtio_snd_hdr_t), &response_bytes);
+}
+
+/*
+ * virtio_snd_query_info:
+ *
+ * The item information request (section 5.14.6.1): `count` items of `size`
+ * bytes starting at `start_id`, of jacks, streams or channel maps according
+ * to `request`, copied to `items`. The response must carry them all.
+ */
+static virtio_snd_error_t virtio_snd_query_info(virtio_snd_device_t *device, uint32_t request, uint32_t start_id, uint32_t count, uint32_t size, void *items)
+{
+	if (count == 0U || size == 0U || size > VIRTIO_SND_CONTROL_RESPONSE_MAX || count > (VIRTIO_SND_CONTROL_RESPONSE_MAX - sizeof(virtio_snd_hdr_t)) / size) return VIRTIO_SND_E_INVALID;
+
+	virtio_snd_query_info_t *message = (virtio_snd_query_info_t *)(void *)device->control_page.virtual_address;
+
+	message->hdr.code = request;
+	message->start_id = start_id;
+	message->count = count;
+	message->size = size;
+
+	uint32_t wanted = (uint32_t)sizeof(virtio_snd_hdr_t) + count * size;
+	uint32_t response_bytes;
+	virtio_snd_error_t error = virtio_snd_control(device, sizeof(*message), wanted, &response_bytes);
+
+	if (error != VIRTIO_SND_E_NONE) return error;
+
+	if (response_bytes < wanted) {
+		VIRTIO_SND_LOG("request %s: the device answered %u byte(s), %u were needed\n", virtio_snd_request_name(request), response_bytes, wanted);
+		return VIRTIO_SND_E_IO;
+	}
+
+	ml_dma_rmb();
+	memcpy(items, device->control_page.virtual_address + VIRTIO_SND_CONTROL_RESPONSE_OFFSET + sizeof(virtio_snd_hdr_t), (size_t)count * size);
+	return VIRTIO_SND_E_NONE;
+}
+
+/* ---- what the device can do ------------------------------------------- */
+
+static void virtio_snd_probe_jacks(virtio_snd_device_t *device)
+{
+	if (device->jacks == 0U) {
+		VIRTIO_SND_LOG("no jacks to query\n");
+		return;
+	}
+
+	uint32_t count = device->jacks < 8U ? device->jacks : 8U;
+	virtio_snd_jack_info_t jacks[8];
+	virtio_snd_error_t error = virtio_snd_query_info(device, VIRTIO_SND_R_JACK_INFO, 0U, count, sizeof(jacks[0]), jacks);
+
+	if (error != VIRTIO_SND_E_NONE) {
+		VIRTIO_SND_LOG("JACK_INFO for %u jack(s): %s\n", count, virtio_snd_error_name(error));
+		return;
+	}
+
+	for (uint32_t index = 0U; index < count; index++) {
+		VIRTIO_SND_LOG("jack %u: %s\n", index, jacks[index].connected != 0U ? "connected" : "not connected");
+		VIRTIO_SND_LOG("jack %u: features 0x%x%s\n", index, jacks[index].features, (jacks[index].features & (1U << VIRTIO_SND_JACK_F_REMAP)) != 0U ? " (remappable)" : "");
+	}
+}
+
+static void virtio_snd_probe_chmaps(virtio_snd_device_t *device)
+{
+	if (device->chmaps == 0U) {
+		VIRTIO_SND_LOG("no channel maps to query\n");
+		return;
+	}
+
+	uint32_t count = device->chmaps < 8U ? device->chmaps : 8U;
+	virtio_snd_chmap_info_t maps[8];
+	virtio_snd_error_t error = virtio_snd_query_info(device, VIRTIO_SND_R_CHMAP_INFO, 0U, count, sizeof(maps[0]), maps);
+
+	if (error != VIRTIO_SND_E_NONE) {
+		VIRTIO_SND_LOG("CHMAP_INFO for %u channel map(s): %s\n", count, virtio_snd_error_name(error));
+		return;
+	}
+
+	for (uint32_t index = 0U; index < count; index++) {
+		char positions[128];
+
+		(void)virtio_snd_describe_positions(maps[index].positions, maps[index].channels, positions, sizeof(positions));
+		VIRTIO_SND_LOG("channel map %u: %s, %u channel(s)\n", index, virtio_snd_direction_name(maps[index].direction), (unsigned int)maps[index].channels);
+		VIRTIO_SND_LOG("channel map %u: positions %s\n", index, positions);
+	}
+}
+
+static void virtio_snd_log_stream(uint32_t stream_id, const virtio_snd_pcm_info_t *info)
+{
+	char formats[256];
+	char rates[192];
+
+	(void)virtio_snd_describe_formats(info->formats, formats, sizeof(formats));
+	(void)virtio_snd_describe_rates(info->rates, rates, sizeof(rates));
+
+	VIRTIO_SND_LOG("stream %u: %s\n", stream_id, virtio_snd_direction_name(info->direction));
+	VIRTIO_SND_LOG("stream %u: %u to %u channel(s)\n", stream_id, (unsigned int)info->channels_min, (unsigned int)info->channels_max);
+	VIRTIO_SND_LOG("stream %u: formats %s\n", stream_id, formats);
+	VIRTIO_SND_LOG("stream %u: rates %s Hz\n", stream_id, rates);
+	VIRTIO_SND_LOG("stream %u: features 0x%x\n", stream_id, info->features);
+	kverbosef("virtio_snd_log_stream: stream %u: HDA function node %u\n", stream_id, info->hdr.hda_fn_nid);
+}
+
+/*
+ * virtio_snd_probe_streams:
+ *
+ * PCM_INFO for every stream (up to what the driver keeps), logged in full,
+ * then the choice of the stream /dev/audio0 plays on: the first output stream
+ * that takes 16-bit stereo at 44.1 kHz, the one format every WAV is converted to.
+ */
+static void virtio_snd_probe_streams(virtio_snd_device_t *device)
+{
+	device->playback_stream = VIRTIO_SND_NO_STREAM;
+
+	if (device->streams == 0U) {
+		VIRTIO_SND_LOG("the device has no PCM streams\n");
+		return;
+	}
+
+	uint32_t count = device->streams < VIRTIO_SND_MAX_STREAMS ? device->streams : VIRTIO_SND_MAX_STREAMS;
+
+	if (count < device->streams) VIRTIO_SND_LOG("only the first %u of %u streams are kept\n", count, device->streams);
+
+	virtio_snd_error_t error = virtio_snd_query_info(device, VIRTIO_SND_R_PCM_INFO, 0U, count, sizeof(device->pcm_info[0]), device->pcm_info);
+
+	if (error != VIRTIO_SND_E_NONE) {
+		VIRTIO_SND_LOG("PCM_INFO for %u stream(s): %s\n", count, virtio_snd_error_name(error));
+		return;
+	}
+
+	device->pcm_info_count = count;
+
+	for (uint32_t index = 0U; index < count; index++) virtio_snd_log_stream(index, &device->pcm_info[index]);
+
+	virtio_snd_pcm_format_t wanted = { .channels = 2U, .format = VIRTIO_SND_PCM_FMT_S16, .rate = VIRTIO_SND_PCM_RATE_44100 };
+
+	for (uint32_t index = 0U; index < count && device->playback_stream == VIRTIO_SND_NO_STREAM; index++) {
+		if (device->pcm_info[index].direction != VIRTIO_SND_D_OUTPUT) continue;
+		if (!virtio_snd_pcm_supports(&device->pcm_info[index], &wanted)) continue;
+
+		device->playback_stream = index;
+	}
+
+	if (device->playback_stream == VIRTIO_SND_NO_STREAM) {
+		VIRTIO_SND_LOG("no output stream takes 16-bit stereo at 44100 Hz: no playback\n");
+		return;
+	}
+
+	VIRTIO_SND_LOG("playback stream %u: 16-bit stereo at 44100 Hz is supported\n", device->playback_stream);
+}
+
+/* ---- attach ------------------------------------------------------------ */
+
+/*
+ * virtio_snd_bring_up:
+ *
+ * Everything between the feature handshake and DRIVER_OK: the control page,
+ * the queues. False leaves the device for virtio_snd_cleanup().
+ */
+static bool virtio_snd_bring_up(virtio_snd_device_t *device)
+{
+	if (!virtio_snd_allocate_page(&device->control_page)) {
+		VIRTIO_SND_LOG("no memory for the control buffers\n");
+		return false;
+	}
+
+	if (!virtio_snd_setup_queues(device)) return false;
+
+	if (!virtio_device_finish(&device->transport)) {
+		VIRTIO_SND_LOG("the device did not accept DRIVER_OK\n");
+		return false;
+	}
+
+	VIRTIO_SND_LOG("device is live (DRIVER_OK)\n");
+	return true;
+}
+
 bool virtio_snd_attach(const virtio_device_t *transport)
 {
 	if (transport == 0 || transport->device_id != VIRTIO_DEVICE_ID_SOUND) return false;
@@ -156,6 +524,17 @@ bool virtio_snd_attach(const virtio_device_t *transport)
 	}
 
 	virtio_snd_read_config(device);
+
+	if (!virtio_snd_bring_up(device)) {
+		VIRTIO_SND_LOG("bring-up failed, the device is left unused\n");
+		virtio_device_fail(&device->transport);
+		virtio_snd_cleanup(device);
+		return false;
+	}
+
+	virtio_snd_probe_jacks(device);
+	virtio_snd_probe_streams(device);
+	virtio_snd_probe_chmaps(device);
 
 	device->ioreg_family = ioreg_add(ioreg_family_audio(), "VirtIOSoundFamily", "VirtIOSoundFamily");
 	device->ioreg_node = ioreg_add(device->ioreg_family, "Audio0", "VirtIOSoundDevice");
@@ -188,5 +567,6 @@ void virtio_snd_dump(void)
 
 		VIRTIO_SND_LOG("device %u, %s, %s\n", index + 1U, device->transport.ops->name, device->attached ? "attached" : "detached");
 		VIRTIO_SND_LOG("device %u: %u jack(s), %u stream(s), %u channel map(s)\n", index + 1U, device->jacks, device->streams, device->chmaps);
+		VIRTIO_SND_LOG("device %u: %llu control request(s), %llu failed\n", index + 1U, (unsigned long long)device->control_requests, (unsigned long long)device->control_failures);
 	}
 }

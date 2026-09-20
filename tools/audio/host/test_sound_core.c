@@ -314,6 +314,71 @@ static void test_negotiation_of_parameters(void)
 	CHECK(!virtio_snd_pcm_supports(&info, 0));
 }
 
+/* ---- errors and the lists for the log ---------------------------------- */
+
+static void test_errors_and_descriptions(void)
+{
+	CHECK(virtio_snd_error_from_status(VIRTIO_SND_S_OK) == VIRTIO_SND_E_NONE);
+	CHECK(virtio_snd_error_from_status(VIRTIO_SND_S_BAD_MSG) == VIRTIO_SND_E_BAD_MSG);
+	CHECK(virtio_snd_error_from_status(VIRTIO_SND_S_NOT_SUPP) == VIRTIO_SND_E_NOT_SUPP);
+	CHECK(virtio_snd_error_from_status(VIRTIO_SND_S_IO_ERR) == VIRTIO_SND_E_IO);
+
+	/* A status the specification does not have is a failure, never a success (a zeroed response is not OK). */
+	CHECK(virtio_snd_error_from_status(0U) == VIRTIO_SND_E_IO);
+	CHECK(virtio_snd_error_from_status(0x8004U) == VIRTIO_SND_E_IO);
+	CHECK(virtio_snd_error_from_status(0xFFFFFFFFU) == VIRTIO_SND_E_IO);
+
+	for (int error = VIRTIO_SND_E_NONE; error <= VIRTIO_SND_E_NO_MEMORY; error++) {
+		CHECK(strcmp(virtio_snd_error_name((virtio_snd_error_t)error), "?") != 0);
+	}
+
+	CHECK(strcmp(virtio_snd_error_name((virtio_snd_error_t)99), "?") == 0);
+
+	char text[256];
+
+	CHECK(virtio_snd_describe_formats(0ULL, text, sizeof(text)) == 0U && text[0] == '\0');
+	CHECK(virtio_snd_describe_formats((1ULL << VIRTIO_SND_PCM_FMT_S16) | (1ULL << VIRTIO_SND_PCM_FMT_FLOAT), text, sizeof(text)) == 9U);
+	CHECK(strcmp(text, "S16 FLOAT") == 0);
+	CHECK(virtio_snd_describe_formats(1ULL << 40, text, sizeof(text)) == 3U && strcmp(text, "?40") == 0);
+	CHECK(virtio_snd_describe_rates((1ULL << VIRTIO_SND_PCM_RATE_44100) | (1ULL << VIRTIO_SND_PCM_RATE_48000), text, sizeof(text)) == 11U);
+	CHECK(strcmp(text, "44100 48000") == 0);
+	CHECK(virtio_snd_describe_rates(1ULL << 63, text, sizeof(text)) == 3U && strcmp(text, "?63") == 0);
+
+	/* Every format at once: fits in the buffer the driver uses. */
+	uint64_t all = 0ULL;
+
+	for (uint32_t bit = 0U; bit < VIRTIO_SND_PCM_FMT_COUNT; bit++) all |= 1ULL << bit;
+	CHECK(virtio_snd_describe_formats(all, text, sizeof(text)) < sizeof(text));
+
+	/* A buffer that is too small is truncated, terminated and never overrun. */
+	char small[8];
+
+	memset(small, 'x', sizeof(small));
+	CHECK(virtio_snd_describe_formats(all, small, sizeof(small)) == sizeof(small) - 1U);
+	CHECK(small[sizeof(small) - 1U] == '\0');
+
+	char one[1] = { 'x' };
+
+	CHECK(virtio_snd_describe_formats(all, one, sizeof(one)) == 0U && one[0] == '\0');
+	CHECK(virtio_snd_describe_rates(all, one, 0U) == 0U);
+
+	static const uint8_t stereo[] = { VIRTIO_SND_CHMAP_FL, VIRTIO_SND_CHMAP_FR };
+
+	CHECK(virtio_snd_describe_positions(stereo, 2U, text, sizeof(text)) == 5U && strcmp(text, "FL FR") == 0);
+	CHECK(virtio_snd_describe_positions(stereo, 0U, text, sizeof(text)) == 0U);
+	CHECK(virtio_snd_describe_positions(0, 2U, text, sizeof(text)) == 0U);
+
+	/* A channel count beyond the array the device may send is clamped, not read past. */
+	uint8_t many[VIRTIO_SND_CHMAP_MAX_SIZE];
+
+	memset(many, VIRTIO_SND_CHMAP_FC, sizeof(many));
+	CHECK(virtio_snd_describe_positions(many, 200U, text, sizeof(text)) == VIRTIO_SND_CHMAP_MAX_SIZE * 3U - 1U);
+
+	static const uint8_t odd[] = { 200U };
+
+	CHECK(virtio_snd_describe_positions(odd, 1U, text, sizeof(text)) == 4U && strcmp(text, "?200") == 0);
+}
+
 int main(void)
 {
 	test_negotiation();
@@ -321,6 +386,7 @@ int main(void)
 	test_names();
 	test_sample_widths();
 	test_negotiation_of_parameters();
+	test_errors_and_descriptions();
 
 	printf("sound core: %u check(s), %u failure(s)\n", g_checks, g_failures);
 	return g_failures == 0U ? 0 : 1;
