@@ -21,7 +21,7 @@ static uint32_t g_virtio_snd_device_count;
 
 /* ---- DMA memory -------------------------------------------------------- */
 
-static bool virtio_snd_allocate_page(virtio_snd_page_t *page)
+bool virtio_snd_allocate_page(virtio_snd_page_t *page)
 {
 	uint64_t physical;
 	uint64_t higher_half;
@@ -39,7 +39,7 @@ static bool virtio_snd_allocate_page(virtio_snd_page_t *page)
 	return true;
 }
 
-static void virtio_snd_free_page(virtio_snd_page_t *page)
+void virtio_snd_free_page(virtio_snd_page_t *page)
 {
 	if (page->physical != 0ULL) (void)pmm_free_page(page->physical);
 
@@ -217,6 +217,7 @@ static void virtio_snd_cleanup(virtio_snd_device_t *device)
 	if (device->txq.initialized) (void)virtqueue_destroy(&device->txq);
 
 	virtio_snd_free_page(&device->control_page);
+	virtio_snd_free_page(&device->event_page);
 	memset(device, 0, sizeof(*device));
 }
 
@@ -322,6 +323,26 @@ virtio_snd_error_t virtio_snd_pcm_request(virtio_snd_device_t *device, uint32_t 
 
 	message->hdr.code = request;
 	message->stream_id = stream_id;
+
+	uint32_t response_bytes;
+
+	return virtio_snd_control(device, sizeof(*message), sizeof(virtio_snd_hdr_t), &response_bytes);
+}
+
+virtio_snd_error_t virtio_snd_set_params_request(virtio_snd_device_t *device, uint32_t stream_id, uint32_t buffer_bytes, uint32_t period_bytes, const virtio_snd_pcm_format_t *format)
+{
+	virtio_snd_pcm_set_params_t *message = (virtio_snd_pcm_set_params_t *)(void *)device->control_page.virtual_address;
+
+	memset(message, 0, sizeof(*message));
+	message->hdr.hdr.code = VIRTIO_SND_R_PCM_SET_PARAMS;
+	message->hdr.stream_id = stream_id;
+	message->buffer_bytes = buffer_bytes;
+	message->period_bytes = period_bytes;
+	message->features = 0U;
+	message->channels = format->channels;
+	message->format = format->format;
+	message->rate = format->rate;
+	message->padding = 0U;
 
 	uint32_t response_bytes;
 
@@ -485,18 +506,38 @@ static void virtio_snd_probe_streams(virtio_snd_device_t *device)
  */
 static bool virtio_snd_bring_up(virtio_snd_device_t *device)
 {
-	if (!virtio_snd_allocate_page(&device->control_page)) {
-		VIRTIO_SND_LOG("no memory for the control buffers\n");
+	if (!virtio_snd_allocate_page(&device->control_page) || !virtio_snd_allocate_page(&device->event_page)) {
+		VIRTIO_SND_LOG("no memory for the control and event buffers\n");
 		return false;
 	}
 
 	if (!virtio_snd_setup_queues(device)) return false;
+
+	if (!virtio_snd_post_events(device)) {
+		VIRTIO_SND_LOG("the event buffers could not be posted\n");
+		return false;
+	}
+
+	VIRTIO_SND_LOG("%u event buffer(s) posted on the eventq\n", VIRTIO_SND_EVENT_QUEUE_SIZE);
+
+	if (!virtio_device_irq_attach(&device->transport, virtio_snd_irq, device)) {
+		VIRTIO_SND_LOG("the interrupt could not be attached\n");
+		return false;
+	}
+
+	if (device->transport.irq_bound) {
+		VIRTIO_SND_LOG("interrupt handler attached: completions arrive by interrupt\n");
+	} else {
+		VIRTIO_SND_LOG("interrupt delivery is off on this transport: completions are polled\n");
+	}
 
 	if (!virtio_device_finish(&device->transport)) {
 		VIRTIO_SND_LOG("the device did not accept DRIVER_OK\n");
 		return false;
 	}
 
+	device->ready = true;
+	virtio_device_notify(&device->transport, VIRTIO_SND_VQ_EVENT);
 	VIRTIO_SND_LOG("device is live (DRIVER_OK)\n");
 	return true;
 }
@@ -560,13 +601,44 @@ uint32_t virtio_snd_device_count(void)
 	return g_virtio_snd_device_count;
 }
 
+virtio_snd_device_t *virtio_snd_device_at(uint32_t index)
+{
+	if (index >= g_virtio_snd_device_count) return 0;
+
+	virtio_snd_device_t *device = &g_virtio_snd_devices[index];
+
+	return device->attached && device->playback_stream != VIRTIO_SND_NO_STREAM ? device : 0;
+}
+
+/*
+ * virtio_snd_dump:
+ *
+ * The end-of-boot summary: what the device is, what it was asked and what
+ * has come of it. The counters that only mean something once audio has
+ * played are detail, they are behind -v.
+ */
 void virtio_snd_dump(void)
 {
 	for (uint32_t index = 0U; index < g_virtio_snd_device_count; index++) {
 		const virtio_snd_device_t *device = &g_virtio_snd_devices[index];
+		const virtio_snd_playback_t *playback = &device->playback;
 
 		VIRTIO_SND_LOG("device %u, %s, %s\n", index + 1U, device->transport.ops->name, device->attached ? "attached" : "detached");
 		VIRTIO_SND_LOG("device %u: %u jack(s), %u stream(s), %u channel map(s)\n", index + 1U, device->jacks, device->streams, device->chmaps);
-		VIRTIO_SND_LOG("device %u: %llu control request(s), %llu failed\n", index + 1U, (unsigned long long)device->control_requests, (unsigned long long)device->control_failures);
+
+		if (device->playback_stream == VIRTIO_SND_NO_STREAM) {
+			VIRTIO_SND_LOG("device %u: no playback stream\n", index + 1U);
+		} else {
+			VIRTIO_SND_LOG("device %u: playback on stream %u, /dev/audio0\n", index + 1U, device->playback_stream);
+		}
+
+		VIRTIO_SND_LOG("device %u: interrupts %s\n", index + 1U, device->transport.irq_bound ? "by interrupt" : "polled");
+		VIRTIO_SND_LOG("device %u: %llu playback open(s)\n", index + 1U, (unsigned long long)playback->opens);
+		VIRTIO_SND_LOG("device %u: %llu period(s) played\n", index + 1U, (unsigned long long)playback->total_periods);
+		VIRTIO_SND_LOG("device %u: %llu underrun(s)\n", index + 1U, (unsigned long long)playback->total_xruns);
+		kverbosef("virtio_snd_dump: device %u: %llu control request(s), %llu failed\n", index + 1U, (unsigned long long)device->control_requests, (unsigned long long)device->control_failures);
+		kverbosef("virtio_snd_dump: device %u: %llu interrupt(s)\n", index + 1U, (unsigned long long)device->irq_count);
+		kverbosef("virtio_snd_dump: device %u: %llu event(s), %llu xrun, %llu jack\n", index + 1U, (unsigned long long)device->event_count, (unsigned long long)device->xrun_events, (unsigned long long)device->jack_events);
+		if (device->event_count != 0ULL) kverbosef("virtio_snd_dump: device %u: last event %s (0x%x) for %u\n", index + 1U, virtio_snd_event_name(device->last_event), device->last_event, device->last_event_data);
 	}
 }

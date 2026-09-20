@@ -328,7 +328,7 @@ static void test_errors_and_descriptions(void)
 	CHECK(virtio_snd_error_from_status(0x8004U) == VIRTIO_SND_E_IO);
 	CHECK(virtio_snd_error_from_status(0xFFFFFFFFU) == VIRTIO_SND_E_IO);
 
-	for (int error = VIRTIO_SND_E_NONE; error <= VIRTIO_SND_E_NO_MEMORY; error++) {
+	for (int error = VIRTIO_SND_E_NONE; error <= VIRTIO_SND_E_INTERRUPTED; error++) {
 		CHECK(strcmp(virtio_snd_error_name((virtio_snd_error_t)error), "?") != 0);
 	}
 

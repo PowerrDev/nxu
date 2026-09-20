@@ -103,6 +103,9 @@ const char *virtio_snd_error_name(virtio_snd_error_t error)
 	case VIRTIO_SND_E_ILLEGAL: return "illegal in the stream's current state";
 	case VIRTIO_SND_E_INVALID: return "invalid parameters";
 	case VIRTIO_SND_E_NO_MEMORY: return "out of memory";
+	case VIRTIO_SND_E_BUSY: return "the device is in use";
+	case VIRTIO_SND_E_AGAIN: return "would block";
+	case VIRTIO_SND_E_INTERRUPTED: return "interrupted by a signal";
 	default: return "?";
 	}
 }

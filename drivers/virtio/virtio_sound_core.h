@@ -83,7 +83,10 @@ typedef enum {
 	VIRTIO_SND_E_DEAD,
 	VIRTIO_SND_E_ILLEGAL,
 	VIRTIO_SND_E_INVALID,
-	VIRTIO_SND_E_NO_MEMORY
+	VIRTIO_SND_E_NO_MEMORY,
+	VIRTIO_SND_E_BUSY,
+	VIRTIO_SND_E_AGAIN,
+	VIRTIO_SND_E_INTERRUPTED
 } virtio_snd_error_t;
 
 /* The outcome a response status code stands for; a code outside the specification is an I/O error. */
