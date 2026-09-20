@@ -65,6 +65,14 @@ QEMU_DISPLAY_BACKEND ?= cocoa
 
 QEMU_DISPLAY := -display $(QEMU_DISPLAY_BACKEND)
 
+# The sound device every arm64 boot gets (the VirtIO Sound driver, /dev/audio0
+# and the boot chime): the host's speakers for the boot you watch. `make check`
+# and the headless tests never use them, they record with the wav backend (see
+# tools/check.sh) or discard with `none`. Override with e.g.
+# QEMU_AUDIODEV='-audiodev none,id=snd0' to keep a run quiet.
+QEMU_AUDIODEV ?= -audiodev coreaudio,id=snd0
+QEMU_SOUND_DEVICE := -device virtio-sound-device,audiodev=snd0
+
 RAMFB ?= 0
 
 ifeq ($(RAMFB),1)
@@ -944,6 +952,8 @@ run-console: $(KERNEL_IMAGE) $(DISK) $(DISK_FORMAT_STAMP)
 		$(QEMU_GPU_DEVICE) \
 		-device virtio-keyboard-device \
 		-device virtio-mouse-device \
+		$(QEMU_AUDIODEV) \
+		$(QEMU_SOUND_DEVICE) \
 		-serial stdio \
 		-monitor none
 

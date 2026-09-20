@@ -26,6 +26,14 @@
 #   TEST_<id>_PASS        serial line that means the test passed; setting it
 #                         puts the test in `make check` (headless tests only)
 #   TEST_<id>_TIMEOUT     seconds `make check` waits for it (default: CHECK_TIMEOUT)
+#   TEST_<id>_AUDIODEV    QEMU -audiodev arguments for the sound device (default:
+#                         QEMU_AUDIODEV, the host's speakers)
+#   TEST_<id>_CAPTURE     set to 1 for a test that records what it plays: `make
+#                         check` gives it QEMU's wav audiodev and, once the pass
+#                         line has shown, runs TEST_<id>_VERIFY on the recording
+#   TEST_<id>_VERIFY      command that checks the recording; @CAPTURE@ stands for
+#                         its path. It must exit 0 (make check only; no shell
+#                         quotes, tabs or # in it)
 
 TEST_GUI_STACK := UISERVICE=1 WINDOWSERVER=1
 
@@ -44,7 +52,8 @@ TEST_IDS := \
     socket-process \
     xamethyst-process \
     windowserver-process \
-    about-sevos-process
+    about-sevos-process \
+    sound
 
 
 # -- Graphical boot ------------------------------------------------------------
@@ -130,6 +139,22 @@ TEST_about-sevos-process_GPU := ,xres=1280,yres=960
 TEST_about-sevos-process_MONITOR := telnet:127.0.0.1:45456,server,nowait
 
 
+# -- Sound ---------------------------------------------------------------------
+
+# The kernel plays a test tone, the boot chime (through the boot code) and then
+# playsound (a user process) into QEMU's audio backend. `make test TEST=sound`
+# plays it through the host's speakers; `make check` records it with the wav
+# backend and verify_capture.py compares the recording with the tone formula and
+# with Boot_Audio.wav sample by sample.
+TEST_sound_GROUP := Sound
+TEST_sound_DESC := Tone, boot chime and playsound through VirtIO Sound (audible)
+TEST_sound_PASS := sound_test: passed
+TEST_sound_CFLAGS := -DNXU_SOUND_TEST
+TEST_sound_TIMEOUT := 120
+TEST_sound_CAPTURE := 1
+TEST_sound_VERIFY := python3 tools/audio/verify_capture.py @CAPTURE@ tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.wav --tone --chimes 2
+
+
 # -- make check ----------------------------------------------------------------
 
 # Seconds `make check` waits for a test's pass line before calling it a failure.
@@ -151,12 +176,17 @@ CHECK_I386_TARGETS := \
     test-i386-fs \
     test-i386-devices \
     test-i386-userland \
-    test-i386-btrfs
+    test-i386-btrfs \
+    test-i386-sound
+
+# The host tests `make check` runs first, one make target each.
+CHECK_HOST_TARGETS := \
+    test-audio-host
 
 
 # -- Rules ---------------------------------------------------------------------
 
-.PHONY: tests test test-list check check-list check-i386-list
+.PHONY: tests test test-list check check-list check-i386-list check-host-list
 
 ifneq ($(filter test,$(MAKECMDGOALS)),)
 ifeq ($(filter $(TEST),$(TEST_IDS)),)
@@ -177,13 +207,18 @@ test-list:
 
 check-list:
 
-	@printf '%s\t%s\t%s\t%s\n' 'default' '$(CHECK_TIMEOUT)' '$(CHECK_DEFAULT_PASS)' ''
-	@$(foreach id,$(CHECK_IDS),printf '%s\t%s\t%s\t%s\n' '$(id)' '$(or $(TEST_$(id)_TIMEOUT),$(CHECK_TIMEOUT))' '$(TEST_$(id)_PASS)' '$(TEST_$(id)_CFLAGS)';)
+	@printf '%s\t%s\t%s\t%s\t%s\t%s\n' 'default' '$(CHECK_TIMEOUT)' '$(CHECK_DEFAULT_PASS)' '-' '-' '-'
+	@$(foreach id,$(CHECK_IDS),printf '%s\t%s\t%s\t%s\t%s\t%s\n' '$(id)' '$(or $(TEST_$(id)_TIMEOUT),$(CHECK_TIMEOUT))' '$(TEST_$(id)_PASS)' '$(or $(TEST_$(id)_CFLAGS),-)' '$(if $(TEST_$(id)_CAPTURE),1,-)' '$(or $(TEST_$(id)_VERIFY),-)';)
 
 
 check-i386-list:
 
 	@printf '%s\n' $(CHECK_I386_TARGETS)
+
+
+check-host-list:
+
+	@printf '%s\n' $(CHECK_HOST_TARGETS)
 
 
 check:
@@ -216,5 +251,7 @@ test: $(DISK) $(DISK_FORMAT_STAMP)
 		-device virtio-gpu-device$(TEST_$(TEST)_GPU) \
 		-device virtio-keyboard-device \
 		-device virtio-mouse-device \
+		$(or $(TEST_$(TEST)_AUDIODEV),$(QEMU_AUDIODEV)) \
+		$(QEMU_SOUND_DEVICE) \
 		-serial stdio \
 		-monitor $(or $(TEST_$(TEST)_MONITOR),none)
