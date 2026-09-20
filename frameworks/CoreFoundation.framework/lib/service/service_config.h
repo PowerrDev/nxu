@@ -19,6 +19,9 @@ typedef struct {
 	bool disabled;
 	bool disabled_in_safe_mode;
 	bool start_on_login;
+	/* Capabilities bootd hands the job's process at spawn (default: none). */
+	bool allow_filesystem_write;
+	bool allow_display;
 } service_config_t;
 
 typedef enum {

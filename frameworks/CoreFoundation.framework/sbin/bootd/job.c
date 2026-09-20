@@ -111,6 +111,20 @@ bootd_images_compare(const char *primary_path, const char *recovery_path)
 	return result;
 }
 
+/*
+ * What the job's process may do to the system. Default-deny: a service gets
+ * only the capabilities its plist asks for (AllowFilesystemWrite, AllowDisplay).
+ */
+static uint64_t
+bootd_job_capabilities(const bootd_job_t *job)
+{
+	uint64_t caps = 0ULL;
+
+	if (job->config.allow_filesystem_write) caps |= NXU_CAP_FS_WRITE;
+	if (job->config.allow_display) caps |= NXU_CAP_DISPLAY;
+	return caps;
+}
+
 static bool
 bootd_job_spawn(bootd_job_t *job, uint64_t now_us)
 {
@@ -122,10 +136,11 @@ bootd_job_spawn(bootd_job_t *job, uint64_t now_us)
 		path = job->config.recovery_program;
 	}
 
-	int64_t pid = nxu_spawn(path, job->process_name);
+	uint64_t caps = bootd_job_capabilities(job);
+	int64_t pid = nxu_spawn_caps(path, job->process_name, caps);
 	if (pid < 0 && path == job->config.program && job->config.recovery_program[0] != '\0') {
 		bootd_job_log(job, "primary launch failed; trying recovery");
-		pid = nxu_spawn(job->config.recovery_program, job->process_name);
+		pid = nxu_spawn_caps(job->config.recovery_program, job->process_name, caps);
 	}
 
 	if (pid < 0) {
