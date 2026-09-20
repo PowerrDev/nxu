@@ -876,6 +876,11 @@ uint64_t heap_get_allocation_count(void)
 
 void heap_dump(void)
 {
+	kprintf("heap: total backing pages: %llu\n", (unsigned long long)(g_heap.page_count + g_heap.large_page_count));
+	kprintf("heap: active allocations: %llu\n", (unsigned long long)g_heap.allocation_count);
+
+	if (!kconsole_verbose()) return;
+
 	uint64_t free_blocks = 0ULL;
 	uint64_t free_bytes = 0ULL;
 
@@ -902,66 +907,16 @@ void heap_dump(void)
 		}
 	}
 
-	kputs("heap: total backing pages: ");
-	kputu64(
-		g_heap.page_count +
-		g_heap.large_page_count
-	);
-	kputc('\n');
-
-	kputs("heap: small arena pages: ");
-	kputu64(g_heap.page_count);
-	kputc('\n');
-
-	kputs("heap: large backing pages: ");
-	kputu64(g_heap.large_page_count);
-	kputc('\n');
-
-	kputs("heap: active allocations: ");
-	kputu64(g_heap.allocation_count);
-	kputc('\n');
-
-	kputs("heap: active large allocations: ");
-	kputu64(
-		g_heap.large_allocation_count
-	);
-	kputc('\n');
-
-	kputs("heap: total requested bytes: ");
-	kputu64(g_heap.allocated_bytes);
-	kputc('\n');
-
-	kputs("heap: large requested bytes: ");
-	kputu64(
-		g_heap.large_allocated_bytes
-	);
-	kputc('\n');
-
-	kputs("heap: small used blocks: ");
-	kputu64(used_blocks);
-	kputs(", payload bytes: ");
-	kputu64(used_bytes);
-	kputc('\n');
-
-	kputs("heap: small free blocks: ");
-	kputu64(free_blocks);
-	kputs(", payload bytes: ");
-	kputu64(free_bytes);
-	kputc('\n');
-
-	kputs("heap: small allocation limit: ");
-	kputu64(
-		PMM_PAGE_SIZE -
-		heap_page_header_size() -
-		heap_block_header_size()
-	);
-	kputln(" bytes");
-	
-	kputs("heap: virtual arena limit: ");
-	kputu64(VM_KERN_SIZE);
-	kputln(" bytes");
-
-	kputs("heap: large allocation record limit: ");
-	kputu64(HEAP_MAX_LARGE_ALLOCATIONS);
-	kputc('\n');
+	kprintf("heap: small arena pages: %llu\n", (unsigned long long)g_heap.page_count);
+	kprintf("heap: large backing pages: %llu\n", (unsigned long long)g_heap.large_page_count);
+	kprintf("heap: active large allocations: %llu\n", (unsigned long long)g_heap.large_allocation_count);
+	kprintf("heap: total requested bytes: %llu\n", (unsigned long long)g_heap.allocated_bytes);
+	kprintf("heap: large requested bytes: %llu\n", (unsigned long long)g_heap.large_allocated_bytes);
+	kprintf("heap: small used blocks: %llu\n", (unsigned long long)used_blocks);
+	kprintf("heap: small used payload bytes: %llu\n", (unsigned long long)used_bytes);
+	kprintf("heap: small free blocks: %llu\n", (unsigned long long)free_blocks);
+	kprintf("heap: small free payload bytes: %llu\n", (unsigned long long)free_bytes);
+	kprintf("heap: small allocation limit: %llu bytes\n", (unsigned long long)(PMM_PAGE_SIZE - heap_page_header_size() - heap_block_header_size()));
+	kprintf("heap: virtual arena limit: %llu bytes\n", (unsigned long long)VM_KERN_SIZE);
+	kprintf("heap: large allocation record limit: %llu\n", (unsigned long long)HEAP_MAX_LARGE_ALLOCATIONS);
 }
