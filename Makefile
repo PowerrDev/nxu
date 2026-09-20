@@ -1018,6 +1018,24 @@ test-arm64-btrfs: $(KERNEL_IMAGE) $(BTRFS_HOST_TOOL)
 	tools/btrfs/test_arm64.sh $(KERNEL_IMAGE) $(DISK) $(BUILD_ROOT)/btrfs-arm64 $(BTRFS_HOST_TOOL)
 
 
+# =============================================================================
+# Audio: host tests
+# =============================================================================
+#
+#   make test-audio-host    the pure audio code (sound core, WAV parser) natively
+#                           with ASan+UBSan (tools/audio/test_host.sh)
+#
+# The kernel-side tests (a tone and the boot chime played through the VirtIO
+# Sound driver into QEMU's wav backend, then checked on the host) are in the
+# registry in makedefs/tests.mk.
+
+.PHONY: test-audio-host
+
+test-audio-host:
+
+	tools/audio/test_host.sh $(BUILD_ROOT)/audio-host
+
+
 include makedefs/tests.mk
 
 include makedefs/i386.mk
