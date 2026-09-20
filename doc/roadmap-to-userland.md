@@ -229,8 +229,8 @@ short as possible:
 | **PCI drivers** | The ECAM window is already discovered; enumeration and drivers add nothing to the userland path. |
 | **A disk filesystem** | The initramfs is already in RAM. A block driver plus a filesystem is a large body of work that the first process does not need. |
 | **VirtIO drivers** | The transports are discovered but nothing needs them yet. |
-| **Signals and IPC** | These become useful once multiple independently scheduled workloads exist. The thread object itself is now implemented. |
-| **Demand paging, copy-on-write, swap** | Optimizations over a working eager loader. |
+| **Signals and IPC** | Implemented: see [Process control](kern/process-control.md). |
+| **Demand paging, copy-on-write, swap** | Demand paging (anonymous memory) and copy-on-write are implemented: see [Demand paging](vm/demand-paging.md). Swap is not. |
 
 The ordering principle: prefer the shortest path to a running user process, then
 build outward. Each of the above becomes substantially easier to design once
@@ -242,11 +242,11 @@ Several existing limitations become blocking as this work proceeds:
 
 | Limitation | Blocks | Documented in |
 | --- | --- | --- |
-| Translation tables are never reclaimed | Address-space destruction | [Translation tables](vm/translation-tables.md) |
+| Translation tables of the kernel map are never reclaimed | (user address spaces are reclaimed at task exit) | [Translation tables](vm/translation-tables.md) |
 | Block descriptors cannot be split | Fine-grained mapping over identity-mapped ranges | [Virtual memory](vm/virtual-memory.md) |
 | No locking anywhere | SMP, and any allocation from interrupt context | [VM overview](vm/overview.md) |
 | No `panic()` helper; failures halt inline | Recoverable user faults | [Core kernel initialization](kern/initialization.md) |
-| No physical page reference counting | Shared mappings, copy-on-write | [Physical memory](vm/physical-memory.md) |
+| The physical page reference table is 4096 entries, scanned linearly | Many simultaneously shared pages | [Demand paging](vm/demand-paging.md) |
 | No `DC CVAU` / `IC IVAU` | Loading executable code | [Cache](arm64/cache.md) |
 | GIC MMIO bases hard-coded | Any non-QEMU machine | [Interrupt controller](arm64/interrupt-controller.md) |
 | `platform_t` lives on the boot stack | Any subsystem needing platform data later | [Hardware discovery](platform/hardware-discovery.md) |

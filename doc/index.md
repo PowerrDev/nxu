@@ -55,6 +55,7 @@ deviates from that rule in two places; both are recorded in
 - [Roadmap to userland](roadmap-to-userland.md) — planned work, not implemented
   functionality.
 - [Root services](root-services.md) — PID 1, logd, patchd and recovery behavior.
+- [Testing](testing.md) — `make check`, the test registry, and how to add a test.
 - [Service property lists](service-plists.md) — declarative bootd job schema and plist parser limits.
 
 ## ARM64 (`mach/arm64`)
@@ -77,6 +78,7 @@ deviates from that rule in two places; both are recorded in
 - [Heap](kern/heap.md) — the two-tier kernel allocator.
 - [Processes](kern/processes.md) — `proc` identity/hierarchy and `task` execution ownership.
 - [Threads](kern/threads.md) — thread lifetime, state, stacks and machine state.
+- [Process control](kern/process-control.md) — user-fault containment, signals, `fork` and `exec`.
 - [Scheduler](kern/scheduler.md) — processor object, priority run queue and quantum core.
 
 ## Virtual filesystem (`vfs`)
@@ -92,6 +94,7 @@ deviates from that rule in two places; both are recorded in
 ## Virtual memory (`vm`)
 
 - [Overview](vm/overview.md) — the four memory layers and what each one owns.
+- [Demand paging and copy-on-write](vm/demand-paging.md) — lazy regions, the fault resolver, `fork` sharing and address-space teardown.
 - [Physical memory](vm/physical-memory.md) — the bitmap physical page manager.
 - [Virtual memory](vm/virtual-memory.md) — translation tables, MMU control and
   the mapping API.
@@ -123,7 +126,7 @@ deviates from that rule in two places; both are recorded in
 | Kernel console / PL011 | Implemented | `kprintf` fan-out, 32 KiB history, polled serial primary sink. |
 | Device Tree parser | Implemented | Read-only walker, version 17 layout. |
 | Platform discovery | Implemented | RAM, UART, GIC, PCI ECAM, VirtIO-MMIO. |
-| Exception vectors | Implemented | All 16 entries; IRQ handled, everything else panics. |
+| Exception vectors | Implemented | All 16 entries; IRQ, system calls and user-mode faults are handled; kernel faults panic. |
 | GICv3 | Implemented | Single core, PPIs and SPIs, platform-provided MMIO bases. |
 | Generic physical timer | Implemented | Periodic, 100 Hz, INTID 30. |
 | Physical memory manager | Implemented | Bitmap, first RAM region only. |
@@ -147,15 +150,16 @@ deviates from that rule in two places; both are recorded in
 | ramfs | Implemented | Heap-backed validation filesystem mounted at `/`. |
 | ext4 | Implemented foundation | Writable allocation, CRC32C metadata checksums, depth-zero extent mutation and VFS mount at `/disk`. |
 | JBD2 | Implemented foundation | Checksum-v3 metadata transactions, immediate checkpointing and deterministic replay test. |
+| Fault containment, signals, `fork`, `exec` | Implemented (arm64) | See [Process control](kern/process-control.md); i386 returns "not supported". |
+| Demand paging, copy-on-write | Implemented (arm64) | Anonymous memory only; see [Demand paging](vm/demand-paging.md). |
 | SMP | Not implemented | Later-stage work. |
 
 ## Boot-time validation
 
-`kern_init` runs a series of self-tests during bring-up and prints their
-results. These are development validation, not a stable interface. Their exact
-output may change without notice, and they are expected to move into a
-dedicated test subsystem later. See
-[Core kernel initialization](kern/initialization.md).
+The kernel checks itself during bring-up through `kernel_do_post()`, a staged
+power-on self-test (`kern/tests/post.c`), and prints the results. These are
+development validation, not a stable interface; their exact output may change
+without notice. See [Core kernel initialization](kern/initialization.md).
 
 ## Drivers
 
