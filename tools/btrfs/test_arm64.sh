@@ -4,8 +4,8 @@
 #
 # The kernel boots headless with a private copy of the ext4 root disk as the
 # first virtio-blk-device and the fixtures as extra virtio-blk-devices; the
-# boot argument btrfs-test=<spec> (read by the guarded hook in
-# kern/kern_init.c) makes it run vfs/btrfs/btrfs_selftest.c after the ext4
+# boot argument btrfs-test=<spec> (read by boot_test_storage in
+# kern/tests/boot_test.c) makes it run vfs/btrfs/btrfs_selftest.c after the ext4
 # mount. See tools/btrfs/test_lib.sh for the groups.
 #
 # usage: test_arm64.sh <kernel.bin> <root disk.img> <scratch dir> <btrfs_host>

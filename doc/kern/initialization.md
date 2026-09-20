@@ -25,6 +25,64 @@ It is the only function in NXU that knows the full initialization order.
   allocators live, timer ticking, IRQs unmasked.
 - Enter the idle loop.
 
+## How `kern_init.c` is organised
+
+`kern_init.c` stays the one place that knows the boot order, and it reads as
+that order. The lower-half phase (`kern_init()`: DTB, platform, PMM, MMU,
+TTBR1) is one function with its transition checks. The higher-half phase is
+`kern_init_higher_half()`, which is only a list of stages, each a small
+`static` function that does one thing:
+
+```text
+kern_finish_higher_half_transition   validate TTBR1, rebase pointers, TTBR0 off
+kern_init_memory                     vm_kern, heap, kernel_do_post(MEMORY)
+driverkit_init                       every device driver (platform/driverkit.h)
+kern_hold_boot_splash                recovery-key window while the splash shows
+kern_init_processes                  NXPC transport, process manager
+kern_init_filesystem                 VFS, ramfs at /, the /disk mountpoint
+kern_init_scheduler                  thread subsystem, processor scheduler
+kernel_do_post(CORE)                 checksums, IPC, vm_shm/vm_map, VFS, scheduler
+boot_test_graphical                  GUI test builds only; otherwise a no-op
+kern_mount_system_volume             ext4 from disk0 at /disk
+kernel_do_post(STORAGE)              block read, writable ext4 test, sync
+boot_test_storage                    Btrfs / journal-crash / process tests
+kern_launch_init_process             PID 1: bootd, its recovery image or triageOS
+kern_start_scheduler                 timer, IRQs, hand the CPU to userspace
+```
+
+### `driverkit_init()` (`platform/driverkit.h`)
+
+One call brings up every driver in dependency order: the interrupt controller
+and IRQ routing, input core, keyboard, boot mode, mouse, block core, display
+core, RTC, then the VirtIO bus scan that attaches the real devices, with the
+emergency ramfb console as the fallback when no GPU appears. Boot-args decide
+which families are probed at all; the result is a `driverkit_config_t` the later
+stages consult instead of re-reading boot-args. It also owns the splash: the
+splash is shown the moment a GPU attaches, mid-scan.
+
+### `kernel_do_post()` (`kern/tests/post.h`)
+
+The power-on self-test. One entry, staged, because some checks are only
+meaningful at one moment:
+
+| Stage | Runs after | Checks |
+| --- | --- | --- |
+| `KERNEL_POST_MEMORY` | `vm_kern_init`, `heap_init` | vm_kern arena, small and large heap. These assert exact address reuse, so they must run before any driver has allocated. |
+| `KERNEL_POST_CORE` | IPC, processes, VFS, scheduler | CRC32C, NXPC, `vm_shm`, `vm_map` (including that regions are lazy), VFS, run queue, MLFQ, the AArch64 context switch, EL0 vector classification. |
+| `KERNEL_POST_STORAGE` | `/disk` mounted | raw block read, the writable ext4 test, sync. |
+
+A failed stage logs which check failed and returns false; `kern_init` halts.
+The lower-half checks (identity map, live mappings, higher-half alias, TTBR0
+shutdown) are part of the transition itself and stay in `kern_init.c`.
+
+### `boot_test_*()` (`kern/tests/boot_test.h`)
+
+The `-DNXU_*_TEST` ladders that used to sit inline in the boot sequence.
+A test build selects one with a compile-time switch (`makedefs/tests.mk`); the
+kernel boots into it instead of userspace and halts. In a normal build both
+hooks are empty. The Btrfs test is selected by a boot argument instead
+(`btrfs-test=<spec>`).
+
 ## Non-responsibilities
 
 - **Implementing any subsystem.** Every phase is a call into `platform`,
