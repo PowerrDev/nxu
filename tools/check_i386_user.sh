@@ -21,7 +21,7 @@ set -u
 USER_BUILD=${1:?usage: check_i386_user.sh <user build dir> [program...]}
 shift
 
-PROGRAMS="bootd logd patchd ipctest_a ipctest_b threadtest sockettest_server sockettest_client"
+PROGRAMS="bootd logd patchd ipctest_a ipctest_b threadtest sockettest_server sockettest_client playsound"
 if [ $# -gt 0 ]; then PROGRAMS="$*"; fi
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)

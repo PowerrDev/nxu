@@ -12,6 +12,7 @@
 #include <kern/audio/audio_defs.h>
 #include <kern/boot/boot_chime.h>
 #include <kern/console/console.h>
+#include <kern/loader/elf.h>
 #include <kern/machine/machine_routines.h>
 #include <kern/machine/timer.h>
 #include <kern/process/proc.h>
@@ -159,6 +160,48 @@ static void sound_test_thread(void *parameter)
 	g_sound_test_done = true;
 }
 
+#define SOUND_TEST_PLAYSOUND_PATH "/disk/System/Library/CoreServices/playsound"
+
+/* Exit status of playsound when the audio device refuses it for lack of the capability. */
+#define SOUND_TEST_PLAYSOUND_DENIED 10ULL
+
+/*
+ * Start the user program playsound (it plays the boot chime when it is
+ * given no file), holding exactly `caps`, and wait for it. True when it
+ * exits with `expected`. Its own report goes to the console as it runs.
+ */
+static bool sound_test_run_playsound(uint32_t caps, uint64_t expected, const char *what)
+{
+	proc_t proc = 0;
+	loader_status_t loaded = loader_spawn(proc_kernel(), SOUND_TEST_PLAYSOUND_PATH, "playsound", &proc);
+
+	if (loaded != LOADER_STATUS_OK) {
+		SOUND_TEST_LOG("FAILED: %s: playsound could not be started: %s\n", what, loader_status_name(loaded));
+		return false;
+	}
+
+	/* The first process started would be PID 1 and hold every capability; it gets the ones this run is about. */
+	proc_set_caps(proc, caps);
+
+	uint64_t status = 0ULL;
+	uint64_t deadline = timer_get_microseconds() + 60000000ULL;
+
+	while (!proc_reap(proc_kernel(), proc->p_ident.pid, &status)) {
+		if (timer_get_microseconds() > deadline || !sched_yield()) {
+			SOUND_TEST_LOG("FAILED: %s: playsound did not exit in time\n", what);
+			return false;
+		}
+	}
+
+	if (status != expected) {
+		SOUND_TEST_LOG("FAILED: %s: playsound exited with status 0x%llx, expected %llu\n", what, (unsigned long long)status, (unsigned long long)expected);
+		return false;
+	}
+
+	SOUND_TEST_LOG("%s: playsound exited with status %llu as expected\n", what, (unsigned long long)status);
+	return true;
+}
+
 bool sound_test_run(void)
 {
 	g_sound_test_done = false;
@@ -181,5 +224,11 @@ bool sound_test_run(void)
 		}
 	}
 
-	return g_sound_test_ok;
+	if (!g_sound_test_ok) return false;
+
+	/* The same sound once more, from user space: refused without the audio capability, played with it. */
+	bool refused = sound_test_run_playsound(0U, SOUND_TEST_PLAYSOUND_DENIED, "without NXU_CAP_AUDIO");
+	bool played = refused && sound_test_run_playsound(NXU_CAP_AUDIO, 0ULL, "with NXU_CAP_AUDIO");
+
+	return refused && played;
 }
