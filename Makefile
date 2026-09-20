@@ -928,6 +928,20 @@ run-console: $(KERNEL_IMAGE) $(DISK) $(DISK_FORMAT_STAMP)
 
 
 # =============================================================================
+# Version
+# =============================================================================
+
+# Recompute NXU_VERSION and NXU_BUILD in kern/logging/version.h from the number
+# of commits (see tools/version.sh for the scheme). Run it before tagging or
+# demoing a build; it only rewrites the header.
+.PHONY: version
+
+version:
+
+	tools/version.sh --write
+
+
+# =============================================================================
 # Disk tools
 # =============================================================================
 
