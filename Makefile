@@ -1034,11 +1034,20 @@ test-arm64-btrfs: $(KERNEL_IMAGE) $(BTRFS_HOST_TOOL)
 # Sound driver into QEMU's wav backend, then checked on the host) are in the
 # registry in makedefs/tests.mk.
 
-.PHONY: test-audio-host
+.PHONY: test-audio-host boot-audio
 
 test-audio-host:
 
 	tools/audio/test_host.sh $(BUILD_ROOT)/audio-host
+
+
+# The kernel cannot decode MP3: decode the boot chime with macOS afconvert into
+# the WAV that ships next to it, check it with the kernel's own WAV reader, and
+# commit the result. Both files land in the system volume under
+# /System/Library/Resources/Audio.
+boot-audio:
+
+	tools/audio/make_boot_audio.sh
 
 
 include makedefs/tests.mk
