@@ -232,7 +232,8 @@ btrfs_status_t btrfs_lzo_decompress(void *ctx, const uint8_t *in, size_t in_len,
 		cursor += segment;
 	}
 
-	/* The last extent of a file is rounded up to a sector; the rest reads as zeros. */
+	/* An extent that decodes to nothing is not an extent. The last one of a file is rounded up to a sector; the rest reads as zeros. */
+	if (produced == 0U) return BTRFS_ERR_CORRUPT;
 	for (size_t i = produced; i < out_len; i++) out[i] = 0U;
 	return BTRFS_OK;
 }

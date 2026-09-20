@@ -880,6 +880,7 @@ btrfs_status_t btrfs_zstd_decompress(void *ctx, const uint8_t *in, size_t in_len
 	uint8_t *op = out;
 	uint8_t *out_end = out + out_len;
 	bool ok = true;
+	unsigned frames = 0U;
 
 	/* Frames one after another until the output is complete; what follows is sector padding. */
 	while (ok && pos < in_len && op < out_end) {
@@ -917,8 +918,14 @@ btrfs_status_t btrfs_zstd_decompress(void *ctx, const uint8_t *in, size_t in_len
 		size_t used;
 
 		ok = btrfs_zstd_frame(z, in + pos, in_len - pos, &used, &op, out_end);
-		if (ok) pos += used;
+		if (ok) {
+			pos += used;
+			frames++;
+		}
 	}
+
+	/* An empty or all-padding extent is not a stream. */
+	if (frames == 0U) ok = false;
 
 	/* The last extent of a file is rounded up to a sector; the rest reads as zeros. */
 	if (ok) memset(op, 0, (size_t)(out_end - op));

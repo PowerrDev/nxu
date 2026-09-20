@@ -245,6 +245,13 @@ static int cmd_fuzz(int argc, char **argv)
 			ok++;
 			if (integrity && memcmp(out, orig, orig_len) != 0) {
 				wrong++;
+				if (opt_u64(argc, argv, "--dump", 0U) != 0U) {
+					FILE *d = fopen("codec-wrong.bin", "wb");
+					if (d != NULL) {
+						fwrite(mutant, 1U, n, d);
+						fclose(d);
+					}
+				}
 				fprintf(stderr, "codec: iteration %llu: damaged stream decoded to different data\n", (unsigned long long)i);
 			}
 		} else {

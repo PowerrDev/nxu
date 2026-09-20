@@ -14,7 +14,9 @@
 #                link counts, subvolume crossing, all with and without data checksums
 #   subvolumes   ROOT_REF/BACKREF against `btrfs subvolume list`, the default
 #                subvolume, every subvolume mounted by id
-#   refusals     compressed files, unsupported checksums, RAID/multi-device
+#   compression  zlib, LZO and ZSTD extents read byte-identically to Linux's view; the
+#                decoders alone (test_codec.sh): real streams, limits, mutation sweeps
+#   refusals     unsupported checksums, RAID/multi-device
 #   damage       named corruptions of good images: each must give a clean status
 #   sweep        seeded random corruption: only errors, or the good image's results
 #
@@ -324,6 +326,16 @@ for name in tree deep; do
 	rc=$?
 	if [ $rc -eq 0 ]; then pass "sweep $name: $(printf '%s' "$out" | sed 's/.*; mount refused/mount refused/')"; else fail "sweep $name (rc $rc)" "$out"; fi
 done
+
+# The decoders on their own: real compressors' streams, limits, mutation sweeps.
+echo "== compression decoders (tools/btrfs/test_codec.sh) =="
+out=$(BTRFS_CODEC_ITERS=${BTRFS_CODEC_ITERS:-400} "$HERE/test_codec.sh" "$HOST" "$SCRATCH" 2>&1)
+rc=$?
+printf '%s\n' "$out" | grep -v -e '^$' -e 'codec check(s)'
+codec_checks=$(printf '%s\n' "$out" | sed -n 's/^\([0-9]*\) codec check(s), \([0-9]*\) failure(s)$/\1/p')
+codec_failures=$(printf '%s\n' "$out" | sed -n 's/^\([0-9]*\) codec check(s), \([0-9]*\) failure(s)$/\2/p')
+count=$((count + ${codec_checks:-1}))
+failures=$((failures + ${codec_failures:-$rc}))
 
 printf '\n%d check(s), %d failure(s)\n' "$count" "$failures"
 [ "$failures" -eq 0 ]

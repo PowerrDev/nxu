@@ -346,6 +346,8 @@ btrfs_status_t btrfs_zlib_decompress(void *ctx, const uint8_t *in, size_t in_len
 	uint32_t adler = ((uint32_t)in[s.in_pos] << 24U) | ((uint32_t)in[s.in_pos + 1U] << 16U) | ((uint32_t)in[s.in_pos + 2U] << 8U) | in[s.in_pos + 3U];
 	if (adler != btrfs_adler32(out, s.out_pos)) return BTRFS_ERR_CORRUPT;
 
+	if (s.out_pos == 0U) return BTRFS_ERR_CORRUPT;
+
 	/* Btrfs rounds the last extent up to a sector and the stream only holds the file's bytes. */
 	for (size_t i = s.out_pos; i < out_len; i++) out[i] = 0U;
 	return BTRFS_OK;
