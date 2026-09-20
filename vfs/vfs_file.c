@@ -32,10 +32,23 @@ vfs_status_t vfs_open(filedesc_t filedesc, const char *path, uint32_t flags, uin
 		}
 	}
 
+	/* A device node may refuse the open (it is exclusive, or the caller lacks a privilege). */
+	status = vnode_open(vnode, flags);
+	if (status != VFS_STATUS_OK) {
+		vnode_rele(vnode);
+		return status;
+	}
+
 	file_t file;
 	status = file_alloc(vnode, flags, &file);
+
+	if (status != VFS_STATUS_OK) {
+		vnode_close(vnode, flags);
+		vnode_rele(vnode);
+		return status;
+	}
+
 	vnode_rele(vnode);
-	if (status != VFS_STATUS_OK) return status;
 
 	status = filedesc_install(filedesc, file, descriptor);
 	if (status != VFS_STATUS_OK) file_rele(file);
@@ -110,6 +123,23 @@ vfs_status_t vfs_seek(filedesc_t filedesc, uint32_t descriptor, uint64_t offset)
 	if (status != VFS_STATUS_OK) return status;
 
 	status = file_seek(file, offset);
+	file_rele(file);
+	return status;
+}
+
+/*
+ * vfs_ioctl:
+ *
+ * A device-specific request on an open descriptor. argument is a kernel
+ * buffer of the size the command encodes.
+ */
+vfs_status_t vfs_ioctl(filedesc_t filedesc, uint32_t descriptor, uint32_t command, void *argument)
+{
+	file_t file;
+	vfs_status_t status = filedesc_get(filedesc, descriptor, &file);
+	if (status != VFS_STATUS_OK) return status;
+
+	status = file_ioctl(file, command, argument);
 	file_rele(file);
 	return status;
 }

@@ -28,6 +28,7 @@ I386_C_SOURCES += \
     kern/tests/sound_test.c \
     kern/tests/thread_process_test.c \
     libk/crc32c.c \
+    vfs/devfs.c \
     vfs/ext4.c \
     vfs/file.c \
     vfs/jbd2.c \

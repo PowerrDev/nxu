@@ -410,6 +410,9 @@ const char *vfs_status_name(vfs_status_t status)
 	case VFS_STATUS_PATH_TOO_LONG: return "path too long";
 	case VFS_STATUS_BUSY: return "busy";
 	case VFS_STATUS_END_OF_DIRECTORY: return "end of directory";
+	case VFS_STATUS_WOULD_BLOCK: return "would block";
+	case VFS_STATUS_INTERRUPTED: return "interrupted";
+	case VFS_STATUS_DENIED: return "denied";
 	default: return "unknown";
 	}
 }

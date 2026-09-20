@@ -62,6 +62,7 @@
 #define NXU_SYS_WAIT 58ULL
 #define NXU_SYS_IPC_RECEIVE_WAIT 59ULL
 #define NXU_SYS_GET_CAPS 60ULL
+#define NXU_SYS_IOCTL 61ULL
 
 /* wait(): pass as the pid to wait for any child. */
 #define NXU_WAIT_ANY UINT64_MAX
@@ -76,11 +77,13 @@
  *   FS_WRITE   open for write/create/truncate/append, unlink, mkdir
  *   DISPLAY    claim the display (display_claim)
  *   RESET      reset the machine (system_reset)
+ *   AUDIO      open the audio device (/dev/audio0)
  */
 #define NXU_CAP_FS_WRITE (1U << 0U)
 #define NXU_CAP_DISPLAY (1U << 1U)
 #define NXU_CAP_RESET (1U << 2U)
-#define NXU_CAP_ALL (NXU_CAP_FS_WRITE | NXU_CAP_DISPLAY | NXU_CAP_RESET)
+#define NXU_CAP_AUDIO (1U << 3U)
+#define NXU_CAP_ALL (NXU_CAP_FS_WRITE | NXU_CAP_DISPLAY | NXU_CAP_RESET | NXU_CAP_AUDIO)
 
 /*
  * Exit status recorded for a process the kernel terminated (waitpid reports
@@ -177,8 +180,42 @@ typedef struct {
 #define NXU_O_TRUNCATE (1U << 3U)
 #define NXU_O_APPEND (1U << 4U)
 
-/* The open flags that can change a file or create one: they need NXU_CAP_FS_WRITE. */
+/*
+ * Device files: a read or write that would have to wait fails with
+ * -NXU_SYS_E_AGAIN (or is cut short) instead of sleeping.
+ */
+#define NXU_O_NONBLOCK (1U << 5U)
+
+/*
+ * The open flags that can change a file or create one: they need
+ * NXU_CAP_FS_WRITE. Opening a device node for writing is not one of them; the
+ * device asks for its own capability instead (NXU_CAP_AUDIO for /dev/audio0).
+ */
 #define NXU_O_MODIFYING (NXU_O_WRITE | NXU_O_CREATE | NXU_O_TRUNCATE | NXU_O_APPEND)
+
+/*
+ * ioctl request numbers: the direction of the argument, its size, a device
+ * group and a number in the group, so the kernel can copy the argument in and
+ * out without knowing the device. NXU_IOC_IN: the kernel reads it (a request
+ * carrying a value); NXU_IOC_OUT: the kernel fills it in; both: negotiated
+ * in place. Arguments are at most NXU_IOC_SIZE_MAX bytes.
+ */
+#define NXU_IOC_NONE 0U
+#define NXU_IOC_IN 1U
+#define NXU_IOC_OUT 2U
+#define NXU_IOC_SIZE_MAX 256U
+
+#define NXU_IOC(direction, group, number, size) \
+	(((uint32_t)(direction) << 30U) | ((uint32_t)(size) << 16U) | ((uint32_t)(group) << 8U) | (uint32_t)(number))
+#define NXU_IOC_DIRECTION(command) (((command) >> 30U) & 3U)
+#define NXU_IOC_SIZE(command) (((command) >> 16U) & 0x3FFFU)
+#define NXU_IOC_GROUP(command) (((command) >> 8U) & 0xFFU)
+#define NXU_IOC_NUMBER(command) ((command) & 0xFFU)
+
+#define NXU_IO(group, number) NXU_IOC(NXU_IOC_NONE, group, number, 0U)
+#define NXU_IOR(group, number, type) NXU_IOC(NXU_IOC_OUT, group, number, sizeof(type))
+#define NXU_IOW(group, number, type) NXU_IOC(NXU_IOC_IN, group, number, sizeof(type))
+#define NXU_IOWR(group, number, type) NXU_IOC(NXU_IOC_IN | NXU_IOC_OUT, group, number, sizeof(type))
 
 #define NXU_DIRENT_NAME_MAX 255U
 

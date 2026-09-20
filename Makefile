@@ -349,6 +349,7 @@ C_SOURCES := \
     vfs/btrfs/btrfs_super.c \
     vfs/btrfs/btrfs_tree.c \
     vfs/btrfs/btrfs_vfs.c \
+    vfs/devfs.c \
     vfs/ext4.c \
     vfs/jbd2.c \
     vfs/file.c \

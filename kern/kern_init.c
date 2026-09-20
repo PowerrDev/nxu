@@ -37,6 +37,7 @@
 #include <vm/user_copy.h>
 #include <vm/vm_kern.h>
 #include <vm/vmm.h>
+#include <vfs/devfs.h>
 #include <vfs/ext4.h>
 #include <vfs/ramfs.h>
 #include <vfs/vfs.h>
@@ -832,6 +833,7 @@ static void kern_init_filesystem(void)
 	if (!vfs_init()) kern_fail("IOVirtualFSDriver initialization failed");
 	if (!ramfs_register()) kern_fail("IOVirtualFSDriver ramfs registration failed");
 	if (!ext4_register()) kern_fail("IOVirtualFSDriver ext4 registration failed");
+	if (!devfs_register()) kern_fail("IOVirtualFSDriver devfs registration failed");
 
 	vfs_status_t mount_status = vfs_mount("ramfs", 0, "/");
 	if (mount_status != VFS_STATUS_OK) kern_fail("IOVirtualFSDriver root ramfs mount failed");
@@ -839,6 +841,10 @@ static void kern_init_filesystem(void)
 	kputln("IOVirtualFSDriver mounted ramfs at /");
 
 	if (vfs_mkdir("/disk") != VFS_STATUS_OK) kern_fail("IOVirtualFSDriver: /disk mountpoint creation failed");
+
+	if (vfs_mkdir("/dev") != VFS_STATUS_OK || vfs_mount("devfs", 0, "/dev") != VFS_STATUS_OK) kern_fail("IOVirtualFSDriver: devfs mount at /dev failed");
+
+	kputln("IOVirtualFSDriver mounted devfs at /dev");
 }
 
 /*

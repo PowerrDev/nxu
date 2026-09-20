@@ -22,10 +22,18 @@ int64_t nxu_spawn(const char *path, const char *name);
  * the caller's set. Without NXU_CAP_FS_WRITE, nxu_open for write/create/
  * truncate/append, nxu_unlink and nxu_mkdir return -NXU_SYS_E_DENIED; without
  * NXU_CAP_DISPLAY so does nxu_display_claim, and without NXU_CAP_RESET so does
- * nxu_system_reset.
+ * nxu_system_reset. Opening /dev/audio0 needs NXU_CAP_AUDIO (writing a device
+ * node does not need NXU_CAP_FS_WRITE).
  */
 int64_t nxu_spawn_caps(const char *path, const char *name, uint64_t caps);
 int64_t nxu_get_caps(void);
+
+/*
+ * A device-specific request on an open descriptor (NXU_IOC_* in syscall_defs.h
+ * says which way the argument goes and how big it is). The audio device's
+ * requests are in <kern/audio/audio_defs.h>.
+ */
+int64_t nxu_ioctl(uint64_t descriptor, uint64_t command, void *argument);
 int64_t nxu_waitpid(uint64_t pid, uint64_t *status);
 int64_t nxu_getpid(void);
 int64_t nxu_yield(void);

@@ -20,6 +20,7 @@
 #include <kern/memory/heap.h>
 #include <kern/process/proc.h>
 #include <kern/tests/ipc_test.h>
+#include <vfs/devfs.h>
 #include <vfs/ext4.h>
 #include <vfs/file.h>
 #include <vfs/ramfs.h>
@@ -65,7 +66,7 @@ bool i386_init_kernel(const i386_boot_info_t *boot)
 
 	kprintf("i386_init_kernel: process manager ready, kernel PID %u\n", (unsigned)proc_kernel()->p_ident.pid);
 
-	if (!vfs_init() || !ramfs_register() || !ext4_register()) {
+	if (!vfs_init() || !ramfs_register() || !ext4_register() || !devfs_register()) {
 		kputln("i386_init_kernel: vfs registration failed");
 		return false;
 	}
@@ -84,7 +85,13 @@ bool i386_init_kernel(const i386_boot_info_t *boot)
 		return false;
 	}
 
+	if (vfs_mkdir("/dev") != VFS_STATUS_OK || vfs_mount("devfs", 0, "/dev") != VFS_STATUS_OK) {
+		kputln("i386_init_kernel: devfs mount at /dev failed");
+		return false;
+	}
+
 	kputln("i386_init_kernel: ramfs mounted at /, /disk mountpoint created");
+	kputln("i386_init_kernel: devfs mounted at /dev");
 	return true;
 }
 
