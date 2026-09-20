@@ -704,6 +704,13 @@ uint32_t btrfs_crc32c(uint32_t crc, const void *data, size_t length);
 /* The checksum Btrfs stores for a block: ~crc32c(~0, data), little-endian. */
 uint32_t btrfs_csum_crc32c(const void *data, size_t length);
 
+/*
+ * The checksum of `type` over data, into out[0..csum_size) with the rest of
+ * the 32-byte field zeroed (the on-disk form). False for a type this driver
+ * does not know.
+ */
+bool btrfs_csum_data(uint32_t type, const void *data, size_t length, uint8_t out[BTRFS_CSUM_SIZE]);
+
 /* The DIR_ITEM key offset for a name: crc32c(~1, name). */
 uint32_t btrfs_name_hash(const uint8_t *name, size_t length);
 

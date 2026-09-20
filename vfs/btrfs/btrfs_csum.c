@@ -102,6 +102,19 @@ uint32_t btrfs_csum_crc32c(const void *data, size_t length)
 	return ~btrfs_crc32c(~0U, data, length);
 }
 
+bool btrfs_csum_data(uint32_t type, const void *data, size_t length, uint8_t out[BTRFS_CSUM_SIZE])
+{
+	for (uint32_t index = 0U; index < BTRFS_CSUM_SIZE; index++) out[index] = 0U;
+
+	switch (type) {
+	case BTRFS_CSUM_TYPE_CRC32:
+		btrfs_put_le32(out, btrfs_csum_crc32c(data, length));
+		return true;
+	default:
+		return false;
+	}
+}
+
 uint32_t btrfs_name_hash(const uint8_t *name, size_t length)
 {
 	return btrfs_crc32c((uint32_t)~1U, name, length);

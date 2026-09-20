@@ -183,6 +183,8 @@ btrfs_fs_t *btrfs_fs_open(const btrfs_env_t *env, const btrfs_reader_t *reader, 
 
 	fs->sectorsize = fs->super.sectorsize;
 	fs->nodesize = fs->super.nodesize;
+	fs->csum_type = fs->super.csum_type;
+	fs->csum_size = btrfs_csum_type_size(fs->super.csum_type);
 	memcpy(fs->header_fsid, (fs->super.incompat_flags & BTRFS_FEATURE_INCOMPAT_METADATA_UUID) != 0ULL ? fs->super.metadata_uuid : fs->super.fsid, BTRFS_FSID_SIZE);
 
 	if (fs->super.log_root != 0ULL && !fs->options.ignore_log_tree) {

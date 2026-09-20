@@ -159,6 +159,8 @@ struct btrfs_fs {
 	uint8_t header_fsid[BTRFS_FSID_SIZE];
 	uint32_t sectorsize;
 	uint32_t nodesize;
+	uint32_t csum_type;            /* BTRFS_CSUM_TYPE_*, from the superblock */
+	uint32_t csum_size;            /* bytes per checksum: 4, 8 or 32 */
 
 	btrfs_chunk_map_t chunks;
 	btrfs_cache_t cache;
