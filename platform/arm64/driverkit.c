@@ -18,6 +18,7 @@
 #include <drivers/virtio/virtio.h>
 #include <drivers/virtio/virtio_input.h>
 #include <kern/boot/boot_args.h>
+#include <kern/boot/boot_chime.h>
 #include <kern/boot/boot_mode.h>
 #include <kern/boot/splash.h>
 #include <kern/console/bootlog.h>
@@ -90,6 +91,9 @@ static void driverkit_show_splash_if_needed(void)
 
 	if (!boot_splash_show(display)) driverkit_fatal("driverkit_show_splash_if_needed: initialization failed");
 	g_boot_splash_shown = true;
+
+	/* The first frame is on its way to the screen: the boot chime is due as soon as the sound device and its file are there. */
+	boot_chime_arm();
 }
 
 bool driverkit_init(driverkit_config_t *config)

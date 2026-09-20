@@ -10,6 +10,7 @@
 #include <kern/tests/sound_test.h>
 
 #include <kern/audio/audio_defs.h>
+#include <kern/boot/boot_chime.h>
 #include <kern/console/console.h>
 #include <kern/machine/machine_routines.h>
 #include <kern/machine/timer.h>
@@ -142,7 +143,19 @@ static void sound_test_thread(void *parameter)
 {
 	(void)parameter;
 
-	g_sound_test_ok = sound_test_play_tone();
+	bool ok = sound_test_play_tone();
+
+	SOUND_TEST_LOG("the tone %s\n", ok ? "played" : "did not play");
+
+	/* Then the chime, through the code the boot uses (its WAV is read from the system volume). */
+	if (ok) {
+		bool chime = boot_chime_play();
+
+		SOUND_TEST_LOG("the boot chime %s\n", chime ? "played" : "did not play");
+		ok = chime;
+	}
+
+	g_sound_test_ok = ok;
 	g_sound_test_done = true;
 }
 
@@ -168,6 +181,5 @@ bool sound_test_run(void)
 		}
 	}
 
-	SOUND_TEST_LOG("the tone %s\n", g_sound_test_ok ? "played" : "did not play");
 	return g_sound_test_ok;
 }

@@ -294,6 +294,7 @@ C_SOURCES := \
     drivers/virtio/virtio_sound_pcm.c \
     drivers/virtio/virtqueue.c \
     kern/boot/boot_args.c \
+    kern/boot/boot_chime.c \
     kern/boot/boot_mode.c \
     kern/boot/nvram.c \
     kern/boot/splash.c \
@@ -378,6 +379,7 @@ C_SOURCES := \
     platform/arm64/rtc.c \
     platform/arm64/uart.c \
     libk/crc32c.c \
+    libk/mp3.c \
     libk/string.c \
     libk/wav.c
 

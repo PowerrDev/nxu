@@ -1,5 +1,6 @@
 #include <kern/console/console.h>
 #include <kern/boot/boot_args.h>
+#include <kern/boot/boot_chime.h>
 #include <kern/boot/boot_mode.h>
 #include <kern/boot/splash.h>
 #include <kern/boot/nvram.h>
@@ -1036,6 +1037,9 @@ void kern_init_higher_half(void)
 		vfs_dump();
 
 		boot_test_storage(boot_display);
+
+		/* The file the chime plays is readable now; the thread starts playing once the scheduler runs. */
+		boot_chime_start();
 		kern_launch_init_process(boot_display);
 	}
 
