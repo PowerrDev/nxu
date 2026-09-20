@@ -8,6 +8,9 @@
  * features builds without the kernel.
  */
 
+/* Reserved for legacy devices; QEMU offers both on every modern device. */
+#define VIRTIO_F_NOTIFY_ON_EMPTY 24U
+#define VIRTIO_F_ANY_LAYOUT 27U
 #define VIRTIO_F_RING_INDIRECT_DESC 28U
 #define VIRTIO_F_RING_EVENT_IDX 29U
 #define VIRTIO_F_VERSION_1 32U

@@ -63,6 +63,8 @@ const char *virtio_snd_feature_name(uint32_t bit)
 {
 	switch (bit) {
 	case VIRTIO_SND_F_CTLS: return "SND_F_CTLS";
+	case VIRTIO_F_NOTIFY_ON_EMPTY: return "F_NOTIFY_ON_EMPTY";
+	case VIRTIO_F_ANY_LAYOUT: return "F_ANY_LAYOUT";
 	case VIRTIO_F_RING_INDIRECT_DESC: return "F_RING_INDIRECT_DESC";
 	case VIRTIO_F_RING_EVENT_IDX: return "F_RING_EVENT_IDX";
 	case VIRTIO_F_VERSION_1: return "F_VERSION_1";
