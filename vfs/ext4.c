@@ -2481,11 +2481,8 @@ static vfs_status_t ext4_journal_map_locked(
 		previous = physical;
 	}
 
-	kputs("IOFilesystemFamily: journal blocks ");
-	kputu64(blocks);
-	kputs(", physical runs ");
-	kputu64(runs);
-	kputc('\n');
+	kprintf("IOFilesystemFamily: journal blocks: %llu\n", (unsigned long long)blocks);
+	kverbosef("IOFilesystemFamily: journal physical runs: %llu\n", (unsigned long long)runs);
 
 	*block_map = map;
 	*block_count = blocks;
@@ -2742,53 +2739,35 @@ void ext4_dump(void)
 		ext4_mount_data_t *data = g_ext4_mounts[index];
 		if (data == 0 || !data->active) continue;
 
-		kputs("IOFilesystemFamily: mount ");
-		kputs(data->mount->m_path);
-		kputs(", block size: ");
-		kputu64(data->block_size);
-		kputs(", blocks: ");
-		kputu64(data->blocks_count);
-		kputs(", groups: ");
-		kputu64(data->group_count);
-		kputs(", inode size: ");
-		kputu64(data->inode_size);
-		kputc('\n');
-
-		kputs("IOFilesystemFamily: features compat ");
-		kputhex32(data->feature_compat);
-		kputs(", incompat ");
-		kputhex32(data->feature_incompat);
-		kputs(", ro-compat ");
-		kputhex32(data->feature_ro_compat);
-		kputc('\n');
-
-		kputs("IOFilesystemFamily: resident vnodes: ");
-		kputu64(data->node_count);
-		kputc('\n');
-
-		kputs("IOFilesystemFamily: free blocks: ");
-		kputu64(data->free_blocks_count);
-		kputs(", free inodes: ");
-		kputu64(data->free_inodes_count);
-		kputc('\n');
-
-		kputln("IOFilesystemFamily: metadata checksums: CRC32C");
+		kprintf("IOFilesystemFamily: mount %s, block size: %llu\n", data->mount->m_path, (unsigned long long)data->block_size);
+		kprintf("IOFilesystemFamily: blocks: %llu\n", (unsigned long long)data->blocks_count);
+		kprintf("IOFilesystemFamily: free blocks: %llu\n", (unsigned long long)data->free_blocks_count);
+		kprintf("IOFilesystemFamily: free inodes: %llu\n", (unsigned long long)data->free_inodes_count);
 		kputln("IOFilesystemFamily: journal: JBD2 checksum-v3, ordered data");
-		kputs("jbd2: commits: ");
-		kputu64(data->journal.commit_count);
-		kputs(", replays: ");
-		kputu64(data->journal.replay_count);
-		kputs(", replayed metadata blocks: ");
-		kputu64(data->journal.replayed_block_count);
-		kputs(", discarded incomplete transactions: ");
-		kputu64(data->journal.discard_count);
-		kputc('\n');
+		kprintf("jbd2: commits: %llu\n", (unsigned long long)data->journal.commit_count);
+		kprintf("jbd2: replays: %llu\n", (unsigned long long)data->journal.replay_count);
+		kprintf("jbd2: replayed metadata blocks: %llu\n", (unsigned long long)data->journal.replayed_block_count);
+		kprintf("jbd2: discarded incomplete transactions: %llu\n", (unsigned long long)data->journal.discard_count);
 		if (data->journal.replay_count != 0ULL) {
-			kputs("jbd2: last replay sequence: ");
-			kputu64(data->journal.last_replay_sequence);
-			kputs(", metadata blocks: ");
-			kputu64(data->journal.last_replay_blocks);
+			kprintf("jbd2: last replay sequence: %llu\n", (unsigned long long)data->journal.last_replay_sequence);
+			kprintf("jbd2: last replay metadata blocks: %llu\n", (unsigned long long)data->journal.last_replay_blocks);
+		}
+
+		kverbosef("IOFilesystemFamily: groups: %llu\n", (unsigned long long)data->group_count);
+		kverbosef("IOFilesystemFamily: inode size: %llu\n", (unsigned long long)data->inode_size);
+		if (kconsole_verbose()) {
+			kputs("IOFilesystemFamily: features compat: ");
+			kputhex32(data->feature_compat);
+			kputc('\n');
+			kputs("IOFilesystemFamily: features incompat: ");
+			kputhex32(data->feature_incompat);
+			kputc('\n');
+			kputs("IOFilesystemFamily: features ro-compat: ");
+			kputhex32(data->feature_ro_compat);
 			kputc('\n');
 		}
+
+		kverbosef("IOFilesystemFamily: resident vnodes: %llu\n", (unsigned long long)data->node_count);
+		kverbosef("IOFilesystemFamily: metadata checksums: CRC32C\n");
 	}
 }
