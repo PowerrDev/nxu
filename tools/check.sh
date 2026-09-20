@@ -94,7 +94,7 @@ run_kernel_test() {
 	for ((i = 0; i < timeout; i++)); do
 		sleep 1
 		if grep -qF -e "$pass" "$serial" 2>/dev/null; then break; fi
-		if grep -qE 'FAILED|panic\(|kern_fail' "$serial" 2>/dev/null; then break; fi
+		if grep -qE 'FAILED|panic\(|kern_fail|: failed[[:space:]]*$' "$serial" 2>/dev/null; then break; fi
 		kill -0 "$qpid" 2>/dev/null || break
 	done
 	sleep 1
@@ -104,6 +104,9 @@ run_kernel_test() {
 	local took=$((SECONDS - started))
 	if grep -qF -e "$pass" "$serial"; then
 		record "ok    $id  (${took}s)"
+	elif grep -qE 'FAILED|panic\(|kern_fail|: failed[[:space:]]*$' "$serial"; then
+		record "FAIL  $id  reported a failure after ${took}s (serial log: $serial)"
+		tail -25 "$serial"
 	else
 		record "FAIL  $id  no pass line within ${timeout}s (serial log: $serial)"
 		tail -25 "$serial"
