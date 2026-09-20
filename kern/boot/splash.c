@@ -7,6 +7,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 #define BOOT_SPLASH_BACKGROUND 0x00000000U
 #define BOOT_SPLASH_MAX_SCALE 1U
@@ -78,6 +79,25 @@ static uint32_t g_text_cursor_y;
 static bool g_text_active;
 static bool g_text_dirty;
 static bool g_text_replaying;
+
+/*
+ * The console is a grid of character cells. putc edits the grid and
+ * boot_splash_text_render() paints it; nothing touches the framebuffer per
+ * character or per line. The grid is a ring of rows: visible row r lives in
+ * g_text_cells[(g_text_top + r) % g_text_rows], so a scroll only moves
+ * g_text_top and blanks the vacated row.
+ *
+ * It used to scroll by copying the whole framebuffer once per log line --
+ * 16 MB on a Retina scanout -- which under TCG stalled the boot log for
+ * seconds at a time and made the history replay give up half way through.
+ */
+#define BOOT_SPLASH_TEXT_MAX_COLUMNS 512U
+#define BOOT_SPLASH_TEXT_MAX_ROWS 160U
+
+static char g_text_cells[BOOT_SPLASH_TEXT_MAX_ROWS][BOOT_SPLASH_TEXT_MAX_COLUMNS];
+static bool g_text_row_dirty[BOOT_SPLASH_TEXT_MAX_ROWS];
+static uint32_t g_text_top;
+static bool g_text_all_dirty;
 
 static const uint8_t g_status_glyph_space[7] = { 0U, 0U, 0U, 0U, 0U, 0U, 0U };
 static const uint8_t g_status_glyph_dot[7] = { 0U, 0U, 0U, 0U, 0U, 0x0CU, 0x0CU };
@@ -332,16 +352,28 @@ static bool boot_splash_rect_hits_header(uint32_t left, uint32_t right, uint32_t
 	return right > g_header_left && left < g_header_right && bottom > g_header_top && top < g_header_bottom;
 }
 
-static void boot_splash_text_clear_cell(uint32_t column, uint32_t row)
+/* Fill pixels [from, to) of one scanline with the background colour. */
+static void boot_splash_fill_span(uint32_t *pixels, uint32_t from, uint32_t to)
 {
-	uint32_t start_x = column * BOOT_SPLASH_TEXT_CELL_WIDTH;
-	uint32_t start_y = row * BOOT_SPLASH_TEXT_CELL_HEIGHT;
-	if (boot_splash_rect_hits_header(start_x, start_x + BOOT_SPLASH_TEXT_CELL_WIDTH, start_y, start_y + BOOT_SPLASH_TEXT_CELL_HEIGHT)) return;
+	for (uint32_t x = from; x < to; x++) pixels[x] = BOOT_SPLASH_BACKGROUND;
+}
 
-	for (uint32_t y = 0U; y < BOOT_SPLASH_TEXT_CELL_HEIGHT; y++) {
-		uint32_t *pixels = g_display->framebuffer + (uint64_t)(start_y + y) * g_display->stride + start_x;
-		for (uint32_t x = 0U; x < BOOT_SPLASH_TEXT_CELL_WIDTH; x++) pixels[x] = BOOT_SPLASH_BACKGROUND;
+/*
+ * Blank one raw scanline, leaving the header's column range alone if this
+ * scanline falls inside its row range -- the logo and bar are never
+ * overwritten and never need repainting afterwards.
+ */
+static void boot_splash_clear_row(uint32_t y)
+{
+	uint32_t *row = g_display->framebuffer + (uint64_t)y * g_display->stride;
+
+	if (y >= g_header_top && y < g_header_bottom) {
+		boot_splash_fill_span(row, 0U, g_header_left);
+		boot_splash_fill_span(row, g_header_right, g_display->width);
+		return;
 	}
+
+	boot_splash_fill_span(row, 0U, g_display->width);
 }
 
 static void boot_splash_text_draw_char(uint32_t column, uint32_t row, char character)
@@ -351,13 +383,13 @@ static void boot_splash_text_draw_char(uint32_t column, uint32_t row, char chara
 	uint32_t start_x = column * BOOT_SPLASH_TEXT_CELL_WIDTH;
 	uint32_t start_y = row * BOOT_SPLASH_TEXT_CELL_HEIGHT;
 
-	boot_splash_text_clear_cell(column, row);
 	if (boot_splash_rect_hits_header(start_x, start_x + BOOT_SPLASH_TEXT_CELL_WIDTH, start_y, start_y + BOOT_SPLASH_TEXT_CELL_HEIGHT)) return;
 
 	const uint8_t *glyph = &g_font8x16[(uint32_t)(uint8_t)character * FONT8X16_HEIGHT];
 
 	for (uint32_t glyph_row = 0U; glyph_row < FONT8X16_HEIGHT; glyph_row++) {
 		uint8_t bits = glyph[glyph_row];
+		if (bits == 0U) continue;
 		uint32_t *pixels = g_display->framebuffer + (uint64_t)(start_y + glyph_row) * g_display->stride + start_x;
 
 		for (uint32_t column_bit = 0U; column_bit < FONT8X16_WIDTH; column_bit++) {
@@ -367,67 +399,47 @@ static void boot_splash_text_draw_char(uint32_t column, uint32_t row, char chara
 	}
 }
 
-/*
- * Copy one raw scanline, skipping the header's column range if this
- * scanline falls inside its row range -- protecting the header's own
- * pixels from ever being read as scroll source or overwritten as scroll
- * destination, without needing to repaint it afterward.
- */
-static void boot_splash_copy_row(uint32_t destination_y, uint32_t source_y)
+/* Blank visible row `row` on the scanout and paint its cells over it. */
+static void boot_splash_text_render_row(uint32_t row)
 {
-	uint32_t *destination = g_display->framebuffer + (uint64_t)destination_y * g_display->stride;
-	uint32_t *source = g_display->framebuffer + (uint64_t)source_y * g_display->stride;
-	bool masked = (destination_y >= g_header_top && destination_y < g_header_bottom) ||
-		(source_y >= g_header_top && source_y < g_header_bottom);
+	uint32_t start_y = row * BOOT_SPLASH_TEXT_CELL_HEIGHT;
+	for (uint32_t y = 0U; y < BOOT_SPLASH_TEXT_CELL_HEIGHT; y++) boot_splash_clear_row(start_y + y);
 
-	for (uint32_t x = 0U; x < g_display->width; x++) {
-		if (masked && x >= g_header_left && x < g_header_right) continue;
-		destination[x] = source[x];
-	}
-}
-
-static void boot_splash_clear_row(uint32_t y)
-{
-	uint32_t *row = g_display->framebuffer + (uint64_t)y * g_display->stride;
-	bool masked = y >= g_header_top && y < g_header_bottom;
-
-	for (uint32_t x = 0U; x < g_display->width; x++) {
-		if (masked && x >= g_header_left && x < g_header_right) continue;
-		row[x] = BOOT_SPLASH_BACKGROUND;
+	const char *cells = g_text_cells[(g_text_top + row) % g_text_rows];
+	for (uint32_t column = 0U; column < g_text_columns; column++) {
+		if (cells[column] == '\0' || cells[column] == ' ') continue;
+		boot_splash_text_draw_char(column, row, cells[column]);
 	}
 }
 
 /*
- * Shift the whole console up by one cell height and clear the vacated last
- * row, exactly like a terminal scroll -- across the full screen, since
- * boot_splash_copy_row()/boot_splash_clear_row() already mask out the
- * header's column range on any scanline that needs it.
+ * Paint every row that changed since the last render (all of them after a
+ * scroll), without presenting. The status caption lives inside the console's
+ * rectangle, so put it back on top afterwards.
  */
-static void boot_splash_text_scroll(void)
+static void boot_splash_text_render(void)
 {
-	uint32_t region_height = g_text_rows * BOOT_SPLASH_TEXT_CELL_HEIGHT;
-	uint32_t cell = BOOT_SPLASH_TEXT_CELL_HEIGHT;
-	if (region_height < cell) return;
-
-	uint32_t pixel_rows = region_height - cell;
-	for (uint32_t y = 0U; y < pixel_rows; y++) {
-		boot_splash_copy_row(y, y + cell);
+	for (uint32_t row = 0U; row < g_text_rows; row++) {
+		if (!g_text_all_dirty && !g_text_row_dirty[row]) continue;
+		boot_splash_text_render_row(row);
+		g_text_row_dirty[row] = false;
 	}
 
-	for (uint32_t y = pixel_rows; y < region_height; y++) {
-		boot_splash_clear_row(y);
-	}
+	g_text_all_dirty = false;
+	if (g_status_active) (void)boot_splash_paint_status();
 }
 
 static void boot_splash_text_advance_line(void)
 {
 	g_text_cursor_x = 0U;
 	g_text_cursor_y++;
+	if (g_text_cursor_y < g_text_rows) return;
 
-	if (g_text_cursor_y >= g_text_rows) {
-		boot_splash_text_scroll();
-		g_text_cursor_y = g_text_rows - 1U;
-	}
+	uint32_t vacated = g_text_top;
+	g_text_top = (g_text_top + 1U) % g_text_rows;
+	memset(g_text_cells[vacated], 0, sizeof(g_text_cells[vacated]));
+	g_text_cursor_y = g_text_rows - 1U;
+	g_text_all_dirty = true;
 }
 
 /* Present the full screen once if the text console has drawn since the last flush. */
@@ -474,6 +486,7 @@ static bool boot_splash_text_flush(void)
 		(void)boot_splash_paint_bar();
 	}
 
+	boot_splash_text_render();
 	return display_present_full(g_display);
 }
 
@@ -516,23 +529,24 @@ static void boot_splash_text_putc(char character, void *context)
 	}
 
 	if (g_text_cursor_x >= g_text_columns) boot_splash_text_advance_line();
+	if (character < 32 || character > 126) character = '?';
 
-	boot_splash_text_draw_char(g_text_cursor_x, g_text_cursor_y, character);
+	g_text_cells[(g_text_top + g_text_cursor_y) % g_text_rows][g_text_cursor_x] = character;
+	g_text_row_dirty[g_text_cursor_y] = true;
 	g_text_cursor_x++;
 	g_text_dirty = true;
 }
 
 /*
- * Target number of presents for the whole replay, regardless of how much
- * history there is: boot_splash_history_line_count() below picks a lines-
- * per-present stride so a short history still gets one present per line
- * (visibly scrolling from the very first retained line) while a long one
- * gets multiple lines per present instead of a present per line -- keeping
- * the present count, and so the real-world time a present costs under
- * software-emulated QEMU (TCG), bounded independent of history size.
+ * The replay plays the retained history back over about
+ * BOOT_SPLASH_REPLAY_TARGET_MS in BOOT_SPLASH_REPLAY_TARGET_PRESENTS even
+ * steps, however long the history is: a short one gets a present per line
+ * (visibly scrolling from the very first line), a long one several lines per
+ * present. Painting is per present, not per line, so what a step costs does
+ * not depend on how many lines it covers.
  */
-#define BOOT_SPLASH_REPLAY_TARGET_PRESENTS 48ULL
-#define BOOT_SPLASH_REPLAY_STEP_MS 70ULL
+#define BOOT_SPLASH_REPLAY_TARGET_PRESENTS 30ULL
+#define BOOT_SPLASH_REPLAY_TARGET_MS 1200ULL
 #define BOOT_SPLASH_REPLAY_MAX_MS 2500ULL
 
 /* Cheap probe: capacity 0 reads nothing but still clamps/advances *cursor. */
@@ -564,33 +578,32 @@ static uint64_t boot_splash_history_line_count(void)
 }
 
 /*
- * Replay the retained console history from the very first line, through the
- * same scrolling text path live boot output uses, presenting every
- * lines_per_present lines with a short forced delay between presents -- so
- * the splash visibly scrolls through the whole boot log seen so far instead
- * of jumping straight to only its last screenful. g_text_replaying
- * suppresses boot_splash_text_putc()'s own per-line flush attempt so this
- * function alone controls pacing.
+ * Replay the retained console history from the very first line through the
+ * same cell grid live boot output uses, painting and presenting every
+ * lines_per_present lines on an even schedule -- so the splash visibly
+ * scrolls through the whole boot log seen so far instead of jumping straight
+ * to its last screenful. g_text_replaying keeps boot_splash_text_putc() from
+ * flushing on its own, so this function alone controls pacing.
  *
- * Also bounded by BOOT_SPLASH_REPLAY_MAX_MS as a safety net: if presents are
- * running unusually slowly (a heavily loaded or emulated host), remaining
- * lines are drawn without presenting each one -- one final present at the
- * end catches the screen up -- so this can never turn into a real stall.
+ * Bounded by BOOT_SPLASH_REPLAY_MAX_MS as a safety net: if paints and
+ * presents run unusually slowly (a loaded or emulated host), the remaining
+ * lines are fed into the grid without stepping and one final present catches
+ * the screen up, so the replay can never turn into a stall.
  */
 static void boot_splash_replay_history(display_device_t *display)
 {
 	uint64_t total_lines = boot_splash_history_line_count();
 	if (total_lines == 0ULL) return;
 
-	uint64_t lines_per_present = total_lines / BOOT_SPLASH_REPLAY_TARGET_PRESENTS;
-	if (lines_per_present == 0ULL) lines_per_present = 1ULL;
-
+	uint64_t lines_per_present = (total_lines + BOOT_SPLASH_REPLAY_TARGET_PRESENTS - 1ULL) / BOOT_SPLASH_REPLAY_TARGET_PRESENTS;
 	uint64_t cursor = boot_splash_history_oldest_cursor();
 
 	uint64_t frequency = timer_get_frequency();
-	uint64_t step_ticks = frequency != 0ULL ? (frequency * BOOT_SPLASH_REPLAY_STEP_MS) / 1000ULL : 0ULL;
+	uint64_t step_ticks = frequency != 0ULL ? (frequency * BOOT_SPLASH_REPLAY_TARGET_MS) / (1000ULL * BOOT_SPLASH_REPLAY_TARGET_PRESENTS) : 0ULL;
 	uint64_t max_ticks = frequency != 0ULL ? (frequency * BOOT_SPLASH_REPLAY_MAX_MS) / 1000ULL : 0ULL;
-	uint64_t deadline = timer_get_ticks() + max_ticks;
+	uint64_t started = timer_get_ticks();
+	uint64_t deadline = started + max_ticks;
+	uint64_t steps = 0ULL;
 
 	char buffer[256];
 	uint64_t read_size;
@@ -612,18 +625,23 @@ static void boot_splash_replay_history(display_device_t *display)
 			if (lines_since_present < lines_per_present) continue;
 			lines_since_present = 0ULL;
 
+			boot_splash_text_render();
 			(void)display_present_full(display);
+			steps++;
 
 			if (max_ticks != 0ULL && timer_get_ticks() >= deadline) {
 				animate = false;
 			} else if (step_ticks != 0ULL) {
-				uint64_t next = timer_get_ticks() + step_ticks;
+				uint64_t next = started + steps * step_ticks;
 				while (timer_get_ticks() < next) __asm__ volatile("yield");
 			}
 		}
 	}
 
-	if (!animate || g_text_dirty) (void)display_present_full(display);
+	if (!animate || g_text_dirty) {
+		boot_splash_text_render();
+		(void)display_present_full(display);
+	}
 
 	g_text_replaying = false;
 	g_text_dirty = false;
@@ -662,9 +680,15 @@ static void boot_splash_text_init(void)
 	}
 
 	g_text_columns = g_display->width / BOOT_SPLASH_TEXT_CELL_WIDTH;
+	if (g_text_columns > BOOT_SPLASH_TEXT_MAX_COLUMNS) g_text_columns = BOOT_SPLASH_TEXT_MAX_COLUMNS;
 	g_text_rows = g_display->height / BOOT_SPLASH_TEXT_CELL_HEIGHT;
+	if (g_text_rows > BOOT_SPLASH_TEXT_MAX_ROWS) g_text_rows = BOOT_SPLASH_TEXT_MAX_ROWS;
 	g_text_cursor_x = 0U;
 	g_text_cursor_y = 0U;
+	g_text_top = 0U;
+	g_text_all_dirty = false;
+	memset(g_text_cells, 0, sizeof(g_text_cells));
+	memset(g_text_row_dirty, 0, sizeof(g_text_row_dirty));
 	g_text_dirty = false;
 	g_text_active = g_text_columns != 0U && g_text_rows != 0U;
 }
@@ -767,6 +791,7 @@ bool boot_splash_finish(void)
 	 */
 	if (g_text_dirty) {
 		g_text_dirty = false;
+		boot_splash_text_render();
 		if (!display_present_full(g_display)) return false;
 	}
 
