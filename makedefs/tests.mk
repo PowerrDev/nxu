@@ -5,6 +5,10 @@
 #   make tests              interactive picker (tools/test_menu.sh)
 #   make test TEST=<id>     build and boot a single test directly
 #   make test-list          machine-readable registry (id, group, description)
+#   make check              build and boot every headless test, then the i386
+#                           suites, and print one pass/fail table (tools/check.sh)
+#   make check-list         the kernel tests `make check` runs (id, timeout, pass line, defines)
+#   make check-i386-list    the i386 suite targets `make check` runs
 #
 # Every test is a kernel CONFIG of its own (BUILD/<id>/kernel.bin) that is
 # compiled with the test's -D switch and booted under QEMU against the
@@ -19,6 +23,9 @@
 #   TEST_<id>_GPU         QEMU virtio-gpu-device args (default: bare device)
 #   TEST_<id>_RAMFB       QEMU ramfb device           (default: none)
 #   TEST_<id>_MONITOR     QEMU -monitor argument      (default: none)
+#   TEST_<id>_PASS        serial line that means the test passed; setting it
+#                         puts the test in `make check` (headless tests only)
+#   TEST_<id>_TIMEOUT     seconds `make check` waits for it (default: CHECK_TIMEOUT)
 
 TEST_GUI_STACK := UISERVICE=1 WINDOWSERVER=1
 
@@ -32,6 +39,8 @@ TEST_IDS := \
     journal-crash \
     ipc-process \
     thread-process \
+    fault-process \
+    process-control \
     socket-process \
     xamethyst-process \
     windowserver-process \
@@ -79,14 +88,27 @@ TEST_journal-crash_DISPLAY := gtk
 
 TEST_ipc-process_GROUP := Userland processes
 TEST_ipc-process_DESC := bootd registry, two processes exchange IPC
+TEST_ipc-process_PASS := ipc_process_test: passed
 TEST_ipc-process_CFLAGS := -DNXU_IPC_PROCESS_TEST
 
 TEST_thread-process_GROUP := Userland processes
 TEST_thread-process_DESC := User process spawns and joins its threads
+TEST_thread-process_PASS := thread_process_test: passed
 TEST_thread-process_CFLAGS := -DNXU_THREAD_PROCESS_TEST
+
+TEST_fault-process_GROUP := Userland processes
+TEST_fault-process_DESC := Faulting user processes are killed, not the kernel
+TEST_fault-process_PASS := fault_process_test: passed
+TEST_fault-process_CFLAGS := -DNXU_FAULT_PROCESS_TEST
+
+TEST_process-control_GROUP := Userland processes
+TEST_process-control_DESC := fork, exec, signals, copy-on-write, demand paging
+TEST_process-control_PASS := process_control_test: passed
+TEST_process-control_CFLAGS := -DNXU_PROCESS_CONTROL_TEST
 
 TEST_socket-process_GROUP := Userland processes
 TEST_socket-process_DESC := Socket server and client stream a payload
+TEST_socket-process_PASS := socket_process_test: passed
 TEST_socket-process_CFLAGS := -DNXU_SOCKET_PROCESS_TEST
 
 TEST_xamethyst-process_GROUP := Userland processes
@@ -108,9 +130,33 @@ TEST_about-sevos-process_GPU := ,xres=1280,yres=960
 TEST_about-sevos-process_MONITOR := telnet:127.0.0.1:45456,server,nowait
 
 
+# -- make check ----------------------------------------------------------------
+
+# Seconds `make check` waits for a test's pass line before calling it a failure.
+CHECK_TIMEOUT ?= 150
+
+# The plain boot has no test define, so it is not in TEST_IDS; check-list adds it.
+CHECK_DEFAULT_PASS := kern_init: root userspace services active
+
+CHECK_IDS := $(foreach id,$(TEST_IDS),$(if $(TEST_$(id)_PASS),$(id)))
+
+# The i386 suites `make check` runs, one make target each. A new i386 area adds
+# its test-i386-<area> target to this list, or `make check` will not run it.
+CHECK_I386_TARGETS := \
+    test-i386 \
+    test-i386-interrupts \
+    test-i386-vm \
+    test-i386-threads \
+    test-i386-boot \
+    test-i386-fs \
+    test-i386-devices \
+    test-i386-userland \
+    test-i386-btrfs
+
+
 # -- Rules ---------------------------------------------------------------------
 
-.PHONY: tests test test-list
+.PHONY: tests test test-list check check-list check-i386-list
 
 ifneq ($(filter test,$(MAKECMDGOALS)),)
 ifeq ($(filter $(TEST),$(TEST_IDS)),)
@@ -127,6 +173,22 @@ tests:
 test-list:
 
 	@$(foreach id,$(TEST_IDS),printf '%s\t%s\t%s\n' '$(id)' '$(TEST_$(id)_GROUP)' '$(TEST_$(id)_DESC)';)
+
+
+check-list:
+
+	@printf '%s\t%s\t%s\t%s\n' 'default' '$(CHECK_TIMEOUT)' '$(CHECK_DEFAULT_PASS)' ''
+	@$(foreach id,$(CHECK_IDS),printf '%s\t%s\t%s\t%s\n' '$(id)' '$(or $(TEST_$(id)_TIMEOUT),$(CHECK_TIMEOUT))' '$(TEST_$(id)_PASS)' '$(TEST_$(id)_CFLAGS)';)
+
+
+check-i386-list:
+
+	@printf '%s\n' $(CHECK_I386_TARGETS)
+
+
+check:
+
+	+@MAKE="$(MAKE)" CHECK_ONLY="$(CHECK_ONLY)" CHECK_I386="$(CHECK_I386)" tools/check.sh
 
 
 test: $(DISK) $(DISK_FORMAT_STAMP)
