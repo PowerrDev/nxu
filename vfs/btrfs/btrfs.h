@@ -34,13 +34,18 @@ bool btrfs_register(void);
  * (whether it succeeds or not). NULL clears them.
  *
  *   subvol_id           mount this subvolume instead of the default (0: default)
- *   verify_data         check file data against the checksum tree
+ *   verify_data         check file data against the checksum tree (the
+ *                       default; kept as an explicit spelling)
  *   ignore_log_tree     mount despite an unreplayed log tree
+ *   noverify            do not check file data against the checksum tree
+ *                       (metadata is always checked). Together with verify_data
+ *                       the mount is refused as contradictory.
  */
 typedef struct {
 	uint64_t subvol_id;
 	bool verify_data;
 	bool ignore_log_tree;
+	bool noverify;
 } btrfs_mount_options_t;
 
 void btrfs_set_next_mount_options(const btrfs_mount_options_t *options);

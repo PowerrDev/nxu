@@ -27,9 +27,14 @@
  * read fails with BTRFS_ERR_UNSUPPORTED_COMPRESSION, never with garbage.
  * Encrypted extents fail with BTRFS_ERR_UNSUPPORTED_ENCRYPTION.
  *
- * With options.verify_data_csums the sectors of every regular extent read are
- * checked against the csum tree (EXTENT_CSUM items), falling back to the other
- * copy of a DUP chunk, and a mismatch returns BTRFS_ERR_CSUM.
+ * Data checksums: unless options.skip_data_csums is set, every sector of every
+ * regular extent of a file that carries checksums (inode flag NODATASUM clear)
+ * is checked against the csum tree (EXTENT_CSUM items) before its bytes reach
+ * the caller. A mismatching sector is retried on the other copy of a DUP (or
+ * mirrored) chunk; if no copy verifies, or the csum tree has no checksum for a
+ * sector that must have one, the read fails with BTRFS_ERR_CSUM and *done is 0.
+ * Preallocated space and holes have no data and no checksum. Files with
+ * NODATASUM are read as they are. See doc/vfs/btrfs.md, "Bad extents".
  */
 
 #ifndef NXU_VFS_BTRFS_BTRFS_FILE_H

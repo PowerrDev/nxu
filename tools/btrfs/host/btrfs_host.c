@@ -11,11 +11,15 @@
  *   btrfs_host info  IMAGE                       print what the superblock says
  *   btrfs_host open  IMAGE [options]             mount; print the status name
  *   btrfs_host walk  IMAGE [options]             walk the tree with no manifest
+ *   btrfs_host extents IMAGE PATH                print where a file's data extents (and its
+ *                                                inode item) are; input of corrupt.py
+ *   btrfs_host read IMAGE PATH [--offset N] [--length N]
+ *                                                read a file (range); print status, count, crc32c
  *   btrfs_host check IMAGE MANIFEST [options]    walk the whole tree and compare
  *                                                with the ground-truth manifest
  *   btrfs_host sweep IMAGE --seed N --iters N    corruption sweep
  *
- * options:  --subvol ID  --verify-data  --ignore-log  --seed N  -v
+ * options:  --subvol ID  --verify-data (the default)  --noverify  --ignore-log  --seed N  -v
  *
  * The manifest was written inside the Alpine guest by Linux's own Btrfs driver
  * (tools/btrfs/guest/manifest.py), so `check` compares this driver with Linux,
@@ -815,6 +819,8 @@ typedef struct {
 	bool verbose;
 	uint64_t seed;
 	uint64_t iterations;
+	uint64_t offset;         /* read: first byte */
+	uint64_t length;         /* read: bytes (0: to the end of the file) */
 } options_t;
 
 static btrfs_fs_t *open_fs(image_t *image, btrfs_reader_t *reader, btrfs_env_t *env, const options_t *opt, btrfs_status_t *status)
@@ -930,6 +936,160 @@ static int cmd_walk(const char *path, const options_t *opt)
 	return w.failures == 0 ? 0 : 1;
 }
 
+/* Resolve a path below the mounted subvolume's root directory to its inode number. */
+static btrfs_status_t resolve_path(btrfs_fs_t *fs, const char *file, btrfs_subvol_t *root, uint64_t *out_ino)
+{
+	uint64_t ino = 0;
+	btrfs_status_t status = btrfs_root_lookup(fs, fs->mount_subvol, root);
+	if (status == BTRFS_OK) ino = root->item.root_dirid;
+
+	const char *p = file;
+	while (status == BTRFS_OK && *p != '\0') {
+		while (*p == '/') p++;
+		if (*p == '\0') break;
+		const char *end = p;
+		while (*end != '\0' && *end != '/') end++;
+
+		btrfs_dirent_t entry;
+		status = btrfs_dir_lookup(fs, &root->tree, ino, (const uint8_t *)p, (size_t)(end - p), &entry);
+		if (status == BTRFS_OK) ino = entry.location.objectid;
+		p = end;
+	}
+
+	*out_ino = ino;
+	return status;
+}
+
+/*
+ * Print the data extents of one file: "extent=FILEOFF,TYPE,COMPRESSION,LOGICAL,DISK_BYTES,RAM_BYTES,PHYSICAL...".
+ * corrupt.py uses it to damage the data of a chosen file (kinds data-extent:...).
+ */
+static int cmd_extents(const char *path, const char *file, const options_t *opt)
+{
+	image_t image;
+	btrfs_reader_t reader;
+	btrfs_env_t env;
+	btrfs_host_env_t host;
+	btrfs_status_t status;
+	int rc = 1;
+
+	if (!image_open(&image, &reader, path)) { fprintf(stderr, "cannot open %s\n", path); return 2; }
+	btrfs_host_env_init(&host, &env);
+	host.verbose = opt->verbose;
+
+	btrfs_fs_t *fs = open_fs(&image, &reader, &env, opt, &status);
+	if (fs == NULL) { printf("open=%s\n", btrfs_status_name(status)); image_close(&image, &reader); return 3; }
+
+	btrfs_subvol_t root;
+	uint64_t ino = 0;
+	status = resolve_path(fs, file, &root, &ino);
+
+	if (status != BTRFS_OK) {
+		fprintf(stderr, "cannot resolve %s: %s\n", file, btrfs_status_name(status));
+	} else {
+		btrfs_path_t bp;
+		btrfs_key_t key = btrfs_key_make(ino, BTRFS_INODE_ITEM_KEY, 0);
+		btrfs_path_init(&bp);
+
+		/* Where the inode item lives: corrupt.py can clear its NODATASUM flag. */
+		if (btrfs_tree_lookup(fs, &root.tree, &key, &bp) == BTRFS_OK) {
+			const uint8_t *item;
+			uint32_t size;
+			btrfs_key_t ikey;
+
+			if (btrfs_path_item(&bp, &ikey, &item, &size)) printf("inode_leaf=%llu,%u\n", (unsigned long long)bp.blocks[0]->bytenr, (unsigned)(item - bp.blocks[0]->data));
+		}
+
+		key = btrfs_key_make(ino, BTRFS_EXTENT_DATA_KEY, 0);
+		status = btrfs_tree_search_ge(fs, &root.tree, &key, &bp, NULL);
+
+		while (status == BTRFS_OK) {
+			const uint8_t *item;
+			uint32_t size;
+			btrfs_file_extent_t e;
+
+			if (!btrfs_path_item(&bp, &key, &item, &size) || key.objectid != ino || key.type != BTRFS_EXTENT_DATA_KEY) break;
+			if (!btrfs_file_extent_parse(item, size, &e)) break;
+
+			if (e.type == BTRFS_FILE_EXTENT_INLINE) {
+				printf("extent=%llu,inline,%u,0,0,%llu\n", (unsigned long long)key.offset, e.compression, (unsigned long long)e.ram_bytes);
+			} else if (e.disk_bytenr != 0) {
+				btrfs_mapping_t m;
+				printf("extent=%llu,%s,%u,%llu,%llu,%llu", (unsigned long long)key.offset, e.type == BTRFS_FILE_EXTENT_PREALLOC ? "prealloc" : "regular", e.compression, (unsigned long long)e.disk_bytenr, (unsigned long long)e.disk_num_bytes, (unsigned long long)e.ram_bytes);
+				if (btrfs_map_logical(fs, e.disk_bytenr, &m) == BTRFS_OK) for (uint32_t c = 0; c < m.copies; c++) printf(",%llu", (unsigned long long)m.physical[c]);
+				printf("\n");
+			}
+
+			status = btrfs_path_next(fs, &bp);
+		}
+
+		btrfs_path_release(fs, &bp);
+		rc = 0;
+	}
+
+	btrfs_fs_close(fs);
+	int leaks = (int)host.live_allocations;
+	image_close(&image, &reader);
+	if (leaks != 0) { fprintf(stderr, "LEAK: %d allocations live after close\n", leaks); return 1; }
+	return rc;
+}
+
+/*
+ * Read (a range of) one file and print the status, the byte count and the crc32c:
+ * "read=<status> done=<n> crc=<hex> csum_failures=.. csum_missing=.. mirror_fallbacks=..
+ * checked=.. device_reads=.. cache_misses=..".
+ * Exit status 0 when the read succeeded, 1 when it failed cleanly.
+ */
+static int cmd_read(const char *path, const char *file, const options_t *opt, uint64_t offset, uint64_t length)
+{
+	image_t image;
+	btrfs_reader_t reader;
+	btrfs_env_t env;
+	btrfs_host_env_t host;
+	btrfs_status_t status;
+	int rc = 1;
+
+	if (!image_open(&image, &reader, path)) { fprintf(stderr, "cannot open %s\n", path); return 2; }
+	btrfs_host_env_init(&host, &env);
+	host.verbose = opt->verbose;
+
+	btrfs_fs_t *fs = open_fs(&image, &reader, &env, opt, &status);
+	if (fs == NULL) { printf("open=%s\n", btrfs_status_name(status)); image_close(&image, &reader); return 3; }
+
+	btrfs_subvol_t root;
+	uint64_t ino;
+	btrfs_inode_t inode;
+	status = resolve_path(fs, file, &root, &ino);
+	if (status == BTRFS_OK) status = btrfs_inode_read(fs, &root.tree, ino, &inode);
+
+	if (status != BTRFS_OK) {
+		fprintf(stderr, "cannot resolve %s: %s\n", file, btrfs_status_name(status));
+		rc = 2;
+	} else {
+		uint64_t size = inode.item.size;
+		uint64_t want = length != 0 ? length : (offset < size ? size - offset : 0);
+		uint8_t *buffer = malloc(want ? (size_t)want : 1);
+		uint64_t done = 0;
+
+		memset(buffer, 0xA5, want ? (size_t)want : 1);
+		status = btrfs_file_read(fs, &root.tree, &inode, offset, buffer, want, &done);
+
+		/* A failed read must never leave verified-looking bytes behind as a result: done is 0. */
+		printf("read=%s done=%llu crc=%08x csum_failures=%llu csum_missing=%llu mirror_fallbacks=%llu checked=%llu device_reads=%llu cache_misses=%llu\n", btrfs_status_name(status), (unsigned long long)done, btrfs_csum_crc32c(buffer, (size_t)done),
+			(unsigned long long)fs->stats.csum_failures, (unsigned long long)fs->stats.data_csum_missing, (unsigned long long)fs->stats.mirror_fallbacks,
+			(unsigned long long)fs->stats.data_csum_checked, (unsigned long long)fs->stats.device_reads, (unsigned long long)fs->cache.misses);
+		rc = status == BTRFS_OK ? 0 : 1;
+		if (status != BTRFS_OK && done != 0) { fprintf(stderr, "a failed read reported %llu bytes\n", (unsigned long long)done); rc = 4; }
+		free(buffer);
+	}
+
+	btrfs_fs_close(fs);
+	int leaks = (int)host.live_allocations;
+	image_close(&image, &reader);
+	if (leaks != 0) { fprintf(stderr, "LEAK: %d allocations live after close\n", leaks); return 1; }
+	return rc;
+}
+
 /* List every subvolume with its parent and name (ROOT_BACKREF), for comparison with `btrfs subvolume list`. */
 static int cmd_subvols(const char *path, const options_t *opt)
 {
@@ -1014,6 +1174,7 @@ static int cmd_check(const char *path, const char *manifest_path, const options_
 
 	uint64_t verified = fs->stats.data_csum_checked;
 	uint64_t csum_failures = fs->stats.csum_failures;
+	uint64_t mirror_fallbacks = fs->stats.mirror_fallbacks;
 	btrfs_fs_close(fs);
 
 	if (host.live_allocations != 0) {
@@ -1021,9 +1182,9 @@ static int cmd_check(const char *path, const char *manifest_path, const options_
 		w.failures++;
 	}
 
-	printf("%s %s: %llu entries, %llu files, %llu bytes, %llu subvolume crossings, %llu placeholders, %llu lookups, %llu partial reads, %llu data sectors verified, %llu csum failures\n",
+	printf("%s %s: %llu entries, %llu files, %llu bytes, %llu subvolume crossings, %llu placeholders, %llu lookups, %llu partial reads, %llu data sectors verified, %llu csum failures, %llu mirror fallbacks\n",
 		w.failures == 0 ? "PASS" : "FAIL", base_name(path), (unsigned long long)w.entries, (unsigned long long)w.files, (unsigned long long)w.bytes,
-		(unsigned long long)w.subvol_crossings, (unsigned long long)w.placeholders, (unsigned long long)w.lookups, (unsigned long long)w.partial_reads, (unsigned long long)verified, (unsigned long long)csum_failures);
+		(unsigned long long)w.subvol_crossings, (unsigned long long)w.placeholders, (unsigned long long)w.lookups, (unsigned long long)w.partial_reads, (unsigned long long)verified, (unsigned long long)csum_failures, (unsigned long long)mirror_fallbacks);
 
 	manifest_free(&manifest);
 	image_close(&image, &reader);
@@ -1070,7 +1231,7 @@ static int cmd_sweep(const char *path, const options_t *opt)
 
 	if (!image_open(&image, &reader, path)) { fprintf(stderr, "cannot open %s\n", path); return 2; }
 	btrfs_host_env_init(&host, &env);
-	local.options.verify_data_csums = true;
+	local.options.skip_data_csums = false;
 
 	/* Baseline: what the good image produces, and which bytes it depends on. */
 	image.record = true;
@@ -1294,8 +1455,11 @@ int main(int argc, char **argv)
 
 	for (int i = 2; i < argc; i++) {
 		if (strcmp(argv[i], "--subvol") == 0 && i + 1 < argc) opt.options.subvol_id = strtoull(argv[++i], NULL, 10);
-		else if (strcmp(argv[i], "--verify-data") == 0) opt.options.verify_data_csums = true;
+		else if (strcmp(argv[i], "--verify-data") == 0) opt.options.skip_data_csums = false;
+		else if (strcmp(argv[i], "--noverify") == 0) opt.options.skip_data_csums = true;
 		else if (strcmp(argv[i], "--ignore-log") == 0) opt.options.ignore_log_tree = true;
+		else if (strcmp(argv[i], "--offset") == 0 && i + 1 < argc) opt.offset = strtoull(argv[++i], NULL, 10);
+		else if (strcmp(argv[i], "--length") == 0 && i + 1 < argc) opt.length = strtoull(argv[++i], NULL, 10);
 		else if (strcmp(argv[i], "--seed") == 0 && i + 1 < argc) opt.seed = strtoull(argv[++i], NULL, 10);
 		else if (strcmp(argv[i], "--iters") == 0 && i + 1 < argc) opt.iterations = strtoull(argv[++i], NULL, 10);
 		else if (strcmp(argv[i], "-v") == 0) opt.verbose = true;
@@ -1308,7 +1472,9 @@ int main(int argc, char **argv)
 	if (argc >= 3 && strcmp(argv[1], "sweep") == 0 && npos == 1) return cmd_sweep(positional[0], &opt);
 	if (argc >= 3 && strcmp(argv[1], "walk") == 0 && npos == 1) return cmd_walk(positional[0], &opt);
 	if (argc >= 3 && strcmp(argv[1], "subvols") == 0 && npos == 1) return cmd_subvols(positional[0], &opt);
+	if (argc >= 4 && strcmp(argv[1], "read") == 0 && npos == 2) return cmd_read(positional[0], positional[1], &opt, opt.offset, opt.length);
+	if (argc >= 4 && strcmp(argv[1], "extents") == 0 && npos == 2) return cmd_extents(positional[0], positional[1], &opt);
 
-	fprintf(stderr, "usage: btrfs_host info|open|walk|subvols|check|sweep IMAGE [MANIFEST] [--subvol N] [--verify-data] [--ignore-log] [--seed N] [--iters N] [-v]\n");
+	fprintf(stderr, "usage: btrfs_host info|open|walk|subvols|extents|read|check|sweep IMAGE [MANIFEST] [--subvol N] [--verify-data|--noverify] [--ignore-log] [--seed N] [--iters N] [-v]\n");
 	return 2;
 }

@@ -22,6 +22,15 @@ Kinds (the damage is applied to DST, a copy of SRC):
   chunk-block:all|first   the same for the chunk tree's root block
   fs-block:all|first      the same for the mounted subvolume's root block
   truncate:N              cut the image to N bytes
+  data-extent:PATH:WHICH[:N]
+                          flip a byte in the data of PATH's first regular extent
+                          (WHICH: first = first copy only, second = second copy
+                          only, all = every copy). N picks the Nth regular extent
+                          (default 0). The info file needs `btrfs_host extents`
+                          output for PATH appended (test_host.sh does that).
+  nodatasum-off:PATH      clear the NODATASUM flag of PATH's inode (tree block
+                          checksums fixed): a file that must have checksums but
+                          has no csum items
 """
 
 import os
@@ -59,6 +68,8 @@ def read_info(path):
         if k == "chunk":
             f = v.split(",")
             info["chunk_list"].append((int(f[0]), int(f[1]), [int(x) for x in f[4:]]))
+        elif k == "extent":
+            info.setdefault("extents", []).append(v.split(","))
         else:
             info[k] = v
     return info
@@ -148,6 +159,32 @@ def main():
                 offsets = offsets[:1]
             for off in offsets:
                 flip_byte(f, off)
+        elif name == "data-extent":
+            parts = arg.split(":")
+            path, which = parts[0], parts[1]
+            nth = parts[2] if len(parts) > 2 else ""
+            regular = [e for e in info.get("extents", []) if e[1] == "regular"]
+            n = int(nth) if nth else 0
+            if n >= len(regular):
+                raise SystemExit("corrupt.py: %s has no regular extent %d" % (path, n))
+            phys = [int(x) for x in regular[n][6:]]
+            if which == "first":
+                phys = phys[:1]
+            elif which == "second":
+                phys = phys[1:2]
+            for off in phys:
+                flip_byte(f, off, 100)
+        elif name == "nodatasum-off":
+            leaf, item = [int(x) for x in info["inode_leaf"].split(",")]
+            nodesize = int(info["nodesize"])
+            for off in physical(info, leaf):
+                f.seek(off)
+                block = bytearray(f.read(nodesize))
+                flags = struct.unpack_from("<Q", block, item + 64)[0]
+                struct.pack_into("<Q", block, item + 64, flags & ~1)
+                struct.pack_into("<I", block, 0, crc32c(bytes(block[32:])))
+                f.seek(off)
+                f.write(block)
         else:
             raise SystemExit("corrupt.py: unknown kind " + kind)
 

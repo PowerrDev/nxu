@@ -12,8 +12,10 @@
  * The Nth spec is run against the Nth block device after the first (device 0
  * is the root disk). A spec is either
  *
- *   NAME[@SUBVOLID][+verify]    mount the fixture read-only (verify: with data
- *                               checksums), walk it and compare with the
+ *   NAME[@SUBVOLID][+verify|+noverify]
+ *                               mount the fixture read-only (data checksums are
+ *                               checked by default; +verify says so explicitly,
+ *                               +noverify turns the check off), walk it and compare with the
  *                               expected listing generated from Linux's
  *                               manifest (btrfs_selftest_data.h): path, type,
  *                               mode, inode, size, mtime, crc32c of contents,

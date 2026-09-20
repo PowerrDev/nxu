@@ -323,12 +323,13 @@ static vfs_status_t btrfs_mount_op(filesystem_t filesystem, block_device_t devic
 {
 	(void)filesystem;
 
-	btrfs_mount_options_t options = { 0ULL, false, false };
+	btrfs_mount_options_t options = { 0ULL, false, false, false };
 	if (g_next_options_set) options = g_next_options;
 	g_next_options_set = false;
 	g_last_mount_status = BTRFS_OK;
 
 	if (device == 0 || mount == 0 || !device->registered) return btrfs_mount_fail(BTRFS_ERR_INVALID);
+	if (options.verify_data && options.noverify) return btrfs_mount_fail(BTRFS_ERR_INVALID);
 	if (g_btrfs_mount_count >= BTRFS_MOUNT_MAX) return VFS_STATUS_NO_SPACE;
 
 	btrfs_mount_t *data = kcalloc(1U, sizeof(*data));
@@ -339,7 +340,7 @@ static vfs_status_t btrfs_mount_op(filesystem_t filesystem, block_device_t devic
 	btrfs_block_reader_init(&data->block, &data->reader, device);
 
 	btrfs_env_t env = { data, btrfs_env_alloc, btrfs_env_release, btrfs_env_log };
-	btrfs_open_options_t open_options = { options.subvol_id, options.verify_data, options.ignore_log_tree, 0U };
+	btrfs_open_options_t open_options = { options.subvol_id, options.noverify, options.ignore_log_tree, 0U };
 	btrfs_status_t status;
 
 	data->fs = btrfs_fs_open(&env, &data->reader, &open_options, &status);

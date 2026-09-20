@@ -4,7 +4,8 @@
 #
 # Everything runs the pure core (compiled natively with AddressSanitizer and
 # UndefinedBehaviorSanitizer) over the real-Linux fixtures in
-# tools/btrfs/fixtures, comparing with the ground truth Linux produced:
+# tools/btrfs/fixtures, comparing with the ground truth Linux produced (data checksums are verified
+# by default):
 #
 #   superblock   what `btrfs inspect-internal dump-super` said about each image
 #   tree walk    every path, type, mode, owner, size, nlink, inode, rdev, mtime,
@@ -126,8 +127,15 @@ expect_walk_fails() {
 # corrupt KIND SRC-NAME -> path of the damaged copy
 corrupt() {
 	local kind=$1 name=$2
-	local out=$BAD/$name.${kind//[:]/_}.img
+	local out=$BAD/$name.${kind//[:\/]/_}.img
 	"$HOST" info "$(image "$name")" > "$SCRATCH/$name.info.txt" 2>&1
+	case "$kind" in
+	data-extent:*|nodatasum-off:*)
+		# The kind names a file: add where its extents and inode item are.
+		local file=${kind#*:}
+		"$HOST" extents "$(image "$name")" "${file%%:*}" >> "$SCRATCH/$name.info.txt" 2>&1
+		;;
+	esac
 	python3 "$HERE/corrupt.py" "$kind" "$(image "$name")" "$out" "$SCRATCH/$name.info.txt" || { echo "test_host: corrupt.py failed for $kind" >&2; exit 2; }
 	printf '%s' "$out"
 }
@@ -140,7 +148,7 @@ done
 echo "== full tree walks, compared with Linux's manifests =="
 for name in empty minimal tree deep n4k n64k s16k meta-single data-dup mixed no-holes-off no-skinny space-cache-v1 block-group-tree squota nodatasum subvols subvols-default; do
 	check_tree "$name" "$name.manifest"
-	check_tree "$name" "$name.manifest" --verify-data
+	check_tree "$name" "$name.manifest" --noverify
 done
 
 echo "== every subvolume mounted by id =="
@@ -181,10 +189,72 @@ lvl=$("$HOST" info "$(image deep)" | kv /dev/stdin mount_tree_level)
 want=$(sed -n 's/^fs_tree_level: //p' "$FIX/deep.info")
 [ "$lvl" = "$want" ] && [ "$lvl" -ge 2 ] && pass "deep: fs tree level $lvl" || fail "deep: tree level driver $lvl, Linux $want"
 
+# read_field OUTPUT KEY: the value of "KEY=value" on a `btrfs_host read` line.
+rf() {
+	if [ "$2" = read ]; then printf '%s\n' "$1" | sed -n 's/^read=\(.*\) done=.*/\1/p' | head -1
+	else printf '%s\n' "$1" | tr ' ' '\n' | sed -n "s/^$2=//p" | head -1; fi
+}
+
+echo "== data checksums: on by default, bad extents are I/O errors, DUP heals, NODATASUM is exempt =="
+FILE=/dir/sub/data.bin
+want=$("$HOST" read "$(image meta-single)" $FILE)
+wcrc=$(rf "$want" crc)
+wdone=$(rf "$want" done)
+[ "$(rf "$want" read)" = ok ] && [ "$wdone" -gt 200000 ] && pass "read $FILE of a good image (crc $wcrc, $wdone bytes)" || fail "cannot read $FILE of the good image" "$want"
+
+# Cost of the check: verifying a 3 MiB single-extent file reads the data in 64 KiB pieces (48)
+# and costs only a few csum-tree blocks on top (the cache serves the rest), not a read per sector.
+plain=$("$HOST" read "$(image tree)" /data/one-extent --noverify)
+checked=$("$HOST" read "$(image tree)" /data/one-extent)
+extra=$(( $(rf "$checked" device_reads) - $(rf "$plain" device_reads) ))
+extra_blocks=$(( $(rf "$checked" cache_misses) - $(rf "$plain" cache_misses) ))
+if [ "$(rf "$checked" crc)" = "$(rf "$plain" crc)" ] && [ "$(rf "$checked" checked)" -ge 768 ] && [ "$extra" -le 52 ] && [ "$extra_blocks" -le 3 ]; then pass "checksum cost: 3 MiB verified ($(rf "$checked" checked) sectors) took $extra extra device reads and $extra_blocks extra tree blocks"; else fail "verification cost out of bounds (extra device reads $extra, tree blocks $extra_blocks)" "$plain
+$checked"; fi
+
+# Single data, first sector of the extent flipped: the read fails, nothing is served.
+bad=$(corrupt "data-extent:$FILE:first" meta-single)
+out=$("$HOST" read "$bad" $FILE); rc=$?
+if [ $rc -eq 1 ] && [ "$(rf "$out" read)" = "checksum mismatch" ] && [ "$(rf "$out" done)" = 0 ] && [ "$(rf "$out" csum_failures)" -ge 1 ]; then pass "single data, damaged extent: read fails with a checksum mismatch, 0 bytes served"; else fail "damaged single extent must fail the read (rc $rc)" "$out"; fi
+
+# ... a read of another part of the same extent still works: verification is per sector.
+out=$("$HOST" read "$bad" $FILE --offset 65536 --length 65536)
+ref=$("$HOST" read "$(image meta-single)" $FILE --offset 65536 --length 65536)
+if [ "$(rf "$out" read)" = ok ] && [ "$(rf "$out" crc)" = "$(rf "$ref" crc)" ]; then pass "single data: sectors of the same extent that are intact are still served"; else fail "an intact sector next to a damaged one must read fine" "$out"; fi
+out=$("$HOST" read "$bad" $FILE --offset 4000 --length 200); rc=$?
+if [ $rc -eq 1 ] && [ "$(rf "$out" read)" = "checksum mismatch" ]; then pass "single data: a read that touches the damaged sector fails"; else fail "a read touching the damaged sector must fail" "$out"; fi
+
+# The opt-out returns the (damaged) bytes: that is exactly what noverify means.
+out=$("$HOST" read "$bad" $FILE --noverify)
+if [ "$(rf "$out" read)" = ok ] && [ "$(rf "$out" crc)" != "$wcrc" ] && [ "$(rf "$out" csum_failures)" = 0 ]; then pass "noverify: the damaged bytes are served unchecked"; else fail "noverify must skip the data check" "$out"; fi
+
+# DUP data: one bad copy heals from the other; both bad fail.
+want=$("$HOST" read "$(image data-dup)" $FILE)
+out=$("$HOST" read "$(corrupt "data-extent:$FILE:first" data-dup)" $FILE)
+if [ "$(rf "$out" read)" = ok ] && [ "$(rf "$out" crc)" = "$(rf "$want" crc)" ] && [ "$(rf "$out" csum_failures)" -ge 1 ] && [ "$(rf "$out" mirror_fallbacks)" -ge 1 ]; then pass "DUP data, first copy damaged: healed from the second copy (mirror fallback counted)"; else fail "DUP data must heal" "$out"; fi
+out=$("$HOST" read "$(corrupt "data-extent:$FILE:second" data-dup)" $FILE)
+if [ "$(rf "$out" read)" = ok ] && [ "$(rf "$out" crc)" = "$(rf "$want" crc)" ] && [ "$(rf "$out" csum_failures)" = 0 ]; then pass "DUP data, second copy damaged: the first copy serves, no failure seen"; else fail "DUP data with a damaged second copy" "$out"; fi
+out=$("$HOST" read "$(corrupt "data-extent:$FILE:all" data-dup)" $FILE); rc=$?
+if [ $rc -eq 1 ] && [ "$(rf "$out" read)" = "checksum mismatch" ] && [ "$(rf "$out" done)" = 0 ]; then pass "DUP data, both copies damaged: the read fails"; else fail "DUP data with both copies damaged must fail (rc $rc)" "$out"; fi
+
+# NODATASUM files: nothing protects them, nothing is checked, they still read.
+want=$("$HOST" read "$(image nodatasum)" $FILE)
+out=$("$HOST" read "$(corrupt "data-extent:$FILE:all" nodatasum)" $FILE)
+if [ "$(rf "$out" read)" = ok ] && [ "$(rf "$out" done)" = "$(rf "$want" done)" ] && [ "$(rf "$out" crc)" != "$(rf "$want" crc)" ] && [ "$(rf "$out" csum_failures)" = 0 ]; then pass "NODATASUM file: damaged data is served without a check"; else fail "NODATASUM data must be read as it is" "$out"; fi
+
+# A file that must have checksums but whose csum items are gone (flag cleared on a NODATASUM
+# fixture): refused, not served unverified.
+out=$("$HOST" read "$(corrupt "nodatasum-off:$FILE" nodatasum)" $FILE); rc=$?
+if [ $rc -eq 1 ] && [ "$(rf "$out" read)" = "checksum mismatch" ] && [ "$(rf "$out" csum_missing)" -ge 1 ]; then pass "missing checksum items: the read is refused (never served unverified)"; else fail "a missing checksum must fail the read (rc $rc)" "$out"; fi
+out=$("$HOST" read "$(corrupt "nodatasum-off:$FILE" nodatasum)" $FILE --noverify)
+if [ "$(rf "$out" read)" = ok ] && [ "$(rf "$out" crc)" = "$(rf "$want" crc)" ]; then pass "missing checksum items with noverify: served"; else fail "noverify with missing checksums" "$out"; fi
+
+# Prealloc, holes and sparse files have no checksums to miss: the tree fixture (PREALLOC
+# files, sparse files, a nodatacow file) walks clean above with verification on.
+
 echo "== compressed extents are refused, everything else is served =="
 for name in comp-zlib comp-lzo comp-zstd; do
 	check_tree "$name" "$name.manifest"
-	check_tree "$name" "$name.manifest" --verify-data
+	check_tree "$name" "$name.manifest" --noverify
 done
 
 echo "== unsupported images are refused cleanly =="

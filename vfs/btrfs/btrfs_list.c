@@ -307,7 +307,7 @@ bool btrfs_list_run(const btrfs_list_request_t *request)
 	mount_path[6] = (char)('0' + (request->device_index % 10U));
 	mount_path[7] = '\0';
 
-	kprintf("btrfs_list_run: mounting %s (%llu sectors) at %s%s\n", device->name, (unsigned long long)device->sector_count, mount_path, request->verify ? ", data checksums on" : "");
+	kprintf("btrfs_list_run: mounting %s (%llu sectors) at %s%s\n", device->name, (unsigned long long)device->sector_count, mount_path, request->noverify ? ", data checksums off" : "");
 
 	vfs_status_t status = vfs_mkdir(mount_path);
 
@@ -316,7 +316,7 @@ bool btrfs_list_run(const btrfs_list_request_t *request)
 		return false;
 	}
 
-	btrfs_mount_options_t options = { request->subvolume, request->verify, false };
+	btrfs_mount_options_t options = { request->subvolume, false, false, request->noverify };
 
 	btrfs_set_next_mount_options(&options);
 

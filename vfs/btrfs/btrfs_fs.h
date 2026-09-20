@@ -133,7 +133,7 @@ typedef struct {
 
 typedef struct {
 	uint64_t subvol_id;        /* 0: the filesystem's default subvolume */
-	bool verify_data_csums;    /* check data checksums against the csum tree */
+	bool skip_data_csums;      /* do NOT check data checksums (the default is to check) */
 	bool ignore_log_tree;      /* mount despite an unreplayed log tree (may show stale data) */
 	uint32_t cache_blocks;     /* tree-block cache size in blocks; 0: automatic */
 } btrfs_open_options_t;
@@ -143,7 +143,9 @@ typedef struct {
 	uint64_t device_bytes;
 	uint64_t csum_failures;    /* tree blocks or data that failed a checksum */
 	uint64_t mirror_fallbacks; /* a second copy served after the first failed */
-	uint64_t data_csum_checked;
+	uint64_t data_csum_checked;  /* data sectors compared with the csum tree */
+	uint64_t data_csum_missing;  /* data sectors of a checksummed file that had no csum item */
+	uint64_t data_bad_reads;     /* file reads refused because no copy of some extent verified */
 } btrfs_stats_t;
 
 /* ---- the filesystem ------------------------------------------------------------------------ */

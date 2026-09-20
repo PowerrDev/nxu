@@ -27,7 +27,7 @@
 typedef struct {
 	uint32_t device_index;    /* block device to mount, 0 is the first */
 	uint64_t subvolume;       /* 0: the default subvolume */
-	bool verify;              /* verify data checksums while reading */
+	bool noverify;            /* do not verify data checksums (they are checked by default) */
 	bool list;                /* print the whole tree */
 	uint32_t max_entries;     /* stop printing after this many entries (0: 512) */
 	const char *cat_path;     /* print this file, path relative to the mount root; 0: none */

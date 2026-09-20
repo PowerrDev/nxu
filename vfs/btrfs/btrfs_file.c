@@ -31,6 +31,34 @@ static unsigned btrfs_log2_u32(uint32_t value)
 	return shift;
 }
 
+/*
+ * A cursor over the csum tree. EXTENT_CSUM items are (EXTENT_CSUM, EXTENT_CSUM,
+ * logical) and hold one checksum per sector for as many sectors as fit, so a
+ * run of extents is covered by a few items. The cursor keeps the current item
+ * pinned and only searches again when an address falls outside it; the leaves
+ * come from the tree-block cache. btrfs_csum_scan_done() must be called once.
+ */
+typedef struct {
+	btrfs_path_t path;
+	const uint8_t *window;   /* checksums of [window_start, window_end), pinned by path */
+	uint64_t window_start;
+	uint64_t window_end;
+} btrfs_csum_scan_t;
+
+static void btrfs_csum_scan_init(btrfs_csum_scan_t *scan)
+{
+	btrfs_path_init(&scan->path);
+	scan->window = 0;
+	scan->window_start = 0ULL;
+	scan->window_end = 0ULL;
+}
+
+static void btrfs_csum_scan_done(btrfs_fs_t *fs, btrfs_csum_scan_t *scan)
+{
+	btrfs_path_release(fs, &scan->path);
+	scan->window = 0;
+}
+
 static btrfs_status_t btrfs_csum_tree_open(btrfs_fs_t *fs)
 {
 	if (fs->have_csum_tree) return BTRFS_OK;
@@ -45,65 +73,95 @@ static btrfs_status_t btrfs_csum_tree_open(btrfs_fs_t *fs)
 }
 
 /*
- * Check `length` bytes (whole sectors) read from sector-aligned logical
- * against the csum tree. A sector with no csum item is not checked (data of a
- * NODATASUM file, or a filesystem written without data checksums).
+ * Find the stored checksum of the sector at `address`. *expected is NULL when
+ * the csum tree holds none (a hole in the coverage, or no csum tree at all);
+ * the caller decides what that means. The pointer stays valid until the next
+ * call on this cursor.
  */
-static btrfs_status_t btrfs_verify_sectors(btrfs_fs_t *fs, uint64_t logical, const uint8_t *data, size_t length)
+static btrfs_status_t btrfs_csum_scan_find(btrfs_fs_t *fs, btrfs_csum_scan_t *scan, uint64_t address, const uint8_t **expected)
+{
+	*expected = 0;
+
+	if (scan->window == 0 || address < scan->window_start || address >= scan->window_end) {
+		scan->window = 0;
+
+		btrfs_status_t status = btrfs_csum_tree_open(fs);
+		if (status == BTRFS_ERR_NOT_FOUND) return BTRFS_OK;
+		if (status != BTRFS_OK) return status;
+
+		btrfs_key_t target = btrfs_key_make(BTRFS_EXTENT_CSUM_OBJECTID, BTRFS_EXTENT_CSUM_KEY, address);
+		btrfs_key_t key;
+		const uint8_t *item;
+		uint32_t size;
+
+		status = btrfs_tree_search_le(fs, &fs->csum_tree, &target, &scan->path, 0);
+		if (status == BTRFS_ERR_END) return BTRFS_OK;
+		if (status != BTRFS_OK) return status;
+
+		if (!btrfs_path_item(&scan->path, &key, &item, &size) || key.objectid != BTRFS_EXTENT_CSUM_OBJECTID || key.type != BTRFS_EXTENT_CSUM_KEY) return BTRFS_OK;
+		if ((key.offset & (fs->sectorsize - 1U)) != 0ULL) return BTRFS_ERR_CORRUPT;
+
+		uint64_t covered = ((uint64_t)(size / fs->csum_size)) << btrfs_log2_u32(fs->sectorsize);
+		if (key.offset + covered < key.offset) return BTRFS_ERR_CORRUPT;
+		if (address < key.offset || address - key.offset >= covered) return BTRFS_OK;
+
+		scan->window = item;
+		scan->window_start = key.offset;
+		scan->window_end = key.offset + covered;
+	}
+
+	*expected = scan->window + ((address - scan->window_start) >> btrfs_log2_u32(fs->sectorsize)) * fs->csum_size;
+	return BTRFS_OK;
+}
+
+/*
+ * Check `length` bytes (whole sectors) read from sector-aligned `logical`
+ * against the csum tree. Every sector must have a checksum and it must match:
+ * this is only called for the extents of a file that carries data checksums, so
+ * a missing item means the volume lost it and the data cannot be vouched for.
+ * Returns BTRFS_ERR_CSUM for a mismatch or a missing checksum; *missing tells
+ * which (another copy of the data cannot supply a checksum that is not there).
+ */
+static btrfs_status_t btrfs_verify_sectors(btrfs_fs_t *fs, btrfs_csum_scan_t *scan, uint64_t logical, const uint8_t *data, size_t length, bool *missing)
 {
 	uint32_t sector = fs->sectorsize;
-	unsigned shift = btrfs_log2_u32(sector);
-	btrfs_path_t path;
-	const uint8_t *window = 0;
-	uint64_t window_start = 0ULL;
-	uint64_t window_end = 0ULL;
 
-	btrfs_path_init(&path);
+	*missing = false;
 
 	for (size_t position = 0U; position < length; position += sector) {
 		uint64_t address = logical + position;
+		const uint8_t *expected;
+		uint8_t actual[BTRFS_CSUM_SIZE];
 
-		if (window == 0 || address < window_start || address >= window_end) {
-			btrfs_key_t target = btrfs_key_make(BTRFS_EXTENT_CSUM_OBJECTID, BTRFS_EXTENT_CSUM_KEY, address);
-			btrfs_key_t key;
-			const uint8_t *item;
-			uint32_t size;
+		btrfs_status_t status = btrfs_csum_scan_find(fs, scan, address, &expected);
+		if (status != BTRFS_OK) return status;
 
-			window = 0;
-			btrfs_status_t status = btrfs_tree_search_le(fs, &fs->csum_tree, &target, &path, 0);
-			if (status == BTRFS_ERR_END) continue;
-			if (status != BTRFS_OK) return status;
-
-			if (btrfs_path_item(&path, &key, &item, &size) && key.objectid == BTRFS_EXTENT_CSUM_OBJECTID && key.type == BTRFS_EXTENT_CSUM_KEY) {
-				uint64_t covered = ((uint64_t)(size / 4U)) << shift;
-				if (address >= key.offset && address - key.offset < covered) {
-					window = item;
-					window_start = key.offset;
-					window_end = key.offset + covered;
-				}
-			}
-
-			if (window == 0) continue;
+		if (expected == 0) {
+			*missing = true;
+			fs->stats.data_csum_missing++;
+			BTRFS_LOG(fs, "no data checksum for logical %llu", BTRFS_U64(address));
+			return BTRFS_ERR_CSUM;
 		}
 
-		uint32_t expected = btrfs_get_le32(window + (((address - window_start) >> shift) * 4U));
 		fs->stats.data_csum_checked++;
 
-		if (expected != btrfs_csum_crc32c(data + position, sector)) {
-			btrfs_path_release(fs, &path);
+		if (!btrfs_csum_data(fs->csum_type, data + position, sector, actual) || memcmp(actual, expected, fs->csum_size) != 0) {
 			fs->stats.csum_failures++;
 			BTRFS_LOG(fs, "data checksum mismatch at logical %llu", BTRFS_U64(address));
 			return BTRFS_ERR_CSUM;
 		}
 	}
 
-	btrfs_path_release(fs, &path);
 	return BTRFS_OK;
 }
 
 /* ---- device reads of data ------------------------------------------------------------------- */
 
-/* Read logical range [logical, logical+length) trying each copy; no checksum. */
+/*
+ * Read logical range [logical, logical+length) trying each copy, no checksum:
+ * for files without data checksums (NODATASUM), and for mounts that opted out
+ * with noverify.
+ */
 static btrfs_status_t btrfs_read_data_plain(btrfs_fs_t *fs, uint64_t logical, uint8_t *buffer, size_t length)
 {
 	while (length != 0U) {
@@ -130,39 +188,48 @@ static btrfs_status_t btrfs_read_data_plain(btrfs_fs_t *fs, uint64_t logical, ui
 }
 
 /*
- * Read with checksum verification: the range is widened to whole sectors, read
- * in chunks, and each chunk must verify on some copy of its chunk mapping.
+ * Read with checksum verification (the bad-extent policy of doc/vfs/btrfs.md):
+ * the range is widened to whole sectors and read in chunks; each chunk must
+ * verify on some copy of its chunk mapping (the first copy that verifies is
+ * used and the failed ones are counted in mirror_fallbacks). Bytes reach
+ * `buffer` only after the chunk they belong to verified. If no copy of a
+ * chunk verifies, the whole read fails with BTRFS_ERR_CSUM (or the device's
+ * error) and nothing further is read: a bad extent is an I/O error for the
+ * read that touches it, never silently wrong data.
  */
 static btrfs_status_t btrfs_read_data_verified(btrfs_fs_t *fs, uint64_t logical, uint8_t *buffer, size_t length)
 {
 	uint64_t mask = fs->sectorsize - 1U;
 	uint64_t start = logical & ~mask;
 	uint64_t end = (logical + length + mask) & ~mask;
-
-	btrfs_status_t status = btrfs_csum_tree_open(fs);
-	if (status != BTRFS_OK) {
-		/* No csum tree at all: nothing to verify against. */
-		return btrfs_read_data_plain(fs, logical, buffer, length);
-	}
+	btrfs_status_t status = BTRFS_OK;
 
 	uint8_t *scratch = btrfs_alloc(fs, BTRFS_VERIFY_CHUNK);
 	if (scratch == 0) return BTRFS_ERR_NOMEM;
 
-	for (uint64_t position = start; position < end; position += BTRFS_VERIFY_CHUNK) {
+	btrfs_csum_scan_t scan;
+	btrfs_csum_scan_init(&scan);
+
+	for (uint64_t position = start; position < end;) {
 		size_t amount = end - position < BTRFS_VERIFY_CHUNK ? (size_t)(end - position) : BTRFS_VERIFY_CHUNK;
 		btrfs_mapping_t mapping;
 
 		status = btrfs_map_logical(fs, position, &mapping);
 		if (status != BTRFS_OK) break;
-		if ((uint64_t)amount > mapping.length) {
-			status = BTRFS_ERR_CORRUPT;
-			break;
-		}
+
+		/* An extent may straddle two chunks; a chunk boundary is always sector aligned. */
+		if ((uint64_t)amount > mapping.length) amount = (size_t)mapping.length;
+
+		bool missing = false;
 
 		status = BTRFS_ERR_IO;
 		for (uint32_t copy = 0U; copy < mapping.copies && status != BTRFS_OK; copy++) {
 			status = btrfs_read_logical(fs, position, scratch, amount, copy);
-			if (status == BTRFS_OK) status = btrfs_verify_sectors(fs, position, scratch, amount);
+			if (status == BTRFS_OK) status = btrfs_verify_sectors(fs, &scan, position, scratch, amount, &missing);
+
+			/* Only a failed read or a mismatch is worth another copy. */
+			if (status != BTRFS_OK && status != BTRFS_ERR_CSUM && status != BTRFS_ERR_IO) break;
+			if (missing) break;
 			if (status != BTRFS_OK && copy + 1U < mapping.copies) fs->stats.mirror_fallbacks++;
 		}
 
@@ -172,9 +239,13 @@ static btrfs_status_t btrfs_read_data_verified(btrfs_fs_t *fs, uint64_t logical,
 		uint64_t copy_start = position < logical ? logical : position;
 		uint64_t copy_end = position + amount > logical + length ? logical + length : position + amount;
 		if (copy_end > copy_start) memcpy(buffer + (copy_start - logical), scratch + (copy_start - position), (size_t)(copy_end - copy_start));
+
+		position += amount;
 	}
 
+	btrfs_csum_scan_done(fs, &scan);
 	btrfs_free(fs, scratch);
+	if (status == BTRFS_ERR_CSUM || status == BTRFS_ERR_IO) fs->stats.data_bad_reads++;
 	return status;
 }
 
@@ -302,7 +373,7 @@ static btrfs_status_t btrfs_read_extent(btrfs_fs_t *fs, const btrfs_inode_t *ino
 
 	uint64_t logical = e->disk_bytenr + e->offset + skip;
 
-	if (fs->options.verify_data_csums && (inode->item.flags & BTRFS_INODE_NODATASUM) == 0ULL) {
+	if (!fs->options.skip_data_csums && (inode->item.flags & BTRFS_INODE_NODATASUM) == 0ULL) {
 		return btrfs_read_data_verified(fs, logical, buffer, amount);
 	}
 
