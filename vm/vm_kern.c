@@ -649,42 +649,14 @@ uint64_t vm_kern_get_allocation_count(void)
 
 void vm_kern_dump(void)
 {
-	kputs("vm_kern: range: ");
-	kputhex64(VM_KERN_BASE);
-	kputc('-');
-	kputhex64(VM_KERN_END);
-	kputc('\n');
+	kprintf("vm_kern: range: 0x%llx-0x%llx\n", (unsigned long long)VM_KERN_BASE, (unsigned long long)VM_KERN_END);
+	kprintf("vm_kern: free pages: %llu\n", (unsigned long long)(VM_KERN_PAGE_COUNT - g_vm_kern.used_pages));
 
-	kputs("vm_kern: virtual size: ");
-	kputu64(VM_KERN_SIZE);
-	kputln(" bytes");
+	if (!kconsole_verbose()) return;
 
-	kputs("vm_kern: total pages: ");
-	kputu64(VM_KERN_PAGE_COUNT);
-	kputc('\n');
-
-	kputs("vm_kern: used pages: ");
-	kputu64(
-		g_vm_kern.used_pages
-	);
-	kputc('\n');
-
-	kputs("vm_kern: free pages: ");
-	kputu64(
-		VM_KERN_PAGE_COUNT -
-		g_vm_kern.used_pages
-	);
-	kputc('\n');
-
-	kputs("vm_kern: active allocations: ");
-	kputu64(
-		g_vm_kern.allocation_count
-	);
-	kputc('\n');
-
-	kputs("vm_kern: allocation record limit: ");
-	kputu64(
-		VM_KERN_MAX_ALLOCATIONS
-	);
-	kputc('\n');
+	kprintf("vm_kern: virtual size: %llu bytes\n", (unsigned long long)VM_KERN_SIZE);
+	kprintf("vm_kern: total pages: %llu\n", (unsigned long long)VM_KERN_PAGE_COUNT);
+	kprintf("vm_kern: used pages: %llu\n", (unsigned long long)g_vm_kern.used_pages);
+	kprintf("vm_kern: active allocations: %llu\n", (unsigned long long)g_vm_kern.allocation_count);
+	kprintf("vm_kern: allocation record limit: %llu\n", (unsigned long long)VM_KERN_MAX_ALLOCATIONS);
 }

@@ -1052,39 +1052,16 @@ uint64_t pmm_get_used_page_count(void)
 
 void pmm_dump(void)
 {
-	kputs("pmm: RAM range: ");
-	kputhex64(g_pmm.memory_base);
-	kputs("-");
-	kputhex64(g_pmm.memory_end);
-	kputc('\n');
+	kprintf("pmm: total pages: %llu\n", (unsigned long long)g_pmm.page_count);
+	kprintf("pmm: used pages: %llu\n", (unsigned long long)g_pmm.used_page_count);
+	kprintf("pmm: free pages: %llu\n", (unsigned long long)g_pmm.free_page_count);
 
-	kputs("pmm: page size: ");
-	kputu64(PMM_PAGE_SIZE);
-	kputln(" bytes");
+	if (!kconsole_verbose()) return;
 
-	kputs("pmm: total pages: ");
-	kputu64(g_pmm.page_count);
-	kputc('\n');
-
-	kputs("pmm: used pages: ");
-	kputu64(g_pmm.used_page_count);
-	kputc('\n');
-
-	kputs("pmm: free pages: ");
-	kputu64(g_pmm.free_page_count);
-	kputc('\n');
-
-	kputs("pmm: bitmap: ");
-	kputhex64((uint64_t)g_pmm.bitmap);
-	kputs(", logical size: ");
-	kputu64(g_pmm.bitmap_bytes);
-	kputs(", reserved size: ");
-	kputu64(g_pmm.bitmap_storage_bytes);
-	kputln(" bytes");
-
-	kputs("pmm: kernel: ");
-	kputhex64((uint64_t)__kernel_start);
-	kputs("-");
-	kputhex64((uint64_t)__kernel_end);
-	kputc('\n');
+	kprintf("pmm: RAM range: 0x%llx-0x%llx\n", (unsigned long long)g_pmm.memory_base, (unsigned long long)g_pmm.memory_end);
+	kprintf("pmm: page size: %llu bytes\n", (unsigned long long)PMM_PAGE_SIZE);
+	kprintf("pmm: bitmap: %p\n", (void *)g_pmm.bitmap);
+	kprintf("pmm: bitmap logical size: %llu bytes\n", (unsigned long long)g_pmm.bitmap_bytes);
+	kprintf("pmm: bitmap reserved size: %llu bytes\n", (unsigned long long)g_pmm.bitmap_storage_bytes);
+	kprintf("pmm: kernel: %p-%p\n", (void *)__kernel_start, (void *)__kernel_end);
 }
