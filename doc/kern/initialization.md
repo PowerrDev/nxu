@@ -86,10 +86,10 @@ hooks are empty. The Btrfs test is selected by a boot argument instead
 ## Non-responsibilities
 
 - **Implementing any subsystem.** Every phase is a call into `platform`,
-  `vm`, `mach/arm64` or the heap.
+  `vm`, `kern/arm64` or the heap.
 - **Deciding machine addresses.** Those come from `platform_t`.
 - **Handling interrupts.** IRQs are dispatched by
-  [`exception.c`](../../mach/arm64/exception.c).
+  [`exception.c`](../../kern/arm64/exception.c).
 - **Machine context switching.** The scheduler core exists, but `kern_init()` still uses the bootstrap EL0 bridge until AArch64 thread context switching is wired.
 - **Providing a panic path.** Fatal exceptions are handled by
   `exception_handle()`. `kern_init()`'s halt loops are a different, simpler
@@ -288,7 +288,7 @@ the handler.
 ## Source files
 
 - [`kern/kern_init.c`](../../kern/kern_init.c)
-- [`mach/arm64/start.S`](../../mach/arm64/start.S)
+- [`kern/arm64/start.S`](../../kern/arm64/start.S)
 
 ## Related documentation
 

@@ -19,10 +19,10 @@ nest. The `intid` of `irq_register`/`irq_dispatch` is the PIC line, 0..15.
 
 | File | Role |
 |------|------|
-| `mach/i386/pic.{c,h}` | 8259 driver: remap to vectors 32-47, mask/unmask, specific EOI with the cascade, spurious IRQ7/IRQ15, ISR/IRR/IMR reads, ELCR level/edge |
-| `mach/i386/timer.{c,h}` | TSC counter (calibrated against PIT channel 2) plus the arm64-shaped API: `timer_start_periodic`, `timer_handle_interrupt`, `timer_get_interrupt_count/rate`, `timer_delay_ms`, `timer_get_ticks/microseconds/frequency` |
-| `mach/i386/irq.{c,h}` | strong `i386_trap_irq`, strong `i386_init_interrupts`, IRQ0 tick handler |
-| `mach/i386/interrupts_test.c` | strong `i386_init_interrupts_selftest` (`test=interrupts`) |
+| `kern/i386/pic.{c,h}` | 8259 driver: remap to vectors 32-47, mask/unmask, specific EOI with the cascade, spurious IRQ7/IRQ15, ISR/IRR/IMR reads, ELCR level/edge |
+| `kern/i386/timer.{c,h}` | TSC counter (calibrated against PIT channel 2) plus the arm64-shaped API: `timer_start_periodic`, `timer_handle_interrupt`, `timer_get_interrupt_count/rate`, `timer_delay_ms`, `timer_get_ticks/microseconds/frequency` |
+| `kern/i386/irq.{c,h}` | strong `i386_trap_irq`, strong `i386_init_interrupts`, IRQ0 tick handler |
+| `kern/i386/interrupts_test.c` | strong `i386_init_interrupts_selftest` (`test=interrupts`) |
 | `kern/irq/irq.c` | dispatch table; on x86 each line holds a chain of up to 8 handlers |
 | `makedefs/i386/interrupts.mk`, `tools/test_i386_interrupts.sh` | sources and `make test-i386-interrupts` |
 

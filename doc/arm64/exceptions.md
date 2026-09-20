@@ -7,7 +7,7 @@ handler, and treats every other exception as fatal.
 ## Vector table layout
 
 The table is emitted into the `.text.vectors` section by
-[`exception_vectors.S`](../../mach/arm64/exception_vectors.S) and placed
+[`exception_vectors.S`](../../kern/arm64/exception_vectors.S) and placed
 by the linker script at a 2048-byte boundary inside `.text`. `VBAR_EL1` requires
 that alignment: the low 11 bits of the register are reserved, so the table base
 must be a multiple of 2048.
@@ -75,7 +75,7 @@ The four groups above answer two questions the handler cannot otherwise infer:
 ## Saved register frame
 
 `arm64_exception_frame_t` in
-[`exception.h`](../../mach/arm64/exception.h) describes the frame. It is
+[`exception.h`](../../kern/arm64/exception.h) describes the frame. It is
 304 bytes and its layout is duplicated as byte offsets in the assembly, so the
 two must be kept in agreement by hand.
 
@@ -269,10 +269,10 @@ interrupted thread resumes. None of this exists; see
 
 ## Source files
 
-- [`mach/arm64/exception_vectors.S`](../../mach/arm64/exception_vectors.S)
-- [`mach/arm64/exception.c`](../../mach/arm64/exception.c)
-- [`mach/arm64/exception.h`](../../mach/arm64/exception.h)
-- [`mach/arm64/system.h`](../../mach/arm64/system.h)
+- [`kern/arm64/exception_vectors.S`](../../kern/arm64/exception_vectors.S)
+- [`kern/arm64/exception.c`](../../kern/arm64/exception.c)
+- [`kern/arm64/exception.h`](../../kern/arm64/exception.h)
+- [`kern/arm64/system.h`](../../kern/arm64/system.h)
 - [`makedefs/linker.ld`](../../makedefs/linker.ld)
 
 ## Related documentation

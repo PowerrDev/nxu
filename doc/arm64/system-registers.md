@@ -14,7 +14,7 @@ All of these are accessed at EL1. None requires EL2 or EL3.
 | Property | Value |
 | --- | --- |
 | Access | Read |
-| Location | `arm_read_current_el_raw()`, [`system.h`](../../mach/arm64/system.h) |
+| Location | `arm_read_current_el_raw()`, [`system.h`](../../kern/arm64/system.h) |
 | Caller | `kern_init()` |
 | Subsystem | Core kernel |
 | Privilege | EL1 and above |
@@ -60,7 +60,7 @@ encoding 4, giving 44 bits.
 | Property | Value |
 | --- | --- |
 | Access | Read |
-| Location | `cache_read_mmfr2()`, [`cache.c`](../../mach/arm64/cache.c) |
+| Location | `cache_read_mmfr2()`, [`cache.c`](../../kern/arm64/cache.c) |
 | Caller | `cache_uses_legacy_ccsidr()` |
 | Subsystem | Cache |
 
@@ -74,7 +74,7 @@ CPU implements. Non-zero fails cache initialization. See [Cache](cache.md).
 | Property | Value |
 | --- | --- |
 | Access | Read and write |
-| Locations | `vmm_enable()`, [`vmm.c`](../../vm/vmm.c); `vmm_dump()`, [`vmm_debug.c`](../../vm/vmm_debug.c); `cache_read_sctlr()`, `cache_init()`, [`cache.c`](../../mach/arm64/cache.c) |
+| Locations | `vmm_enable()`, [`vmm.c`](../../vm/vmm.c); `vmm_dump()`, [`vmm_debug.c`](../../vm/vmm_debug.c); `cache_read_sctlr()`, `cache_init()`, [`cache.c`](../../kern/arm64/cache.c) |
 | Subsystem | Virtual memory, cache |
 
 The EL1 system control register. Four bits are used:
@@ -192,7 +192,7 @@ risking a fault.
 | Property | Value |
 | --- | --- |
 | Access | Write |
-| Location | `arm64_write_vbar_el1()`, [`system.h`](../../mach/arm64/system.h) |
+| Location | `arm64_write_vbar_el1()`, [`system.h`](../../kern/arm64/system.h) |
 | Caller | `exception_init()` |
 | Subsystem | Exceptions |
 
@@ -205,7 +205,7 @@ followed by `isb`.
 | Property | Value |
 | --- | --- |
 | Access | Read |
-| Locations | `exception_vector_common` ([`exception_vectors.S`](../../mach/arm64/exception_vectors.S)), `arm64_read_elr_el1()` ([`system.h`](../../mach/arm64/system.h)) |
+| Locations | `exception_vector_common` ([`exception_vectors.S`](../../kern/arm64/exception_vectors.S)), `arm64_read_elr_el1()` ([`system.h`](../../kern/arm64/system.h)) |
 | Subsystem | Exceptions |
 
 Exception Link Register: the address execution resumes at when `eret` runs. For
@@ -267,7 +267,7 @@ only meaningful for the exception classes that define it.
 | Property | Value |
 | --- | --- |
 | Access | Read |
-| Location | `cache_read_clidr()`, [`cache.c`](../../mach/arm64/cache.c) |
+| Location | `cache_read_clidr()`, [`cache.c`](../../kern/arm64/cache.c) |
 | Subsystem | Cache |
 
 Cache Level ID Register. NXU reads the 3-bit `Ctype` field for each of up to 7
@@ -279,7 +279,7 @@ levels to decide which levels need data-cache invalidation. Cached into
 | Property | Value |
 | --- | --- |
 | Access | Read |
-| Location | `cache_read_ccsidr()`, [`cache.c`](../../mach/arm64/cache.c) |
+| Location | `cache_read_ccsidr()`, [`cache.c`](../../kern/arm64/cache.c) |
 | Subsystem | Cache |
 
 Describes the cache currently selected by `CSSELR_EL1`. NXU decodes the legacy
@@ -298,7 +298,7 @@ Never cached; read fresh after each `CSSELR_EL1` selection.
 | Property | Value |
 | --- | --- |
 | Access | Write |
-| Location | `cache_write_csselr()`, [`cache.c`](../../mach/arm64/cache.c) |
+| Location | `cache_write_csselr()`, [`cache.c`](../../kern/arm64/cache.c) |
 | Subsystem | Cache |
 
 Cache Size Selection Register: chooses what `CCSIDR_EL1` reports.
@@ -316,7 +316,7 @@ Restored to 0 when the invalidation walk completes. Each write is followed by
 | Property | Value |
 | --- | --- |
 | Access | Read |
-| Location | `cache_read_ctr()`, [`cache.c`](../../mach/arm64/cache.c) |
+| Location | `cache_read_ctr()`, [`cache.c`](../../kern/arm64/cache.c) |
 | Subsystem | Cache |
 
 Cache Type Register. Readable at EL0, which is why it carries the `_EL0` suffix.
@@ -343,13 +343,13 @@ architecturally accessible.
 | `ICC_IAR1_EL1` | Read | `gic_acknowledge_interrupt()` | Acknowledges and returns the pending INTID (low 24 bits) |
 | `ICC_EOIR1_EL1` | Write | `gic_end_interrupt()` | Signals completion of the given INTID |
 
-All in [`gic.c`](../../mach/arm64/gic.c). Reading `ICC_IAR1_EL1` has the
+All in [`gic.c`](../../kern/arm64/gic.c). Reading `ICC_IAR1_EL1` has the
 side effect of activating the interrupt; it is not a passive query. See
 [Interrupt controller](interrupt-controller.md).
 
 ## Generic timer
 
-All in [`timer.c`](../../mach/arm64/timer.c).
+All in [`timer.c`](../../kern/arm64/timer.c).
 
 | Register | Access | Location | Meaning |
 | --- | --- | --- | --- |
@@ -367,10 +367,10 @@ conventional system registers.
 
 | Field | Operation | Location | Purpose |
 | --- | --- | --- | --- |
-| `DAIF` | `msr DAIFSet, #0xf` | [`start.S`](../../mach/arm64/start.S) | Mask Debug, SError, IRQ and FIQ at reset |
-| `DAIF` | `msr DAIFClr, #2` | `arm64_enable_irqs()`, [`gic.c`](../../mach/arm64/gic.c) | Clear `PSTATE.I` — unmask IRQs |
-| `DAIF` | `msr DAIFSet, #2` | `arm64_disable_irqs()`, [`gic.c`](../../mach/arm64/gic.c) | Set `PSTATE.I` — mask IRQs |
-| `SPSel` | `msr SPSel, #1` | [`start.S`](../../mach/arm64/start.S) | Select `SP_EL1` rather than `SP_EL0` |
+| `DAIF` | `msr DAIFSet, #0xf` | [`start.S`](../../kern/arm64/start.S) | Mask Debug, SError, IRQ and FIQ at reset |
+| `DAIF` | `msr DAIFClr, #2` | `arm64_enable_irqs()`, [`gic.c`](../../kern/arm64/gic.c) | Clear `PSTATE.I` — unmask IRQs |
+| `DAIF` | `msr DAIFSet, #2` | `arm64_disable_irqs()`, [`gic.c`](../../kern/arm64/gic.c) | Set `PSTATE.I` — mask IRQs |
+| `SPSel` | `msr SPSel, #1` | [`start.S`](../../kern/arm64/start.S) | Select `SP_EL1` rather than `SP_EL0` |
 
 The `#2` operand is a bitmask over the `DAIF` fields in which bit 1 is `I`.
 `PSTATE.D`, `PSTATE.A` and `PSTATE.F` are set at boot and never cleared, so
@@ -397,12 +397,12 @@ See [Roadmap to userland](../roadmap-to-userland.md).
 
 ## Source files
 
-- [`mach/arm64/system.h`](../../mach/arm64/system.h)
-- [`mach/arm64/cache.c`](../../mach/arm64/cache.c)
-- [`mach/arm64/gic.c`](../../mach/arm64/gic.c)
-- [`mach/arm64/timer.c`](../../mach/arm64/timer.c)
-- [`mach/arm64/start.S`](../../mach/arm64/start.S)
-- [`mach/arm64/exception_vectors.S`](../../mach/arm64/exception_vectors.S)
+- [`kern/arm64/system.h`](../../kern/arm64/system.h)
+- [`kern/arm64/cache.c`](../../kern/arm64/cache.c)
+- [`kern/arm64/gic.c`](../../kern/arm64/gic.c)
+- [`kern/arm64/timer.c`](../../kern/arm64/timer.c)
+- [`kern/arm64/start.S`](../../kern/arm64/start.S)
+- [`kern/arm64/exception_vectors.S`](../../kern/arm64/exception_vectors.S)
 - [`vm/vmm.c`](../../vm/vmm.c)
 - [`vm/vmm_tables.c`](../../vm/vmm_tables.c)
 - [`vm/vmm_debug.c`](../../vm/vmm_debug.c)

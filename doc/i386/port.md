@@ -9,20 +9,20 @@ daemons) are out of scope. The serial console is the display.
 
 The arm64 kernel must keep building and behaving exactly as before. Shared
 code stays shared; anything that differs by architecture goes behind a
-`<mach/machine/...>` dispatch header (XNU's `<machine/...>` idea) or a
+`<kern/machine/...>` dispatch header (XNU's `<machine/...>` idea) or a
 per-architecture source file, never behind `#ifdef __aarch64__` inside shared
 logic unless there is no better seam.
 
 ## What already exists
 
-* `mach/i386/`: Multiboot entry (`start.S`), serial console, TSC timer, GDT
+* `kern/i386/`: Multiboot entry (`start.S`), serial console, TSC timer, GDT
   with a double-fault task gate, IDT, trap frame (`x86_saved_state32_t`), and
   a panic report. See `trap.h`, `gdt.h`, `idt.h`.
-* `mach/machine/{machine_routines,timer,vm_param}.h`: dispatch headers.
-* `mach/i386/boot_info.h`: the ordered boot **phases** (platform, interrupts,
+* `kern/machine/{machine_routines,timer,vm_param}.h`: dispatch headers.
+* `kern/i386/boot_info.h`: the ordered boot **phases** (platform, interrupts,
   vm, kernel, threads, drivers, userland) as weak hooks in `i386_init.c`. Read
   the comment in that header; it is the integration contract.
-* `mach/i386/trap.h`: weak **trap extension points** (`i386_trap_irq`,
+* `kern/i386/trap.h`: weak **trap extension points** (`i386_trap_irq`,
   `i386_trap_syscall`, `i386_trap_user_exception`, `i386_trap_page_fault`,
   `i386_trap_exit`).
 * `makedefs/i386.mk` and per-area fragments in `makedefs/i386/*.mk`.
@@ -39,7 +39,7 @@ I/O-port transport, which is the simplest). No ACPI, no APIC required.
 ## Memory model (fixed; do not change without telling the others)
 
 Classic 32-bit two-level paging, 4 KiB pages, **no PAE, no NX**. See
-`mach/i386/vm_param.h` for the exact constants and the address map.
+`kern/i386/vm_param.h` for the exact constants and the address map.
 
 * Kernel is linked at virtual `0xC0100000`, loaded at physical `0x100000`
   (`VMM_HIGHER_HALF_BASE = 0xC0000000`). Boot code runs at physical addresses
@@ -59,7 +59,7 @@ Classic 32-bit two-level paging, 4 KiB pages, **no PAE, no NX**. See
 
 Implement the machine-independent APIs that shared code already calls, with
 the same signatures: `vm/vmm.h`, `vm/address_space.h`, `vm/pmm.h`,
-`kern/irq/irq.h`, `mach/arm64/timer.h`-shaped `mach/i386/timer.h`,
+`kern/irq/irq.h`, `kern/arm64/timer.h`-shaped `kern/i386/timer.h`,
 `kern/process/thread.h`'s machine hooks, `kern/syscall/syscall.h`,
 `drivers/virtio/*`, `platform/*.h`. If a shared header genuinely has to
 change, change it **additively** (new function, new field, new dispatch
@@ -69,14 +69,14 @@ include) so the arm64 build is unaffected, and mention it in your report.
 
 | Area | Owns |
 |------|------|
-| interrupts | `mach/i386/{pic,irq,timer}.*` (extend `timer.c`), `kern/irq/irq.c`, the strong `i386_trap_irq`, `makedefs/i386/interrupts.mk`, `doc/i386/interrupts.md` |
-| vm | `mach/i386/{start.S,linker script,pmap*,memory_map*}`, `makedefs/linker-i386.ld`, `vm/*`, `kern/memory/heap.c`, `mach/i386/vm_param.h`, `makedefs/i386/vm.mk`, `doc/i386/vm.md` |
+| interrupts | `kern/i386/{pic,irq,timer}.*` (extend `timer.c`), `kern/irq/irq.c`, the strong `i386_trap_irq`, `makedefs/i386/interrupts.mk`, `doc/i386/interrupts.md` |
+| vm | `kern/i386/{start.S,linker script,pmap*,memory_map*}`, `makedefs/linker-i386.ld`, `vm/*`, `kern/memory/heap.c`, `kern/i386/vm_param.h`, `makedefs/i386/vm.mk`, `doc/i386/vm.md` |
 | devices | `platform/i386/*` (except `uart.c`), `platform/platform.h` (additive), `drivers/virtio/*`, `drivers/block/*`, `drivers/input/*`, `drivers/video/*` as needed, `makedefs/i386/devices.mk`, `doc/i386/devices.md` |
-| threads | `mach/i386/{thread*,context_switch.S,transition*,syscall_trap*}`, `mach/machine/thread.h` dispatch, `kern/process/*`, `kern/sched_prism/*`, `kern/syscall/syscall.c`, `kern/lock.h`, the strong `i386_trap_syscall`/`i386_trap_user_exception`/`i386_trap_exit`, `makedefs/i386/threads.mk`, `doc/i386/threads.md` |
-| userland | `kern/loader/*`, `mach/machine/cache.h` dispatch, `frameworks/lib/*`, `frameworks/crt0*`, `frameworks/CoreFoundation.framework/*`, `frameworks/BootDaemons.framework/*` (non-UI ones), `makedefs/user-i386.ld`, `makedefs/i386/userland.mk`, `tools/*` for building an i386 disk image, `doc/i386/userland.md` |
+| threads | `kern/i386/{thread*,context_switch.S,transition*,syscall_trap*}`, `kern/machine/thread.h` dispatch, `kern/process/*`, `kern/sched_prism/*`, `kern/syscall/syscall.c`, `kern/lock.h`, the strong `i386_trap_syscall`/`i386_trap_user_exception`/`i386_trap_exit`, `makedefs/i386/threads.mk`, `doc/i386/threads.md` |
+| userland | `kern/loader/*`, `kern/machine/cache.h` dispatch, `frameworks/lib/*`, `frameworks/crt0*`, `frameworks/CoreFoundation.framework/*`, `frameworks/BootDaemons.framework/*` (non-UI ones), `makedefs/user-i386.ld`, `makedefs/i386/userland.mk`, `tools/*` for building an i386 disk image, `doc/i386/userland.md` |
 
-Nobody edits `Makefile`, `makedefs/i386.mk`, `mach/i386/i386_init.c`,
-`mach/i386/trap.c` or `mach/i386/boot_info.h` in wave 1 (the integrator does).
+Nobody edits `Makefile`, `makedefs/i386.mk`, `kern/i386/i386_init.c`,
+`kern/i386/trap.c` or `kern/i386/boot_info.h` in wave 1 (the integrator does).
 Add sources, flags and targets through your own `makedefs/i386/<area>.mk`
 fragment (`I386_C_SOURCES += ...`). A source listed twice is built once.
 Supply your phase by defining the strong `i386_init_<phase>` and

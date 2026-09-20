@@ -165,7 +165,7 @@ TTBR1 mapping and transitions the kernel to it before TTBR0 is handed to EL0.
 
 ## Source files
 
-- [`mach/arm64/start.S`](../mach/arm64/start.S)
+- [`kern/arm64/start.S`](../kern/arm64/start.S)
 - [`makedefs/linker.ld`](../makedefs/linker.ld)
 - [`kern/kern_init.c`](../kern/kern_init.c)
 - [`Makefile`](../Makefile)

@@ -6,7 +6,7 @@ The tree is split into subsystems, so that architecture-specific code, core
 kernel code and machine discovery never bleed into one another.
 
 ```text
-mach/arm64   ARM64-specific kernel code, including startup, exceptions,
+kern/arm64   ARM64-specific kernel code, including startup, exceptions,
              system registers, caches, GICv3 and the architectural timer.
 kern         Core kernel, split by subsystem; no implementation files live at its root.
 vfs          Virtual filesystem, vnodes, mounts, open files and ramfs.
@@ -37,7 +37,7 @@ kern/tests      Kernel subsystem self-tests.
 Headers are included with a subsystem-qualified path, never a relative one:
 
 ```c
-#include <mach/arm64/cache.h>
+#include <kern/arm64/cache.h>
 #include <kern/memory/heap.h>
 #include <vm/pmm.h>
 #include <platform/uart.h>
@@ -45,7 +45,7 @@ Headers are included with a subsystem-qualified path, never a relative one:
 ```
 
 This works because the build uses two include roots: the repository root
-resolves `<mach/...>`, `<kern/...>`, `<vfs/...>`, `<vm/...>` and `<platform/...>`; and
+resolves `<kern/...>`, `<vfs/...>`, `<vm/...>` and `<platform/...>`; and
 `libk` resolves the freestanding runtime headers.
 
 ## Root userspace

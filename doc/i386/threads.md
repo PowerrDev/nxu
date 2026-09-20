@@ -3,8 +3,8 @@
 Machine thread state, context switching, the scheduler on i386, the ring 3
 transition and the system-call path. Shared code (`kern/process`,
 `kern/sched_prism`, `kern/syscall`) is unchanged in behaviour; it reaches the
-machine through `<mach/machine/thread.h>`, `<mach/machine/cpu.h>` and
-`<mach/machine/system.h>`.
+machine through `<kern/machine/thread.h>`, `<kern/machine/cpu.h>` and
+`<kern/machine/system.h>`.
 
 ## User ABI (fixed)
 
@@ -87,14 +87,14 @@ would land on the #DF vector.
 
 | File | Role |
 |------|------|
-| `mach/i386/thread.{h,c}` | `machine_thread_t` and the `machine_thread_*` API |
-| `mach/i386/context_switch.S` | `i386_switch_context` |
-| `mach/i386/transition.S` | `i386_enter_user`, `i386_user_return` |
-| `mach/i386/syscall_trap.{h,c}` | strong `i386_trap_syscall`, `i386_trap_user_exception`, `i386_trap_exit` |
-| `mach/i386/threads_init.c` | `i386_init_threads` |
-| `mach/i386/threads_selftest.c` | `test=threads` |
-| `mach/i386/{cpu,system}.h`, `mach/machine/{thread,cpu,system}.h` | dispatch and x86 flavours |
-| `mach/i386/threads_standins.c` | **test-only** weak stand-ins, see below |
+| `kern/i386/thread.{h,c}` | `machine_thread_t` and the `machine_thread_*` API |
+| `kern/i386/context_switch.S` | `i386_switch_context` |
+| `kern/i386/transition.S` | `i386_enter_user`, `i386_user_return` |
+| `kern/i386/syscall_trap.{h,c}` | strong `i386_trap_syscall`, `i386_trap_user_exception`, `i386_trap_exit` |
+| `kern/i386/threads_init.c` | `i386_init_threads` |
+| `kern/i386/threads_selftest.c` | `test=threads` |
+| `kern/i386/{cpu,system}.h`, `kern/machine/{thread,cpu,system}.h` | dispatch and x86 flavours |
+| `kern/i386/threads_standins.c` | **test-only** weak stand-ins, see below |
 | `makedefs/i386/threads.mk`, `tools/test_i386_threads.sh` | build fragment, `make test-i386-threads` |
 
 ## Test-only stand-ins (drop them at integration)

@@ -127,7 +127,7 @@ Sector sizes above the page size and nodesizes 4 KiB to 64 KiB are fine
 
 `btrfs_register()` publishes the filesystem type; it does no I/O. The kernel
 registers it **only from the boot-argument test hooks** (arm64
-`kern/kern_init.c`, i386 `mach/i386/userland_init.c`), never at boot, so the
+`kern/kern_init.c`, i386 `kern/i386/userland_init.c`), never at boot, so the
 arm64 `vfs_dump` line `filesystems: N` and the whole boot log are unchanged. To
 make Btrfs available in a normal boot, add `btrfs_register()` next to
 `ext4_register()` in the two boot paths (this changes that one log line).
@@ -215,7 +215,7 @@ entries (default 512; the summary still counts everything), `BTRFS_TIMEOUT=<s>`.
 The listing is `<type><rwx mode> <nlink> <size> <path>[ -> target]`. The script
 is `tools/btrfs/run_i386.sh`; the kernel side is the boot arguments `btrfs-ls`,
 `btrfs-cat=<path>`, `btrfs-dev=<n>`, `btrfs-subvol=<id>`, `btrfs-verify=1` and
-`btrfs-max=<n>`, handled in `mach/i386/userland_init.c` before the ext4 root is
+`btrfs-max=<n>`, handled in `kern/i386/userland_init.c` before the ext4 root is
 mounted, so no root disk is needed. arm64 has no equivalent yet. A non-Btrfs or
 damaged image fails the mount cleanly and the run exits nonzero.
 

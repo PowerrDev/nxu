@@ -23,7 +23,7 @@ belongs to:
 
 Only two addresses in the entire kernel are hard-coded MMIO: the PL011 base in
 `platform/arm64/uart.c` and the GIC distributor/redistributor bases in
-`mach/arm64/gic.c`. Both duplicate values that discovery already
+`kern/arm64/gic.c`. Both duplicate values that discovery already
 recovers. See [Hardware discovery](platform/hardware-discovery.md).
 
 ## Compile-time fixed addresses
@@ -35,14 +35,14 @@ recovers. See [Hardware discovery](platform/hardware-discovery.md).
 | Kernel virtual offset | `0xFFFFFF8000000000` | [`makedefs/linker.ld`](../makedefs/linker.ld) |
 | Vector table alignment | 2048 bytes | [`makedefs/linker.ld`](../makedefs/linker.ld) |
 | Section alignment | 4096 bytes | [`makedefs/linker.ld`](../makedefs/linker.ld) |
-| Boot stack size | 16384 bytes | [`mach/arm64/start.S`](../mach/arm64/start.S) |
+| Boot stack size | 16384 bytes | [`kern/arm64/start.S`](../kern/arm64/start.S) |
 | `PMM_PAGE_SIZE` | `4096` | [`vm/pmm.h`](../vm/pmm.h) |
 | `VM_KERN_BASE` | `0x0000001000000000` | [`vm/vm_kern.h`](../vm/vm_kern.h) |
 | `VM_KERN_SIZE` | `0x0000000004000000` (64 MiB) | [`vm/vm_kern.h`](../vm/vm_kern.h) |
 | `VM_KERN_END` | `0x0000001004000000` | [`vm/vm_kern.h`](../vm/vm_kern.h) |
 | Hard-coded UART base | `0x09000000` | [`platform/arm64/uart.c`](../platform/arm64/uart.c) |
-| Hard-coded `GICD_BASE` | `0x08000000` | [`mach/arm64/gic.c`](../mach/arm64/gic.c) |
-| Hard-coded `GICR_BASE` | `0x080A0000` | [`mach/arm64/gic.c`](../mach/arm64/gic.c) |
+| Hard-coded `GICD_BASE` | `0x08000000` | [`kern/arm64/gic.c`](../kern/arm64/gic.c) |
+| Hard-coded `GICR_BASE` | `0x080A0000` | [`kern/arm64/gic.c`](../kern/arm64/gic.c) |
 
 ## DTB-discovered regions
 

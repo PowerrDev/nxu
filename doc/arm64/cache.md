@@ -1,6 +1,6 @@
 # Cache Control
 
-`mach/arm64/cache.c` discovers the CPU's cache topology, invalidates
+`kern/arm64/cache.c` discovers the CPU's cache topology, invalidates
 stale cache contents, and enables the EL1 instruction and data caches.
 
 ## Why caches are enabled separately from the MMU
@@ -283,8 +283,8 @@ This is why the reported line sizes matter: those loops must step by the value
 
 ## Source files
 
-- [`mach/arm64/cache.c`](../../mach/arm64/cache.c)
-- [`mach/arm64/cache.h`](../../mach/arm64/cache.h)
+- [`kern/arm64/cache.c`](../../kern/arm64/cache.c)
+- [`kern/arm64/cache.h`](../../kern/arm64/cache.h)
 - [`vm/vmm.c`](../../vm/vmm.c)
 
 ## Related documentation

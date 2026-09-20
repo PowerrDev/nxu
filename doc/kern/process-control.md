@@ -4,12 +4,12 @@ This page covers how a user process is created, replaced, signalled and ended
 on arm64. The i386 port shares the code but not the machine-dependent half:
 there `fork`, `exec`, `kill`, `sigaction`, `sigprocmask` and `sigreturn` return
 `NXU_SYS_E_NOT_SUPPORTED`, and a user fault still ends the process with the
-CPU trap vector in its exit status (`mach/i386/syscall_trap.c`).
+CPU trap vector in its exit status (`kern/i386/syscall_trap.c`).
 
 ## A user fault kills the process, not the kernel
 
 A synchronous exception from EL0 that is not a system call reaches
-`exception_handle_user_fault()` in `mach/arm64/exception.c`. In order:
+`exception_handle_user_fault()` in `kern/arm64/exception.c`. In order:
 
 1. **Try to resolve it.** A data or instruction abort of translation, access
    flag or permission kind is offered to the page-fault resolver

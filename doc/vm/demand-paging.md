@@ -1,6 +1,6 @@
 # Demand Paging and Copy-on-Write (arm64)
 
-`VM_DEMAND_PAGING` (`mach/arm64/vm_param.h`) is 1 on arm64 and 0 on i386. Where
+`VM_DEMAND_PAGING` (`kern/arm64/vm_param.h`) is 1 on arm64 and 0 on i386. Where
 it is 1, user memory can be populated when it is first touched, and pages can be
 shared between address spaces until one of them writes.
 

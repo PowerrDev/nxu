@@ -63,7 +63,7 @@ x30 / lr
 SP_EL1
 ```
 
-`arm64_switch_context()` is implemented in `mach/arm64/context_switch.S`. It saves the outgoing context, replaces the kernel stack pointer, restores the incoming context and returns through the incoming x30.
+`arm64_switch_context()` is implemented in `kern/arm64/context_switch.S`. It saves the outgoing context, replaces the kernel stack pointer, restores the incoming context and returns through the incoming x30.
 
 Caller-saved x0-x18 are not part of the ordinary scheduler context. Asynchronous exceptions preserve the full architectural state in `arm64_exception_frame_t` instead.
 

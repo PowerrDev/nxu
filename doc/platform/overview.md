@@ -89,7 +89,7 @@ Two places bypass the platform layer and hard-code a QEMU `virt` address:
 | Location | Address | Discovered equivalent |
 | --- | --- | --- |
 | [`platform/arm64/uart.c`](../../platform/arm64/uart.c) | `UART_BASE 0x09000000` | `platform->uart.base` |
-| [`mach/arm64/gic.c`](../../mach/arm64/gic.c) | `GICD_BASE 0x08000000`, `GICR_BASE 0x080A0000` | `platform->gic_distributor`, `platform->gic_redistributor` |
+| [`kern/arm64/gic.c`](../../kern/arm64/gic.c) | `GICD_BASE 0x08000000`, `GICR_BASE 0x080A0000` | `platform->gic_distributor`, `platform->gic_redistributor` |
 
 The UART case is defensible: something must print before the Device Tree has
 been parsed, and a bootstrap console has to start somewhere. The GIC case is

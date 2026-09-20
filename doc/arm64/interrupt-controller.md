@@ -155,7 +155,7 @@ silently blocks all subsequent interrupts at the same or lower priority.
 
 ## Spurious interrupts
 
-`irq_handle()` in [`exception.c`](../../mach/arm64/exception.c) checks
+`irq_handle()` in [`exception.c`](../../kern/arm64/exception.c) checks
 for INTIDs 1020 and above:
 
 ```c
@@ -243,9 +243,9 @@ system-register accesses. That said:
 
 ## Source files
 
-- [`mach/arm64/gic.c`](../../mach/arm64/gic.c)
-- [`mach/arm64/gic.h`](../../mach/arm64/gic.h)
-- [`mach/arm64/exception.c`](../../mach/arm64/exception.c)
+- [`kern/arm64/gic.c`](../../kern/arm64/gic.c)
+- [`kern/arm64/gic.h`](../../kern/arm64/gic.h)
+- [`kern/arm64/exception.c`](../../kern/arm64/exception.c)
 
 ## Related documentation
 

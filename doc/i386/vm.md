@@ -1,9 +1,9 @@
 # i386 virtual memory
 
 Classic two-level paging, 4 KiB pages, no PAE, no NX, one CPU. Constants live
-in `mach/i386/vm_param.h`; the page-table code is `mach/i386/pmap.c`, the
+in `kern/i386/vm_param.h`; the page-table code is `kern/i386/pmap.c`, the
 `vm/vmm.h` and `vm/address_space.h` implementations are
-`mach/i386/vmm_i386.c` and `mach/i386/address_space_i386.c`. The arm64-only
+`kern/i386/vmm_i386.c` and `kern/i386/address_space_i386.c`. The arm64-only
 `vm/vmm*.c` and `vm/address_space.c` are not built for i386; `vm/pmm.c`,
 `vm/vm_kern.c`, `vm/vm_shm.c`, `vm/vm_map.c`, `vm/user_copy.c` and
 `kern/memory/heap.c` are shared as they are.

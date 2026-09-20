@@ -25,7 +25,7 @@ port as a whole.
 | `drivers/virtio/virtio_transport.h` | `virtio_device_t` and the transport ops table |
 | `drivers/virtio/virtio_mmio.c` | MMIO transport (arm64), now `virtio_mmio_ops` |
 | `drivers/virtio/virtio_pci.{h,c}` | legacy and modern PCI transports, PCI bus scanner |
-| `mach/machine/barrier.h` | `ml_dma_wmb/rmb/mb`, `ml_cpu_relax` |
+| `kern/machine/barrier.h` | `ml_dma_wmb/rmb/mb`, `ml_cpu_relax` |
 | `makedefs/i386/devices.mk`, `tools/test_i386_devices.sh` | build fragment and test |
 
 ## Transports

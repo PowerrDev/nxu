@@ -58,7 +58,7 @@ The public API (`frameworks/include/nxu/syscall.h`) is unchanged, so its
 * `.comment`, `.eh_frame`, `.note` discarded.
 
 The whole image must stay in `[0x1000, VM_MAP_BASE)` = below `0x40000000`, the
-window below the mmap area (`mach/i386/vm_param.h`). Don't `strip` the
+window below the mmap area (`kern/i386/vm_param.h`). Don't `strip` the
 binaries: the bss-only data segment's file offset lies beyond the end of the
 code, and the loader (like the arm64 one) requires `offset + filesz` to lie
 inside the file, which is only true because the symbol table follows.
@@ -77,8 +77,8 @@ inside the file, which is only true because the symbol table follows.
   structs, so the checks are shared). Where the i386 path calls the shared
   helper, the arm64 path keeps the original inline expression, because the
   arm64 kernel image is required to be byte-identical across this change.
-* `mach/machine/cache.h`: dispatch header; arm64 forwards to
-  `mach/arm64/cache.h`, i386 (`mach/i386/cache.h`) has coherent caches and
+* `kern/machine/cache.h`: dispatch header; arm64 forwards to
+  `kern/arm64/cache.h`, i386 (`kern/i386/cache.h`) has coherent caches and
   no-op stubs with the same names (`cache_sync_instruction_range`, ...).
 * `elf.c` is **not** in the i386 kernel's source list yet (it needs
   vfs/vm/proc/sched for i386); `make i386-loader-check` compiles it for i386
@@ -145,5 +145,5 @@ page, file bounds; prints sizes) and `tools/test_i386_userland.sh` (boots
 * The kernel side of the ABI above (threads area), notably `NXU_SYS_UPTIME_US`
   returning the low 32 bits in `eax`, and syscalls that take user pointers to
   64-bit objects (`waitpid`, `klog_read`) reading/writing all eight bytes.
-* `kern/kern_init.c` still includes `<mach/arm64/cache.h>` directly (arm64
+* `kern/kern_init.c` still includes `<kern/arm64/cache.h>` directly (arm64
   only, not mine to change).
