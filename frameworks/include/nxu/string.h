@@ -14,6 +14,7 @@ bool nxu_arg_present(const char *arguments, const char *argument);
  * here (rather than left implicit) since -ffreestanding disables clang's
  * usual builtin recognition of these names. */
 void *memcpy(void *destination, const void *source, size_t size);
+void *memmove(void *destination, const void *source, size_t size);
 void *memset(void *destination, int value, size_t size);
 
 #endif

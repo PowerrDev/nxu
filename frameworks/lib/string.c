@@ -61,6 +61,28 @@ memcpy(void *destination, const void *source, size_t size)
 	return destination;
 }
 
+/*
+ * The compiler may lower a large struct copy to memmove (it did for bootd's job
+ * table once service_config_t grew), so a freestanding userland must have one
+ * that is correct when the ranges overlap.
+ */
+void *
+memmove(void *destination, const void *source, size_t size)
+{
+	unsigned char *destination_bytes = destination;
+	const unsigned char *source_bytes = source;
+
+	if (destination_bytes == source_bytes) return destination;
+
+	if (destination_bytes < source_bytes) {
+		for (size_t index = 0U; index < size; index++) destination_bytes[index] = source_bytes[index];
+	} else {
+		for (size_t index = size; index > 0U; index--) destination_bytes[index - 1U] = source_bytes[index - 1U];
+	}
+
+	return destination;
+}
+
 void *
 memset(void *destination, int value, size_t size)
 {
