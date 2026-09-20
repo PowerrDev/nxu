@@ -120,10 +120,6 @@ static void kern_dump_boot_dtb(const dtb_t *device_tree)
 {
 	kputln("dtb: valid flattened Device Tree");
 
-	kputs("dtb: address: ");
-	kputhex64((uint64_t)device_tree->base);
-	kputc('\n');
-
 	kputs("dtb: version: ");
 	kputu64(device_tree->version);
 	kputc('\n');
@@ -132,21 +128,15 @@ static void kern_dump_boot_dtb(const dtb_t *device_tree)
 	kputu64(device_tree->total_size);
 	kputln(" bytes");
 
-	kputs("dtb: structure address: ");
-	kputhex64((uint64_t)device_tree->structure);
-	kputc('\n');
+	if (!kconsole_verbose()) return;
 
-	kputs("dtb: structure size: ");
-	kputu64(device_tree->structure_size);
-	kputln(" bytes");
+	kprintf("dtb: address: %p\n", (void *)device_tree->base);
 
-	kputs("dtb: strings address: ");
-	kputhex64((uint64_t)device_tree->strings);
-	kputc('\n');
+	kprintf("dtb: structure address: %p\n", (void *)device_tree->structure);
+	kprintf("dtb: structure size: %llu bytes\n", (unsigned long long)device_tree->structure_size);
 
-	kputs("dtb: strings size: ");
-	kputu64(device_tree->strings_size);
-	kputln(" bytes");
+	kprintf("dtb: strings address: %p\n", (void *)device_tree->strings);
+	kprintf("dtb: strings size: %llu bytes\n", (unsigned long long)device_tree->strings_size);
 }
 
 static bool kern_test_pmm(void)
@@ -158,11 +148,7 @@ static bool kern_test_pmm(void)
 			return false;
 		}
 
-		kputs("pmm: allocated test page ");
-		kputu64(index);
-		kputs(" at ");
-		kputhex64(test_pages[index]);
-		kputc('\n');
+		kverbosef("kern_test_pmm: allocated test page %u at 0x%llx\n", index, (unsigned long long)test_pages[index]);
 	}
 
 	for (uint32_t index = 0U; index < 3U; index++) {
@@ -729,16 +715,16 @@ static void kern_finish_higher_half_transition(void)
 	nxu_boot_log_higher_half();
 
 	if (!vmm_validate_linked_kernel_layout()) {
-		kern_fail("vmm: higher-half linked layout validation failed");
+		kern_fail("vmm_validate_linked_kernel_layout: higher-half linked layout validation failed");
 	}
 
-	kputln("vmm: higher-half linked layout validated");
+	kputln("vmm_validate_linked_kernel_layout: higher-half linked layout validated");
 
 	if (!kern_test_linked_kernel_pointers()) {
-		kern_fail("vmm: static higher-half pointer validation failed");
+		kern_fail("kern_test_linked_kernel_pointers: static higher-half pointer validation failed");
 	}
 
-	kputln("vmm: static kernel pointers are higher-half linked");
+	kputln("kern_test_linked_kernel_pointers: static kernel pointers are higher-half linked");
 
 	/* Permanent TTBR1 runtime state. */
 
@@ -749,16 +735,16 @@ static void kern_finish_higher_half_transition(void)
 	kputln("kern_init: kernel pointers rebased to TTBR1");
 
 	if (!vmm_disable_ttbr0()) {
-		kern_fail("vmm: TTBR0 shutdown failed");
+		kern_fail("vmm_disable_ttbr0: TTBR0 shutdown failed");
 	}
 
-	kputln("vmm: TTBR0 disabled");
+	kputln("vmm_disable_ttbr0: TTBR0 disabled");
 
 	if (!kern_validate_ttbr0_shutdown()) {
-		kern_fail("vmm: TTBR0 shutdown validation failed");
+		kern_fail("kern_validate_ttbr0_shutdown: TTBR0 shutdown validation failed");
 	}
 
-	kputln("vmm: lower address translation rejected");
+	kputln("kern_validate_ttbr0_shutdown: lower address translation rejected");
 }
 
 /*
@@ -769,15 +755,15 @@ static void kern_finish_higher_half_transition(void)
  */
 static void kern_init_memory(void)
 {
-	kputln("vm_kern: initializing kernel virtual arena");
+	kputln("vm_kern_init: initializing kernel virtual arena");
 
 	if (!vm_kern_init()) {
-		kern_fail("vm_kern: initialization failed");
+		kern_fail("vm_kern_init: initialization failed");
 	}
 
-	kputln("vm_kern: kernel virtual arena initialized");
+	kputln("vm_kern_init: kernel virtual arena initialized");
 
-	kputln("heap: initializing kernel heap");
+	kputln("heap_init: initializing kernel heap");
 
 	if (!heap_init()) {
 		kern_fail("heap_init: initialization failed");
@@ -1154,7 +1140,7 @@ void kern_init(const void *dtb_address)
 	nxu_boot_log_platform(device_tree, platform);
 
 	/* Physical memory manager. */
-	kputln("pmm: initializing physical memory manager");
+	kputln("pmm_init: initializing physical memory manager");
 
 	if (!pmm_init(
 		platform,
@@ -1171,7 +1157,7 @@ void kern_init(const void *dtb_address)
 		kern_fail("kern_test_pmm: allocation/free test failed");
 	}
 
-	kputln("pmm: allocation/free test passed");
+	kputln("kern_test_pmm: allocation/free test passed");
 
 	/* Exception level and vector table. */
 
@@ -1193,7 +1179,7 @@ void kern_init(const void *dtb_address)
 		kern_fail("vmm_init: initialization failed");
 	}
 
-	kputln("vmm: stage 1 MMU enabled");
+	kputln("vmm_init: stage 1 MMU enabled");
 
 	vmm_dump();
 
@@ -1209,8 +1195,8 @@ void kern_init(const void *dtb_address)
 		kern_fail("kern_validate_identity_mappings: identity translation test failed");
 	}
 
-	kputln("vmm: stack identity translation passed");
-	kputln("vmm: UART identity translation passed");
+	kputln("kern_validate_identity_mappings: stack identity translation passed");
+	kputln("kern_validate_identity_mappings: UART identity translation passed");
 
 	/* CPU caches and live table updates. */
 	kputln("cache_init: initializing CPU caches");
@@ -1224,56 +1210,56 @@ void kern_init(const void *dtb_address)
 	cache_dump();
 
 	/* TTBR1 kernel alias and full direct map. */
-	kputln("vmm: installing TTBR1 higher-half alias");
+	kputln("vmm_init_higher_half_alias: installing TTBR1 higher-half alias");
 
 	if (!vmm_init_higher_half_alias()) {
-		kern_fail("vmm: TTBR1 higher-half initialization failed");
+		kern_fail("vmm_init_higher_half_alias: TTBR1 higher-half initialization failed");
 	}
 
-	kputln("vmm: TTBR1 higher-half alias installed");
+	kputln("vmm_init_higher_half_alias: TTBR1 higher-half alias installed");
 
-	vmm_dump_higher_half();
+	if (kconsole_verbose()) vmm_dump_higher_half();
 
 	/* The live mapping test now targets a TTBR1 virtual address */
-	kputln("vmm: testing live page mappings");
+	kputln("kern_test_live_vmm: testing live page mappings");
 
 	if (!kern_test_live_vmm()) {
-		kern_fail("vmm: live page mapping test failed");
+		kern_fail("kern_test_live_vmm: live page mapping test failed");
 	}
 
-	kputln("vmm: live page mapping test passed");
+	kputln("kern_test_live_vmm: live page mapping test passed");
 
-	kputln("vmm: testing higher-half execution");
+	kputln("kern_test_higher_half_alias: testing higher-half execution");
 
 	if (!kern_test_higher_half_alias()) {
-		kern_fail("vmm: higher-half execution test failed");
+		kern_fail("kern_test_higher_half_alias: higher-half execution test failed");
 	}
 
-	kputln("vmm: higher-half execution test passed");
+	kputln("kern_test_higher_half_alias: higher-half execution test passed");
 
-	kputln("vmm: building higher-half direct map");
+	kputln("vmm_map_higher_half_direct_map: building higher-half direct map");
 
 	if (!vmm_map_higher_half_direct_map(
 		platform
 	)) {
-		kern_fail("vmm: higher-half direct map failed");
+		kern_fail("vmm_map_higher_half_direct_map: higher-half direct map failed");
 	}
 
-	kputln("vmm: higher-half direct map installed");
+	kputln("vmm_map_higher_half_direct_map: higher-half direct map installed");
 
 	if (!vmm_validate_higher_half_direct_map(
 		platform
 	)) {
-		kern_fail("vmm: higher-half direct map validation failed");
+		kern_fail("vmm_validate_higher_half_direct_map: higher-half direct map validation failed");
 	}
 
-	kputln("vmm: higher-half direct map validated");
+	kputln("vmm_validate_higher_half_direct_map: higher-half direct map validated");
 
 	if (!kern_test_higher_half_ram_alias()) {
-		kern_fail("vmm: higher-half RAM alias test failed");
+		kern_fail("kern_test_higher_half_ram_alias: higher-half RAM alias test failed");
 	}
 
-	kputln("vmm: higher-half RAM alias test passed");
+	kputln("kern_test_higher_half_ram_alias: higher-half RAM alias test passed");
 
 	vmm_dump_higher_half();
 

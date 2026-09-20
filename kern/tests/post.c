@@ -288,17 +288,9 @@ static bool post_test_small_heap(void)
 		return false;
 	}
 
-	kputs("heap: allocation A: ");
-	kputhex64((uint64_t)allocation_a);
-	kputc('\n');
-
-	kputs("heap: allocation B: ");
-	kputhex64((uint64_t)allocation_b);
-	kputc('\n');
-
-	kputs("heap: allocation C: ");
-	kputhex64((uint64_t)allocation_c);
-	kputc('\n');
+	kverbosef("post_test_small_heap: allocation A at %p\n", allocation_a);
+	kverbosef("post_test_small_heap: allocation B at %p\n", allocation_b);
+	kverbosef("post_test_small_heap: allocation C at %p\n", allocation_c);
 
 	if (!kfree(allocation_b)) {
 		return false;
@@ -410,9 +402,7 @@ static bool post_test_large_heap(void)
 		}
 	}
 
-	kputs("heap: large allocation: ");
-	kputhex64((uint64_t)large_allocation);
-	kputc('\n');
+	kverbosef("post_test_large_heap: large allocation at %p\n", large_allocation);
 
 	heap_dump();
 
@@ -438,14 +428,16 @@ static bool post_fail(const char *message)
 
 static bool post_memory(void)
 {
-	kputln("vm_kern: testing virtual allocations");
+	kputln("post_test_vm_kern: testing virtual allocations");
 
 	if (!post_test_vm_kern()) {
-		return post_fail("vm_kern: allocation test failed");
+		return post_fail("post_test_vm_kern: allocation test failed");
 	}
 
-	kputln("vm_kern: allocation test passed");
+	kputln("post_test_vm_kern: allocation test passed");
 	vm_kern_dump();
+
+	kputln("post_test_small_heap: testing allocation, reuse and free");
 
 	if (!post_test_small_heap()) {
 		return post_fail("post_test_small_heap: allocation, reuse or free test failed");
@@ -460,7 +452,7 @@ static bool post_memory(void)
 		return post_fail("post_test_large_heap: multi-page allocation/free test failed");
 	}
 
-	kputln("heap: multi-page allocation/free test passed");
+	kputln("post_test_large_heap: multi-page allocation/free test passed");
 	heap_dump();
 
 	return true;
