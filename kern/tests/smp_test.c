@@ -316,8 +316,18 @@ static bool test_mlfq_concurrent(void)
 		if (!check(g_mlfq.progress[index] != 0ULL, name, "a thread never ran (starved)")) return false;
 	}
 
-	for (uint32_t cpu = 0U; cpu < g_ncpu; cpu++) {
-		if (!check(g_mlfq.cpu_hits[cpu] != 0ULL, name, "a CPU never ran one of the workers")) return false;
+	/*
+	 * Every CPU that is free to take the work ran some of it. The boot CPU is
+	 * left out of the requirement: it also runs the coordinator and every legacy
+	 * thread (bootd, the boot chime), so it can be busier than the others, and
+	 * placement then rightly sends the workers elsewhere.
+	 */
+	kprintf("smp_test: mlfq: iterations per CPU:");
+	for (uint32_t cpu = 0U; cpu < g_ncpu; cpu++) kprintf(" cpu%u=%llu", cpu, (unsigned long long)g_mlfq.cpu_hits[cpu]);
+	kprintf("\n");
+
+	for (uint32_t cpu = 1U; cpu < g_ncpu; cpu++) {
+		if (!check(g_mlfq.cpu_hits[cpu] != 0ULL, name, "a secondary CPU never ran one of the workers")) return false;
 	}
 
 	return check(demoted, name, "no CPU-bound thread was demoted");

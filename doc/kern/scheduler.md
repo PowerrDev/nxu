@@ -1,6 +1,6 @@
 # Scheduler
 
-NXU uses a single-processor fixed-priority run queue with a multilevel feedback queue (MLFQ) policy layered on top. Threads are the schedulable objects, `processor_t` owns CPU-local scheduling state, and `run_queue_t` owns runnable-queue ordering.
+NXU uses a fixed-priority run queue per CPU with a multilevel feedback queue (MLFQ) policy layered on top. Each CPU owns its queue and its lock; there is no scheduler-wide lock, and threads are placed, woken and migrated between CPUs as described in [SMP](smp.md) (locking model, thread states, IPIs, balancing). The MLFQ rules below apply to each CPU's queue unchanged, including the boost, which each CPU applies to its own queue on its own ticks. Threads are the schedulable objects, `processor_t` owns CPU-local scheduling state, and `run_queue_t` owns runnable-queue ordering.
 
 Scheduling policy is deliberately separate from the AArch64 context-switch mechanism. Priority policy, queue selection, and quantum accounting can therefore change without replacing the thread machine context or the switch ABI.
 

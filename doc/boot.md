@@ -182,7 +182,8 @@ TTBR1 mapping and transitions the kernel to it before TTBR0 is handed to EL0.
 
 - Only the QEMU raw-image boot path is supported. No firmware protocol is
   implemented.
-- No secondary CPU is released; `-smp 1` is assumed.
+- Secondary CPUs are not released by the boot path in `start.S`: `kern_start_scheduler()`
+  starts them later with PSCI (see [SMP](kern/smp.md)). `-smp 1` still works.
 - No stack guard page and no stack-overflow detection.
 - The boot code cannot drop from EL2 or EL3. If the CPU were delivered at a
   higher exception level, NXU would run there and misbehave; `kern_init()`

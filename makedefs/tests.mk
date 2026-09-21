@@ -97,6 +97,8 @@ TEST_everything_GPU := ,xres=$(QEMU_GPU_XRES),yres=$(QEMU_GPU_YRES)
 TEST_everything_RAMFB := $(QEMU_RAMFB_DEVICE)
 TEST_everything_PASS := ipc_process_test: passed|thread_process_test: passed|process_control_test: passed|socket_process_test: passed|sound_test: passed|boot_chime_play: playback started|unified_boot_summary: UIService Voyager.app running|unified_boot_summary: all 5 test(s) passed
 TEST_everything_TIMEOUT := 240
+# Four CPUs: the secondaries are up and idle while the whole system runs on the boot CPU.
+TEST_everything_SMP := 4
 
 
 # -- Graphical boot ------------------------------------------------------------
