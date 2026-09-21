@@ -291,7 +291,7 @@ static void boot_chime_thread(void *parameter)
 
 	bool ok = boot_chime_play();
 
-	BOOT_CHIME_LOG("boot chime %s\n", ok ? "finished" : "did not play");
+	BOOT_CHIME_LOG("boot chime %s\n", ok ? "finished" : "did not finish cleanly (an underrun, a write error or no sound device: see the lines above)");
 	g_boot_chime_state = ok ? BOOT_CHIME_PLAYED : BOOT_CHIME_FAILED;
 }
 

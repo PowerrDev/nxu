@@ -128,6 +128,61 @@ static void sched_mlfq_assign(thread_t thread, uint8_t level)
 	thread->sched_pri = sched_mlfq_priority[level];
 	thread->base_pri = sched_mlfq_priority[level];
 	thread->quantum_remaining = sched_mlfq_quantum[level];
+	thread->mlfq_ticks = 0U;
+}
+
+/*
+ * sched_mlfq_charge_tick
+ *
+ * Charge one timer tick to the thread that was running, and demote it when
+ * it has spent what its level allows. Returns whether it was demoted; the
+ * caller then has to ask for preemption, because a thread that just lost
+ * priority may no longer be the best one to run.
+ *
+ * Two things can spend a level. The quantum runs out when the thread runs
+ * that long in one go (Rule 4 as before). The allotment, one quantum's worth
+ * of ticks at the level, runs out however the ticks were spread: every
+ * dispatch refills the quantum, so a thread that keeps yielding never
+ * exhausts it and, without the allotment, would stay at level 0 for ever and
+ * starve everything below it (the boot chime thread, bootd) until the boost.
+ * Blocking is what shows a thread is not CPU-bound, so that is what clears
+ * the allotment (see sched_switch).
+ *
+ * The bottom level has nowhere to fall to; running out of quantum there only
+ * grants a fresh one. Called with g_sched.lock held.
+ */
+static bool sched_mlfq_charge_tick(thread_t thread, bool *quantum_expired)
+{
+	if (thread->quantum_remaining != 0U) thread->quantum_remaining--;
+	if (thread->mlfq_ticks != UINT32_MAX) thread->mlfq_ticks++;
+
+	bool expired = thread->quantum_remaining == 0U;
+	bool spent = thread->mlfq_level < SCHED_MLFQ_BOTTOM_LEVEL && thread->mlfq_ticks >= sched_mlfq_quantum[thread->mlfq_level];
+
+	if (quantum_expired != 0) *quantum_expired = expired;
+
+	if (!expired && !spent) return false;
+
+	/*
+	 * sched_mlfq_assign() also grants the new level's quantum and clears the
+	 * allotment, so there is no separate reset here.
+	 */
+	uint8_t level = thread->mlfq_level;
+
+	if (level < SCHED_MLFQ_BOTTOM_LEVEL) level++;
+	sched_mlfq_assign(thread, level);
+	return true;
+}
+
+/*
+ * sched_mlfq_blocked
+ *
+ * A thread that sleeps is not CPU-bound: what it ran at its level so far
+ * no longer counts against it. Called with g_sched.lock held.
+ */
+static void sched_mlfq_blocked(thread_t thread)
+{
+	thread->mlfq_ticks = 0U;
 }
 
 /*
@@ -357,6 +412,8 @@ static bool sched_switch(sched_switch_reason_t reason)
 		ml_irq_restore(irq_state);
 		return false;
 	}
+
+	if (reason == SCHED_SWITCH_BLOCK) sched_mlfq_blocked(current);
 
 	if (reason == SCHED_SWITCH_PREEMPT) {
 		thread_t candidate = run_queue_peek(&processor->runq);
@@ -780,25 +837,17 @@ void sched_tick(void)
 		thread_is_active(thread) &&
 		!thread_is_idle(thread)
 	) {
-		if (thread->quantum_remaining != 0U) thread->quantum_remaining--;
+		bool quantum_expired;
 
-		if (thread->quantum_remaining == 0U) {
-			processor->quantum_expiration_count++;
-			processor->preemption_pending = true;
+		/*
+		 * Rule 4, the demotion: the thread ran through its whole quantum,
+		 * or through its level's allotment across several yields, without
+		 * blocking, so treat it as CPU-bound and drop it one MLFQ level.
+		 */
+		bool demoted = sched_mlfq_charge_tick(thread, &quantum_expired);
 
-			/*
-			 * Rule 4, the demotion: the thread ran through its entire
-			 * quantum without voluntarily giving up the CPU (blocking or
-			 * yielding resets the quantum without ever reaching zero
-			 * here), so treat it as CPU-bound and drop it one MLFQ level.
-			 * sched_mlfq_assign() also grants the new level's quantum, so
-			 * there is no separate sched_quantum_reset() call here.
-			 */
-			uint8_t level = thread->mlfq_level;
-
-			if (level < SCHED_MLFQ_BOTTOM_LEVEL) level++;
-			sched_mlfq_assign(thread, level);
-		}
+		if (quantum_expired) processor->quantum_expiration_count++;
+		if (demoted) processor->preemption_pending = true;
 	}
 
 	/*
@@ -930,6 +979,52 @@ bool sched_mlfq_self_test(void)
 
 	sched_mlfq_assign(&hog, (uint8_t)(hog.mlfq_level + 1U));
 	if (hog.mlfq_level != SCHED_MLFQ_BOTTOM_LEVEL) return false;
+
+	/*
+	 * A thread that yields every tick never runs out its quantum (each
+	 * dispatch refills it) but still spends its level's allotment: it sinks
+	 * one level per quantum's worth of ticks, and takes no earlier than that.
+	 */
+	sched_mlfq_test_thread(&hog, SCHED_MLFQ_TOP_LEVEL);
+
+	for (uint8_t level = SCHED_MLFQ_TOP_LEVEL; level < SCHED_MLFQ_BOTTOM_LEVEL; level++) {
+		uint32_t ticks = sched_mlfq_level_quantum(level);
+
+		for (uint32_t tick = 1U; tick <= ticks; tick++) {
+			if (hog.mlfq_level != level) return false;
+
+			bool demoted = sched_mlfq_charge_tick(&hog, 0);
+
+			if (demoted != (tick == ticks)) return false;
+
+			/* The yield: the next dispatch grants a whole quantum again. */
+			if (!demoted) hog.quantum_remaining = sched_mlfq_level_quantum(level);
+		}
+
+		if (hog.mlfq_level != level + 1U) return false;
+		if (hog.mlfq_ticks != 0U) return false;
+	}
+
+	/* The bottom level has nowhere lower to go. */
+	for (uint32_t tick = 0U; tick < sched_mlfq_level_quantum(SCHED_MLFQ_BOTTOM_LEVEL) * 2U; tick++) {
+		(void)sched_mlfq_charge_tick(&hog, 0);
+		if (hog.mlfq_level != SCHED_MLFQ_BOTTOM_LEVEL) return false;
+	}
+
+	/* Sleeping clears the allotment, so a thread that blocks between short bursts stays where it is. */
+	sched_mlfq_test_thread(&hog, SCHED_MLFQ_TOP_LEVEL);
+
+	for (uint32_t round = 0U; round < 8U; round++) {
+		for (uint32_t tick = 1U; tick < sched_mlfq_level_quantum(SCHED_MLFQ_TOP_LEVEL); tick++) {
+			if (sched_mlfq_charge_tick(&hog, 0)) return false;
+
+			hog.quantum_remaining = sched_mlfq_level_quantum(SCHED_MLFQ_TOP_LEVEL);
+		}
+
+		sched_mlfq_blocked(&hog);
+	}
+
+	if (hog.mlfq_level != SCHED_MLFQ_TOP_LEVEL) return false;
 
 	/*
 	 * Rule 5: threads parked below the top queue, and the currently

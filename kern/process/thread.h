@@ -124,6 +124,14 @@ struct thread {
 	 */
 	uint8_t mlfq_level;
 
+	/*
+	 * Timer ticks this thread has run at its current level since it last
+	 * blocked or changed level. Unlike quantum_remaining, dispatching or
+	 * yielding does not refill it, so a thread that spins in sched_yield()
+	 * still runs out of its allotment and sinks. See sched_tick().
+	 */
+	uint32_t mlfq_ticks;
+
 	uint32_t suspend_count;
 	uint32_t quantum_remaining;
 

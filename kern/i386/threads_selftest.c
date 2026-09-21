@@ -319,6 +319,14 @@ static bool test_tick_and_preempt(void)
 
 	SELFTEST_CHECK(self->mlfq_level == SCHED_MLFQ_TOP_LEVEL, "test starts at the top MLFQ level");
 
+	/*
+	 * The earlier phases ran with the timer on, and every real tick that
+	 * landed on this thread counts against its level's allotment (yielding
+	 * refills the quantum but not the allotment). Start the count from zero
+	 * so the synthetic ticks below are the only ones.
+	 */
+	self->mlfq_ticks = 0U;
+
 	/* A full quantum of ticks demotes one level and requests preemption. */
 	uint32_t quantum = sched_mlfq_level_quantum(SCHED_MLFQ_TOP_LEVEL);
 

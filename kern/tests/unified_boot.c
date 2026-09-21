@@ -14,6 +14,7 @@
 #include <kern/boot/boot_args.h>
 #include <kern/boot/boot_chime.h>
 #include <kern/console/console.h>
+#include <kern/ipc/ipc_init.h>
 #include <kern/machine/timer.h>
 #include <kern/process/proc.h>
 #include <kern/process/thread.h>
@@ -32,8 +33,8 @@
 /* Highest PID the summary looks for when it lists what is still running. */
 #define UNIFIED_BOOT_PID_SCAN_MAX 64U
 
-/* How long the tests wait for the boot chime to finish before they start anyway. */
-#define UNIFIED_BOOT_CHIME_WAIT_US 30000000ULL
+/* How long the tests wait for bootd to publish the bootstrap registry before they start anyway. */
+#define UNIFIED_BOOT_REGISTRY_WAIT_US 10000000ULL
 
 /* How long the summary watches the UI loop to see that it is still cycling. */
 #define UNIFIED_BOOT_UI_WATCH_US 100000ULL
@@ -164,22 +165,22 @@ static bool unified_boot_summary(void)
 }
 
 /*
- * The tests start once the chime is done: starting a process is long
- * synchronous work, and a thread that spins waiting for one keeps the top
- * scheduler level. Known limitation: even so the chime is fed too slowly while
- * the UI loop and this thread yield in loops, and it plays with underruns
- * (see doc/testing.md); the summary says so.
+ * ipc_process_test spawns a bootd of its own when there is no bootstrap
+ * registry yet, and a second bootd would replace the one this boot runs. So
+ * the tests wait for the registry, which is the one thing they need from the
+ * boot; the chime, the other services and the UI do not hold them up.
  */
-static void unified_boot_wait_for_chime(void)
+static void unified_boot_wait_for_registry(void)
 {
-	uint64_t deadline = timer_get_microseconds() + UNIFIED_BOOT_CHIME_WAIT_US;
+	uint64_t deadline = timer_get_microseconds() + UNIFIED_BOOT_REGISTRY_WAIT_US;
 
-	if (boot_chime_state() != BOOT_CHIME_PLAYING) return;
+	while (ipc_bootstrap_registry_port() == IPC_PORT_NULL) {
+		if (timer_get_microseconds() > deadline) {
+			UNIFIED_BOOT_LOG("bootd did not publish the bootstrap registry in time: the tests start anyway\n");
+			return;
+		}
 
-	UNIFIED_BOOT_LOG("waiting for the boot chime to finish before the tests start\n");
-
-	while (boot_chime_state() == BOOT_CHIME_PLAYING && timer_get_microseconds() < deadline) {
-		if (!sched_yield()) break;
+		if (!sched_yield()) return;
 	}
 }
 
@@ -187,8 +188,15 @@ static void unified_boot_thread(void *parameter)
 {
 	(void)parameter;
 
-	unified_boot_wait_for_chime();
+	unified_boot_wait_for_registry();
 
+	/*
+	 * The process tests start as soon as bootd is up, while the chime plays
+	 * and the other services come up: they do not touch the sound device, and
+	 * the scheduler charges the CPU they use against their own level, not the
+	 * chime thread's. sound_test waits for the chime, which holds the
+	 * exclusive device.
+	 */
 	for (unsigned int index = 0U; index < UNIFIED_TEST_COUNT; index++) {
 		unified_test_t *test = &g_unified_tests[index];
 
