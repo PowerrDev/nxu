@@ -88,7 +88,10 @@ which everything that can share a boot runs together (`kern/tests/unified_boot.c
 It is a normal boot, bootd as PID 1 with logd and patchd and the boot chime, plus
 
 - the UIService session (WindowServer and the Voyager app) on the boot thread,
-  owning the display and taking input, cooperatively yielding to the scheduler;
+  owning the display and taking input, cooperatively yielding to the scheduler
+  (Voyager lists the real volume through the host's directory hook,
+  `UIServiceListDirectory` in `platform/arm64/services/ui_service.c`, which
+  reads the VFS the way a system call would);
 - a kernel thread that, as soon as bootd has published the bootstrap registry
   (while the chime is still playing), runs the ipc, thread, process control,
   socket and sound tests against that live system (the same tests as
