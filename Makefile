@@ -344,6 +344,7 @@ C_SOURCES := \
     kern/tests/xamethyst_process_test.c \
     kern/tests/windowserver_process_test.c \
     kern/tests/about_sevos_process_test.c \
+    kern/tests/unified_boot.c \
     kern/syscall/syscall.c \
     kern/process/thread.c \
     vfs/btrfs/btrfs_chunk.c \
