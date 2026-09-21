@@ -61,9 +61,35 @@ thread_t sched_bootstrap_thread(void);
 thread_t sched_idle_thread(void);
 
 /*
+ * sched_cpu_prepare
+ *
+ * Boot CPU: give a registered secondary CPU its idle thread before starting it.
+ *
+ * sched_cpu_idle
+ *
+ * Secondary CPU: the last thing its start-up does. Marks the CPU online for
+ * scheduling and idles on the boot stack until work is queued on it.
+ */
+bool sched_cpu_prepare(uint32_t cpu);
+__attribute__((noreturn))
+void sched_cpu_idle(void);
+
+/*
+ * sched_thread_can_run_on
+ *
+ * Whether the scheduler would ever place `thread` on `cpu`: its affinity
+ * allows it and that kind of thread can run there (user threads are boot-CPU
+ * only for now). thread_can_run_on_cpu() in the design notes.
+ */
+bool sched_thread_can_run_on(thread_t thread, uint32_t cpu);
+
+/*
  * thread_setrun
  *
- * Queue one runnable non-idle thread on the current processor run queue.
+ * Make one runnable non-idle thread eligible to run: choose a CPU for it (its
+ * affinity, where it last ran, how loaded the CPUs are) and queue it there. A
+ * thread that is still switching out is queued by the CPU that is switching
+ * away, once its context is saved. Safe from any CPU and from interrupt context.
  */
 bool thread_setrun(thread_t thread, sched_queue_placement_t placement);
 
@@ -113,6 +139,17 @@ bool sched_yield(void);
  * after sched_thread_wakeup() makes the thread runnable and it is selected.
  */
 bool sched_block(bool uninterruptible);
+
+/*
+ * sched_block_commit
+ *
+ * The second half of sched_block, for a caller that has already moved the
+ * current thread to the waiting state itself (sched_thread_wait) under a lock
+ * that its waker also takes, so the wakeup cannot slip in between (waitq_block).
+ * Interrupts must stay masked from sched_thread_wait until this returns: an
+ * interrupt in between could switch away from a thread already marked waiting.
+ */
+bool sched_block_commit(void);
 
 /*
  * sched_exit_current
@@ -174,6 +211,9 @@ bool sched_mlfq_self_test(void);
  * sched_validate
  */
 bool sched_validate(void);
+
+/* The cross-CPU run queue invariants (see sched.c); walks every queue, for tests. */
+bool sched_validate_all(void);
 
 /*
  * sched_dump
