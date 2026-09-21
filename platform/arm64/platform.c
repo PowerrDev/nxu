@@ -36,6 +36,11 @@ typedef struct {
 	bool is_rtc;
 	bool is_pcie;
 	bool is_virtio_mmio;
+
+	bool is_psci;
+	bool psci_method_hvc;
+	bool psci_method_smc;
+	bool cpu_disabled;
 } platform_node_t;
 
 typedef struct {
@@ -396,8 +401,47 @@ static void platform_property(
 		return;
 	}
 
+	/* PSCI's conduit: which instruction a CPU_ON call is made with. */
+	if (platform_string_equals(name, "method")) {
+		if (platform_value_string_equals(value, length, "hvc")) {
+			node->psci_method_hvc = true;
+		} else if (platform_value_string_equals(value, length, "smc")) {
+			node->psci_method_smc = true;
+		}
+
+		return;
+	}
+
+	/* A CPU the firmware lists but says must not be used. */
+	if (platform_string_equals(name, "status")) {
+		if (
+			platform_value_string_equals(value, length, "disabled") ||
+			platform_value_string_equals(value, length, "fail")
+		) {
+			node->cpu_disabled = true;
+		}
+
+		return;
+	}
+
 	if (!platform_string_equals(name, "compatible")) {
 		return;
+	}
+
+	if (platform_compatible_contains(
+		value,
+		length,
+		"arm,psci"
+	) || platform_compatible_contains(
+		value,
+		length,
+		"arm,psci-0.2"
+	) || platform_compatible_contains(
+		value,
+		length,
+		"arm,psci-1.0"
+	)) {
+		node->is_psci = true;
 	}
 
 	if (platform_compatible_contains(
@@ -512,6 +556,39 @@ static void platform_end_node(
 	platform_node_t *node = &discovery->nodes[depth];
 
 	platform_t *platform = discovery->platform;
+
+	/*
+	 * /cpus/cpu@N: `reg` is the CPU's MPIDR affinity (its parent has
+	 * #address-cells = 1, #size-cells = 0). Only the affinity fields are
+	 * kept: the other MPIDR bits (MT, U, RES1) are not part of the identity
+	 * PSCI and the GIC match on.
+	 */
+	if (
+		platform_string_starts_with(node->name, "cpu@") &&
+		!node->cpu_disabled
+	) {
+		platform_region_t affinity;
+
+		if (
+			platform_read_reg(node, 0U, &affinity) &&
+			platform->cpu_count < PLATFORM_MAX_CPUS
+		) {
+			platform->cpu_mpidr[platform->cpu_count++] =
+				affinity.base & 0xFF00FFFFFFULL;
+		}
+
+		return;
+	}
+
+	if (node->is_psci) {
+		platform->psci_method = node->psci_method_hvc
+			? PLATFORM_PSCI_HVC
+			: node->psci_method_smc
+				? PLATFORM_PSCI_SMC
+				: PLATFORM_PSCI_NONE;
+
+		return;
+	}
 
 	if (
 		node->is_memory ||
