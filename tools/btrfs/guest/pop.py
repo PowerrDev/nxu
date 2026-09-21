@@ -8,7 +8,7 @@ produces, not what our own driver would expect.
 
 usage: pop.py RECIPE ROOT [FLAGS_FILE]
 
-Recipes: empty minimal tree deep small compressible compress_mix compress_random logbase logops
+Recipes: empty minimal tree deep small compressible compress_mix compress_random logbase logops multi
 Data is deterministic and position dependent (a file read at the wrong offset
 can never hash equal) yet highly compressible, so the images stay small.
 """
@@ -109,6 +109,18 @@ def small(root):
 
 def empty(root):
     pass
+
+
+def multi(root):
+    """The multi-device population: `small` plus data that spans many 64 KiB stripes."""
+    small(root)
+    put(root + "/stripes.bin", pat(60, 0, 3 * 1024 * 1024 + 4321))
+    put(root + "/dir/stripes2.bin", pat(61, 0, 700 * 1024))
+    with open(root + "/dir/rewritten", "wb") as f:
+        f.write(pat(62, 0, 300000))
+        f.flush()
+        os.fsync(f.fileno())
+    pwrite_sync(root + "/dir/rewritten", 100000, pat(63, 100000, 70000))
 
 
 def minimal(root):
@@ -401,7 +413,7 @@ def plain(root):
     pwrite_sync(root + "/plain_sparse", 100000, pat(26, 100000, 4096))
 
 
-RECIPES = {"plain": plain, "empty": empty, "minimal": minimal, "tree": tree, "deep": deep, "small": small, "compressible": compressible, "logbase": logbase, "logops": logops, "compress_mix": compress_mix, "compress_random": compress_random}
+RECIPES = {"plain": plain, "empty": empty, "minimal": minimal, "tree": tree, "deep": deep, "small": small, "compressible": compressible, "multi": multi, "logbase": logbase, "logops": logops, "compress_mix": compress_mix, "compress_random": compress_random}
 
 
 def main():

@@ -301,6 +301,57 @@ if want logtree; then
 	say "built $name"
 fi
 
+# ---- (f4) multi-device filesystems ------------------------------------------
+# Real mkfs.btrfs over several loop devices; Linux mounts them, writes the manifest, and
+# every device image is kept as NAME.<index>.img.zst (index = position given to mkfs; the
+# driver takes them in any order). NAME.info is device 0's superblock dump.
+multidev() {
+	local name=$1 ndev=$2 dprof=$3 mprof=$4
+	local i loops="" first=""
+
+	i=0
+	while [ $i -lt $ndev ]; do
+		rm -f $WORK/$name.$i.img
+		truncate -s 128M $WORK/$name.$i.img
+		l=$(losetup -f --show $WORK/$name.$i.img) || fail "losetup $name.$i"
+		loops="$loops $l"
+		[ -z "$first" ] && first=$l
+		i=$((i + 1))
+	done
+
+	mkfs.btrfs -q -f -L $name -U "$(uuid_for $name)" -d $dprof -m $mprof $loops > $WORK/mkfs.log 2>&1 || { cat $WORK/mkfs.log; fail "mkfs $name"; }
+	btrfs device scan $loops > /dev/null 2>&1
+	mkdir -p /mnt/$name
+	mount -o noatime $first /mnt/$name || fail "mount $name"
+	python3 $GUESTDIR/pop.py multi /mnt/$name || fail "populate $name"
+	sync
+	manifest /mnt/$name "$name.manifest"
+	btrfs filesystem usage /mnt/$name 2>&1 | grep -E "^(Data|Metadata|System)," | sed "s/^/guest: $name: /"
+	umount /mnt/$name || fail "umount $name"
+	btrfs check --readonly $first > $WORK/check.log 2>&1 || { cat $WORK/check.log; fail "btrfs check $name"; }
+	for l in $loops; do losetup -d $l; done
+
+	{ btrfs inspect-internal dump-super -f $WORK/$name.0.img; echo "fs_tree_level: 0"; } > $OUT/$name.info
+	i=0
+	while [ $i -lt $ndev ]; do
+		zstd -19 -q --long=27 -f $WORK/$name.$i.img -o $OUT/$name.$i.img.zst || fail "zstd $name.$i"
+		rm -f $WORK/$name.$i.img
+		i=$((i + 1))
+	done
+	say "built $name ($ndev devices)"
+}
+
+if want multidev; then
+	multidev md-raid1 2 raid1 raid1
+	multidev md-raid0 2 raid0 raid1
+	multidev md-raid10 4 raid10 raid10
+	multidev md-raid1c3 3 raid1c3 raid1c3
+	multidev md-raid1c4 4 raid1c4 raid1c4
+	multidev md-raid5 3 raid5 raid1
+	multidev md-raid6 4 raid6 raid1c3
+	multidev md-single 2 single dup
+fi
+
 # ---- (g) refusal fixtures ---------------------------------------------------
 if want refusal; then
 	simple csum-xxhash 128 small --csum xxhash

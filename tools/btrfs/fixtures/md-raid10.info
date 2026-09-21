@@ -1,0 +1,115 @@
+superblock: bytenr=65536, device=/work/md-raid10.0.img
+---------------------------------------------------------
+csum_type		0 (crc32c)
+csum_size		4
+csum			0x2ac2c892 [match]
+bytenr			65536
+flags			0x1
+			( WRITTEN )
+magic			_BHRfS_M [match]
+fsid			e3b4f327-4fca-5bf4-8199-0f43b68d6cf9
+metadata_uuid		00000000-0000-0000-0000-000000000000
+label			md-raid10
+generation		10
+root			39305216
+sys_array_size		193
+chunk_root_generation	9
+root_level		0
+chunk_root		22052864
+chunk_root_level	0
+log_root		0
+log_root_transid (deprecated)	0
+log_root_level		0
+total_bytes		536870912
+bytes_used		4620288
+sectorsize		4096
+nodesize		16384
+leafsize (deprecated)	16384
+stripesize		4096
+root_dir		6
+num_devices		4
+compat_flags		0x0
+compat_ro_flags		0x3
+			( FREE_SPACE_TREE |
+			  FREE_SPACE_TREE_VALID )
+incompat_flags		0x361
+			( MIXED_BACKREF |
+			  BIG_METADATA |
+			  EXTENDED_IREF |
+			  SKINNY_METADATA |
+			  NO_HOLES )
+cache_generation	0
+uuid_tree_generation	10
+dev_item.uuid		954527d4-ecc2-4e24-9fc2-524b943f2852
+dev_item.fsid		e3b4f327-4fca-5bf4-8199-0f43b68d6cf9 [match]
+dev_item.type		0
+dev_item.total_bytes	134217728
+dev_item.bytes_used	130023424
+dev_item.io_align	4096
+dev_item.io_width	4096
+dev_item.sector_size	4096
+dev_item.devid		1
+dev_item.dev_group	0
+dev_item.seek_speed	0
+dev_item.bandwidth	0
+dev_item.generation	0
+sys_chunk_array[2048]:
+	item 0 key (FIRST_CHUNK_TREE CHUNK_ITEM 22020096)
+		length 16777216 owner 2 stripe_len 65536 type SYSTEM|RAID10
+		io_align 65536 io_width 65536 sector_size 4096
+		num_stripes 4 sub_stripes 2
+			stripe 0 devid 1 offset 22020096
+			dev_uuid 954527d4-ecc2-4e24-9fc2-524b943f2852
+			stripe 1 devid 2 offset 1048576
+			dev_uuid 2cf282e7-9725-4adb-8b12-262ac80e3762
+			stripe 2 devid 3 offset 1048576
+			dev_uuid d8c1f96f-0ae4-4ed4-a5eb-5b2be3c1c087
+			stripe 3 devid 4 offset 1048576
+			dev_uuid c52ef229-26c5-4190-96b2-4450a679642f
+backup_roots[4]:
+	backup 0:
+		backup_tree_root:	39108608	gen: 9	level: 0
+		backup_chunk_root:	22052864	gen: 9	level: 0
+		backup_extent_root:	39059456	gen: 9	level: 0
+		backup_fs_root:		38846464	gen: 9	level: 0
+		backup_dev_root:	39075840	gen: 9	level: 0
+		csum_root:	38862848	gen: 9	level: 0
+		backup_total_bytes:	536870912
+		backup_bytes_used:	466944
+		backup_num_devices:	4
+
+	backup 1:
+		backup_tree_root:	39305216	gen: 10	level: 0
+		backup_chunk_root:	22052864	gen: 9	level: 0
+		backup_extent_root:	39256064	gen: 10	level: 0
+		backup_fs_root:		39288832	gen: 10	level: 0
+		backup_dev_root:	39075840	gen: 9	level: 0
+		csum_root:	39239680	gen: 10	level: 0
+		backup_total_bytes:	536870912
+		backup_bytes_used:	4620288
+		backup_num_devices:	4
+
+	backup 2:
+		backup_tree_root:	38977536	gen: 7	level: 0
+		backup_chunk_root:	22020096	gen: 5	level: 0
+		backup_extent_root:	38862848	gen: 7	level: 0
+		backup_fs_root:		38813696	gen: 5	level: 0
+		backup_dev_root:	38846464	gen: 5	level: 0
+		csum_root:	38879232	gen: 5	level: 0
+		backup_total_bytes:	536870912
+		backup_bytes_used:	147456
+		backup_num_devices:	4
+
+	backup 3:
+		backup_tree_root:	38961152	gen: 8	level: 0
+		backup_chunk_root:	22036480	gen: 8	level: 0
+		backup_extent_root:	38797312	gen: 8	level: 0
+		backup_fs_root:		38813696	gen: 5	level: 0
+		backup_dev_root:	38928384	gen: 8	level: 0
+		csum_root:	38879232	gen: 5	level: 0
+		backup_total_bytes:	536870912
+		backup_bytes_used:	147456
+		backup_num_devices:	4
+
+
+fs_tree_level: 0
