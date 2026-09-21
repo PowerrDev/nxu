@@ -1,11 +1,30 @@
+#include <kern/machine/smp.h>
 #include <kern/sched_prism/processor.h>
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
-static struct processor g_boot_processor;
+/* machine_cpu_id() reads the first word of the per-CPU object as the logical id. */
+_Static_assert(offsetof(struct processor, cpu_id) == 0, "struct processor must start with cpu_id");
+
+static struct processor g_processors[NXU_MAX_CPUS];
+static uint32_t g_processor_count;
 static bool g_processor_initialized;
+
+/*
+ * Initialise one slot. The state stays OFFLINE until the CPU reports in
+ * (boot CPU: immediately).
+ */
+static void processor_init_slot(processor_t processor, uint32_t cpu_id, uint64_t mpidr)
+{
+	memset(processor, 0, sizeof(*processor));
+	processor->cpu_id = cpu_id;
+	processor->mpidr = mpidr;
+	processor->state = PROCESSOR_OFFLINE;
+	run_queue_init(&processor->runq);
+}
 
 /*
  * processor_bootstrap
@@ -14,14 +33,15 @@ bool processor_bootstrap(void)
 {
 	if (g_processor_initialized) return true;
 
-	memset(&g_boot_processor, 0, sizeof(g_boot_processor));
+	processor_init_slot(&g_processors[0], 0U, machine_cpu_mpidr());
+	g_processors[0].state = PROCESSOR_STARTING;
+	g_processors[0].state = PROCESSOR_RUNNING;
 
-	g_boot_processor.cpu_id = 0U;
-	g_boot_processor.state = PROCESSOR_STARTING;
-	run_queue_init(&g_boot_processor.runq);
-	g_boot_processor.state = PROCESSOR_RUNNING;
-
+	g_processor_count = 1U;
 	g_processor_initialized = true;
+
+	/* From here `current_processor()` on the boot CPU is a register read. */
+	machine_cpu_local_set(&g_processors[0]);
 	return true;
 }
 
@@ -30,7 +50,55 @@ bool processor_bootstrap(void)
  */
 processor_t current_processor(void)
 {
-	return g_processor_initialized ? &g_boot_processor : 0;
+	void *local = machine_cpu_local();
+
+	if (local != 0) return local;
+	return g_processor_initialized ? &g_processors[0] : 0;
+}
+
+/*
+ * processor_register
+ */
+processor_t processor_register(uint32_t cpu_id, uint64_t mpidr)
+{
+	if (!g_processor_initialized || cpu_id == 0U || cpu_id >= NXU_MAX_CPUS) return 0;
+	if (cpu_id < g_processor_count && g_processors[cpu_id].mpidr != 0ULL) return 0;
+
+	processor_init_slot(&g_processors[cpu_id], cpu_id, mpidr);
+
+	if (cpu_id >= g_processor_count) g_processor_count = cpu_id + 1U;
+	return &g_processors[cpu_id];
+}
+
+/*
+ * processor_by_id
+ */
+processor_t processor_by_id(uint32_t cpu_id)
+{
+	if (!g_processor_initialized || cpu_id >= g_processor_count) return 0;
+	return &g_processors[cpu_id];
+}
+
+/*
+ * processor_count
+ */
+uint32_t processor_count(void)
+{
+	return g_processor_count;
+}
+
+/*
+ * processor_online_set
+ */
+void processor_online_set(nxu_cpuset_t *set)
+{
+	cpuset_clear(set);
+
+	for (uint32_t cpu = 0U; cpu < g_processor_count; cpu++) {
+		processor_state_t state = __atomic_load_n(&g_processors[cpu].state, __ATOMIC_ACQUIRE);
+
+		if (state == PROCESSOR_RUNNING || state == PROCESSOR_IDLE) cpuset_add(set, cpu);
+	}
 }
 
 /*
@@ -40,7 +108,7 @@ bool processor_validate(processor_t processor)
 {
 	if (
 		processor == 0 ||
-		processor->cpu_id != 0U ||
+		processor->cpu_id >= NXU_MAX_CPUS ||
 		processor->state == PROCESSOR_OFFLINE ||
 		processor->state == PROCESSOR_SHUTDOWN ||
 		!run_queue_validate(&processor->runq)
