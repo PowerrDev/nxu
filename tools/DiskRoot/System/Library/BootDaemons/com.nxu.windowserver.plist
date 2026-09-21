@@ -14,6 +14,9 @@
 	<key>KeepAlive</key>
 	<true/>
 
+	<key>AllowDisplay</key>
+	<true/>
+
 	<key>DisabledInSafeMode</key>
 	<true/>
 
