@@ -89,8 +89,9 @@ It is a normal boot, bootd as PID 1 with logd and patchd and the boot chime, plu
 
 - the UIService session (WindowServer and the Voyager app) on the boot thread,
   owning the display and taking input, cooperatively yielding to the scheduler;
-- a kernel thread that, once the chime is done, runs the ipc, thread, process
-  control, socket and sound tests against that live system (the same tests as
+- a kernel thread that, as soon as bootd has published the bootstrap registry
+  (while the chime is still playing), runs the ipc, thread, process control,
+  socket and sound tests against that live system (the same tests as
   the standalone ones; `ipc_process_test` reuses the running bootd instead of
   starting a second, `process_control_test_shared` skips the check that every
   page was given back, since other work moves the page count, and
@@ -135,15 +136,16 @@ they do not fight the UI session for the display.
 
 ### Known limitations
 
-- **The boot chime is degraded here.** Threads that wait by yielding in a loop
-  (the UI loop, the test thread) never use up their scheduler quantum, so the
-  multilevel feedback queues keep them at the top level and starve the demoted
-  bootd and the chime thread until the four second boost. In the unified boot
-  the 2.4 s chime takes several seconds and reports an underrun; the summary says
-  so. `make test TEST=sound` and a normal boot (`make run-console`) play it
-  cleanly, and `make check` verifies the recording there, not in `everything`.
-  Fixing it means fixing the scheduler (demote a thread that only yields, or give
-  waiting kernel threads a timed sleep).
+- **The boot chime shares the CPU with threads that only yield.** The UI loop and
+  the test thread wait by yielding in a loop. Yielding used to refill their
+  scheduler quantum, so the multilevel feedback queues kept them at the top level
+  and starved the demoted chime thread until the four second boost: the 2.4 s
+  chime took over six seconds and underran. The scheduler now also charges a
+  per-level allotment that yields do not refill (`doc/kern/scheduler.md`, rule 4),
+  so such threads sink below the chime thread, which sleeps between periods and
+  stays on top. In the unified boot the chime now plays in about 2.5 s with no
+  underrun. `make check` verifies the recording in the standalone `sound` row,
+  not in `everything`.
 - Only headless runs of the unified boot were verified; the cocoa window and the
   host speakers were not exercised.
 - Tests run one after another in one kernel thread on a 16 KiB kernel stack.
