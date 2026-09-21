@@ -61,11 +61,14 @@ ipc_process_test(void)
 	proc_t proc_b = 0;
 	bool passed = false;
 
-	loader_status_t status_bootd = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/bootd", "bootd", &proc_bootd);
-	if (status_bootd != LOADER_STATUS_OK) {
-		kputs("ipc_process_test: spawning bootd failed: ");
-		kputln(loader_status_name(status_bootd));
-		return false;
+	/* A boot that already runs bootd (the unified boot) has the registry: a second bootd would replace it. */
+	if (ipc_bootstrap_registry_port() == IPC_PORT_NULL) {
+		loader_status_t status_bootd = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/bootd", "bootd", &proc_bootd);
+		if (status_bootd != LOADER_STATUS_OK) {
+			kputs("ipc_process_test: spawning bootd failed: ");
+			kputln(loader_status_name(status_bootd));
+			return false;
+		}
 	}
 
 	if (!ipc_process_test_wait_registry()) {
