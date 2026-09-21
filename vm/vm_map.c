@@ -197,6 +197,24 @@ bool vm_map_reserve(
 	return true;
 }
 
+bool vm_map_region_at_locked(
+	const vm_address_space_t *space,
+	uint64_t va,
+	vm_user_protection_t *out_protection
+)
+{
+	if (space == 0) return false;
+
+	for (vm_map_entry_t entry = space->mmap_entries; entry != 0; entry = entry->next) {
+		if (va >= entry->start_va && va < entry->end_va) {
+			if (out_protection != 0) *out_protection = entry->protection;
+			return true;
+		}
+	}
+
+	return false;
+}
+
 bool vm_map_region_at(
 	const vm_address_space_t *space,
 	uint64_t va,
