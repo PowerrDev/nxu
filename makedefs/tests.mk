@@ -41,6 +41,7 @@ TEST_GUI_STACK := UISERVICE=1 WINDOWSERVER=1
 TEST_GUI_DISPLAY := $(QEMU_DISPLAY_BACKEND)
 
 TEST_IDS := \
+    everything \
     ui-about \
     ui-voyager \
     windowserver-about \
@@ -54,6 +55,42 @@ TEST_IDS := \
     windowserver-process \
     about-sevos-process \
     sound
+
+
+# -- Everything at once --------------------------------------------------------
+
+# What `make run` boots: one kernel, one QEMU, everything that can share a boot
+# running in it (kern/tests/unified_boot.h). The boot is a normal one -- bootd
+# as PID 1 with logd and patchd, the boot chime -- with the UIService session
+# (WindowServer + the Voyager app) on the boot thread and a kernel thread that
+# runs ipc-process, thread-process, process-control, socket-process and sound
+# against the live system, then prints one unified_boot_summary block.
+#
+# Left out, and why (the code decides, not the names):
+#   journal-crash        halts the kernel after crashing mid-transaction on purpose
+#   fault-process        exists to fault user processes on purpose
+#   ui-about             the same session as ui-voyager with a different app;
+#                        one session, one app: Voyager is the richer one
+#   windowserver-about   ui-about again (both bootstrap WindowServer, then run About)
+#   windowserver-process a second display server: the userland WindowServer
+#                        claims the one display the UI session already owns
+#   about-sevos-process  needs that userland WindowServer to draw into
+#   xamethyst-process    XAmethyst claims the display too (it replaces WindowServer)
+#
+# `make check` runs it headless: the same kernel, -display none and the wav
+# audio backend. Every pass line below must show, and the recording must hold
+# the boot chime, then the tone, then playsound's chime.
+TEST_everything_GROUP := Everything at once
+TEST_everything_DESC := Everything that can run together, in action (what make run boots)
+TEST_everything_CFLAGS := -DNXU_UNIFIED_BOOT_TEST -DNXU_UI_SERVICE_APP_VOYAGER
+TEST_everything_FRAMEWORKS := $(TEST_GUI_STACK)
+TEST_everything_DISPLAY := $(TEST_GUI_DISPLAY)
+TEST_everything_GPU := ,xres=$(QEMU_GPU_XRES),yres=$(QEMU_GPU_YRES)
+TEST_everything_RAMFB := $(QEMU_RAMFB_DEVICE)
+TEST_everything_PASS := ipc_process_test: passed|thread_process_test: passed|process_control_test: passed|socket_process_test: passed|sound_test: passed|boot_chime_thread: boot chime finished|unified_boot_summary: UIService Voyager.app running|unified_boot_summary: all 5 test(s) passed
+TEST_everything_TIMEOUT := 240
+TEST_everything_CAPTURE := 1
+TEST_everything_VERIFY := python3 tools/audio/verify_capture.py @CAPTURE@ tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.wav --chime-first --tone --chimes 1
 
 
 # -- Graphical boot ------------------------------------------------------------
@@ -207,8 +244,8 @@ test-list:
 
 check-list:
 
-	@printf '%s\t%s\t%s\t%s\t%s\t%s\n' 'default' '$(CHECK_TIMEOUT)' '$(CHECK_DEFAULT_PASS)' '-' '-' '-'
-	@$(foreach id,$(CHECK_IDS),printf '%s\t%s\t%s\t%s\t%s\t%s\n' '$(id)' '$(or $(TEST_$(id)_TIMEOUT),$(CHECK_TIMEOUT))' '$(TEST_$(id)_PASS)' '$(or $(TEST_$(id)_CFLAGS),-)' '$(if $(TEST_$(id)_CAPTURE),1,-)' '$(or $(TEST_$(id)_VERIFY),-)';)
+	@printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'default' '$(CHECK_TIMEOUT)' '$(CHECK_DEFAULT_PASS)' '-' '-' '-' '-'
+	@$(foreach id,$(CHECK_IDS),printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' '$(id)' '$(or $(TEST_$(id)_TIMEOUT),$(CHECK_TIMEOUT))' '$(TEST_$(id)_PASS)' '$(or $(TEST_$(id)_CFLAGS),-)' '$(if $(TEST_$(id)_CAPTURE),1,-)' '$(or $(TEST_$(id)_VERIFY),-)' '$(or $(TEST_$(id)_FRAMEWORKS),-)';)
 
 
 check-i386-list:
