@@ -2,7 +2,7 @@
 """
 Check what QEMU's wav audiodev recorded while the kernel played the sound test.
 
-usage: verify_capture.py <capture.wav> <Boot_Audio.wav> [--chime-first] --tone [--chimes N]
+usage: verify_capture.py <capture.wav> <Boot_Audio.wav> --tone [--chimes N]
 
 The capture is what really reached the host's audio backend, so this is the
 proof that the driver's samples arrived: not silent, the right length, and the
@@ -15,9 +15,6 @@ right samples.
   --chimes N   the boot chime, N times, one after another after that: each is
                located by a 64-frame signature from the reference file, then
                compared frame by frame with it.
-  --chime-first  one chime before the tone instead: the recording of a boot that
-               plays the chime as it starts and runs the tone test after it (the
-               unified boot). The tone is then the first sound after that chime.
 
 A recording stops where QEMU stopped, and QEMU does not finalize the header when
 it is killed or exits from a debug-exit device: the sizes in it are 0 then, so
@@ -120,8 +117,8 @@ def compare(capture, at, reference, first, count, tolerance):
     return good, limit
 
 
-def verify_tone(capture, search_from=0):
-    start = first_sound(capture, search_from, 0)
+def verify_tone(capture):
+    start = first_sound(capture, 0, 0)
 
     if not check(start is not None, "the capture is not silent"):
         return None
@@ -154,8 +151,7 @@ def verify_tone(capture, search_from=0):
     return tail_start + TAIL_FRAMES
 
 
-def verify_chime(capture, reference, search_from, number, label=None):
-    name = label or "chime %d" % number
+def verify_chime(capture, reference, search_from, number):
     frames = len(reference) // 2
     window = 64
 
@@ -164,17 +160,17 @@ def verify_chime(capture, reference, search_from, number, label=None):
     signature = reference[2 * signature_at:2 * (signature_at + window)].tobytes()
     position = capture.tobytes().find(signature, 4 * search_from)
 
-    if not check(position >= 0 and position % 4 == 0, "%s: its signature is in the recording" % name):
+    if not check(position >= 0 and position % 4 == 0, "chime %d: its signature is in the recording" % number):
         return None
 
     start = position // 4 - signature_at
 
     good, limit = compare(capture, start, reference, 0, frames, 2)
 
-    print("      %s starts at frame %d (%.0f ms)" % (name, start, start * 1000.0 / RATE))
-    check(limit == frames, "%s: the recording holds all %d frames (%d)" % (name, frames, limit))
-    check(good == frames, "%s: every frame equals Boot_Audio.wav (%d of %d)" % (name, good, frames))
-    check(abs(frames * 1000 // RATE - 2356) <= 1, "%s: %d ms long" % (name, frames * 1000 // RATE))
+    print("      chime %d starts at frame %d (%.0f ms)" % (number, start, start * 1000.0 / RATE))
+    check(limit == frames, "chime %d: the recording holds all %d frames (%d)" % (number, frames, limit))
+    check(good == frames, "chime %d: every frame equals Boot_Audio.wav (%d of %d)" % (number, good, frames))
+    check(abs(frames * 1000 // RATE - 2356) <= 1, "chime %d: %d ms long" % (number, frames * 1000 // RATE))
     return start + frames
 
 
@@ -191,14 +187,8 @@ def main(argv):
 
     position = 0
 
-    if "--chime-first" in argv:
-        position = verify_chime(capture, reference, 0, 0, "boot chime")
-
-        if position is None:
-            return 1
-
     if "--tone" in argv:
-        position = verify_tone(capture, position)
+        position = verify_tone(capture)
 
         if position is None:
             return 1
