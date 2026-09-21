@@ -63,6 +63,10 @@ I386_OBJECTS := \
 
 I386_QEMU_FLAGS ?= -display none -serial stdio -monitor none -no-reboot -device isa-debug-exit,iobase=0xf4,iosize=0x04
 
+# run-i386 has a sound device on the host's speakers (the VirtIO Sound driver's
+# /dev/audio0, see doc/drivers/virtio-sound.md); the tests use the wav backend.
+I386_QEMU_AUDIO ?= -audiodev coreaudio,id=snd0 -device virtio-sound-pci,audiodev=snd0
+
 .PHONY: i386 run-i386 test-i386
 
 -include $(I386_OBJECTS:%.o=%.d)
@@ -103,6 +107,7 @@ run-i386: $(I386_KERNEL)
 	qemu-system-i386 \
 		-kernel $(I386_KERNEL) \
 		-m 128M \
+		$(I386_QEMU_AUDIO) \
 		$(I386_QEMU_FLAGS)
 
 
