@@ -1,6 +1,9 @@
 #ifndef NXU_TIMER_H
 #define NXU_TIMER_H
 
+/* The EL1 physical timer's private peripheral interrupt: the same INTID on every CPU. */
+#define PHYSICAL_TIMER_INTID 30U
+
 #include <stdint.h>
 
 /**
@@ -93,6 +96,16 @@ void timer_delay_ms(uint64_t milliseconds);
  * called from interrupt context: it rewrites state the handler reads.
  */
 void timer_start_periodic(uint32_t frequency_hz);
+
+/**
+ * timer_start_local - Arm the calling CPU's physical timer.
+ *
+ * The generic timer is banked per CPU: each CPU has its own CNTP_* registers
+ * and its own PPI. Uses the rate timer_start_periodic() set up on the boot
+ * CPU, which must have run first. The CPU must also enable the timer PPI in
+ * its own redistributor (gic_enable_ppi()).
+ */
+void timer_start_local(void);
 
 /**
  * timer_handle_interrupt - Service a timer interrupt.

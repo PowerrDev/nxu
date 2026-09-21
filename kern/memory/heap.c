@@ -1,4 +1,5 @@
 #include <kern/console/console.h>
+#include <kern/lock.h>
 #include <kern/memory/heap.h>
 
 #include <vm/pmm.h>
@@ -80,6 +81,9 @@ typedef struct {
 } heap_state_t;
 
 static heap_state_t g_heap;
+
+/* Serialises the heap's pages, blocks and large-allocation records; outermost of the memory locks. */
+static nxu_rlock_t g_heap_lock = NXU_RLOCK_INIT;
 
 static bool heap_align_up(
 	size_t value,
@@ -641,6 +645,8 @@ static bool heap_free_large(
 
 void *kmalloc(size_t size)
 {
+	NXU_RLOCK_GUARD(&g_heap_lock);
+
 	if (
 		!g_heap.initialized ||
 		size == 0U
@@ -733,6 +739,8 @@ void *kcalloc(
 
 bool kfree(void *address)
 {
+	NXU_RLOCK_GUARD(&g_heap_lock);
+
 	if (
 		!g_heap.initialized ||
 		address == 0

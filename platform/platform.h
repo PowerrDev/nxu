@@ -9,6 +9,16 @@
 #define PLATFORM_MAX_MEMORY_REGIONS 8U
 #define PLATFORM_MAX_VIRTIO_MMIO_DEVICES 32U
 
+/* The most CPUs platform discovery will record; the kernel's own limit (NXU_MAX_CPUS) may be lower. */
+#define PLATFORM_MAX_CPUS 16U
+
+/* How firmware wants PSCI calls made: which instruction traps to it. */
+typedef enum {
+	PLATFORM_PSCI_NONE,
+	PLATFORM_PSCI_HVC,
+	PLATFORM_PSCI_SMC
+} platform_psci_method_t;
+
 typedef struct {
 	uint64_t base;
 	uint64_t size;
@@ -25,6 +35,16 @@ typedef struct {
 	platform_region_t gic_redistributor;
 
 	platform_region_t rtc;
+
+	/*
+	 * CPUs the Device Tree lists, in its order (the first is the boot CPU
+	 * on the platforms this kernel runs on). The value is the CPU's MPIDR
+	 * affinity fields (Aff3:Aff2:Aff1:Aff0), which is what PSCI CPU_ON and
+	 * the GIC identify a CPU by; it is not a logical CPU number.
+	 */
+	uint64_t cpu_mpidr[PLATFORM_MAX_CPUS];
+	uint32_t cpu_count;
+	platform_psci_method_t psci_method;
 
 	platform_region_t pcie_ecam;
 	uint32_t pcie_bus_start;

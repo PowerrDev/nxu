@@ -1,6 +1,7 @@
 #ifndef NXU_VM_ADDRESS_SPACE_H
 #define NXU_VM_ADDRESS_SPACE_H
 
+#include <kern/cpuset.h>
 #include <kern/lock.h>
 
 #include <stdbool.h>
@@ -32,6 +33,16 @@ typedef struct {
 	uint64_t root_physical;
 	uint64_t table_count;
 	bool active;
+
+	/*
+	 * The CPUs whose TTBR0 currently points at this space (set on activate,
+	 * cleared when that CPU leaves it). Only the boot CPU runs user threads
+	 * today, so it is empty or {0}; it is what a page unmap consults to know
+	 * which CPUs may hold a translation, and the TLB strategy is written so
+	 * nothing else changes when more CPUs are added: page invalidations are
+	 * inner-shareable and reach every CPU whether or not it is in this set.
+	 */
+	nxu_cpuset_t active_cpus;
 	nxu_spinlock_t lock;
 	struct vm_map_entry *mmap_entries;
 	uint64_t mmap_next_va;

@@ -279,6 +279,7 @@ C_SOURCES := \
     kern/arm64/cache.c \
     kern/arm64/exception.c \
     kern/arm64/gic.c \
+    kern/arm64/smp.c \
     kern/arm64/thread.c \
     kern/arm64/user.c \
     kern/arm64/timer.c \
@@ -340,6 +341,7 @@ C_SOURCES := \
     kern/tests/fault_process_test.c \
     kern/tests/process_control_test.c \
     kern/tests/socket_process_test.c \
+    kern/tests/smp_test.c \
     kern/tests/sound_test.c \
     kern/tests/xamethyst_process_test.c \
     kern/tests/windowserver_process_test.c \
@@ -400,6 +402,7 @@ C_SOURCES := \
 
 ASM_SOURCES := \
     kern/arm64/start.S \
+    kern/arm64/smp_entry.S \
     kern/arm64/context_switch.S \
     kern/arm64/exception_vectors.S \
     kern/arm64/transition.S

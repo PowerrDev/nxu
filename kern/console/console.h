@@ -50,6 +50,15 @@ int kvprintf(const char *format, va_list arguments);
  */
 void kconsole_set_verbose(bool verbose);
 bool kconsole_verbose(void);
+
+/*
+ * kconsole_break_lock
+ *
+ * For a panic that has just stopped the other CPUs: one of them may have been
+ * stopped holding the console lock, and the panic message must get out anyway.
+ * Frees the lock unless the calling CPU itself holds it.
+ */
+void kconsole_break_lock(void);
 int kverbosef(const char *format, ...);
 
 #endif

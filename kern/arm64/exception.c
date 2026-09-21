@@ -1,9 +1,11 @@
 #include <kern/console/console.h>
 #include <kern/arm64/exception.h>
 #include <kern/arm64/gic.h>
+#include <kern/arm64/smp.h>
 #include <kern/arm64/system.h>
 #include <kern/arm64/timer.h>
 #include <kern/arm64/transition.h>
+#include <kern/sched_prism/processor.h>
 #include <kern/sched_prism/sched.h>
 #include <kern/irq/irq.h>
 #include <kern/syscall/syscall.h>
@@ -382,9 +384,12 @@ static void irq_handle(void)
 		return;
 	}
 
-	if (intid == 30U) {
+	if (intid == PHYSICAL_TIMER_INTID) {
 		timer_handle_interrupt();
+		current_processor()->ticks++;
 		sched_tick();
+	} else if (intid < 16U) {
+		smp_handle_ipi(intid);
 	} else if (!irq_dispatch(intid)) {
 		kputs("irq: unhandled INTID ");
 		kputu64(intid);
@@ -716,10 +721,16 @@ static void exception_dispatch(arm64_exception_frame_t *frame)
 	if (kind == ARM64_EXCEPTION_KIND_IRQ) {
 		irq_handle();
 
+		/*
+		 * Where it is safe to enter the scheduler from an interrupt: the
+		 * interrupted code is EL0, the CPU's idle loop, or a kernel thread
+		 * that declared itself preemptible. Ordinary kernel threads switch
+		 * only where they ask to.
+		 */
 		thread_t thread = current_thread();
 		bool scheduler_safe =
 			exception_vector_from_aarch64_el0(frame->vector_id) ||
-			(thread != 0 && thread_is_idle(thread));
+			(thread != 0 && (thread_is_idle(thread) || thread_is_preemptible(thread)));
 
 		if (scheduler_safe && sched_preemption_pending()) {
 			if (!sched_preempt()) {
@@ -755,11 +766,12 @@ static void exception_dispatch(arm64_exception_frame_t *frame)
 	 * Never recursively panic. If the panic path itself faults, immediately
 	 * stop instead of consuming the EL1 stack with nested exception frames.
 	 */
-	if (g_panic_active) {
+	if (__atomic_exchange_n(&g_panic_active, true, __ATOMIC_ACQ_REL)) {
 		panic_halt();
 	}
 
-	g_panic_active = true;
+	/* The first CPU to panic reports alone: the others stop before they scribble on the console. */
+	smp_stop_other_cpus();
 
 	uint8_t ec = exception_class(frame->esr);
 	uint8_t trap_type = panic_trap_type(ec);

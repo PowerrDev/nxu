@@ -1,8 +1,69 @@
+/*
+ * File:        kern/sched_prism/sched.c
+ *
+ * The MLFQ scheduler, one run queue per CPU.
+ *
+ * SMP locking model
+ * -----------------
+ *
+ * There is no scheduler-wide lock. Three kinds of lock exist, all spinlocks
+ * that are taken with interrupts masked:
+ *
+ *   processor.runq_lock    One per CPU. Protects that CPU's run queue: which
+ *                          threads are queued, their thread->runq and
+ *                          run-queue links, and the CPU's active_thread and
+ *                          next_thread. It also serialises the MLFQ policy on
+ *                          the queued threads (levels, quanta, boost) and the
+ *                          active thread's own MLFQ fields.
+ *
+ *   thread.sched_lock      One per thread. Protects thread->on_cpu and
+ *                          thread->wakeup_deferred, the hand-off between the
+ *                          CPU switching a thread out and whoever wakes it.
+ *
+ *   g_thread_lock          (kern/process/thread.c) Thread state bits, task
+ *                          membership, affinity. Innermost: nothing is taken
+ *                          while it is held.
+ *
+ * Order, outermost first:  runq_lock(cpu a) -> runq_lock(cpu b > a) ->
+ * g_thread_lock. sched_lock is a leaf that is never held together with a
+ * runq_lock. Code that needs two run queues (migration, balancing) takes them
+ * in ascending logical CPU id, and no path holds a runq_lock while it waits
+ * for anything else. A CPU takes only its own runq_lock in the hot path
+ * (sched_switch, sched_tick); another CPU's is taken only to place or migrate
+ * a thread onto it.
+ *
+ * Invariants (checked by sched_validate):
+ *   - A thread is on at most one run queue, and only while it is neither
+ *     running nor waiting.
+ *   - thread->on_cpu is set exactly from the moment a CPU chooses a thread
+ *     until that CPU has switched off the thread's stack. A thread with on_cpu
+ *     set is never queued: a wakeup that arrives in that window is recorded in
+ *     wakeup_deferred and carried out by the CPU that is switching away
+ *     (sched_finish_switch), after the thread's context has been saved. This
+ *     is what stops two CPUs from ever running one thread.
+ *   - A running thread is never migrated: only RUNNABLE, queued threads move,
+ *     and they move under both run queues' locks.
+ *   - A CPU's idle thread is never queued, never migrates, and is the only
+ *     thing its CPU runs when nothing else is queued.
+ *
+ * Thread states (thread->state bits, see kern/process/thread.h):
+ *   NEW       TH_SUSP, not started      -> sched_thread_start
+ *   RUNNABLE  TH_RUN, on a run queue    -> chosen by a CPU
+ *   RUNNING   TH_RUN, on_cpu != 0       -> yield/preempt: RUNNABLE again;
+ *                                          block: WAITING; terminate: DEAD
+ *   WAITING   TH_WAIT (on a wait queue) -> woken: RUNNABLE
+ *   DEAD      TH_TERMINATE              -> reaped by the CPU that left it
+ * TH_SUSP (hold) can combine with any of these and keeps a thread from being
+ * queued until released.
+ */
+
 #include <kern/console/console.h>
 #include <kern/sched_prism/sched.h>
 #include <kern/sched_prism/waitq.h>
+#include <kern/ipi.h>
 #include <kern/machine/cpu.h>
 #include <kern/machine/machine_routines.h>
+#include <kern/machine/smp.h>
 #include <kern/process/proc.h>
 #include <platform/uart.h>
 #include <vm/address_space.h>
@@ -11,15 +72,9 @@
 #include <string.h>
 
 typedef struct {
-	volatile uint32_t value;
-} sched_lock_t;
-
-typedef struct {
-	sched_lock_t lock;
 	thread_t bootstrap_thread;
-	thread_t idle_thread;
+	task_t kernel_task;
 	bool initialized;
-	uint32_t mlfq_boost_ticks;
 } sched_state_t;
 
 typedef enum {
@@ -31,29 +86,12 @@ typedef enum {
 
 static sched_state_t g_sched;
 
-/*
- * sched_lock
- */
-static void sched_lock(sched_lock_t *lock)
-{
-	while (
-		__atomic_exchange_n(
-			&lock->value,
-			1U,
-			__ATOMIC_ACQUIRE
-		) != 0U
-	) {
-		cpu_relax();
-	}
-}
+/* Every this many ticks an idle or underloaded CPU looks for work to pull from a busier one. */
+#define SCHED_BALANCE_INTERVAL_TICKS 4U
 
-/*
- * sched_unlock
- */
-static void sched_unlock(sched_lock_t *lock)
-{
-	__atomic_store_n(&lock->value, 0U, __ATOMIC_RELEASE);
-}
+static bool sched_switch(sched_switch_reason_t reason);
+static processor_t sched_select_cpu(thread_t thread);
+static bool sched_enqueue_on(processor_t target, thread_t thread, run_queue_placement_t placement);
 
 /*
  * sched_fatal
@@ -149,7 +187,7 @@ static void sched_mlfq_assign(thread_t thread, uint8_t level)
  * the allotment (see sched_switch).
  *
  * The bottom level has nowhere to fall to; running out of quantum there only
- * grants a fresh one. Called with g_sched.lock held.
+ * grants a fresh one. Called with the CPU's runq_lock held.
  */
 static bool sched_mlfq_charge_tick(thread_t thread, bool *quantum_expired)
 {
@@ -178,7 +216,7 @@ static bool sched_mlfq_charge_tick(thread_t thread, bool *quantum_expired)
  * sched_mlfq_blocked
  *
  * A thread that sleeps is not CPU-bound: what it ran at its level so far
- * no longer counts against it. Called with g_sched.lock held.
+ * no longer counts against it. Called with the CPU's runq_lock held.
  */
 static void sched_mlfq_blocked(thread_t thread)
 {
@@ -190,7 +228,7 @@ static void sched_mlfq_blocked(thread_t thread)
  *
  * The "equalizer" rule: drain every level below the top queue and put its
  * threads back at level 0 with a fresh top-level quantum, then do the same
- * for the currently running thread. Called with g_sched.lock held.
+ * for the currently running thread. Called with the CPU's runq_lock held.
  */
 static void sched_mlfq_boost_locked(processor_t processor)
 {
@@ -259,6 +297,14 @@ static bool sched_activate_thread(thread_t thread)
 	if (thread == 0 || thread->task == 0) return false;
 
 	task_t task = thread->task;
+
+	/*
+	 * Address-space and process identity are boot-CPU state so far (a single
+	 * TTBR0 bookkeeping and one "current process"): secondary CPUs run kernel
+	 * threads only, with TTBR0 disabled from the moment they came up, and have
+	 * nothing to switch. sched_cpu_may_run() keeps user threads off them.
+	 */
+	if (current_processor()->cpu_id != 0U) return task_is_kernel(task);
 	proc_t proc = task_get_proc(task);
 
 	if (proc == 0) return false;
@@ -286,19 +332,45 @@ static void sched_finish_switch(void)
 	uint64_t irq_state = ml_irq_save();
 	processor_t processor = current_processor();
 
-	sched_lock(&g_sched.lock);
-
+	/* previous_thread and previous_requeue are this CPU's own: written before the switch, read here. */
 	thread_t previous = processor->previous_thread;
+	bool requeue = processor->previous_requeue;
+
 	processor->previous_thread = 0;
+	processor->previous_requeue = false;
 
-	sched_unlock(&g_sched.lock);
+	if (previous == 0 || previous == current_thread()) {
+		ml_irq_restore(irq_state);
+		return;
+	}
 
-	if (
-		previous != 0 &&
-		previous != current_thread() &&
-		thread_is_terminated(previous)
-	) {
+	/*
+	 * The previous thread's context was saved before the switch and this CPU
+	 * is off its stack, so from here another CPU may run it. Release it, and
+	 * pick up a wakeup that arrived while it was still switching out (see
+	 * thread_setrun): that wakeup is what would otherwise have queued it.
+	 */
+	nxu_spin_lock(&previous->sched_lock);
+	__atomic_store_n(&previous->on_cpu, (struct processor *)0, __ATOMIC_RELEASE);
+
+	bool woken = previous->wakeup_deferred;
+
+	previous->wakeup_deferred = false;
+	nxu_spin_unlock(&previous->sched_lock);
+
+	if (thread_is_terminated(previous)) {
 		(void)thread_reap(previous);
+	} else if (
+		(requeue || woken) &&
+		!thread_is_idle(previous) &&
+		thread_is_runnable(previous) &&
+		previous->runq == 0
+	) {
+		processor_t target = sched_select_cpu(previous);
+
+		if (!sched_enqueue_on(target, previous, RUN_QUEUE_TAIL)) {
+			sched_fatal("sched_finish_switch: could not requeue the outgoing thread");
+		}
 	}
 
 	ml_irq_restore(irq_state);
@@ -385,11 +457,124 @@ void sched_idle_continue(void *parameter)
 }
 
 /*
+ * sched_cpu_may_run
+ *
+ * Whether `thread` may run on `cpu`: its affinity allows it, and the CPU can
+ * run this kind of thread. Threads of user tasks stay on the boot CPU: the
+ * address-space bookkeeping (which space is live in TTBR0, the current process)
+ * is single-CPU state, so a secondary CPU never runs user code yet.
+ */
+static bool sched_cpu_may_run(thread_t thread, uint32_t cpu)
+{
+	if (!cpuset_contains(&thread->affinity, cpu)) return false;
+	if (cpu != 0U && (thread->flags & TH_FLAG_KERNEL) == 0U) return false;
+	return true;
+}
+
+/*
+ * sched_select_cpu
+ *
+ * Choose the CPU a runnable thread is queued on. In order of preference:
+ *
+ *   1. the CPU it last ran on, when that is idle (cache-warm and free),
+ *   2. otherwise the least loaded CPU it may run on (an idle one, if any),
+ *      unless the previous CPU is nearly as loaded, in which case it stays
+ *      where it was (moving a thread to save one queue place costs more than
+ *      it gains).
+ *
+ * Only online CPUs the thread's affinity and kind allow are considered; the
+ * boot CPU is the fallback when none is. The common case (a pinned thread, or
+ * an idle previous CPU) does not scan. Loads are read without locks, so the
+ * choice is a hint: the enqueue that follows is what is made atomic.
+ */
+static processor_t sched_select_cpu(thread_t thread)
+{
+	uint32_t count = processor_count();
+	processor_t last = processor_by_id(thread->last_cpu);
+	bool last_ok = last != 0 && processor_is_online(last) && sched_cpu_may_run(thread, last->cpu_id);
+
+	if (last_ok && processor_load(last) == 0U) return last;
+
+	processor_t best = 0;
+	uint32_t best_load = UINT32_MAX;
+
+	for (uint32_t cpu = 0U; cpu < count; cpu++) {
+		processor_t candidate = processor_by_id(cpu);
+
+		if (candidate == 0 || !processor_is_online(candidate) || !sched_cpu_may_run(thread, cpu)) continue;
+
+		uint32_t load = processor_load(candidate);
+
+		if (load < best_load) {
+			best = candidate;
+			best_load = load;
+		}
+	}
+
+	if (best == 0) return processor_by_id(0);
+
+	if (last_ok && best_load != 0U && processor_load(last) <= best_load + 1U) return last;
+	return best;
+}
+
+/*
+ * sched_enqueue_on
+ *
+ * Put a runnable thread that is on no queue and on no CPU onto `target`'s run
+ * queue, and make the target notice if it should now run something else. The
+ * target may be another CPU: this is the one place a CPU takes another's
+ * runq_lock to add work.
+ *
+ * The reschedule is requested by setting the target's preemption_pending flag
+ * (its need_resched) and, when the target is not this CPU, a reschedule IPI: an
+ * idle CPU is asleep in WFI and a busy one is between its own safe points. The
+ * IPI is only sent when the flag was not already set, so a burst of wakeups
+ * costs one interrupt.
+ */
+static bool sched_enqueue_on(processor_t target, thread_t thread, run_queue_placement_t placement)
+{
+	processor_t self = current_processor();
+	uint64_t irq_state = ml_irq_save();
+	bool kick = false;
+
+	nxu_spin_lock(&target->runq_lock);
+
+	bool queued = thread->runq == 0 && run_queue_enqueue(&target->runq, thread, placement);
+
+	if (queued) {
+		thread_t active = target->active_thread;
+
+		if (thread->last_cpu != target->cpu_id) target->migrate_in_count++;
+
+		if (
+			active == 0 ||
+			thread_is_idle(active) ||
+			thread->sched_pri > active->sched_pri
+		) {
+			kick = !__atomic_exchange_n(&target->preemption_pending, true, __ATOMIC_ACQ_REL);
+		}
+	}
+
+	nxu_spin_unlock(&target->runq_lock);
+
+	if (kick && target != self) ipi_send(target->cpu_id, IPI_RESCHEDULE);
+
+	ml_irq_restore(irq_state);
+	return queued;
+}
+
+/*
  * sched_switch
  *
  * Select and activate an incoming thread, then switch SP_EL1 and the AArch64
  * callee-saved context. IRQs remain masked across the scheduler handoff so
  * processor->active_thread can never disagree with the stack actually in use.
+ *
+ * Only this CPU's run queue is touched, under its own lock. The outgoing thread
+ * is not queued here even when it yielded: until the switch below has saved its
+ * context another CPU must not be able to pick it up, so it is handed to
+ * sched_finish_switch (previous_requeue), which queues it from the incoming
+ * thread's stack.
  */
 static bool sched_switch(sched_switch_reason_t reason)
 {
@@ -403,91 +588,99 @@ static bool sched_switch(sched_switch_reason_t reason)
 		return false;
 	}
 
-	sched_lock(&g_sched.lock);
+	nxu_spin_lock(&processor->runq_lock);
 
 	thread_t current = processor->active_thread;
 
 	if (current == 0) {
-		sched_unlock(&g_sched.lock);
+		nxu_spin_unlock(&processor->runq_lock);
 		ml_irq_restore(irq_state);
 		return false;
 	}
 
 	if (reason == SCHED_SWITCH_BLOCK) sched_mlfq_blocked(current);
 
-	if (reason == SCHED_SWITCH_PREEMPT) {
-		thread_t candidate = run_queue_peek(&processor->runq);
-
-		if (
-			candidate == 0 ||
-			(!thread_is_idle(current) &&
-			candidate->sched_pri < current->sched_pri)
-		) {
-			processor->preemption_pending = false;
-			sched_quantum_reset(current);
-			sched_unlock(&g_sched.lock);
-			ml_irq_restore(irq_state);
-			return true;
-		}
-	}
+	bool yielding = reason == SCHED_SWITCH_YIELD || reason == SCHED_SWITCH_PREEMPT;
 
 	bool requeue_current =
-		(reason == SCHED_SWITCH_YIELD || reason == SCHED_SWITCH_PREEMPT) &&
+		yielding &&
 		thread_is_active(current) &&
 		thread_is_runnable(current) &&
 		!thread_is_idle(current);
 
-	if (
-		requeue_current &&
-		!run_queue_enqueue(&processor->runq, current, RUN_QUEUE_TAIL)
-	) {
-		sched_unlock(&g_sched.lock);
+	thread_t candidate = run_queue_peek(&processor->runq);
+	bool stay = false;
+
+	if (yielding) {
+		if (!requeue_current) {
+			stay = candidate == 0;
+		} else {
+			/*
+			 * The current thread keeps the CPU when nothing queued here is at
+			 * least as good, unless its affinity was narrowed to exclude this
+			 * CPU, in which case it has to leave.
+			 */
+			stay =
+				sched_cpu_may_run(current, processor->cpu_id) &&
+				(candidate == 0 || candidate->sched_pri < current->sched_pri);
+		}
+	}
+
+	if (stay) {
+		__atomic_store_n(&processor->preemption_pending, false, __ATOMIC_RELEASE);
+		sched_quantum_reset(current);
+		nxu_spin_unlock(&processor->runq_lock);
 		ml_irq_restore(irq_state);
-		return false;
+		return true;
 	}
 
 	thread_t next = run_queue_dequeue(&processor->runq);
 
 	if (next == 0) next = processor->idle_thread;
 
-	if (next == 0) {
-		sched_unlock(&g_sched.lock);
+	if (next == 0 || next == current) {
+		nxu_spin_unlock(&processor->runq_lock);
 		ml_irq_restore(irq_state);
-		return false;
+		return next == current;
 	}
 
-	if (next == current) {
-		processor->next_thread = 0;
-		processor->preemption_pending = false;
-		sched_quantum_reset(current);
-		sched_unlock(&g_sched.lock);
-		ml_irq_restore(irq_state);
-		return true;
-	}
+	/*
+	 * `next` is off every queue now, so nobody else can choose it; marking it
+	 * on this CPU before the lock is dropped keeps a concurrent wakeup from
+	 * queueing it elsewhere (see thread_setrun).
+	 */
+	nxu_spin_lock(&next->sched_lock);
+	__atomic_store_n(&next->on_cpu, processor, __ATOMIC_RELEASE);
+	nxu_spin_unlock(&next->sched_lock);
 
+	next->last_cpu = processor->cpu_id;
 	processor->next_thread = next;
 	processor->dispatch_count++;
 
-	sched_unlock(&g_sched.lock);
+	nxu_spin_unlock(&processor->runq_lock);
 
 	if (!sched_activate_thread(next)) {
 		sched_fatal("sched_activate_thread: incoming thread activation failed");
 	}
 
-	sched_lock(&g_sched.lock);
+	nxu_spin_lock(&processor->runq_lock);
 
 	if (!thread_set_current(next)) {
-		sched_unlock(&g_sched.lock);
+		nxu_spin_unlock(&processor->runq_lock);
 		sched_fatal("thread_set_current: current-thread handoff failed");
 	}
 
 	processor->previous_thread = current;
-	processor->active_thread = next;
+	processor->previous_requeue = requeue_current;
 	processor->next_thread = 0;
-	processor->state = thread_is_idle(next)
-		? PROCESSOR_IDLE
-		: PROCESSOR_RUNNING;
-	processor->preemption_pending = false;
+
+	__atomic_store_n(
+		&processor->state,
+		thread_is_idle(next) ? PROCESSOR_IDLE : PROCESSOR_RUNNING,
+		__ATOMIC_RELEASE
+	);
+
+	__atomic_store_n(&processor->preemption_pending, false, __ATOMIC_RELEASE);
 	processor->context_switch_count++;
 
 	if (reason == SCHED_SWITCH_PREEMPT) {
@@ -496,7 +689,7 @@ static bool sched_switch(sched_switch_reason_t reason)
 
 	sched_quantum_reset(next);
 
-	sched_unlock(&g_sched.lock);
+	nxu_spin_unlock(&processor->runq_lock);
 
 	machine_thread_switch_context(
 		&current->machine,
@@ -571,13 +764,73 @@ bool sched_bootstrap(task_t kernel_task)
 	processor->idle_thread = idle_thread;
 	processor->next_thread = 0;
 	processor->previous_thread = 0;
+	processor->previous_requeue = false;
 	processor->state = PROCESSOR_RUNNING;
 
+	/*
+	 * The boot thread carries the boot CPU's identity (the UI session, EL0
+	 * excursions parked on its stack, the boot-time kernel state): it stays on
+	 * the boot CPU whatever the default affinity is.
+	 */
+	cpuset_clear(&bootstrap_thread->affinity);
+	cpuset_add(&bootstrap_thread->affinity, processor->cpu_id);
+
+	bootstrap_thread->on_cpu = processor;
+	bootstrap_thread->last_cpu = processor->cpu_id;
+
 	g_sched.bootstrap_thread = bootstrap_thread;
-	g_sched.idle_thread = idle_thread;
+	g_sched.kernel_task = kernel_task;
 	g_sched.initialized = true;
 
 	return true;
+}
+
+/*
+ * sched_cpu_prepare
+ *
+ * Boot CPU, before it starts secondary `cpu` (whose processor is registered):
+ * give it the thread that represents the context it will boot into, which is
+ * also its idle thread. That context is the CPU's boot stack, so its idle loop
+ * (sched_cpu_idle) runs there and the CPU needs no other stack for idling.
+ */
+bool sched_cpu_prepare(uint32_t cpu)
+{
+	processor_t processor = processor_by_id(cpu);
+
+	if (!g_sched.initialized || processor == 0 || processor->idle_thread != 0) return false;
+
+	thread_t idle;
+
+	if (!thread_create_cpu_idle(g_sched.kernel_task, cpu, &idle)) return false;
+
+	sched_quantum_reset(idle);
+
+	idle->on_cpu = processor;
+	processor->idle_thread = idle;
+	processor->active_thread = idle;
+	return true;
+}
+
+/*
+ * sched_cpu_idle
+ *
+ * The end of a secondary CPU's start-up: from here it is an ordinary scheduling
+ * CPU, idling on the stack it booted on. Timer, reschedule IPI and device
+ * interrupts wake it; when work has been queued on it the interrupt's return
+ * path (sched_preempt, at the idle thread's safe point) switches to that work,
+ * and the CPU comes back to this loop when it runs out.
+ */
+__attribute__((noreturn))
+void sched_cpu_idle(void)
+{
+	processor_t processor = current_processor();
+
+	__atomic_store_n(&processor->state, PROCESSOR_IDLE, __ATOMIC_RELEASE);
+
+	for (;;) {
+		ml_irq_enable();
+		cpu_wait_for_interrupt();
+	}
 }
 
 bool sched_is_initialized(void)
@@ -592,9 +845,25 @@ thread_t sched_bootstrap_thread(void)
 
 thread_t sched_idle_thread(void)
 {
-	return g_sched.initialized ? g_sched.idle_thread : 0;
+	processor_t processor = g_sched.initialized ? current_processor() : 0;
+
+	return processor != 0 ? processor->idle_thread : 0;
 }
 
+bool sched_thread_can_run_on(thread_t thread, uint32_t cpu)
+{
+	return thread != 0 && !thread_is_idle(thread) && sched_cpu_may_run(thread, cpu);
+}
+
+/*
+ * thread_setrun
+ *
+ * Make a runnable thread eligible to run: choose a CPU for it and queue it
+ * there. A thread that is still switching out on some CPU (on_cpu) is not
+ * queued: it is marked, and the CPU that is switching away queues it once its
+ * context is safely saved (sched_finish_switch). That is what makes waking a
+ * thread from any CPU, at any moment, safe.
+ */
 bool thread_setrun(thread_t thread, sched_queue_placement_t placement)
 {
 	if (
@@ -608,45 +877,61 @@ bool thread_setrun(thread_t thread, sched_queue_placement_t placement)
 	}
 
 	uint64_t irq_state = ml_irq_save();
-	processor_t processor = current_processor();
 
-	sched_lock(&g_sched.lock);
-
-	bool valid =
-		thread != processor->active_thread &&
-		thread->runq == 0 &&
-		run_queue_enqueue(
-			&processor->runq,
-			thread,
-			sched_queue_placement(placement)
-		);
-
-	if (valid && processor->active_thread != 0) {
-		if (
-			thread_is_idle(processor->active_thread) ||
-			thread->sched_pri > processor->active_thread->sched_pri
-		) {
-			processor->preemption_pending = true;
-		}
+	if (thread == current_thread()) {
+		ml_irq_restore(irq_state);
+		return false;
 	}
 
-	sched_unlock(&g_sched.lock);
+	nxu_spin_lock(&thread->sched_lock);
+
+	if (__atomic_load_n(&thread->on_cpu, __ATOMIC_ACQUIRE) != 0) {
+		thread->wakeup_deferred = true;
+		nxu_spin_unlock(&thread->sched_lock);
+		ml_irq_restore(irq_state);
+		return true;
+	}
+
+	nxu_spin_unlock(&thread->sched_lock);
+
+	bool valid = sched_enqueue_on(sched_select_cpu(thread), thread, sched_queue_placement(placement));
+
 	ml_irq_restore(irq_state);
 	return valid;
 }
 
+/*
+ * thread_run_queue_remove
+ *
+ * Take a queued thread off whichever CPU's run queue it is on. The queue is
+ * found from the thread, so it can move between the lookup and the lock;
+ * the check after the lock says whether it did, and the lookup is retried.
+ */
 bool thread_run_queue_remove(thread_t thread)
 {
 	if (!g_sched.initialized || thread == 0) return false;
 
 	uint64_t irq_state = ml_irq_save();
-	sched_lock(&g_sched.lock);
+	bool result = false;
 
-	bool result =
-		thread->runq != 0 &&
-		run_queue_remove(thread->runq, thread);
+	for (;;) {
+		run_queue_t *runq = __atomic_load_n(&thread->runq, __ATOMIC_ACQUIRE);
 
-	sched_unlock(&g_sched.lock);
+		if (runq == 0) break;
+
+		processor_t owner = (processor_t)((uint8_t *)runq - offsetof(struct processor, runq));
+
+		nxu_spin_lock(&owner->runq_lock);
+
+		if (thread->runq == runq) {
+			result = run_queue_remove(runq, thread);
+			nxu_spin_unlock(&owner->runq_lock);
+			break;
+		}
+
+		nxu_spin_unlock(&owner->runq_lock);
+	}
+
 	ml_irq_restore(irq_state);
 	return result;
 }
@@ -655,8 +940,7 @@ thread_t thread_select(processor_t processor)
 {
 	if (!g_sched.initialized || processor == 0) return 0;
 
-	uint64_t irq_state = ml_irq_save();
-	sched_lock(&g_sched.lock);
+	uint64_t irq_state = nxu_spin_lock_irqsave(&processor->runq_lock);
 
 	thread_t thread = run_queue_dequeue(&processor->runq);
 
@@ -668,8 +952,7 @@ thread_t thread_select(processor_t processor)
 		sched_quantum_reset(thread);
 	}
 
-	sched_unlock(&g_sched.lock);
-	ml_irq_restore(irq_state);
+	nxu_spin_unlock_irqrestore(&processor->runq_lock, irq_state);
 	return thread;
 }
 
@@ -765,10 +1048,9 @@ bool sched_thread_set_priority(thread_t thread, uint16_t priority)
 
 	if (queued) return thread_setrun(thread, SCHED_TAILQ);
 
-	uint64_t irq_state = ml_irq_save();
+	/* A thread lowering its own priority may now be beaten by something queued on its CPU. */
+	uint64_t irq_state = nxu_spin_lock_irqsave(&current_processor()->runq_lock);
 	processor_t processor = current_processor();
-
-	sched_lock(&g_sched.lock);
 
 	thread_t candidate = run_queue_peek(&processor->runq);
 
@@ -777,17 +1059,21 @@ bool sched_thread_set_priority(thread_t thread, uint16_t priority)
 		candidate != 0 &&
 		candidate->sched_pri > thread->sched_pri
 	) {
-		processor->preemption_pending = true;
+		__atomic_store_n(&processor->preemption_pending, true, __ATOMIC_RELEASE);
 	}
 
-	sched_unlock(&g_sched.lock);
-	ml_irq_restore(irq_state);
+	nxu_spin_unlock_irqrestore(&processor->runq_lock, irq_state);
 	return true;
 }
 
 bool sched_yield(void)
 {
 	return sched_switch(SCHED_SWITCH_YIELD);
+}
+
+bool sched_block_commit(void)
+{
+	return sched_switch(SCHED_SWITCH_BLOCK);
 }
 
 bool sched_block(bool uninterruptible)
@@ -802,7 +1088,7 @@ bool sched_block(bool uninterruptible)
 		return false;
 	}
 
-	return sched_switch(SCHED_SWITCH_BLOCK);
+	return sched_block_commit();
 }
 
 __attribute__((noreturn))
@@ -821,6 +1107,99 @@ void sched_exit_current(void)
 	sched_fatal("sched_exit_current: terminated thread resumed unexpectedly");
 }
 
+/*
+ * sched_migrate_one
+ *
+ * Move one RUNNABLE thread from `from`'s run queue to `to`'s, for load
+ * balancing. Only a thread that is queued moves: a running thread is never
+ * migrated (its context is live on its CPU; it can only leave by being switched
+ * out and queued anew), and a thread that is mid-switch is not queued at all.
+ * Both queues are locked, lower logical CPU id first, so two CPUs balancing
+ * towards each other cannot deadlock. The thread taken is the lowest-priority
+ * one that may run on `to`: it is the one whose delay hurts least and whose
+ * cache is coldest, and the higher levels keep their interactive latency.
+ */
+static bool sched_migrate_one(processor_t from, processor_t to)
+{
+	processor_t first = from->cpu_id < to->cpu_id ? from : to;
+	processor_t second = first == from ? to : from;
+
+	nxu_spin_lock(&first->runq_lock);
+	nxu_spin_lock(&second->runq_lock);
+
+	thread_t victim = 0;
+
+	for (uint32_t priority = 0U; priority < RUN_QUEUE_COUNT && victim == 0; priority++) {
+		if ((from->runq.bitmap & (1ULL << priority)) == 0ULL) continue;
+
+		for (thread_t thread = from->runq.queues[priority].head; thread != 0; thread = thread->sched_links.runq.next) {
+			if (sched_cpu_may_run(thread, to->cpu_id)) {
+				victim = thread;
+				break;
+			}
+		}
+	}
+
+	bool moved = false;
+
+	if (victim != 0 && run_queue_remove(&from->runq, victim)) {
+		moved = run_queue_enqueue(&to->runq, victim, RUN_QUEUE_TAIL);
+
+		if (!moved) sched_fatal("sched_migrate_one: could not queue a migrating thread");
+
+		from->migrate_out_count++;
+		to->migrate_in_count++;
+		__atomic_store_n(&to->preemption_pending, true, __ATOMIC_RELEASE);
+	}
+
+	nxu_spin_unlock(&second->runq_lock);
+	nxu_spin_unlock(&first->runq_lock);
+	return moved;
+}
+
+/*
+ * sched_balance
+ *
+ * Pull-style balancing, run from a CPU's own tick every few ticks: if this CPU
+ * has less to do than the busiest CPU (idle: at least one queued thread
+ * elsewhere; otherwise: two more than it has), take one thread from it.
+ * Placement at wakeup (sched_select_cpu) does most of the spreading; this
+ * catches what it cannot, such as several threads woken onto one CPU while
+ * the others were busy, or work finished elsewhere.
+ *
+ * It scans all CPUs, so it runs at a low rate and only from the tick, never on
+ * the wakeup or switch paths. The loads it reads are estimates; the move itself
+ * is decided under the two run queue locks.
+ */
+static void sched_balance(processor_t self)
+{
+	uint32_t count = processor_count();
+
+	if (count <= 1U) return;
+
+	uint32_t own_load = processor_load(self);
+	processor_t busiest = 0;
+	uint32_t busiest_load = 0U;
+
+	for (uint32_t cpu = 0U; cpu < count; cpu++) {
+		processor_t candidate = processor_by_id(cpu);
+
+		if (candidate == self || !processor_is_online(candidate)) continue;
+
+		uint32_t load = processor_load(candidate);
+
+		if (load > busiest_load) {
+			busiest = candidate;
+			busiest_load = load;
+		}
+	}
+
+	if (busiest == 0 || busiest->runq.count == 0U) return;
+	if (busiest_load < own_load + (own_load == 0U ? 1U : 2U)) return;
+
+	(void)sched_migrate_one(busiest, self);
+}
+
 void sched_tick(void)
 {
 	if (!g_sched.initialized) return;
@@ -828,7 +1207,7 @@ void sched_tick(void)
 	uint64_t irq_state = ml_irq_save();
 	processor_t processor = current_processor();
 
-	sched_lock(&g_sched.lock);
+	nxu_spin_lock(&processor->runq_lock);
 
 	thread_t thread = processor->active_thread;
 
@@ -847,23 +1226,28 @@ void sched_tick(void)
 		bool demoted = sched_mlfq_charge_tick(thread, &quantum_expired);
 
 		if (quantum_expired) processor->quantum_expiration_count++;
-		if (demoted) processor->preemption_pending = true;
+		if (demoted) __atomic_store_n(&processor->preemption_pending, true, __ATOMIC_RELEASE);
 	}
 
 	/*
 	 * Rule 5, the equalizer boost. This runs on wall-clock ticks regardless
 	 * of which thread is active (including while the CPU is idle) so
 	 * background work queued during a quiet period is not left waiting at
-	 * the bottom the moment something else shows up.
+	 * the bottom the moment something else shows up. Each CPU boosts its own
+	 * queue on its own ticks: the levels are per CPU, and no CPU needs another
+	 * one's lock for it.
 	 */
-	g_sched.mlfq_boost_ticks++;
+	processor->boost_ticks++;
 
-	if (g_sched.mlfq_boost_ticks >= SCHED_MLFQ_BOOST_INTERVAL_TICKS) {
-		g_sched.mlfq_boost_ticks = 0U;
+	if (processor->boost_ticks >= SCHED_MLFQ_BOOST_INTERVAL_TICKS) {
+		processor->boost_ticks = 0U;
 		sched_mlfq_boost_locked(processor);
 	}
 
-	sched_unlock(&g_sched.lock);
+	nxu_spin_unlock(&processor->runq_lock);
+
+	if (processor->ticks % SCHED_BALANCE_INTERVAL_TICKS == 0U) sched_balance(processor);
+
 	ml_irq_restore(irq_state);
 }
 
@@ -1063,10 +1447,10 @@ bool sched_validate(void)
 		processor == 0 ||
 		current == 0 ||
 		processor->active_thread != current ||
-		processor->idle_thread != g_sched.idle_thread ||
+		processor->idle_thread == 0 ||
 		!thread_is_bootstrap(g_sched.bootstrap_thread) ||
-		!thread_is_idle(g_sched.idle_thread) ||
-		g_sched.idle_thread->runq != 0 ||
+		!thread_is_idle(processor->idle_thread) ||
+		processor->idle_thread->runq != 0 ||
 		processor->previous_thread != 0 ||
 		!processor_validate(processor)
 	) {
@@ -1074,6 +1458,61 @@ bool sched_validate(void)
 	}
 
 	return true;
+}
+
+/*
+ * sched_validate_all
+ *
+ * The cross-CPU invariants, checked with every CPU's run queue locked in
+ * ascending id order: each queued thread is on exactly the queue its runq
+ * pointer names, is runnable, is not running anywhere, and appears on no other
+ * queue. (Whether it may run on the CPU that holds it is not checked: a thread
+ * whose affinity was narrowed while it was queued stays queued until it next
+ * runs or is balanced away.) Costly (it walks every queue), so only tests call
+ * it.
+ */
+bool sched_validate_all(void)
+{
+	if (!g_sched.initialized) return false;
+
+	uint64_t irq_state = ml_irq_save();
+	uint32_t count = processor_count();
+	bool ok = true;
+
+	for (uint32_t cpu = 0U; cpu < count; cpu++) nxu_spin_lock(&processor_by_id(cpu)->runq_lock);
+
+	for (uint32_t cpu = 0U; cpu < count && ok; cpu++) {
+		processor_t processor = processor_by_id(cpu);
+
+		if (!run_queue_validate(&processor->runq)) ok = false;
+
+		for (uint32_t priority = 0U; priority < RUN_QUEUE_COUNT && ok; priority++) {
+			for (thread_t thread = processor->runq.queues[priority].head; thread != 0 && ok; thread = thread->sched_links.runq.next) {
+				if (
+					thread->runq != &processor->runq ||
+					thread_is_idle(thread) ||
+					!thread_is_runnable(thread) ||
+					thread->on_cpu != 0
+				) {
+					ok = false;
+				}
+
+				/* On no other queue: a thread queued twice would have two runq owners. */
+				for (uint32_t other = cpu + 1U; other < count && ok; other++) {
+					for (uint32_t level = 0U; level < RUN_QUEUE_COUNT && ok; level++) {
+						for (thread_t peer = processor_by_id(other)->runq.queues[level].head; peer != 0; peer = peer->sched_links.runq.next) {
+							if (peer == thread) ok = false;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	for (uint32_t cpu = count; cpu > 0U; cpu--) nxu_spin_unlock(&processor_by_id(cpu - 1U)->runq_lock);
+
+	ml_irq_restore(irq_state);
+	return ok;
 }
 
 void sched_dump(void)
@@ -1105,7 +1544,7 @@ void sched_dump(void)
 	kverbosef("sched_dump: default quantum: %llu tick(s)\n", (unsigned long long)SCHED_DEFAULT_QUANTUM_TICKS);
 	kverbosef("sched_dump: MLFQ levels: %llu\n", (unsigned long long)SCHED_MLFQ_LEVELS);
 	kverbosef("sched_dump: MLFQ boost interval: %llu tick(s)\n", (unsigned long long)SCHED_MLFQ_BOOST_INTERVAL_TICKS);
-	kverbosef("sched_dump: MLFQ next boost in: %llu tick(s)\n", (unsigned long long)(SCHED_MLFQ_BOOST_INTERVAL_TICKS - g_sched.mlfq_boost_ticks));
+	kverbosef("sched_dump: MLFQ next boost in: %llu tick(s)\n", (unsigned long long)(SCHED_MLFQ_BOOST_INTERVAL_TICKS - processor->boost_ticks));
 
 	if (
 		processor->active_thread != 0 &&

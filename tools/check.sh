@@ -91,10 +91,10 @@ first_missing_pass_line() {
 	done
 }
 
-# run_kernel_test <id> <timeout> <pass strings> <kernel defines> <capture: 1|-> <verify command|-> <frameworks|->
+# run_kernel_test <id> <timeout> <pass strings> <kernel defines> <capture: 1|-> <verify command|-> <frameworks|-> <cpus>
 # "-" stands for an empty column (read would fold empty fields together).
 run_kernel_test() {
-	local id=$1 timeout=$2 pass=$3 cflags=$4 capture=$5 verify=$6 frameworks=$7
+	local id=$1 timeout=$2 pass=$3 cflags=$4 capture=$5 verify=$6 frameworks=$7 cpus=${8:-1}
 	local build_log="$SCRATCH/$id.build.log" serial="$SCRATCH/$id.serial.log"
 	local started=$SECONDS qpid i
 	local audio="-audiodev none,id=snd0" recording="$SCRATCH/$id.wav"
@@ -120,7 +120,7 @@ run_kernel_test() {
 
 	: >"$serial"
 	qemu-system-aarch64 \
-		-machine virt,gic-version=3 -cpu cortex-a72 -smp 1 -m 512M \
+		-machine virt,gic-version=3 -cpu cortex-a72 -smp "$cpus" -m 512M \
 		-kernel "BUILD/$id/kernel.bin" \
 		-display none -global virtio-mmio.force-legacy=false \
 		-drive if=none,format=raw,file="$SCRATCH/disk.img",id=nxudisk \
@@ -180,11 +180,11 @@ for target in $host_targets; do
 	fi
 done
 
-while IFS=$'\t' read -r id timeout pass cflags capture verify frameworks; do
+while IFS=$'\t' read -r id timeout pass cflags capture verify frameworks smp; do
 	[ -n "$id" ] || continue
 	selected "$id" || continue
 	echo "check: $id"
-	run_kernel_test "$id" "$timeout" "$pass" "$cflags" "$capture" "$verify" "$frameworks"
+	run_kernel_test "$id" "$timeout" "$pass" "$cflags" "$capture" "$verify" "$frameworks" "$smp"
 done <<EOF
 $registry
 EOF

@@ -8,6 +8,7 @@
 #include <kern/arm64/cache.h>
 #include <kern/arm64/exception.h>
 #include <kern/arm64/gic.h>
+#include <kern/arm64/smp.h>
 #include <kern/arm64/system.h>
 #include <kern/machine/machine_routines.h>
 #include <kern/arm64/timer.h>
@@ -24,6 +25,7 @@
 #include <kern/ipc/ipc_types.h>
 #include <kern/tests/boot_test.h>
 #include <kern/tests/post.h>
+#include <kern/tests/smp_test.h>
 #include <platform/driverkit.h>
 #include <kern/process/proc.h>
 #include <kern/sched_prism/sched.h>
@@ -50,7 +52,6 @@
 
 /* Timer configuration. */
 #define KERNEL_TIMER_HZ 100U
-#define PHYSICAL_TIMER_INTID 30U
 
 /* Live VMM mapping test. */
 #define KERNEL_VMM_TEST_ADDRESS 0xFFFFFFE100000000ULL
@@ -961,8 +962,18 @@ void kern_start_scheduler(const driverkit_config_t *drivers)
 
 	kprintf("kern_init: periodic timer started at %u Hz\n", KERNEL_TIMER_HZ);
 
+	/* After the boot CPU's timer (the secondaries copy its rate) and before it takes its first interrupt. */
+	(void)smp_boot_secondaries();
+
 	arm64_enable_irqs();
 	kputln("kern_init: IRQs enabled");
+
+#if defined(NXU_SMP_TEST)
+	/* The secondary CPUs are up and the boot CPU takes interrupts: the SMP suite runs on the boot thread. */
+	if (!smp_test_run()) kern_fail("smp_test: failed");
+	kputln("smp_test: passed; halting (test build)");
+	for (;;) __asm__ volatile("wfe");
+#endif
 
 	if (g_boot_process != 0) {
 		kprintf("sched: dispatching %s PID %u\n", boot_mode_is_triage_os() ? "triageOS" : "bootd", g_boot_process->p_ident.pid);
@@ -1110,6 +1121,21 @@ void kern_init(const void *dtb_address)
 	if (!boot_args_init()) kern_fail("boot_args_init: initialization failed");
 	kputln("boot_args_init: initialization complete");
 	boot_args_dump();
+
+	/*
+	 * New threads may run on the boot CPU only until the subsystems they run in
+	 * are SMP-safe (doc/kern/smp.md lists what is not). `sched.affinity=all` lifts
+	 * that for every thread created from here on, to find out what breaks.
+	 */
+	char affinity_policy[8];
+
+	if (boot_arg_value("sched.affinity", affinity_policy, sizeof(affinity_policy)) && strcmp(affinity_policy, "all") == 0) {
+		nxu_cpuset_t everywhere;
+
+		cpuset_fill(&everywhere, NXU_MAX_CPUS);
+		processor_set_default_affinity(&everywhere);
+		kputln("sched: new threads may run on any CPU (sched.affinity=all)");
+	}
 
 	kern_dump_boot_dtb(device_tree);
 

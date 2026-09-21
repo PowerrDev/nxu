@@ -36,6 +36,39 @@ bool gic_higher_half_enabled(void);
 void gic_init(void);
 
 /**
+ * gic_init_secondary - Bring up the calling CPU's GICv3 interface.
+ * @cpu: The caller's logical CPU id (1 or more).
+ * @mpidr: The caller's MPIDR affinity fields.
+ *
+ * Finds the CPU's redistributor frame by matching GICR_TYPER's affinity,
+ * wakes it, and enables the ICC_* system-register CPU interface. Call it on
+ * the CPU being brought up, after machine_cpu_local_set(). Everything shared
+ * (the distributor, SPI routing) was configured once by gic_init().
+ *
+ * Return: false if the CPU has no redistributor (it cannot take interrupts).
+ */
+bool gic_init_secondary(uint32_t cpu, uint64_t mpidr);
+
+/**
+ * gic_enable_sgi - Enable one software-generated interrupt on this CPU.
+ * @intid: SGI number, 0 through 15.
+ * @priority: Priority byte; numerically lower means higher priority.
+ *
+ * Every CPU must enable the SGIs it is to receive in its own redistributor.
+ */
+void gic_enable_sgi(uint32_t intid, uint8_t priority);
+
+/**
+ * gic_send_sgi - Raise SGI @intid on the CPU with affinity @target_mpidr.
+ * gic_send_sgi_others - Raise it on every CPU but the caller.
+ *
+ * The write is preceded by a DSB so anything the sender stored for the
+ * receiver is visible before the interrupt is.
+ */
+void gic_send_sgi(uint64_t target_mpidr, uint32_t intid);
+void gic_send_sgi_others(uint32_t intid);
+
+/**
  * gic_enable_ppi - Configure and enable one private peripheral interrupt.
  * @intid: Interrupt ID. Must be in the range 16 through 31.
  * @priority: Priority value; numerically lower means higher priority.

@@ -102,6 +102,24 @@ bool vmm_translate_write(
 	uint64_t *physical_address
 );
 
+/*
+ * Build a private translation root that identity-maps [physical_address,
+ * physical_address + size) as executable normal memory, and return its
+ * physical address. Nothing else is mapped in it.
+ *
+ * A CPU that starts with its MMU off fetches from a physical address; the
+ * instruction after the one that turns the MMU on is still at that physical
+ * address, so it must be translated to itself. The kernel proper runs only
+ * on TTBR1 (TTBR0 is disabled after boot), so a starting CPU is given this
+ * root as its TTBR0 for the few instructions it needs, and disables TTBR0
+ * again once it has branched to its higher-half address.
+ */
+bool vmm_create_identity_stub(
+	uint64_t physical_address,
+	uint64_t size,
+	uint64_t *root_physical
+);
+
 bool vmm_validate_kernel_permissions(void);
 bool vmm_validate_linked_kernel_layout(void);
 

@@ -2,6 +2,7 @@
 #include <vm/vmm_internal.h>
 
 #include <kern/lock.h>
+#include <kern/machine/smp.h>
 #include <kern/machine/vm_param.h>
 #include <vm/pmm.h>
 
@@ -230,6 +231,7 @@ bool vm_address_space_activate(vm_address_space_t *space)
 	if (g_active_address_space != 0) {
 		g_active_address_space->table_count = g_vmm.table_count;
 		g_active_address_space->active = false;
+		cpuset_remove_atomic(&g_active_address_space->active_cpus, machine_cpu_id());
 	}
 
 	uint64_t tcr = vmm_read_tcr() & ~VMM_TCR_EPD0;
@@ -239,14 +241,22 @@ bool vm_address_space_activate(vm_address_space_t *space)
 	 * TTBR0 was disabled at the end of Lesson 17. Install the new root,
 	 * allow TTBR0 walks again, and remove translations from the previous
 	 * lower address space before any user mapping can be observed.
+	 *
+	 * The flush is this CPU's own (not inner-shareable): it is this CPU's
+	 * TTBR0 that changed, so only this CPU can hold the previous space's
+	 * translations that must go, and a broadcast would also empty every idle
+	 * CPU's TLB of kernel (TTBR1) entries on each process switch. What other
+	 * CPUs might hold of *this* space is dealt with when its tables change:
+	 * every unmap and permission change invalidates by address, inner-shareable
+	 * (vmm_invalidate_page), which reaches all CPUs.
 	 */
 	__asm__ volatile(
 		"dsb ishst\n"
 		"msr ttbr0_el1, %0\n"
 		"msr tcr_el1, %1\n"
 		"isb\n"
-		"tlbi vmalle1is\n"
-		"dsb ish\n"
+		"tlbi vmalle1\n"
+		"dsb nsh\n"
 		"isb\n"
 		:
 		: "r"(ttbr0), "r"(tcr)
@@ -259,6 +269,7 @@ bool vm_address_space_activate(vm_address_space_t *space)
 	g_vmm.ttbr0_disabled = false;
 
 	space->active = true;
+	cpuset_add_atomic(&space->active_cpus, machine_cpu_id());
 	g_active_address_space = space;
 
 	return true;
@@ -271,6 +282,7 @@ bool vm_address_space_deactivate(void)
 	if (g_active_address_space != 0) {
 		g_active_address_space->table_count = g_vmm.table_count;
 		g_active_address_space->active = false;
+		cpuset_remove_atomic(&g_active_address_space->active_cpus, machine_cpu_id());
 	}
 
 	if (!g_vmm.ttbr0_disabled && !vmm_disable_ttbr0()) return false;

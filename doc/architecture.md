@@ -168,8 +168,10 @@ thread dispatch path.
 
 ## Current limitations
 
-- One CPU; SMP bring-up and per-CPU scheduler state beyond CPU 0 are not active.
-- Ordinary EL1 kernel preemption is deferred.
+- SMP: every CPU comes up and schedules its own kernel threads, but threads
+  run on the boot CPU only by default and user threads never leave it; most
+  subsystems are not SMP-safe. See [SMP](kern/smp.md).
+- Ordinary EL1 kernel preemption is opt-in per thread (`TH_FLAG_PREEMPTIBLE`).
 - The bootstrap userspace program is still embedded machine code rather than an
   ELF loaded from VFS.
 - VirtIO Block is synchronous and uses one request at a time.
