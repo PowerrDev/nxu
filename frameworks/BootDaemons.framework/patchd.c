@@ -4,8 +4,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define PATCHD_BUFFER_SIZE 256U
+#define PATCHD_BUFFER_SIZE 1024U
 #define PATCHD_INTERVAL_US 5000000ULL
+/* How often the loop looks for a repair request: an open() per pass of a yield loop is real work. */
+#define PATCHD_REQUEST_POLL_US 500000ULL
 #define PATCHD_REQUEST_PATH "/disk/var/db/patchd/repair-all"
 
 typedef struct {
@@ -57,6 +59,14 @@ patchd_images_equal(const patchd_target_t *target)
 		}
 
 		if (!equal) break;
+
+		/*
+		 * The check reads whole system images. Done in one go it holds the CPU
+		 * for tens of milliseconds every interval and the graphical session
+		 * (which shares the CPU by yielding) stalls behind it, so give the
+		 * others a turn after every chunk.
+		 */
+		(void)nxu_yield();
 	}
 
 	(void)nxu_close((uint64_t)recovery);
@@ -130,10 +140,16 @@ main(void)
 {
 	patchd_log("patchd: integrity repair service started\n");
 	uint64_t last_check = 0ULL;
+	uint64_t last_request_poll = 0ULL;
 
 	for (;;) {
 		uint64_t now = (uint64_t)nxu_uptime_us();
-		bool forced = patchd_repair_requested();
+		bool forced = false;
+
+		if (now - last_request_poll >= PATCHD_REQUEST_POLL_US) {
+			last_request_poll = now;
+			forced = patchd_repair_requested();
+		}
 
 		if (forced || now - last_check >= PATCHD_INTERVAL_US) {
 			patchd_check_all(forced);
