@@ -27,14 +27,25 @@
  *     it, so the system call can return "interrupted" and let the signal's
  *     handler run.
  *
- * The kernel is not preemptible and wakeups come only from thread context,
- * so checking the condition and joining the queue need no lock on the single
- * CPU. That is an assumption SMP will have to replace with a real lock here.
+ * SMP. Each queue has its own lock, taken with interrupts masked, and it
+ * covers the queue links and thread->wait_queue. waitq_block joins the queue
+ * and marks the thread waiting under that lock, so a waker on another CPU
+ * (which must take it to dequeue) can only find the thread once it is fully
+ * "waiting", and its wakeup is then never lost or applied to a thread that has
+ * not gone to sleep yet.
+ *
+ * That closes the window inside waitq_block, but not the one in the loop
+ * above: `condition()` is checked before the lock is taken. A subsystem whose
+ * waker can run on another CPU than the sleeper (which today means none:
+ * threads of the existing subsystems are all pinned to the boot CPU, see
+ * processor_default_affinity) must check the condition under a lock its waker
+ * also takes, or use waitq_block_unlock() (kern/sched_prism/waitq.h).
  */
 
 #ifndef NXU_KERN_SCHED_PRISM_WAITQ_H
 #define NXU_KERN_SCHED_PRISM_WAITQ_H
 
+#include <kern/lock.h>
 #include <kern/process/thread.h>
 
 #include <stdbool.h>
@@ -42,6 +53,7 @@
 typedef struct waitq {
 	thread_t head;
 	thread_t tail;
+	nxu_spinlock_t lock;
 } waitq_t;
 
 /* An all-zero waitq is valid and empty; this is for readability. */
@@ -56,6 +68,18 @@ void waitq_init(waitq_t *queue);
  * queue on return.
  */
 bool waitq_block(waitq_t *queue, bool interruptible);
+
+/*
+ * waitq_block_unlock
+ *
+ * waitq_block for a caller that checked its condition under `guard`, a lock its
+ * waker also takes: joins the queue and marks the thread waiting *before*
+ * releasing `guard`, so the waker, who needs `guard` to make the condition true,
+ * cannot wake a thread that is not yet asleep. `guard` is released on return
+ * either way, and interrupts are restored to what they were before the caller
+ * took it (pass that state in `irq_state`).
+ */
+bool waitq_block_unlock(waitq_t *queue, bool interruptible, nxu_spinlock_t *guard, uint64_t irq_state);
 
 /* Wake the longest-waiting thread / every thread on queue. */
 void waitq_wake_one(waitq_t *queue);
