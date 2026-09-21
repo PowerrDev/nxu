@@ -664,3 +664,44 @@ bool vmm_ttbr0_disabled(void)
 	return g_vmm.ttbr0_disabled;
 }
 
+
+bool vmm_create_identity_stub(
+	uint64_t physical_address,
+	uint64_t size,
+	uint64_t *root_physical
+)
+{
+	if (root_physical == 0 || size == 0ULL) {
+		return false;
+	}
+
+	uint64_t *root;
+	uint64_t root_address;
+	uint64_t table_count = 0ULL;
+
+	if (!vmm_allocate_table(&root, &root_address, &table_count)) {
+		return false;
+	}
+
+	if (!vmm_root_map_range(
+		root,
+		physical_address,
+		physical_address,
+		size,
+		VMM_MEMORY_NORMAL,
+		VMM_PROTECTION_READ_EXECUTE,
+		&table_count
+	)) {
+		return false;
+	}
+
+	/*
+	 * Publish the finished tables before any CPU is pointed at them: the
+	 * starting CPU's table walker observes them through the inner-shareable
+	 * domain, so the stores must have completed there first.
+	 */
+	__asm__ volatile("dsb ishst" : : : "memory");
+
+	*root_physical = root_address;
+	return true;
+}
