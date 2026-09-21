@@ -8,7 +8,7 @@ produces, not what our own driver would expect.
 
 usage: pop.py RECIPE ROOT [FLAGS_FILE]
 
-Recipes: empty minimal tree deep small compressible compress_mix compress_random
+Recipes: empty minimal tree deep small compressible compress_mix compress_random logbase logops
 Data is deterministic and position dependent (a file read at the wrong offset
 can never hash equal) yet highly compressible, so the images stay small.
 """
@@ -319,6 +319,78 @@ def compress_random(root):
     put(root + "/text", b"The quick brown fox jumps over the lazy dog. " * 3000)
 
 
+def logbase(root):
+    """The committed part of the log-tree fixture: files that logops then changes."""
+    os.mkdir(root + "/dir")
+    put(root + "/keep_append", pat(40, 0, 100000))
+    put(root + "/keep_overwrite", pat(41, 0, 300000))
+    put(root + "/keep_meta", pat(42, 0, 9000))
+    put(root + "/keep_trunc", pat(43, 0, 200000))
+    put(root + "/keep_link", pat(44, 0, 6000))
+    put(root + "/keep_del", pat(45, 0, 7000))
+    put(root + "/keep_ren", pat(46, 0, 8000))
+    put(root + "/keep_hole", pat(47, 0, 200000))
+    put(root + "/untouched", pat(48, 0, 30000))
+    put(root + "/dir/untouched2", pat(49, 0, 3000))
+    put(root + "/dir/keep_del2", pat(50, 0, 3000))
+
+
+def fsync_path(path):
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def logops(root):
+    """Changes that are fsynced but never committed: they end up in the log tree."""
+    import ctypes
+    libc = ctypes.CDLL(None, use_errno=True)
+
+    # New files, a new directory with a file in it.
+    put(root + "/n_small", pat(51, 0, 5000))
+    fsync_path(root + "/n_small")
+    put(root + "/n_big", pat(52, 0, 300000))
+    fsync_path(root + "/n_big")
+    os.mkdir(root + "/nd")
+    put(root + "/nd/f1", pat(53, 0, 20000))
+    fsync_path(root + "/nd/f1")
+
+    # Append; overwrite inside an existing extent; shrink.
+    with open(root + "/keep_append", "ab") as f:
+        f.write(pat(40, 100000, 50000))
+        f.flush()
+        os.fsync(f.fileno())
+    pwrite_sync(root + "/keep_overwrite", 100000, pat(54, 100000, 20000))
+    os.truncate(root + "/keep_trunc", 70000)
+    fsync_path(root + "/keep_trunc")
+
+    # Inode metadata only.
+    os.chmod(root + "/keep_meta", 0o600)
+    os.setxattr(root + "/keep_meta", "user.log", b"replayed")
+    os.utime(root + "/keep_meta", (1700000000, 1700000123))
+    fsync_path(root + "/keep_meta")
+
+    # A hard link, a rename, an unlink (fsync of the directory), a new symlink.
+    os.link(root + "/keep_link", root + "/nd/alias")
+    fsync_path(root + "/keep_link")
+    os.rename(root + "/keep_ren", root + "/renamed_ok")
+    fsync_path(root + "/renamed_ok")
+    os.unlink(root + "/keep_del")
+    os.unlink(root + "/dir/keep_del2")
+    fsync_path(root)
+    fsync_path(root + "/dir")
+    os.symlink("n_small", root + "/newlink")
+    fsync_path(root)
+
+    # Punch a hole (FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE).
+    fd = os.open(root + "/keep_hole", os.O_RDWR)
+    libc.fallocate(fd, 0x03, ctypes.c_longlong(40960), ctypes.c_longlong(65536))
+    os.fsync(fd)
+    os.close(fd)
+
+
 def plain(root):
     """Written after compression was switched off: plain extents in the same filesystem."""
     put(root + "/hello.txt", b"hello\n")
@@ -329,7 +401,7 @@ def plain(root):
     pwrite_sync(root + "/plain_sparse", 100000, pat(26, 100000, 4096))
 
 
-RECIPES = {"plain": plain, "empty": empty, "minimal": minimal, "tree": tree, "deep": deep, "small": small, "compressible": compressible, "compress_mix": compress_mix, "compress_random": compress_random}
+RECIPES = {"plain": plain, "empty": empty, "minimal": minimal, "tree": tree, "deep": deep, "small": small, "compressible": compressible, "logbase": logbase, "logops": logops, "compress_mix": compress_mix, "compress_random": compress_random}
 
 
 def main():

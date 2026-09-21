@@ -26,7 +26,7 @@ Each image is formatted with `mkfs.btrfs`, populated through the Linux driver
 `mkfs.btrfs --rootdir`.
 
 To regenerate: `tools/btrfs/make_fixtures.sh` (about 6 minutes), or
-`--only <group>` for one of `basic tree deep subvols variants compressed compressed2 refusal`.
+`--only <group>` for one of `basic tree deep subvols variants compressed compressed2 logtree refusal`.
 `tools/btrfs/make_fixtures.sh --smoke` only prints what the lab has. After
 regenerating, run `python3 tools/btrfs/gen_selftest_data.py >
 vfs/btrfs/btrfs_selftest_data.h` so the in-kernel expected listings follow.
@@ -57,6 +57,7 @@ timestamps are whenever the images were built.
 | `nodatasum` | mounted with `nodatasum`: no data checksums |
 | `comp-zlib`, `comp-lzo`, `comp-zstd` | files written under `compress-force=...` (flagged `compressed` in the manifest) next to plain files written after compression was switched off |
 | `mix-zlib1`, `mix-zlib9`, `mix-lzo`, `mix-zstd1`, `mix-zstd3`, `mix-zstd15` | the `compress_mix` recipe under each algorithm and level: files of exactly 128 KiB, one byte less and more, 256 KiB, sector-sized and tiny (inline) files, a sparse file with compressed extents between holes, a file overwritten in the middle so old compressed extents are only partly referenced, one with an incompressible island |
+| `logtree` | an unreplayed log tree: a committed baseline, then new files and directories, an append, an overwrite inside an extent, a truncate, a chmod + xattr + utimes, a hard link, a rename, unlinks fsynced through the directory, a symlink and a punched hole, all fsynced with the commit interval at an hour and the image copied while still mounted, so the superblock points at a log tree that was never committed. `logtree.manifest` is what Linux showed after mounting (and so replaying) a copy; `logtree.base.manifest` is the committed baseline before the operations (what `ignore_log_tree` must show) |
 | `mix-random` | incompressible data written with `compress-force=zstd:3` (Btrfs keeps it as plain extents) next to compressed text |
 | `csum-xxhash`, `csum-sha256`, `csum-blake2` | `mkfs.btrfs --csum`: every tree block and data sector uses that algorithm |
 | `raid1`, `raid0`, `raid5`, `single2dev` | the FIRST device only of a 2/2/3/2-device filesystem: refused at mount |

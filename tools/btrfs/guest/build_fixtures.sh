@@ -272,6 +272,35 @@ if want compressed2; then
 	finish $name
 fi
 
+# ---- (f3) a filesystem with an unreplayed log tree ---------------------------
+# Baseline committed, then fsyncs without a commit (commit=3600 keeps the transaction open),
+# then the image file is copied while the filesystem is still mounted: that copy is what a
+# crash right after the last fsync would leave, with the log tree pointed to by the
+# superblock. A second copy is mounted, so Linux replays the log, and THAT view is the
+# manifest of the fixture. logtree.base.manifest is the committed state without the log.
+if want logtree; then
+	name=logtree
+	new_fs $name 128
+	mount_fs $name noatime,commit=3600
+	python3 $GUESTDIR/pop.py logbase /mnt/$name
+	sync
+	manifest /mnt/$name "$name.base.manifest"
+	python3 $GUESTDIR/pop.py logops /mnt/$name || fail "logops"
+	cp $WORK/$name.img $WORK/$name.crash.img
+	cp $WORK/$name.img $WORK/$name.replay.img
+	umount /mnt/$name || fail "umount $name"
+	rm -f $WORK/$name.img
+	btrfs inspect-internal dump-super -f $WORK/$name.crash.img | grep -E "^(log_root|generation|log_root_transid)" | sed 's/^/guest: crash image: /'
+	{ btrfs inspect-internal dump-super -f $WORK/$name.crash.img; echo "fs_tree_level: 0"; } > $OUT/$name.info
+	zstd -19 -q --long=27 -f $WORK/$name.crash.img -o $OUT/$name.img.zst || fail "zstd $name"
+	mv $WORK/$name.replay.img $WORK/logreplay.img
+	mount_fs logreplay noatime
+	manifest /mnt/logreplay "$name.manifest"
+	umount /mnt/logreplay || fail "umount logreplay"
+	rm -f $WORK/logreplay.img $WORK/$name.crash.img
+	say "built $name"
+fi
+
 # ---- (g) refusal fixtures ---------------------------------------------------
 if want refusal; then
 	simple csum-xxhash 128 small --csum xxhash
