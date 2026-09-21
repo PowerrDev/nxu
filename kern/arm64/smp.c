@@ -352,6 +352,9 @@ void smp_stop_other_cpus(void)
 	uint64_t deadline = timer_get_microseconds() + 20000ULL;
 
 	while (timer_get_microseconds() < deadline) cpu_relax();
+
+	/* A CPU stopped in the middle of a print still holds the console lock. */
+	kconsole_break_lock();
 }
 
 /* ---- the boot CPU ------------------------------------------------------- */

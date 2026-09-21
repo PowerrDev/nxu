@@ -1,5 +1,6 @@
 #include <kern/console/console.h>
 
+#include <kern/lock.h>
 #include <kern/machine/timer.h>
 #include <platform/uart.h>
 
@@ -12,6 +13,13 @@ typedef struct {
 	void *context;
 	bool active;
 } kconsole_sink_entry_t;
+
+/*
+ * One writer at a time: a kprintf, kputs or kputln from one CPU comes out as one
+ * unbroken line. Recursive (a sink may print), taken with interrupts masked, and
+ * a leaf apart from the sinks it calls (UART, display) which take nothing back.
+ */
+static nxu_rlock_t g_kconsole_lock = NXU_RLOCK_INIT;
 
 static kconsole_sink_entry_t g_kconsole_sinks[KCONSOLE_MAX_SINKS];
 static char g_kconsole_history[KCONSOLE_HISTORY_SIZE];
@@ -169,6 +177,8 @@ static void kconsole_emit_timestamp(void)
 
 void kputc(char character)
 {
+	NXU_RLOCK_GUARD(&g_kconsole_lock);
+
 	if (g_kconsole_line_start && character != '\n') {
 		kconsole_emit_timestamp();
 		g_kconsole_line_start = false;
@@ -183,12 +193,16 @@ void kputc(char character)
 
 void kputs(const char *string)
 {
+	NXU_RLOCK_GUARD(&g_kconsole_lock);
+
 	if (string == 0) string = "(null)";
 	while (*string != '\0') kputc(*string++);
 }
 
 void kputln(const char *string)
 {
+	NXU_RLOCK_GUARD(&g_kconsole_lock);
+
 	kputs(string);
 	kputc('\n');
 }
@@ -284,6 +298,8 @@ static int kprintf_signed(int64_t value)
 
 int kvprintf(const char *format, va_list arguments)
 {
+	NXU_RLOCK_GUARD(&g_kconsole_lock);
+
 	if (format == 0) return 0;
 
 	int written = 0;
@@ -386,6 +402,15 @@ void kconsole_set_verbose(bool verbose)
 bool kconsole_verbose(void)
 {
 	return g_kconsole_verbose;
+}
+
+void kconsole_break_lock(void)
+{
+	if (__atomic_load_n(&g_kconsole_lock.owner, __ATOMIC_RELAXED) == machine_cpu_id() + 1U) return;
+
+	g_kconsole_lock.owner = 0U;
+	g_kconsole_lock.depth = 0U;
+	__atomic_store_n(&g_kconsole_lock.lock.value, 0U, __ATOMIC_RELEASE);
 }
 
 int kverbosef(const char *format, ...)
