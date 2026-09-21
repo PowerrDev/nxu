@@ -25,6 +25,7 @@
 #include <kern/ipc/ipc_types.h>
 #include <kern/tests/boot_test.h>
 #include <kern/tests/post.h>
+#include <kern/tests/smp_test.h>
 #include <platform/driverkit.h>
 #include <kern/process/proc.h>
 #include <kern/sched_prism/sched.h>
@@ -966,6 +967,13 @@ void kern_start_scheduler(const driverkit_config_t *drivers)
 
 	arm64_enable_irqs();
 	kputln("kern_init: IRQs enabled");
+
+#if defined(NXU_SMP_TEST)
+	/* The secondary CPUs are up and the boot CPU takes interrupts: the SMP suite runs on the boot thread. */
+	if (!smp_test_run()) kern_fail("smp_test: failed");
+	kputln("smp_test: passed; halting (test build)");
+	for (;;) __asm__ volatile("wfe");
+#endif
 
 	if (g_boot_process != 0) {
 		kprintf("sched: dispatching %s PID %u\n", boot_mode_is_triage_os() ? "triageOS" : "bootd", g_boot_process->p_ident.pid);

@@ -26,6 +26,7 @@
 #   TEST_<id>_GPU         QEMU virtio-gpu-device args (default: bare device)
 #   TEST_<id>_RAMFB       QEMU ramfb device           (default: none)
 #   TEST_<id>_MONITOR     QEMU -monitor argument      (default: none)
+#   TEST_<id>_SMP         virtual CPUs QEMU gives it (-smp; default: 1)
 #   TEST_<id>_PASS        serial line that means the test passed; setting it
 #                         puts the test in `make check` (headless tests only).
 #                         Several lines, all required, are separated by |
@@ -58,6 +59,7 @@ TEST_IDS := \
     xamethyst-process \
     windowserver-process \
     about-sevos-process \
+    smp \
     sound
 
 
@@ -187,6 +189,13 @@ TEST_about-sevos-process_MONITOR := telnet:127.0.0.1:45456,server,nowait
 # plays it through the host's speakers; `make check` records it with the wav
 # backend and verify_capture.py compares the recording with the tone formula and
 # with Boot_Audio.wav sample by sample.
+TEST_smp_GROUP := Kernel
+TEST_smp_DESC := SMP: four CPUs, per-CPU run queues, IPIs, affinity, migration, shared memory
+TEST_smp_PASS := smp_test: passed
+TEST_smp_CFLAGS := -DNXU_SMP_TEST
+TEST_smp_SMP := 4
+TEST_smp_TIMEOUT := 120
+
 TEST_sound_GROUP := Sound
 TEST_sound_DESC := Tone, boot chime and playsound through VirtIO Sound (audible)
 TEST_sound_PASS := sound_test: passed
@@ -248,8 +257,8 @@ test-list:
 
 check-list:
 
-	@printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'default' '$(CHECK_TIMEOUT)' '$(CHECK_DEFAULT_PASS)' '-' '-' '-' '-'
-	@$(foreach id,$(CHECK_IDS),printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' '$(id)' '$(or $(TEST_$(id)_TIMEOUT),$(CHECK_TIMEOUT))' '$(TEST_$(id)_PASS)' '$(or $(TEST_$(id)_CFLAGS),-)' '$(if $(TEST_$(id)_CAPTURE),1,-)' '$(or $(TEST_$(id)_VERIFY),-)' '$(or $(TEST_$(id)_FRAMEWORKS),-)';)
+	@printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'default' '$(CHECK_TIMEOUT)' '$(CHECK_DEFAULT_PASS)' '-' '-' '-' '-' '1'
+	@$(foreach id,$(CHECK_IDS),printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' '$(id)' '$(or $(TEST_$(id)_TIMEOUT),$(CHECK_TIMEOUT))' '$(TEST_$(id)_PASS)' '$(or $(TEST_$(id)_CFLAGS),-)' '$(if $(TEST_$(id)_CAPTURE),1,-)' '$(or $(TEST_$(id)_VERIFY),-)' '$(or $(TEST_$(id)_FRAMEWORKS),-)' '$(or $(TEST_$(id)_SMP),1)';)
 
 
 check-i386-list:
@@ -280,7 +289,7 @@ test: $(DISK) $(DISK_FORMAT_STAMP)
 	qemu-system-aarch64 \
 		-machine virt,gic-version=3 \
 		-cpu cortex-a72 \
-		-smp 1 \
+		-smp $(or $(TEST_$(TEST)_SMP),1) \
 		-m 512M \
 		-kernel BUILD/$(TEST)/kernel.bin \
 		-append "$(BOOT_ARGS) ui.scale=$(QEMU_UI_SCALE_PERMILLE)" \
