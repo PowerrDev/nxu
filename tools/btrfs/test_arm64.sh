@@ -45,6 +45,9 @@ arch_boot() {
 		args+=(-drive "if=none,format=raw,file=$path,id=d$index" -device "virtio-blk-device,drive=d$index")
 	done
 	args+=(-drive "if=none,format=raw,file=$SCRATCH/root.img,id=d0" -device virtio-blk-device,drive=d0 -device virtio-gpu-device -device virtio-keyboard-device -device virtio-mouse-device)
+	# The sound device goes last so it takes the lowest slot and leaves the block
+	# disk order alone; a normal boot has one (see doc/drivers/virtio-sound.md).
+	args+=(-audiodev none,id=snd0 -device virtio-sound-device,audiodev=snd0)
 
 	OUTPUT=$(perl "$HERE/../qemu_watchdog.pl" "$QEMU_TIMEOUT" qemu-system-aarch64 \
 		-machine virt,gic-version=3 -cpu cortex-a72 -smp 1 -m 512M \
