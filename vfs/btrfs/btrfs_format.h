@@ -51,11 +51,12 @@ typedef enum {
 	BTRFS_ERR_NAME_TOO_LONG,
 	BTRFS_ERR_UNSUPPORTED,         /* generic: valid but not implemented */
 	BTRFS_ERR_UNSUPPORTED_FEATURE, /* unknown or unsupported incompat/compat_ro bits */
-	BTRFS_ERR_UNSUPPORTED_CSUM,    /* checksum algorithm other than crc32c */
+	BTRFS_ERR_UNSUPPORTED_CSUM,    /* checksum algorithm this driver does not know (none today) */
 	BTRFS_ERR_UNSUPPORTED_PROFILE, /* RAID / multi-device chunk or filesystem */
 	BTRFS_ERR_UNSUPPORTED_COMPRESSION,
 	BTRFS_ERR_UNSUPPORTED_ENCRYPTION,
-	BTRFS_ERR_LOG_TREE             /* an unreplayed log tree needs replay */
+	BTRFS_ERR_LOG_TREE,            /* the log tree holds something the replay layer does not understand */
+	BTRFS_ERR_MISSING_DEVICE       /* a device of the filesystem was not supplied (degraded mounts are refused) */
 } btrfs_status_t;
 
 const char *btrfs_status_name(btrfs_status_t status);
@@ -127,6 +128,7 @@ static inline void btrfs_put_le64(uint8_t *p, uint64_t v)
 #define BTRFS_RAID_STRIPE_TREE_OBJECTID 12ULL
 #define BTRFS_DEV_ITEMS_OBJECTID 1ULL
 #define BTRFS_EXTENT_CSUM_OBJECTID ((uint64_t)-10LL)
+#define BTRFS_TREE_LOG_OBJECTID ((uint64_t)-6LL)
 #define BTRFS_FIRST_FREE_OBJECTID 256ULL
 #define BTRFS_LAST_FREE_OBJECTID ((uint64_t)-256LL)
 #define BTRFS_FIRST_CHUNK_TREE_OBJECTID 256ULL
@@ -704,6 +706,27 @@ uint32_t btrfs_crc32c(uint32_t crc, const void *data, size_t length);
 /* The checksum Btrfs stores for a block: ~crc32c(~0, data), little-endian. */
 uint32_t btrfs_csum_crc32c(const void *data, size_t length);
 
+/*
+ * The checksum of `type` over data, into out[0..csum_size) with the rest of
+ * the 32-byte field zeroed (the on-disk form). False for a type this driver
+ * does not know.
+ */
+bool btrfs_csum_data(uint32_t type, const void *data, size_t length, uint8_t out[BTRFS_CSUM_SIZE]);
+
+/*
+ * True if the checksum of `data` under `type` equals the csum_size(type) bytes
+ * at stored (the first bytes of a header's csum field, or one csum item entry).
+ * False for a mismatch and for a type this driver does not know.
+ */
+bool btrfs_csum_matches(uint32_t type, const uint8_t *stored, const void *data, size_t length);
+
+/* SHA-256 and BLAKE2b with a 32-byte digest (btrfs_hash.c): the 32-byte checksum types. */
+void btrfs_sha256(const void *data, size_t length, uint8_t out[32]);
+void btrfs_blake2b_256(const void *data, size_t length, uint8_t out[32]);
+
+/* XXH64 (Yann Collet's xxHash, 64-bit) of data with the given seed: Btrfs' xxhash checksum and the ZSTD content checksum. */
+uint64_t btrfs_xxh64(const void *data, size_t length, uint64_t seed);
+
 /* The DIR_ITEM key offset for a name: crc32c(~1, name). */
 uint32_t btrfs_name_hash(const uint8_t *name, size_t length);
 
@@ -713,5 +736,6 @@ uint64_t btrfs_extref_hash(uint64_t parent_objectid, const uint8_t *name, size_t
 /* Number of checksum bytes for a csum type, or 0 for an unknown type. */
 uint32_t btrfs_csum_type_size(uint32_t type);
 const char *btrfs_csum_type_name(uint32_t type);
+const char *btrfs_compression_name(uint32_t compression);
 
 #endif

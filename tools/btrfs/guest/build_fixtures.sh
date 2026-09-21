@@ -238,6 +238,120 @@ if want compressed; then
 	done
 fi
 
+# ---- (f2) compressed extents of every shape ---------------------------------
+# One fixture per algorithm and level, all with the compress_mix recipe (see pop.py), plus
+# incompressible data. The manifest flags the files that were compressed for the record;
+# the tests do not depend on it, the driver must read every file as Linux does.
+if want compressed2; then
+	for spec in zlib1:zlib:1 zlib9:zlib:9 lzo:lzo: zstd1:zstd:1 zstd3:zstd:3 zstd15:zstd:15; do
+		label=${spec%%:*}
+		rest=${spec#*:}
+		algo=${rest%%:*}
+		level=${rest##*:}
+		name=mix-$label
+		new_fs $name 128
+		mount_fs $name noatime,compress-force=$algo${level:+:$level}
+		python3 $GUESTDIR/pop.py compress_mix /mnt/$name
+		sync
+		: > $WORK/flags
+		for f in e128k e128k_m1 e128k_p1 e256k text dir/big sparse overwritten island; do
+			printf '/%s\tcompressed\n' "$f" >> $WORK/flags
+		done
+		manifest /mnt/$name "$name.manifest" --flags $WORK/flags
+		btrfs inspect-internal dump-tree -t 5 "$WORK/$name.img" 2>/dev/null | grep -c "compression $(case $algo in zlib) echo 1;; lzo) echo 2;; zstd) echo 3;; esac)" > "$WORK/ncomp" || true
+		say "$name: $(cat $WORK/ncomp) compressed extents"
+		finish $name
+	done
+
+	name=mix-random
+	new_fs $name 128
+	mount_fs $name noatime,compress-force=zstd:3
+	python3 $GUESTDIR/pop.py compress_random /mnt/$name
+	sync
+	manifest /mnt/$name "$name.manifest"
+	finish $name
+fi
+
+# ---- (f3) a filesystem with an unreplayed log tree ---------------------------
+# Baseline committed, then fsyncs without a commit (commit=3600 keeps the transaction open),
+# then the image file is copied while the filesystem is still mounted: that copy is what a
+# crash right after the last fsync would leave, with the log tree pointed to by the
+# superblock. A second copy is mounted, so Linux replays the log, and THAT view is the
+# manifest of the fixture. logtree.base.manifest is the committed state without the log.
+if want logtree; then
+	name=logtree
+	new_fs $name 128
+	mount_fs $name noatime,commit=3600
+	python3 $GUESTDIR/pop.py logbase /mnt/$name
+	sync
+	manifest /mnt/$name "$name.base.manifest"
+	python3 $GUESTDIR/pop.py logops /mnt/$name || fail "logops"
+	cp $WORK/$name.img $WORK/$name.crash.img
+	cp $WORK/$name.img $WORK/$name.replay.img
+	umount /mnt/$name || fail "umount $name"
+	rm -f $WORK/$name.img
+	btrfs inspect-internal dump-super -f $WORK/$name.crash.img | grep -E "^(log_root|generation|log_root_transid)" | sed 's/^/guest: crash image: /'
+	{ btrfs inspect-internal dump-super -f $WORK/$name.crash.img; echo "fs_tree_level: 0"; } > $OUT/$name.info
+	zstd -19 -q --long=27 -f $WORK/$name.crash.img -o $OUT/$name.img.zst || fail "zstd $name"
+	mv $WORK/$name.replay.img $WORK/logreplay.img
+	mount_fs logreplay noatime
+	manifest /mnt/logreplay "$name.manifest"
+	umount /mnt/logreplay || fail "umount logreplay"
+	rm -f $WORK/logreplay.img $WORK/$name.crash.img
+	say "built $name"
+fi
+
+# ---- (f4) multi-device filesystems ------------------------------------------
+# Real mkfs.btrfs over several loop devices; Linux mounts them, writes the manifest, and
+# every device image is kept as NAME.<index>.img.zst (index = position given to mkfs; the
+# driver takes them in any order). NAME.info is device 0's superblock dump.
+multidev() {
+	local name=$1 ndev=$2 dprof=$3 mprof=$4
+	local i loops="" first=""
+
+	i=0
+	while [ $i -lt $ndev ]; do
+		rm -f $WORK/$name.$i.img
+		truncate -s 128M $WORK/$name.$i.img
+		l=$(losetup -f --show $WORK/$name.$i.img) || fail "losetup $name.$i"
+		loops="$loops $l"
+		[ -z "$first" ] && first=$l
+		i=$((i + 1))
+	done
+
+	mkfs.btrfs -q -f -L $name -U "$(uuid_for $name)" -d $dprof -m $mprof $loops > $WORK/mkfs.log 2>&1 || { cat $WORK/mkfs.log; fail "mkfs $name"; }
+	btrfs device scan $loops > /dev/null 2>&1
+	mkdir -p /mnt/$name
+	mount -o noatime $first /mnt/$name || fail "mount $name"
+	python3 $GUESTDIR/pop.py multi /mnt/$name || fail "populate $name"
+	sync
+	manifest /mnt/$name "$name.manifest"
+	btrfs filesystem usage /mnt/$name 2>&1 | grep -E "^(Data|Metadata|System)," | sed "s/^/guest: $name: /"
+	umount /mnt/$name || fail "umount $name"
+	btrfs check --readonly $first > $WORK/check.log 2>&1 || { cat $WORK/check.log; fail "btrfs check $name"; }
+	for l in $loops; do losetup -d $l; done
+
+	{ btrfs inspect-internal dump-super -f $WORK/$name.0.img; echo "fs_tree_level: 0"; } > $OUT/$name.info
+	i=0
+	while [ $i -lt $ndev ]; do
+		zstd -19 -q --long=27 -f $WORK/$name.$i.img -o $OUT/$name.$i.img.zst || fail "zstd $name.$i"
+		rm -f $WORK/$name.$i.img
+		i=$((i + 1))
+	done
+	say "built $name ($ndev devices)"
+}
+
+if want multidev; then
+	multidev md-raid1 2 raid1 raid1
+	multidev md-raid0 2 raid0 raid1
+	multidev md-raid10 4 raid10 raid10
+	multidev md-raid1c3 3 raid1c3 raid1c3
+	multidev md-raid1c4 4 raid1c4 raid1c4
+	multidev md-raid5 3 raid5 raid1
+	multidev md-raid6 4 raid6 raid1c3
+	multidev md-single 2 single dup
+fi
+
 # ---- (g) refusal fixtures ---------------------------------------------------
 if want refusal; then
 	simple csum-xxhash 128 small --csum xxhash

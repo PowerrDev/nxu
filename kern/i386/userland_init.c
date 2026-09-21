@@ -99,7 +99,7 @@ bool i386_init_userland(const i386_boot_info_t *boot)
 	 * print its tree / one file (see vfs/btrfs/btrfs_list.h, make
 	 * run-i386-btrfs). Handled before the ext4 root mount so the Btrfs image
 	 * can be the only disk. Options: btrfs-dev=<n> (block device, default 0),
-	 * btrfs-subvol=<id>, btrfs-verify=1, btrfs-max=<entries>.
+	 * btrfs-subvol=<id>, btrfs-noverify=1, btrfs-max=<entries>.
 	 */
 	char list_value[128];
 	btrfs_list_request_t list_request;
@@ -115,7 +115,7 @@ bool i386_init_userland(const i386_boot_info_t *boot)
 		if (i386_boot_arg("btrfs-dev", option, sizeof(option))) list_request.device_index = userland_parse_u32(option);
 		if (i386_boot_arg("btrfs-subvol", option, sizeof(option))) list_request.subvolume = userland_parse_u32(option);
 		if (i386_boot_arg("btrfs-max", option, sizeof(option))) list_request.max_entries = userland_parse_u32(option);
-		list_request.verify = i386_boot_arg("btrfs-verify", option, sizeof(option));
+		list_request.noverify = i386_boot_arg("btrfs-noverify", option, sizeof(option));
 
 		bool list_ok = btrfs_list_run(&list_request);
 

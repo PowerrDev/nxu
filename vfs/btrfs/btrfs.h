@@ -17,6 +17,8 @@
 
 #include <vfs/btrfs/btrfs_format.h>
 
+#include <drivers/block/block_device.h>
+
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -34,13 +36,26 @@ bool btrfs_register(void);
  * (whether it succeeds or not). NULL clears them.
  *
  *   subvol_id           mount this subvolume instead of the default (0: default)
- *   verify_data         check file data against the checksum tree
+ *   verify_data         check file data against the checksum tree (the
+ *                       default; kept as an explicit spelling)
  *   ignore_log_tree     mount despite an unreplayed log tree
+ *   noverify            do not check file data against the checksum tree
+ *                       (metadata is always checked). Together with verify_data
+ *                       the mount is refused as contradictory.
+ *   extra_devices       the other devices of a multi-device filesystem (the
+ *                       device given to vfs_mount is the first); every device
+ *                       the filesystem lists must be supplied, in any order,
+ *                       else the mount fails with BTRFS_ERR_MISSING_DEVICE
  */
+#define BTRFS_MOUNT_EXTRA_DEVICES 3U
+
 typedef struct {
 	uint64_t subvol_id;
 	bool verify_data;
 	bool ignore_log_tree;
+	bool noverify;
+	block_device_t extra_devices[BTRFS_MOUNT_EXTRA_DEVICES];
+	uint32_t extra_count;
 } btrfs_mount_options_t;
 
 void btrfs_set_next_mount_options(const btrfs_mount_options_t *options);

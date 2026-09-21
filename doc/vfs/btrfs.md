@@ -15,14 +15,17 @@ real Linux stack (see [Fixtures](#fixtures-and-ground-truth)).
         |
    ---- pure core: no kernel headers; allocator, reader and log are injected ----
         |
-   btrfs_file     EXTENT_DATA -> bytes: inline, regular, prealloc, holes, compression hook,
-                  optional data checksums
+   btrfs_replay   the log tree, read into memory and layered over dir/inode/file/csum lookups
+   btrfs_file     EXTENT_DATA -> bytes: inline, regular, prealloc, holes, compressed extents,
+                  data checksums
+   btrfs_codec    zlib, LZO and ZSTD decoders (btrfs_zlib.c, btrfs_lzo.c, btrfs_zstd.c)
    btrfs_dir      DIR_ITEM lookup by crc32c name hash, DIR_INDEX cursor iteration
    btrfs_inode    INODE_ITEM, INODE_REF / INODE_EXTREF
    btrfs_root     ROOT_ITEM, subvolumes, "default", ROOT_REF / ROOT_BACKREF, subvolume points
    btrfs_tree     verified tree blocks, LRU cache, search, cross-leaf iteration (paths)
-   btrfs_chunk    logical -> physical (sys_chunk_array, then the chunk tree); SINGLE, DUP
-   btrfs_super    three superblock copies, validation, feature/csum/device gating
+   btrfs_chunk    logical -> physical (sys_chunk_array, then the chunk tree); SINGLE, DUP, WIP: RAID
+   btrfs_super    three superblock copies, validation, feature/device gating
+   btrfs_csum     crc32c, xxh64; btrfs_hash: sha256, blake2b-256 (the four csum types)
    btrfs_io       reader interface: read N bytes at a byte offset
         |
    btrfs_io_block.c (kernel block_device_t)   btrfs_io_host.c (a file; host tests only)
@@ -46,19 +49,49 @@ printf subset with no field widths, like `kprintf`.
 considered only if it fits on the device. A copy is valid when the magic
 `_BHRfS_M`, its own byte number, its crc32c and its geometry (power-of-two
 sector/node sizes, levels < 8, aligned roots) are right; the valid copy with
-the highest generation wins, so a damaged primary falls back to a mirror. Other
-checksum types are recognised and refused with their own status, before the
-checksum is looked at.
+the highest generation wins, so a damaged primary falls back to a mirror. The superblock names its
+own checksum type, which then covers every tree block and every data sector;
+an unknown type number is corruption, not a feature.
 
 **Chunk map** (`btrfs_chunk.c`). Built from `sys_chunk_array`, then completed
 from the chunk tree. Sorted array, binary search, overlap and range checks
-(everything must lie inside the device). SINGLE has one stripe, DUP two: a
-tree block that fails verification on the first copy is re-read from the
-second (`mirror_fallbacks` counts it, the block is served only if the second
-copy verifies). RAID0/1/10/5/6, RAID1C3/4, any stripe on another device and
-any multi-device filesystem are parsed, then refused. `btrfs_mapping_t` and
-`btrfs_chunk_t` keep the general stripe list; a new profile only needs a case
-in `btrfs_map_logical`.
+(everything must lie inside its device). `btrfs_map_logical` turns a logical
+address into the copies of the piece it falls in, each a (device id, physical
+offset) pair, and `btrfs_read_logical` reads across pieces and devices.
+**Multi-device and RAID support is work in progress (WIP)**: it is committed
+separately (`WIP vfs/btrfs: ...`, easy to revert), it reads every profile below
+byte-identically to Linux on the host and in both kernels, but it has had far
+less testing than the single-device paths (no write, no degraded mode, no
+parity reconstruction, no fuzzing of multi-device images), so treat it as
+experimental:
+
+| Profile | Mapping |
+|---|---|
+| SINGLE | 1 stripe |
+| DUP, RAID1, RAID1C3, RAID1C4 | every stripe is a whole copy (DUP: two on one device; the others on different devices): 2, 2, 3, 4 copies |
+| RAID0 | `stripe_len` bytes on one device, then the next, round robin; 1 copy |
+| RAID10 | as RAID0 over pairs (`sub_stripes` = 2), each stripe mirrored: 2 copies |
+| RAID5, RAID6 | data stripes rotate with the row (`(column + row) mod n`), parity takes the rest; a read goes straight to the data stripe: 1 copy, **no reconstruction from parity** |
+
+A block or data extent that fails verification on one copy is re-read from the
+next copy in stripe order (`mirror_fallbacks` counts each failed copy that had a
+successor) and is served only if a later copy verifies; if none does, the read
+fails. Chunk geometry is validated per profile (stripe count, `stripe_len` a
+power of two, chunk length a multiple of a full stripe row, every stripe inside
+its device).
+
+**Devices** (`btrfs_fs_open_devices`, WIP). The caller supplies all devices of the
+filesystem in any order (`btrfs_fs_open` is the one-device case; the kernel takes
+up to 8, the virtio-blk driver 4 in total). Every device's superblock is read and
+they must agree on the fsid and have distinct device ids; the highest generation
+wins (a device that lags is used but logged), each device must be as large as its
+own device item says, and the chunk tree's DEV_ITEMs are matched with the
+supplied devices by id **and uuid**. Every device the superblock lists
+(`num_devices`) must be present: a missing one is refused with
+`BTRFS_ERR_MISSING_DEVICE`, never mounted degraded (degraded reads would serve
+holes or fall back on parity this driver does not use). More devices than the
+filesystem has, a device of another filesystem, or two devices with one id are
+`BTRFS_ERR_INVALID`.
 
 **Tree blocks** (`btrfs_tree.c`). A block is accepted only if its crc32c, own
 address, fsid (metadata_uuid when set), level, generation (equal to what the
@@ -92,29 +125,142 @@ the offset and walk forward: inline, regular (reading the slice
 `[offset, offset+num_bytes)` of a possibly larger disk extent), preallocated
 (zeros), explicit hole (zeros), implicit gap (zeros), tail up to `i_size`
 (zeros). Every iteration advances the position or moves to a strictly later
-item. Compressed extents go through `fs->decompressors[]` (zlib/lzo/zstd); none
-is registered, so they fail with `BTRFS_ERR_UNSUPPORTED_COMPRESSION`, never with
-garbage, and everything else in the volume stays readable. Optional data
-checksum verification (`verify_data`) checks every sector of a regular extent
-against the csum tree and falls back to the other DUP copy.
+item. Data checksums are verified on every read (see
+[Bad extents](#bad-extents-and-data-checksums)); compressed extents are decoded
+(see [Compression](#compression)).
+
+### Log tree replay
+
+`fsync()` does not commit a transaction. It writes what changed into a log tree
+and points `super.log_root` at it; if the machine stops before the next commit,
+Linux replays the log at the next mount. This driver never writes, so instead of
+replaying into the trees it reads the log into memory in `btrfs_fs_open()`
+(`btrfs_replay.c`: the log root tree, one log tree per subvolume, every item
+copied into one pool, capped at 16 MiB and 256 Ki items) and layers it over the
+committed trees, so a volume that Linux would replay shows the same thing here:
+
+- **Inodes**: a logged INODE_ITEM replaces the committed item; inodes that exist
+  only in the log are found. A directory the log changed keeps its committed
+  size plus 2 x name length for every entry the replay links and minus that for
+  every entry it unlinks (Linux's rule; a new directory starts from the logged
+  size).
+- **Directory entries**: DIR_INDEX items of the log and the names of logged
+  INODE_REF items (Linux replays those as links) add or replace entries by index
+  (the log wins an index it shares); entries in a logged range (`DIR_LOG_INDEX`
+  `[first, last]`) that the log does not repeat and names that a logged INODE_REF
+  no longer lists (rename, unlink) are removed. A directory the log touched is
+  looked up by walking the merged listing (the hash items exist only in the
+  committed tree).
+- **File extents**: logged EXTENT_DATA items replace what they overlap. A file
+  with logged extents is read through a merged extent list (committed extents
+  trimmed around the logged ones, so a tail keeps its offset into the disk
+  extent; holes punched by the log are explicit hole extents), which also covers
+  truncation, appends, overwrites inside an extent and compressed extents.
+- **Checksums**: the EXTENT_CSUM items of the log verify the logged data (they
+  are consulted before the csum tree), so replayed data is verified like any
+  other.
+- **INODE_REF enumeration** (hard-link counts): a logged item replaces the
+  committed item of the same (inode, parent).
+
+`ignore_log_tree` skips all of this (the state of the last commit). Not
+understood, so the mount is refused with `log-tree` rather than showing
+something wrong: item types the log tree of a subvolume should not hold for this
+driver (extended inode refs, `DIR_ITEM`, orphan items, root items in a subvolume
+log, entries that lead into another subvolume), a log with more than 32 subvolume
+trees, an inode that is referenced but exists neither in the log nor in the
+tree, and a logged extent that would have to cut the front off an inline extent.
+XATTR items and `DIR_LOG_ITEM` (the name-hash range) are ignored: this driver
+does not interpret xattrs and looks names up by walking. Inodes that the log
+unlinks completely disappear because their directory entries do (Linux removes
+the orphan later; nothing here can show it). The device is never written.
+
+### Compression
+
+`btrfs_fs_open()` registers the three decoders in `fs->decompressors[]`; a
+method without a decoder (only a damaged image can name one) fails the read with
+`BTRFS_ERR_UNSUPPORTED_COMPRESSION`, never with garbage. The decoders are
+freestanding (`btrfs_codec.h`) and share one contract: they get the on-disk
+extent (`disk_num_bytes`, possibly with zero sector padding) and a buffer of
+exactly `ram_bytes`, write at most that many bytes, and return `BTRFS_OK` only
+for a complete, well-formed stream; a stream that decodes to fewer bytes is
+zero filled (Linux does the same for the rounded-up last extent), anything else
+is `BTRFS_ERR_CORRUPT`. `ram_bytes` above 128 KiB (what Btrfs writes) is refused
+before any decoder runs, so a decompression bomb cannot grow past the extent's
+stated size.
+
+- **zlib** (`btrfs_zlib.c`): RFC 1950/1951 inflate in the style of puff.c; the
+  output is the window, no allocation; Adler-32 verified.
+- **LZO** (`btrfs_lzo.c`): LZO1X with `lzo1x_decompress_safe` semantics inside
+  Btrfs' framing (total length, then per-sector segments, headers never
+  straddling a sector, every segment its own stream, so distances are checked
+  against the segment).
+- **ZSTD** (`btrfs_zstd.c`): RFC 8878 frames: raw/RLE/compressed blocks, raw/RLE/
+  Huffman literals (1 and 4 streams, direct and FSE weights, treeless), all four
+  sequence table modes, repeat offsets, content checksum verified. No
+  dictionaries, windows above 128 KiB refused. Work memory (about 11 KiB of
+  tables plus one block of literals) is one allocation through the injected
+  `btrfs_env_t`.
+
+Reads: the compressed bytes are read through the normal data path (so they are
+verified against the csum tree, which covers what is on disk, and DUP falls
+back), decoded, and the requested slice of the decoded extent is copied out;
+partial-extent reads (`offset` inside the decoded extent, several files or
+ranges referring to different parts of one extent) fall out of that. Inline
+compressed extents decode from the item. **Memory:** decoded data lives in
+`fs->extent_cache`, one buffer of at most 128 KiB allocated on first use and
+freed at close, holding the last decoded extent, so reading a file in small
+steps decodes each extent once (`extents_decoded`, `extent_cache_hits` in the
+stats). While a decode runs there is also the compressed copy (at most 128 KiB)
+and the decoder's work memory; both are freed before the read returns. Peak is
+therefore about 300 KiB per mounted filesystem, and a failed decode leaves the
+cache empty.
+
+### Bad extents and data checksums
+
+Every sector of a regular extent is compared with the csum tree before its
+bytes reach the caller; `noverify` at mount is the only way out (metadata is
+always checked). The policy, in `btrfs_read_data_verified()`:
+
+- The range is widened to whole sectors and read in 64 KiB pieces; a piece is
+  copied out only after it verified, so a failing read never hands out
+  unverified bytes from that piece.
+- A piece must verify on some copy of its chunk. DUP (and later mirrored)
+  chunks are tried first copy first, then the next; each failed copy that has a
+  successor counts in `stats.mirror_fallbacks`, so a damaged first copy
+  self-heals for the reader (the device is never written).
+- If no copy verifies the whole read fails with `BTRFS_ERR_CSUM` (VFS: I/O
+  error) and no further piece is read. A read that stays clear of the bad sector
+  still works: verification is per sector, not per extent. `stats.csum_failures`
+  and `stats.data_bad_reads` count it, the log says which logical address.
+- No data checksum, no verification: preallocated extents and holes have no
+  data and no csum items; inodes with the NODATASUM flag (mount option
+  `nodatasum`, chattr +C) are read as they are.
+- A sector of a file that must carry checksums but has no csum item is treated
+  as a failure too (`stats.data_csum_missing`), because serving it would be
+  serving unverified data. (Linux serves it; the strict reading is deliberate.)
+- The csum tree is searched through a cursor that keeps the current
+  EXTENT_CSUM item pinned, so a run of extents needs one tree search per item,
+  and the leaves come from the tree-block cache.
 
 ## Feature matrix
 
 | Area | Status |
 |---|---|
 | crc32c checksums | supported (table driven, in the core) |
-| xxhash64 / sha256 / blake2b | refused at mount: `unsupported checksum type` |
+| xxhash64, sha256, blake2b checksums | supported (tree blocks, superblock, data) |
 | SINGLE, DUP chunks (metadata and data) | supported |
-| RAID0/1/10/5/6, RAID1C3/4, multi-device | refused: `unsupported RAID or multi-device profile` |
+| RAID0, RAID1, RAID10, RAID1C3, RAID1C4, SINGLE across devices (metadata and data) | **WIP**, verified against Linux: every device supplied (up to 8 in the core, 4 boot disks in the kernel), any order |
+| RAID5, RAID6 (all devices present) | **WIP**: plain reads only; no parity reconstruction, so a checksum failure is an error |
+| missing device (degraded mount), device of another filesystem, duplicate device id, device uuid differing from the chunk tree | refused: `a device of the filesystem is missing` / `invalid argument` (was `unsupported RAID or multi-device profile` before the WIP) |
 | Superblock mirrors, highest valid generation | supported |
 | mixed block groups, skinny/no skinny metadata, no-holes and explicit holes, free-space-tree, v1 space cache, block-group-tree, extended irefs, squota, metadata_uuid, big metadata | supported (only how metadata is written or accounted for changes) |
 | zoned, extent-tree-v2, raid-stripe-tree, unknown incompat bits | refused: `unsupported feature` |
-| unreplayed log tree | refused (`log-tree`); `ignore_log_tree` mounts anyway and may show stale data |
+| unreplayed log tree (fsynced, not yet committed) | replayed in memory over the trees (see [Log tree](#log-tree-replay)); `ignore_log_tree` shows the last commit instead; a log this layer does not understand is refused (`log-tree`) |
 | Subvolumes, snapshots, read-only snapshots, nested subvolumes, default subvolume, mount by id | supported, read-only |
 | Inline, regular, prealloc, hole, partial-extent reads | supported |
-| Compressed extents (zlib, lzo, zstd) | refused per file: `not supported`; decoder hook exists |
+| Compressed extents (zlib, lzo, zstd; any level; inline, partial references, sparse) | supported |
 | Encrypted extents, other encodings | refused per extent |
-| Data checksums | optional (`verify_data`), off by default |
+| Data checksums | verified on every read by default; `noverify` opts out (`verify_data` spells the default); NODATASUM files, holes and prealloc are exempt |
 | Directories with thousands of entries, 255-byte names, unicode names, hard links (INODE_REF and EXTREF), symlinks (inline target up to 4095 bytes), fifo, socket, char and block devices | supported |
 | xattr items | skipped safely |
 | ACLs, quotas, send/receive, reflink-aware reads beyond plain extents | not interpreted (nothing is needed to read the bytes) |
@@ -133,7 +279,7 @@ make Btrfs available in a normal boot, add `btrfs_register()` next to
 `ext4_register()` in the two boot paths (this changes that one log line).
 
 Options for the next mount go through `btrfs_set_next_mount_options()`
-(`subvol_id`, `verify_data`, `ignore_log_tree`) because `vfs_mount` has no
+(`subvol_id`, `verify_data`, `noverify`, `ignore_log_tree`, `extra_devices`) because `vfs_mount` has no
 options argument; `btrfs_last_mount_status()` keeps the precise cause of a
 failed mount, since VFS statuses are coarse (`UNSUPPORTED_*` map to
 `NOT_SUPPORTED`, magic to `INVALID`, corruption/checksum/truncation to
@@ -155,13 +301,17 @@ counters and I/O counters.
 ## Tests
 
 ```
-make test-btrfs-host BUILD_ROOT=<scratch>        # native, ASan + UBSan, 139 checks
-make test-i386-btrfs BUILD_ROOT=<scratch>        # in-kernel, second..fourth virtio-blk-pci
-make test-arm64-btrfs BUILD_ROOT=<scratch> CONFIG=base   # in-kernel, virtio-blk-device
+make test-btrfs-host BUILD_ROOT=<scratch>        # native, ASan + UBSan, 294 checks
+make test-i386-btrfs BUILD_ROOT=<scratch>        # in-kernel, second..fourth virtio-blk-pci, 50 checks
+make test-arm64-btrfs BUILD_ROOT=<scratch> CONFIG=base   # in-kernel, virtio-blk-device, 50 checks
 ```
 
 Always pass a scratch `BUILD_ROOT`. None of them touches `disk.img` or
-`tools/DiskRoot` (the arm64 test copies `disk.img`).
+`tools/DiskRoot` (the arm64 test copies `disk.img`); if `disk.img` looks stale to
+make, pass `DISK=`, `DISK_ROOT=` and `DISK_FORMAT_STAMP=` pointing at scratch copies
+so the rebuild does not dirty the tracked files. Counts above are from the last run
+of the commands as written (2026-09-20); the sweep length is `BTRFS_SWEEP_ITERS`
+(default 300) times `BTRFS_SWEEP_SEEDS` (default 2).
 
 **Host** (`tools/btrfs/test_host.sh`, tool `tools/btrfs/host/btrfs_host.c`):
 superblock facts against `btrfs inspect-internal dump-super`; a full walk of
@@ -172,10 +322,24 @@ reads at random offsets, across and past EOF and in odd steps, all checked
 against the full read; readdir cursor resume; lookup of every name by hash and
 of a missing name; hard-link counts against INODE_REF/EXTREF; every subvolume
 mounted by id; subvolume list against `btrfs subvolume list`; the default
-subvolume; refusal fixtures (compression, checksum types, RAID); named
+subvolume; compressed extents of every algorithm and shape (`mix-*`, `comp-*`:
+zlib 1/9, LZO, ZSTD 1/3/15, the 128 KiB extent boundary, sparse files, extents
+only partly referenced, incompressible data) and all four checksum types, each
+walked against Linux; the decoders alone (`tools/btrfs/test_codec.sh`: streams from
+python zlib and the zstd command and an LZO generator, output cap, truncation,
+bombs, mutation sweeps under ASan/UBSan, sha256/blake2b against hashlib);
+multi-device filesystems (`md-*`, real `mkfs.btrfs` over 2 to 4 devices: RAID1, RAID0,
+RAID10, RAID1C3, RAID1C4, RAID5, RAID6, SINGLE data with DUP metadata; every
+profile walked against Linux, also with the devices in reverse order; missing,
+foreign and duplicate devices refused; a damaged copy falling back to another
+device, all-but-one copies damaged, every copy damaged, RAID0 (one copy) failing);
+refusal of what is unsupported; named
 corruptions (`tools/btrfs/corrupt.py`: superblock magic/checksum/features/log
 root/geometry, truncation at several sizes, root/chunk/subvolume tree blocks,
-DUP self-healing); and a seeded corruption sweep (bit flips, zeroing,
+DUP self-healing); the data-checksum policy (a damaged data extent fails a
+read of it, DUP heals from the second copy, both copies bad fails, `noverify`
+and NODATASUM serve the bytes, a missing csum item refuses, verification
+cost stays bounded); and a seeded corruption sweep (bit flips, zeroing,
 scribbles, truncation, checksummed-but-lying superblocks and tree blocks,
 injected read errors, injected allocation failures) which may only produce
 errors or the good image's results, never a crash, hang (read budget and
@@ -184,7 +348,9 @@ alarm), out-of-bounds access, leak or different data reported as success.
 **In-kernel** (`vfs/btrfs/btrfs_selftest.c`, both architectures): boot argument
 `btrfs-test=<spec>[,<spec>...]`, the Nth spec against the Nth block device
 after the root disk (the virtio-blk driver takes four devices in total, so
-three fixtures per boot). `NAME[@SUBVOLID][+verify]` mounts, walks through the
+three fixture devices per boot; a spec ending in `+devN` takes N consecutive
+devices for one multi-device filesystem, so the 4-device profiles run on the
+host only). `NAME[@SUBVOLID][+verify|+noverify]` mounts, walks through the
 public VFS interface against the expected listing generated from Linux's
 manifests (`btrfs_selftest_data.h`, `tools/btrfs/gen_selftest_data.py`), checks
 readdir resume, odd-offset and EOF reads, that every mutating operation
@@ -195,7 +361,8 @@ also compares each fixture disk's sha256 before and after the boot. arm64
 notes: QEMU virt hands out virtio-mmio slots top-down while the kernel probes
 bottom-up, so `test_arm64.sh` defines the fixtures in reverse and the root disk
 last; the kernel also needs the gpu/keyboard/mouse devices of the normal boot
-command. The arm64 test ends with a PSCI `SYSTEM_OFF`.
+command, and the sound device is defined after everything else so that it takes
+the lowest slot and leaves the block order alone. The arm64 test ends with a PSCI `SYSTEM_OFF`.
 
 ## Booting a Btrfs disk and looking at it
 
@@ -210,11 +377,11 @@ listings, this works on any image (`vfs/btrfs/btrfs_list.{c,h}`, arch-neutral).
 
 Options: `BTRFS_CAT=/path` prints that file (first 8 KiB, non-printable bytes as
 `.`), `BTRFS_LS=0` skips the tree, `BTRFS_SUBVOL=<id>` mounts that subvolume,
-`BTRFS_VERIFY=1` checks data checksums, `BTRFS_MAX=<n>` bounds the printed
+`BTRFS_NOVERIFY=1` skips data checksums, `BTRFS_MAX=<n>` bounds the printed
 entries (default 512; the summary still counts everything), `BTRFS_TIMEOUT=<s>`.
 The listing is `<type><rwx mode> <nlink> <size> <path>[ -> target]`. The script
 is `tools/btrfs/run_i386.sh`; the kernel side is the boot arguments `btrfs-ls`,
-`btrfs-cat=<path>`, `btrfs-dev=<n>`, `btrfs-subvol=<id>`, `btrfs-verify=1` and
+`btrfs-cat=<path>`, `btrfs-dev=<n>`, `btrfs-subvol=<id>`, `btrfs-noverify=1` and
 `btrfs-max=<n>`, handled in `kern/i386/userland_init.c` before the ext4 root is
 mounted, so no root disk is needed. arm64 has no equivalent yet. A non-Btrfs or
 damaged image fails the mount cleanly and the run exits nonzero.
@@ -264,16 +431,22 @@ needed information.
 - **VFS.** The mutating vnode operations exist and return `READ_ONLY`; they are
   the entry points a writable mount would fill in, together with the mount's
   sync/unmount.
-- **Log tree.** Refused today; replay is a prerequisite for mounting a volume
-  that was not cleanly committed.
+- **Log tree.** Read-only replay exists (below); a writer has to do it for real
+  (apply the log into the trees in a transaction and clear `log_root`) before it
+  writes anything.
 
 ## Not done / follow-ups
 
-- Compression decoders (zlib, lzo, zstd) behind `fs->decompressors[]`.
-- Data checksum verification on by default, and a policy for a bad extent.
-- Multi-device and RAID profiles (`btrfs_map_logical`, a multi-device reader).
-- Other checksum algorithms (xxhash64, sha256, blake2b).
-- Log tree replay.
+- Multi-device and RAID (WIP, see above): finish and review it (sweeps over the
+  multi-device fixtures, a kernel mount API that takes more than three extra
+  devices, device scanning by fsid instead of the caller listing the devices),
+  RAID5/6 parity reconstruction (a checksum failure or a missing device on
+  RAID5/6 is an error today), and degraded mounts in general.
+- Not verified: multi-device images under the corruption sweeps (only the
+  single-device fixtures are swept); a multi-device set larger than three extra
+  devices in a kernel (the virtio-blk driver has four devices in all, so RAID10,
+  RAID1C4 and RAID6 run on the host only); real hardware (everything runs under
+  QEMU).
 - Write support (above).
 
 ## References

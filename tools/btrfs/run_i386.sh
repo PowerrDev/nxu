@@ -21,7 +21,7 @@ if [ -z "${BTRFS_IMAGE:-}" ] && [ -z "${BTRFS_FIXTURE:-}" ]; then
 	cat >&2 <<USAGE
 usage: make run-i386-btrfs BTRFS_FIXTURE=<name>       one of $(ls "$HERE/fixtures" | sed -n 's/\.img\.zst$//p' | tr '\n' ' ')
        make run-i386-btrfs BTRFS_IMAGE=<file>         any Btrfs disk image
-options: BTRFS_CAT=/path  BTRFS_LS=0  BTRFS_SUBVOL=<id>  BTRFS_VERIFY=1  BTRFS_MAX=<n>  BTRFS_TIMEOUT=<s>
+options: BTRFS_CAT=/path  BTRFS_LS=0  BTRFS_SUBVOL=<id>  BTRFS_NOVERIFY=1  BTRFS_MAX=<n>  BTRFS_TIMEOUT=<s>
 USAGE
 	exit 2
 fi
@@ -52,7 +52,7 @@ APPEND="qemu-exit=1"
 if [ "${BTRFS_LS:-1}" != 0 ]; then APPEND="btrfs-ls=1 $APPEND"; fi
 if [ -n "${BTRFS_CAT:-}" ]; then APPEND="btrfs-cat=$BTRFS_CAT $APPEND"; fi
 if [ -n "${BTRFS_SUBVOL:-}" ]; then APPEND="btrfs-subvol=$BTRFS_SUBVOL $APPEND"; fi
-if [ -n "${BTRFS_VERIFY:-}" ] && [ "${BTRFS_VERIFY:-0}" != 0 ]; then APPEND="btrfs-verify=1 $APPEND"; fi
+if [ -n "${BTRFS_NOVERIFY:-}" ] && [ "${BTRFS_NOVERIFY:-0}" != 0 ]; then APPEND="btrfs-noverify=1 $APPEND"; fi
 if [ -n "${BTRFS_MAX:-}" ]; then APPEND="btrfs-max=$BTRFS_MAX $APPEND"; fi
 
 case "$APPEND" in

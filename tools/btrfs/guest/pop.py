@@ -8,7 +8,7 @@ produces, not what our own driver would expect.
 
 usage: pop.py RECIPE ROOT [FLAGS_FILE]
 
-Recipes: empty minimal tree deep small compressible
+Recipes: empty minimal tree deep small compressible compress_mix compress_random logbase logops multi
 Data is deterministic and position dependent (a file read at the wrong offset
 can never hash equal) yet highly compressible, so the images stay small.
 """
@@ -109,6 +109,18 @@ def small(root):
 
 def empty(root):
     pass
+
+
+def multi(root):
+    """The multi-device population: `small` plus data that spans many 64 KiB stripes."""
+    small(root)
+    put(root + "/stripes.bin", pat(60, 0, 3 * 1024 * 1024 + 4321))
+    put(root + "/dir/stripes2.bin", pat(61, 0, 700 * 1024))
+    with open(root + "/dir/rewritten", "wb") as f:
+        f.write(pat(62, 0, 300000))
+        f.flush()
+        os.fsync(f.fileno())
+    pwrite_sync(root + "/dir/rewritten", 100000, pat(63, 100000, 70000))
 
 
 def minimal(root):
@@ -269,6 +281,128 @@ def compressible(root):
     os.mkfifo(root + "/fifo")
 
 
+def prng(seed, n):
+    """n deterministic pseudo-random (incompressible) bytes."""
+    out = bytearray()
+    x = (seed * 0x9E3779B97F4A7C15 + 1) & (2**64 - 1)
+    while len(out) < n:
+        x ^= (x << 13) & (2**64 - 1)
+        x ^= x >> 7
+        x ^= (x << 17) & (2**64 - 1)
+        out += struct.pack("<Q", x)
+    return bytes(out[:n])
+
+
+def compress_mix(root):
+    """Compressed extents at the interesting sizes and shapes (compression is forced).
+
+    Around the 128 KiB extent size (exactly one extent, one byte less, one byte
+    more), sector sizes, an inline file, a sparse file with compressed extents
+    between holes, a file whose middle was overwritten so that old compressed
+    extents are only partly referenced, and one with an incompressible island.
+    """
+    os.mkdir(root + "/dir")
+    for name, size in (("e128k", 131072), ("e128k_m1", 131071), ("e128k_p1", 131073), ("e256k", 262144), ("s4096", 4096), ("s4097", 4097), ("s8191", 8191), ("t1", 1), ("t200", 200)):
+        put(root + "/" + name, pat(30 + size % 7, 0, size))
+    put(root + "/text", b"The quick brown fox jumps over the lazy dog. " * 5000)
+    put(root + "/dir/big", pat(31, 0, 600000))
+
+    with open(root + "/sparse", "wb") as f:
+        f.truncate(1048576)
+    pwrite_sync(root + "/sparse", 300000, pat(32, 300000, 4096))
+    pwrite_sync(root + "/sparse", 700000, pat(33, 700000, 100000))
+    pwrite_sync(root + "/sparse", 1048000, pat(34, 1048000, 500))
+
+    put(root + "/overwritten", pat(35, 0, 300000))
+    os.sync()
+    pwrite_sync(root + "/overwritten", 50000, pat(36, 50000, 10000))
+    pwrite_sync(root + "/overwritten", 200001, pat(37, 200001, 3))
+    pwrite_sync(root + "/overwritten", 131072, pat(38, 131072, 4096))
+
+    island = pat(39, 0, 100000)
+    put(root + "/island", island[:40000] + prng(5, 20000) + island[60000:])
+    os.symlink("text", root + "/link")
+
+
+def compress_random(root):
+    """Incompressible data written with compression forced: Btrfs keeps it as plain extents."""
+    put(root + "/random", prng(7, 200000))
+    put(root + "/random_128k", prng(8, 131072))
+    put(root + "/text", b"The quick brown fox jumps over the lazy dog. " * 3000)
+
+
+def logbase(root):
+    """The committed part of the log-tree fixture: files that logops then changes."""
+    os.mkdir(root + "/dir")
+    put(root + "/keep_append", pat(40, 0, 100000))
+    put(root + "/keep_overwrite", pat(41, 0, 300000))
+    put(root + "/keep_meta", pat(42, 0, 9000))
+    put(root + "/keep_trunc", pat(43, 0, 200000))
+    put(root + "/keep_link", pat(44, 0, 6000))
+    put(root + "/keep_del", pat(45, 0, 7000))
+    put(root + "/keep_ren", pat(46, 0, 8000))
+    put(root + "/keep_hole", pat(47, 0, 200000))
+    put(root + "/untouched", pat(48, 0, 30000))
+    put(root + "/dir/untouched2", pat(49, 0, 3000))
+    put(root + "/dir/keep_del2", pat(50, 0, 3000))
+
+
+def fsync_path(path):
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def logops(root):
+    """Changes that are fsynced but never committed: they end up in the log tree."""
+    import ctypes
+    libc = ctypes.CDLL(None, use_errno=True)
+
+    # New files, a new directory with a file in it.
+    put(root + "/n_small", pat(51, 0, 5000))
+    fsync_path(root + "/n_small")
+    put(root + "/n_big", pat(52, 0, 300000))
+    fsync_path(root + "/n_big")
+    os.mkdir(root + "/nd")
+    put(root + "/nd/f1", pat(53, 0, 20000))
+    fsync_path(root + "/nd/f1")
+
+    # Append; overwrite inside an existing extent; shrink.
+    with open(root + "/keep_append", "ab") as f:
+        f.write(pat(40, 100000, 50000))
+        f.flush()
+        os.fsync(f.fileno())
+    pwrite_sync(root + "/keep_overwrite", 100000, pat(54, 100000, 20000))
+    os.truncate(root + "/keep_trunc", 70000)
+    fsync_path(root + "/keep_trunc")
+
+    # Inode metadata only.
+    os.chmod(root + "/keep_meta", 0o600)
+    os.setxattr(root + "/keep_meta", "user.log", b"replayed")
+    os.utime(root + "/keep_meta", (1700000000, 1700000123))
+    fsync_path(root + "/keep_meta")
+
+    # A hard link, a rename, an unlink (fsync of the directory), a new symlink.
+    os.link(root + "/keep_link", root + "/nd/alias")
+    fsync_path(root + "/keep_link")
+    os.rename(root + "/keep_ren", root + "/renamed_ok")
+    fsync_path(root + "/renamed_ok")
+    os.unlink(root + "/keep_del")
+    os.unlink(root + "/dir/keep_del2")
+    fsync_path(root)
+    fsync_path(root + "/dir")
+    os.symlink("n_small", root + "/newlink")
+    fsync_path(root)
+
+    # Punch a hole (FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE).
+    fd = os.open(root + "/keep_hole", os.O_RDWR)
+    libc.fallocate(fd, 0x03, ctypes.c_longlong(40960), ctypes.c_longlong(65536))
+    os.fsync(fd)
+    os.close(fd)
+
+
 def plain(root):
     """Written after compression was switched off: plain extents in the same filesystem."""
     put(root + "/hello.txt", b"hello\n")
@@ -279,7 +413,7 @@ def plain(root):
     pwrite_sync(root + "/plain_sparse", 100000, pat(26, 100000, 4096))
 
 
-RECIPES = {"plain": plain, "empty": empty, "minimal": minimal, "tree": tree, "deep": deep, "small": small, "compressible": compressible}
+RECIPES = {"plain": plain, "empty": empty, "minimal": minimal, "tree": tree, "deep": deep, "small": small, "compressible": compressible, "multi": multi, "logbase": logbase, "logops": logops, "compress_mix": compress_mix, "compress_random": compress_random}
 
 
 def main():

@@ -99,7 +99,7 @@ static btrfs_status_t btrfs_block_verify(const btrfs_fs_t *fs, btrfs_block_t *bl
 	const uint8_t *data = block->data;
 	uint32_t size = fs->nodesize;
 
-	if (btrfs_get_le32(data + BTRFS_HDR_CSUM) != btrfs_csum_crc32c(data + BTRFS_CSUM_SIZE, size - BTRFS_CSUM_SIZE)) {
+	if (!btrfs_csum_matches(fs->csum_type, data + BTRFS_HDR_CSUM, data + BTRFS_CSUM_SIZE, size - BTRFS_CSUM_SIZE)) {
 		return BTRFS_ERR_CSUM;
 	}
 
@@ -114,7 +114,8 @@ static btrfs_status_t btrfs_block_verify(const btrfs_fs_t *fs, btrfs_block_t *bl
 
 	if (block->level >= BTRFS_MAX_LEVEL || block->level != expected_level) return BTRFS_ERR_CORRUPT;
 	if (expected_generation != 0ULL && block->generation != expected_generation) return BTRFS_ERR_CORRUPT;
-	if (block->generation > fs->super.generation) return BTRFS_ERR_CORRUPT;
+	/* Log tree blocks are written by the transaction that was still open: one generation ahead of the superblock. */
+	if (block->generation > fs->super.generation + (tree_id == BTRFS_TREE_LOG_OBJECTID ? 1ULL : 0ULL)) return BTRFS_ERR_CORRUPT;
 	if (!btrfs_owner_matches(tree_id, block->owner)) return BTRFS_ERR_CORRUPT;
 
 	uint64_t room = (uint64_t)size - BTRFS_HEADER_SIZE;

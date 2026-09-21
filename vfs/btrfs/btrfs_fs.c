@@ -14,7 +14,9 @@
  *   5. the subvolume to mount (option, else the "default" directory item)
  */
 
+#include "btrfs_codec.h"
 #include "btrfs_fs.h"
+#include "btrfs_replay.h"
 #include "btrfs_root.h"
 #include "btrfs_tree.h"
 
@@ -150,13 +152,101 @@ static btrfs_status_t btrfs_open_fail(btrfs_fs_t *fs, btrfs_status_t status, btr
 	return status;
 }
 
+const btrfs_device_t *btrfs_device_find(const btrfs_fs_t *fs, uint64_t devid)
+{
+	for (uint32_t index = 0U; index < fs->device_count; index++) {
+		if (fs->devices[index].devid == devid) return &fs->devices[index];
+	}
+
+	return 0;
+}
+
 btrfs_fs_t *btrfs_fs_open(const btrfs_env_t *env, const btrfs_reader_t *reader, const btrfs_open_options_t *options, btrfs_status_t *status)
+{
+	return btrfs_fs_open_devices(env, reader, 1U, options, status);
+}
+
+/*
+ * Read every supplied device's superblock and settle which filesystem they make:
+ * same fsid, distinct device ids, the highest generation wins (fs->super,
+ * fs->reader), and each device must be as large as its own device item says.
+ */
+static btrfs_status_t btrfs_open_devices(btrfs_fs_t *fs, const btrfs_reader_t *readers, uint32_t count)
+{
+	btrfs_super_t *candidate = btrfs_alloc(fs, sizeof(*candidate));
+	uint32_t best = 0U;
+	btrfs_status_t result = BTRFS_OK;
+
+	if (candidate == 0) return BTRFS_ERR_NOMEM;
+
+	for (uint32_t index = 0U; index < count && result == BTRFS_OK; index++) {
+		uint64_t offset;
+		uint32_t copies;
+
+		fs->devices[index].reader = readers[index];
+		result = btrfs_super_load(fs, &fs->devices[index].reader, candidate, &offset, &copies);
+		if (result != BTRFS_OK) {
+			BTRFS_LOG(fs, "device %u has no usable superblock: %s", index, btrfs_status_name(result));
+			break;
+		}
+
+		fs->devices[index].devid = candidate->dev_id;
+		fs->devices[index].generation = candidate->generation;
+		memcpy(fs->devices[index].uuid, candidate->dev_uuid, BTRFS_UUID_SIZE);
+
+		if (candidate->dev_total_bytes > readers[index].size) {
+			BTRFS_LOG(fs, "device %u (id %llu) needs %llu bytes but has %llu", index, BTRFS_U64(candidate->dev_id), BTRFS_U64(candidate->dev_total_bytes), BTRFS_U64(readers[index].size));
+			result = BTRFS_ERR_TRUNCATED;
+			break;
+		}
+
+		if (index != 0U && memcmp(fs->super.fsid, candidate->fsid, BTRFS_FSID_SIZE) != 0) {
+			BTRFS_LOG(fs, "device %u belongs to a different filesystem", index);
+			result = BTRFS_ERR_INVALID;
+			break;
+		}
+
+		for (uint32_t other = 0U; other < index; other++) {
+			if (fs->devices[other].devid == candidate->dev_id) {
+				BTRFS_LOG(fs, "devices %u and %u both claim id %llu", other, index, BTRFS_U64(candidate->dev_id));
+				result = BTRFS_ERR_INVALID;
+			}
+		}
+
+		/* The first superblock read is kept until a newer one shows up. */
+		if (index == 0U || candidate->generation > fs->super.generation) {
+			best = index;
+			fs->super = *candidate;
+			fs->super_offset = offset;
+			fs->super_copies_valid = copies;
+		}
+	}
+
+	btrfs_free(fs, candidate);
+	if (result != BTRFS_OK) return result;
+
+	fs->device_count = count;
+	fs->reader = fs->devices[best].reader;
+
+	for (uint32_t index = 0U; index < count; index++) {
+		if (fs->devices[index].generation != fs->super.generation) {
+			BTRFS_LOG(fs, "device %u (id %llu) is at generation %llu, the filesystem at %llu", index, BTRFS_U64(fs->devices[index].devid), BTRFS_U64(fs->devices[index].generation), BTRFS_U64(fs->super.generation));
+		}
+	}
+
+	return BTRFS_OK;
+}
+
+btrfs_fs_t *btrfs_fs_open_devices(const btrfs_env_t *env, const btrfs_reader_t *readers, uint32_t count, const btrfs_open_options_t *options, btrfs_status_t *status)
 {
 	btrfs_status_t local;
 	if (status == 0) status = &local;
 	*status = BTRFS_ERR_INVALID;
 
-	if (env == 0 || env->alloc == 0 || env->release == 0 || reader == 0 || reader->read == 0) return 0;
+	if (env == 0 || env->alloc == 0 || env->release == 0 || readers == 0 || count == 0U || count > BTRFS_MAX_DEVICES) return 0;
+	for (uint32_t index = 0U; index < count; index++) {
+		if (readers[index].read == 0) return 0;
+	}
 
 	btrfs_fs_t *fs = env->alloc(env->ctx, sizeof(*fs));
 	if (fs == 0) {
@@ -165,12 +255,10 @@ btrfs_fs_t *btrfs_fs_open(const btrfs_env_t *env, const btrfs_reader_t *reader, 
 	}
 
 	fs->env = *env;
-	fs->reader = *reader;
 	if (options != 0) fs->options = *options;
 
-	btrfs_status_t result = btrfs_super_load(fs, &fs->reader, &fs->super, &fs->super_offset, &fs->super_copies_valid);
+	btrfs_status_t result = btrfs_open_devices(fs, readers, count);
 	if (result != BTRFS_OK) {
-		BTRFS_LOG(fs, "no usable superblock: %s", btrfs_status_name(result));
 		btrfs_open_fail(fs, result, status);
 		goto fail;
 	}
@@ -183,13 +271,18 @@ btrfs_fs_t *btrfs_fs_open(const btrfs_env_t *env, const btrfs_reader_t *reader, 
 
 	fs->sectorsize = fs->super.sectorsize;
 	fs->nodesize = fs->super.nodesize;
-	memcpy(fs->header_fsid, (fs->super.incompat_flags & BTRFS_FEATURE_INCOMPAT_METADATA_UUID) != 0ULL ? fs->super.metadata_uuid : fs->super.fsid, BTRFS_FSID_SIZE);
+	fs->csum_type = fs->super.csum_type;
+	fs->csum_size = btrfs_csum_type_size(fs->super.csum_type);
 
-	if (fs->super.log_root != 0ULL && !fs->options.ignore_log_tree) {
-		BTRFS_LOG(fs, "log tree at %llu holds fsynced changes that need replay; refusing", BTRFS_U64(fs->super.log_root));
-		btrfs_open_fail(fs, BTRFS_ERR_LOG_TREE, status);
-		goto fail;
-	}
+	fs->codec.env = &fs->env;
+	fs->codec.sectorsize = fs->sectorsize;
+	fs->decompressors[BTRFS_COMPRESS_ZLIB].decompress = btrfs_zlib_decompress;
+	fs->decompressors[BTRFS_COMPRESS_ZLIB].ctx = &fs->codec;
+	fs->decompressors[BTRFS_COMPRESS_LZO].decompress = btrfs_lzo_decompress;
+	fs->decompressors[BTRFS_COMPRESS_LZO].ctx = &fs->codec;
+	fs->decompressors[BTRFS_COMPRESS_ZSTD].decompress = btrfs_zstd_decompress;
+	fs->decompressors[BTRFS_COMPRESS_ZSTD].ctx = &fs->codec;
+	memcpy(fs->header_fsid, (fs->super.incompat_flags & BTRFS_FEATURE_INCOMPAT_METADATA_UUID) != 0ULL ? fs->super.metadata_uuid : fs->super.fsid, BTRFS_FSID_SIZE);
 
 	btrfs_cache_init(fs);
 
@@ -213,6 +306,13 @@ btrfs_fs_t *btrfs_fs_open(const btrfs_env_t *env, const btrfs_reader_t *reader, 
 		goto fail;
 	}
 
+	/* fsynced changes the last commit does not have yet: read the log tree and layer it over the trees. */
+	result = btrfs_replay_open(fs);
+	if (result != BTRFS_OK) {
+		btrfs_open_fail(fs, result, status);
+		goto fail;
+	}
+
 	*status = BTRFS_OK;
 	return fs;
 
@@ -225,10 +325,12 @@ void btrfs_fs_close(btrfs_fs_t *fs)
 {
 	if (fs == 0) return;
 
+	btrfs_replay_close(fs);
 	btrfs_cache_release(fs);
 	btrfs_chunks_release(fs);
 
 	btrfs_env_t env = fs->env;
+	if (fs->extent_cache.data != 0) env.release(env.ctx, fs->extent_cache.data);
 	env.release(env.ctx, fs);
 }
 

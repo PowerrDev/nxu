@@ -4,7 +4,8 @@
 #
 # Everything runs the pure core (compiled natively with AddressSanitizer and
 # UndefinedBehaviorSanitizer) over the real-Linux fixtures in
-# tools/btrfs/fixtures, comparing with the ground truth Linux produced:
+# tools/btrfs/fixtures, comparing with the ground truth Linux produced (data checksums are verified
+# by default):
 #
 #   superblock   what `btrfs inspect-internal dump-super` said about each image
 #   tree walk    every path, type, mode, owner, size, nlink, inode, rdev, mtime,
@@ -13,7 +14,9 @@
 #                link counts, subvolume crossing, all with and without data checksums
 #   subvolumes   ROOT_REF/BACKREF against `btrfs subvolume list`, the default
 #                subvolume, every subvolume mounted by id
-#   refusals     compressed files, unsupported checksums, RAID/multi-device
+#   compression  zlib, LZO and ZSTD extents read byte-identically to Linux's view; the
+#                decoders alone (test_codec.sh): real streams, limits, mutation sweeps
+#   refusals     RAID/multi-device
 #   damage       named corruptions of good images: each must give a clean status
 #   sweep        seeded random corruption: only errors, or the good image's results
 #
@@ -126,21 +129,28 @@ expect_walk_fails() {
 # corrupt KIND SRC-NAME -> path of the damaged copy
 corrupt() {
 	local kind=$1 name=$2
-	local out=$BAD/$name.${kind//[:]/_}.img
+	local out=$BAD/$name.${kind//[:\/]/_}.img
 	"$HOST" info "$(image "$name")" > "$SCRATCH/$name.info.txt" 2>&1
+	case "$kind" in
+	data-extent:*|nodatasum-off:*)
+		# The kind names a file: add where its extents and inode item are.
+		local file=${kind#*:}
+		"$HOST" extents "$(image "$name")" "${file%%:*}" >> "$SCRATCH/$name.info.txt" 2>&1
+		;;
+	esac
 	python3 "$HERE/corrupt.py" "$kind" "$(image "$name")" "$out" "$SCRATCH/$name.info.txt" || { echo "test_host: corrupt.py failed for $kind" >&2; exit 2; }
 	printf '%s' "$out"
 }
 
 echo "== superblocks =="
-for name in empty minimal tree deep n4k n64k s16k meta-single data-dup mixed no-holes-off no-skinny space-cache-v1 block-group-tree squota nodatasum subvols subvols-default comp-zlib comp-lzo comp-zstd; do
+for name in empty minimal tree deep n4k n64k s16k meta-single data-dup mixed no-holes-off no-skinny space-cache-v1 block-group-tree squota nodatasum subvols subvols-default comp-zlib comp-lzo comp-zstd csum-xxhash csum-sha256 csum-blake2 mix-zlib1 mix-zlib9 mix-lzo mix-zstd1 mix-zstd3 mix-zstd15 mix-random; do
 	check_info "$name"
 done
 
 echo "== full tree walks, compared with Linux's manifests =="
 for name in empty minimal tree deep n4k n64k s16k meta-single data-dup mixed no-holes-off no-skinny space-cache-v1 block-group-tree squota nodatasum subvols subvols-default; do
 	check_tree "$name" "$name.manifest"
-	check_tree "$name" "$name.manifest" --verify-data
+	check_tree "$name" "$name.manifest" --noverify
 done
 
 echo "== every subvolume mounted by id =="
@@ -181,20 +191,224 @@ lvl=$("$HOST" info "$(image deep)" | kv /dev/stdin mount_tree_level)
 want=$(sed -n 's/^fs_tree_level: //p' "$FIX/deep.info")
 [ "$lvl" = "$want" ] && [ "$lvl" -ge 2 ] && pass "deep: fs tree level $lvl" || fail "deep: tree level driver $lvl, Linux $want"
 
-echo "== compressed extents are refused, everything else is served =="
-for name in comp-zlib comp-lzo comp-zstd; do
+# read_field OUTPUT KEY: the value of "KEY=value" on a `btrfs_host read` line.
+rf() {
+	if [ "$2" = read ]; then printf '%s\n' "$1" | sed -n 's/^read=\(.*\) done=.*/\1/p' | head -1
+	else printf '%s\n' "$1" | tr ' ' '\n' | sed -n "s/^$2=//p" | head -1; fi
+}
+
+echo "== data checksums: on by default, bad extents are I/O errors, DUP heals, NODATASUM is exempt =="
+FILE=/dir/sub/data.bin
+want=$("$HOST" read "$(image meta-single)" $FILE)
+wcrc=$(rf "$want" crc)
+wdone=$(rf "$want" done)
+[ "$(rf "$want" read)" = ok ] && [ "$wdone" -gt 200000 ] && pass "read $FILE of a good image (crc $wcrc, $wdone bytes)" || fail "cannot read $FILE of the good image" "$want"
+
+# Cost of the check: verifying a 3 MiB single-extent file reads the data in 64 KiB pieces (48)
+# and costs only a few csum-tree blocks on top (the cache serves the rest), not a read per sector.
+plain=$("$HOST" read "$(image tree)" /data/one-extent --noverify)
+checked=$("$HOST" read "$(image tree)" /data/one-extent)
+extra=$(( $(rf "$checked" device_reads) - $(rf "$plain" device_reads) ))
+extra_blocks=$(( $(rf "$checked" cache_misses) - $(rf "$plain" cache_misses) ))
+if [ "$(rf "$checked" crc)" = "$(rf "$plain" crc)" ] && [ "$(rf "$checked" checked)" -ge 768 ] && [ "$extra" -le 52 ] && [ "$extra_blocks" -le 3 ]; then pass "checksum cost: 3 MiB verified ($(rf "$checked" checked) sectors) took $extra extra device reads and $extra_blocks extra tree blocks"; else fail "verification cost out of bounds (extra device reads $extra, tree blocks $extra_blocks)" "$plain
+$checked"; fi
+
+# Single data, first sector of the extent flipped: the read fails, nothing is served.
+bad=$(corrupt "data-extent:$FILE:first" meta-single)
+out=$("$HOST" read "$bad" $FILE); rc=$?
+if [ $rc -eq 1 ] && [ "$(rf "$out" read)" = "checksum mismatch" ] && [ "$(rf "$out" done)" = 0 ] && [ "$(rf "$out" csum_failures)" -ge 1 ]; then pass "single data, damaged extent: read fails with a checksum mismatch, 0 bytes served"; else fail "damaged single extent must fail the read (rc $rc)" "$out"; fi
+
+# ... a read of another part of the same extent still works: verification is per sector.
+out=$("$HOST" read "$bad" $FILE --offset 65536 --length 65536)
+ref=$("$HOST" read "$(image meta-single)" $FILE --offset 65536 --length 65536)
+if [ "$(rf "$out" read)" = ok ] && [ "$(rf "$out" crc)" = "$(rf "$ref" crc)" ]; then pass "single data: sectors of the same extent that are intact are still served"; else fail "an intact sector next to a damaged one must read fine" "$out"; fi
+out=$("$HOST" read "$bad" $FILE --offset 4000 --length 200); rc=$?
+if [ $rc -eq 1 ] && [ "$(rf "$out" read)" = "checksum mismatch" ]; then pass "single data: a read that touches the damaged sector fails"; else fail "a read touching the damaged sector must fail" "$out"; fi
+
+# The opt-out returns the (damaged) bytes: that is exactly what noverify means.
+out=$("$HOST" read "$bad" $FILE --noverify)
+if [ "$(rf "$out" read)" = ok ] && [ "$(rf "$out" crc)" != "$wcrc" ] && [ "$(rf "$out" csum_failures)" = 0 ]; then pass "noverify: the damaged bytes are served unchecked"; else fail "noverify must skip the data check" "$out"; fi
+
+# DUP data: one bad copy heals from the other; both bad fail.
+want=$("$HOST" read "$(image data-dup)" $FILE)
+out=$("$HOST" read "$(corrupt "data-extent:$FILE:first" data-dup)" $FILE)
+if [ "$(rf "$out" read)" = ok ] && [ "$(rf "$out" crc)" = "$(rf "$want" crc)" ] && [ "$(rf "$out" csum_failures)" -ge 1 ] && [ "$(rf "$out" mirror_fallbacks)" -ge 1 ]; then pass "DUP data, first copy damaged: healed from the second copy (mirror fallback counted)"; else fail "DUP data must heal" "$out"; fi
+out=$("$HOST" read "$(corrupt "data-extent:$FILE:second" data-dup)" $FILE)
+if [ "$(rf "$out" read)" = ok ] && [ "$(rf "$out" crc)" = "$(rf "$want" crc)" ] && [ "$(rf "$out" csum_failures)" = 0 ]; then pass "DUP data, second copy damaged: the first copy serves, no failure seen"; else fail "DUP data with a damaged second copy" "$out"; fi
+out=$("$HOST" read "$(corrupt "data-extent:$FILE:all" data-dup)" $FILE); rc=$?
+if [ $rc -eq 1 ] && [ "$(rf "$out" read)" = "checksum mismatch" ] && [ "$(rf "$out" done)" = 0 ]; then pass "DUP data, both copies damaged: the read fails"; else fail "DUP data with both copies damaged must fail (rc $rc)" "$out"; fi
+
+# NODATASUM files: nothing protects them, nothing is checked, they still read.
+want=$("$HOST" read "$(image nodatasum)" $FILE)
+out=$("$HOST" read "$(corrupt "data-extent:$FILE:all" nodatasum)" $FILE)
+if [ "$(rf "$out" read)" = ok ] && [ "$(rf "$out" done)" = "$(rf "$want" done)" ] && [ "$(rf "$out" crc)" != "$(rf "$want" crc)" ] && [ "$(rf "$out" csum_failures)" = 0 ]; then pass "NODATASUM file: damaged data is served without a check"; else fail "NODATASUM data must be read as it is" "$out"; fi
+
+# A file that must have checksums but whose csum items are gone (flag cleared on a NODATASUM
+# fixture): refused, not served unverified.
+out=$("$HOST" read "$(corrupt "nodatasum-off:$FILE" nodatasum)" $FILE); rc=$?
+if [ $rc -eq 1 ] && [ "$(rf "$out" read)" = "checksum mismatch" ] && [ "$(rf "$out" csum_missing)" -ge 1 ]; then pass "missing checksum items: the read is refused (never served unverified)"; else fail "a missing checksum must fail the read (rc $rc)" "$out"; fi
+out=$("$HOST" read "$(corrupt "nodatasum-off:$FILE" nodatasum)" $FILE --noverify)
+if [ "$(rf "$out" read)" = ok ] && [ "$(rf "$out" crc)" = "$(rf "$want" crc)" ]; then pass "missing checksum items with noverify: served"; else fail "noverify with missing checksums" "$out"; fi
+
+# Prealloc, holes and sparse files have no checksums to miss: the tree fixture (PREALLOC
+# files, sparse files, a nodatacow file) walks clean above with verification on.
+
+# Compressed extents are verified too: the csum covers the bytes on disk, so damage is
+# caught before any decoder sees them; noverify hands the damaged bytes to the decoder,
+# which may only decode or refuse cleanly.
+for name in mix-zlib9 mix-lzo mix-zstd3; do
+	want=$("$HOST" read "$(image $name)" /e128k)
+	out=$("$HOST" read "$(corrupt "data-extent:/e128k:all" $name)" /e128k); rc=$?
+	if [ "$(rf "$want" read)" = ok ] && [ $rc -eq 1 ] && [ "$(rf "$out" read)" = "checksum mismatch" ] && [ "$(rf "$out" done)" = 0 ]; then pass "$name: a damaged compressed extent fails the read with a checksum mismatch"; else fail "$name: damaged compressed extent (rc $rc)" "$out"; fi
+	out=$("$HOST" read "$(corrupt "data-extent:/e128k:all" $name)" /e128k --noverify)
+	case "$(rf "$out" read)" in ok|"corrupt metadata") pass "$name: noverify hands the damaged extent to the decoder: $(rf "$out" read)" ;; *) fail "$name: noverify on a damaged compressed extent" "$out" ;; esac
+done
+
+echo "== compressed extents (zlib levels, LZO, ZSTD levels, boundaries, sparse, partial references, incompressible) read as Linux read them =="
+for name in comp-zlib comp-lzo comp-zstd mix-zlib1 mix-zlib9 mix-lzo mix-zstd1 mix-zstd3 mix-zstd15 mix-random; do
 	check_tree "$name" "$name.manifest"
-	check_tree "$name" "$name.manifest" --verify-data
+	check_tree "$name" "$name.manifest" --noverify
+done
+
+echo "== log tree: fsynced changes not yet committed are replayed in memory =="
+check_tree logtree logtree.manifest
+check_tree logtree logtree.manifest --noverify
+check_tree logtree logtree.base.manifest --ignore-log
+
+echo "== every checksum type: metadata and data verified, compared with Linux's view =="
+for name in csum-xxhash csum-sha256 csum-blake2; do
+	check_tree "$name" "$name.manifest"
+	check_tree "$name" "$name.manifest" --noverify
+done
+
+# ---- multi-device filesystems -------------------------------------------------------
+
+# mdimg NAME I: the image of device I of a multi-device fixture (NAME.I.img.zst).
+mdimg() { image "$1.$2"; }
+
+# mddevs NAME N [SKIP...]: "--dev IMG1 --dev IMG2 ..." for devices 1..N-1 (the first is the image argument).
+mddevs() {
+	local name=$1 n=$2 i out=""
+	for ((i = 1; i < n; i++)); do out="$out --dev $(mdimg "$name" $i)"; done
+	printf '%s' "$out"
+}
+
+# devid_of IMAGE: the device id in its superblock.
+devid_of() { python3 -c "import struct,sys; f=open(sys.argv[1],'rb'); f.seek(0x10000+201); print(struct.unpack('<Q', f.read(8))[0])" "$1"; }
+
+MDNAMES="md-raid1:2 md-raid0:2 md-raid10:4 md-raid1c3:3 md-raid1c4:4 md-raid5:3 md-raid6:4 md-single:2"
+
+echo "== multi-device filesystems: every profile walks byte-identically to what Linux read =="
+for spec in $MDNAMES; do
+	name=${spec%%:*} n=${spec##*:}
+	devs=$(mddevs "$name" "$n")
+	# shellcheck disable=SC2086
+	out=$("$HOST" check "$(mdimg "$name" 0)" "$FIX/$name.manifest" $devs 2>&1); rc=$?
+	if [ $rc -eq 0 ]; then pass "walk $name ($n devices: $(printf '%s' "$out" | tail -1 | sed 's/^PASS [^:]*: //'))"; else fail "walk $name ($n devices)" "$out"; fi
+	# shellcheck disable=SC2086
+	out=$("$HOST" check "$(mdimg "$name" 0)" "$FIX/$name.manifest" $devs --noverify 2>&1); rc=$?
+	if [ $rc -eq 0 ]; then pass "walk $name without data verification"; else fail "walk $name --noverify" "$out"; fi
+
+	# The devices in reverse order: the driver must not care which one is first.
+	last=$((n - 1)) rev=""
+	for ((i = last - 1; i >= 0; i--)); do rev="$rev --dev $(mdimg "$name" $i)"; done
+	# shellcheck disable=SC2086
+	out=$("$HOST" check "$(mdimg "$name" $last)" "$FIX/$name.manifest" $rev 2>&1); rc=$?
+	if [ $rc -eq 0 ]; then pass "walk $name with the devices in reverse order"; else fail "walk $name, reversed" "$out"; fi
+done
+
+echo "== multi-device: missing, foreign and duplicate devices are refused =="
+for spec in $MDNAMES; do
+	name=${spec%%:*} n=${spec##*:}
+	# The first device alone, and every device but the last.
+	expect_open "$name: device 0 alone" "$(mdimg "$name" 0)" "a device of the filesystem is missing"
+	if [ "$n" -gt 2 ]; then
+		# shellcheck disable=SC2046
+		expect_open "$name: $((n - 1)) of $n devices" "$(mdimg "$name" 0)" "a device of the filesystem is missing" $(mddevs "$name" $((n - 1)))
+	fi
+done
+expect_open "a device of another filesystem" "$(mdimg md-raid1 0)" "invalid argument" --dev "$(mdimg md-raid0 1)"
+expect_open "the same device twice" "$(mdimg md-raid1 0)" "invalid argument" --dev "$(mdimg md-raid1 0)"
+expect_open "too many devices" "$(mdimg md-raid1 0)" "invalid argument" --dev "$(mdimg md-raid1 1)" --dev "$(mdimg md-raid0 0)"
+
+echo "== multi-device: a mirror that fails its checksum falls back to another copy =="
+FILE=/dir/sub/data.bin
+# damaged NAME N WHICH...: a copy of device images with the data extent's copy on device id WHICH... damaged.
+# Prints the "--dev" argument list, with the damaged images in place of the good ones.
+damage_md() {
+	local name=$1 n=$2 target=$3 i out="" dev primary
+	shift 3
+	# shellcheck disable=SC2046
+	"$HOST" info "$(mdimg "$name" 0)" $(mddevs "$name" "$n") > "$SCRATCH/$name.md.info" 2>&1
+	# shellcheck disable=SC2046
+	"$HOST" extents "$(mdimg "$name" 0)" "$FILE" $(mddevs "$name" "$n") >> "$SCRATCH/$name.md.info" 2>&1
+	for ((i = 0; i < n; i++)); do
+		dev=$(mdimg "$name" $i)
+		id=$(devid_of "$dev")
+		case " $* " in
+		*" $id "*)
+			python3 "$HERE/corrupt.py" "data-extent:$FILE:dev=$id" "$dev" "$BAD/$name.$i.$target.img" "$SCRATCH/$name.md.info" || { echo "test_host: corrupt.py failed" >&2; exit 2; }
+			dev=$BAD/$name.$i.$target.img
+			;;
+		esac
+		if [ $i -eq 0 ]; then primary=$dev; else out="$out --dev $dev"; fi
+	done
+	printf '%s%s' "$primary" "$out"
+}
+
+md_first_copy_devices() {
+	# the device ids of the copies of the file's first extent, in copy order
+	local name=$1 n=$2
+	# shellcheck disable=SC2046
+	"$HOST" extents "$(mdimg "$name" 0)" "$FILE" $(mddevs "$name" "$n") | sed -n 's/^extentdev=[0-9]*,//p' | head -1 | tr ',' ' '
+}
+
+md_read() { # the damaged set given as one string: primary then --dev arguments
+	# shellcheck disable=SC2086
+	set -- $1
+	local primary=$1
+	shift
+	"$HOST" read "$primary" $FILE "$@"
+}
+
+for spec in md-raid1:2 md-raid1c3:3 md-raid10:4 md-raid0:2; do
+	name=${spec%%:*} n=${spec##*:}
+	# shellcheck disable=SC2046
+	want=$("$HOST" read "$(mdimg "$name" 0)" $FILE $(mddevs "$name" "$n"))
+	copies=$(md_first_copy_devices "$name" "$n")
+	ncopies=$(printf '%s\n' $copies | wc -l | tr -d ' ')
+	first=$(printf '%s\n' $copies | head -1)
+	if [ "$(rf "$want" read)" != ok ]; then fail "$name: cannot read $FILE from the good set" "$want"; continue; fi
+
+	# One copy (the first one tried) damaged.
+	set_=$(damage_md "$name" "$n" one $first)
+	out=$(md_read "$set_"); rc=$?
+	if [ "$ncopies" -ge 2 ]; then
+		if [ "$(rf "$out" read)" = ok ] && [ "$(rf "$out" crc)" = "$(rf "$want" crc)" ] && [ "$(rf "$out" csum_failures)" -ge 1 ] && [ "$(rf "$out" mirror_fallbacks)" -ge 1 ]; then pass "$name: first copy damaged: served from another device (fallback counted)"; else fail "$name: damaged first copy must heal" "$out"; fi
+	else
+		if [ $rc -eq 1 ] && [ "$(rf "$out" read)" = "checksum mismatch" ] && [ "$(rf "$out" done)" = 0 ]; then pass "$name: the only copy damaged: the read fails, nothing served"; else fail "$name: damaged only copy must fail" "$out"; fi
+	fi
+
+	# All copies but one damaged (a mirrored profile still has the last one).
+	if [ "$ncopies" -ge 3 ]; then
+		set_=$(damage_md "$name" "$n" most $(printf '%s\n' $copies | head -$((ncopies - 1)) | tr '\n' ' '))
+		out=$(md_read "$set_")
+		if [ "$(rf "$out" read)" = ok ] && [ "$(rf "$out" crc)" = "$(rf "$want" crc)" ] && [ "$(rf "$out" mirror_fallbacks)" -ge 2 ]; then pass "$name: $((ncopies - 1)) of $ncopies copies damaged: the last one serves"; else fail "$name: all but one copy damaged must heal" "$out"; fi
+	fi
+
+	# Every copy damaged.
+	if [ "$ncopies" -ge 2 ]; then
+		set_=$(damage_md "$name" "$n" all $copies)
+		out=$(md_read "$set_"); rc=$?
+		if [ $rc -eq 1 ] && [ "$(rf "$out" read)" = "checksum mismatch" ] && [ "$(rf "$out" done)" = 0 ]; then pass "$name: every copy damaged: the read fails"; else fail "$name: all copies damaged must fail (rc $rc)" "$out"; fi
+	fi
 done
 
 echo "== unsupported images are refused cleanly =="
-expect_open "csum-xxhash" "$(image csum-xxhash)" "unsupported checksum type"
-expect_open "csum-sha256" "$(image csum-sha256)" "unsupported checksum type"
-expect_open "csum-blake2" "$(image csum-blake2)" "unsupported checksum type"
-expect_open "raid1 (device 0 of 2)" "$(image raid1)" "unsupported RAID or multi-device profile"
-expect_open "raid0 (device 0 of 2)" "$(image raid0)" "unsupported RAID or multi-device profile"
-expect_open "raid5 (device 0 of 3)" "$(image raid5)" "unsupported RAID or multi-device profile"
-expect_open "single profile over 2 devices" "$(image single2dev)" "unsupported RAID or multi-device profile"
+expect_open "raid1 (device 0 of 2)" "$(image raid1)" "a device of the filesystem is missing"
+expect_open "raid0 (device 0 of 2)" "$(image raid0)" "a device of the filesystem is missing"
+expect_open "raid5 (device 0 of 3)" "$(image raid5)" "a device of the filesystem is missing"
+expect_open "single profile over 2 devices" "$(image single2dev)" "a device of the filesystem is missing"
 expect_open "subvolume id that does not exist" "$(image subvols)" "not found" --subvol 9999
 expect_open "mount a non-subvolume tree" "$(image subvols)" "not found" --subvol 7
 
@@ -208,13 +422,18 @@ expect_open "unknown incompat bit 40" "$(corrupt incompat-bit:40 minimal)" "unsu
 expect_open "extent-tree-v2 (incompat bit 13)" "$(corrupt incompat-bit:13 minimal)" "unsupported feature"
 expect_open "raid-stripe-tree (incompat bit 14)" "$(corrupt incompat-bit:14 minimal)" "unsupported feature"
 expect_open "zoned (incompat bit 12)" "$(corrupt incompat-bit:12 minimal)" "unsupported feature"
-expect_open "checksum type 1 in a crc32c image" "$(corrupt csum-type:1 minimal)" "unsupported checksum type"
+expect_open "checksum type 1 (xxhash) claimed by a crc32c image" "$(corrupt csum-type:1 minimal)" "checksum mismatch"
 expect_open "checksum type 9" "$(corrupt csum-type:9 minimal)" "corrupt metadata"
-expect_open "unreplayed log tree" "$(corrupt log-root minimal)" "unreplayed log tree"
-expect_open "unreplayed log tree, told to ignore it" "$(corrupt log-root minimal)" "ok" --ignore-log
+expect_open "log_root that is not a log tree" "$(corrupt log-root minimal)" "corrupt metadata"
+expect_open "log_root that is not a log tree, told to ignore the log" "$(corrupt log-root minimal)" "ok" --ignore-log
+expect_open "real log tree" "$(image logtree)" "ok"
+expect_open "real log tree, told to ignore it" "$(image logtree)" "ok" --ignore-log
+expect_open "log root block damaged" "$(corrupt log-block:root:all logtree)" "checksum mismatch"
+expect_open "log tree block damaged" "$(corrupt log-block:tree:all logtree)" "checksum mismatch"
+expect_open "log root block damaged, told to ignore the log" "$(corrupt log-block:root:all logtree)" "ok" --ignore-log
 expect_open "nonsense nodesize" "$(corrupt nodesize:12345 minimal)" "corrupt metadata"
 expect_open "nodesize larger than allowed" "$(corrupt nodesize:131072 minimal)" "corrupt metadata"
-expect_open "claims two devices" "$(corrupt num-devices:2 minimal)" "unsupported RAID or multi-device profile"
+expect_open "claims two devices" "$(corrupt num-devices:2 minimal)" "a device of the filesystem is missing"
 expect_open "device claimed larger than the image" "$(corrupt dev-total-bytes minimal)" "device smaller than the filesystem"
 expect_open "garbage sys_chunk_array" "$(corrupt sys-array-garbage minimal)" "corrupt metadata"
 
@@ -238,7 +457,7 @@ out=$("$HOST" walk "$(corrupt fs-block:first tree)" 2>&1)
 if printf '%s\n' "$out" | grep -q 'walk=ok' && printf '%s\n' "$out" | grep -qE 'mirror_fallbacks=[1-9]'; then pass "DUP heals a damaged subvolume root block (mirror fallback used)"; else fail "DUP did not heal the subvolume root" "$out"; fi
 
 echo "== corruption sweeps (seeded, ${ITERS} iterations x ${SEEDS} seeds) =="
-for name in empty minimal n4k meta-single data-dup mixed no-holes-off subvols nodatasum comp-zlib; do
+for name in empty minimal n4k meta-single data-dup mixed no-holes-off subvols nodatasum comp-zlib mix-zstd3 mix-lzo csum-blake2 csum-xxhash logtree; do
 	seed=1
 	while [ $seed -le "$SEEDS" ]; do
 		out=$("$HOST" sweep "$(image "$name")" --seed $seed --iters "$ITERS" 2>&1)
@@ -254,6 +473,16 @@ for name in tree deep; do
 	rc=$?
 	if [ $rc -eq 0 ]; then pass "sweep $name: $(printf '%s' "$out" | sed 's/.*; mount refused/mount refused/')"; else fail "sweep $name (rc $rc)" "$out"; fi
 done
+
+# The decoders on their own: real compressors' streams, limits, mutation sweeps.
+echo "== compression decoders (tools/btrfs/test_codec.sh) =="
+out=$(BTRFS_CODEC_ITERS=${BTRFS_CODEC_ITERS:-400} "$HERE/test_codec.sh" "$HOST" "$SCRATCH" 2>&1)
+rc=$?
+printf '%s\n' "$out" | grep -v -e '^$' -e 'codec check(s)'
+codec_checks=$(printf '%s\n' "$out" | sed -n 's/^\([0-9]*\) codec check(s), \([0-9]*\) failure(s)$/\1/p')
+codec_failures=$(printf '%s\n' "$out" | sed -n 's/^\([0-9]*\) codec check(s), \([0-9]*\) failure(s)$/\2/p')
+count=$((count + ${codec_checks:-1}))
+failures=$((failures + ${codec_failures:-$rc}))
 
 printf '\n%d check(s), %d failure(s)\n' "$count" "$failures"
 [ "$failures" -eq 0 ]
