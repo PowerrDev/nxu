@@ -8,8 +8,10 @@
 #include <kern/boot/boot_args.h>
 #include <kern/console/console.h>
 #include <kern/memory/heap.h>
+#include <kern/process/proc.h>
 #include <kern/sched_prism/sched.h>
 #include <platform/rtc.h>
+#include <vfs/vfs.h>
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -313,6 +315,122 @@ static uint32_t UIServiceGetTime(void *opaque, uint64_t *unix_seconds)
 	*unix_seconds = rtc_unix_time();
 	return UI_SERVICE_STATUS_OK;
 }
+
+/* The size of the regular file `name` in `directory`, or 0 if it cannot be found or the path is too long. */
+static uint64_t UIServiceFileSize(const char *directory, const char *name)
+{
+	char path[VFS_PATH_MAX];
+	size_t directory_length = strlen(directory);
+	size_t name_length = strlen(name);
+
+	if (directory_length + 1U + name_length >= sizeof(path)) return 0ULL;
+
+	memcpy(path, directory, directory_length);
+	size_t length = directory_length;
+
+	if (length == 0U || path[length - 1U] != '/') path[length++] = '/';
+
+	memcpy(path + length, name, name_length + 1U);
+
+	vnode_t vnode;
+
+	if (vfs_lookup(path, &vnode) != VFS_STATUS_OK) return 0ULL;
+
+	uint64_t size = vnode->v_type == VNODE_TYPE_REGULAR ? vnode->v_size : 0ULL;
+
+	vnode_rele(vnode);
+	return size;
+}
+
+/*
+ * List a directory for UIService (its read-only filesystem capability, which
+ * Voyager browses with). The listing comes from the VFS the way a system call
+ * would read it, into the app's own buffer. The kernel stack this runs on is
+ * small, so nothing here is larger than a path or one directory entry.
+ */
+static uint32_t UIServiceListDirectory(
+	void *opaque,
+	const char *path,
+	uint32_t path_len,
+	UIServiceDirEntry *entries,
+	uint32_t capacity,
+	uint32_t *count_out,
+	bool *truncated_out
+)
+{
+	(void)opaque;
+
+	if (path == 0 || entries == 0 || count_out == 0 || truncated_out == 0) return UI_SERVICE_FS_STATUS_ERROR;
+
+	*count_out = 0U;
+	*truncated_out = false;
+
+	if (path_len == 0U || path_len >= VFS_PATH_MAX) return UI_SERVICE_FS_STATUS_ERROR;
+
+	char directory[VFS_PATH_MAX];
+
+	memcpy(directory, path, path_len);
+	directory[path_len] = '\0';
+
+	vnode_t vnode;
+	vfs_status_t status = vfs_lookup(directory, &vnode);
+
+	if (status != VFS_STATUS_OK) return status == VFS_STATUS_NOT_FOUND ? UI_SERVICE_FS_STATUS_NOT_FOUND : UI_SERVICE_FS_STATUS_ERROR;
+
+	bool is_directory = vnode->v_type == VNODE_TYPE_DIRECTORY;
+
+	vnode_rele(vnode);
+
+	if (!is_directory) return UI_SERVICE_FS_STATUS_NOT_A_DIRECTORY;
+
+	filedesc_t filedesc = &proc_kernel()->p_fd;
+	uint32_t descriptor;
+
+	if (vfs_open(filedesc, directory, VFS_OPEN_READ, &descriptor) != VFS_STATUS_OK) return UI_SERVICE_FS_STATUS_ERROR;
+
+	uint32_t result = UI_SERVICE_FS_STATUS_OK;
+	uint32_t count = 0U;
+	vfs_dirent_t dirent;
+
+	for (;;) {
+		status = vfs_readdir(filedesc, descriptor, &dirent);
+
+		if (status == VFS_STATUS_END_OF_DIRECTORY) break;
+
+		if (status != VFS_STATUS_OK) {
+			result = UI_SERVICE_FS_STATUS_ERROR;
+			break;
+		}
+
+		/* A browser shows what is inside a folder, not the folder's own links. */
+		if (strcmp(dirent.name, ".") == 0 || strcmp(dirent.name, "..") == 0) continue;
+
+		if (count >= capacity) {
+			*truncated_out = true;
+			break;
+		}
+
+		UIServiceDirEntry *entry = &entries[count++];
+		size_t length = dirent.name_length < UI_SERVICE_FS_NAME_MAX ? dirent.name_length : UI_SERVICE_FS_NAME_MAX;
+
+		memset(entry, 0, sizeof(*entry));
+		memcpy(entry->name, dirent.name, length);
+		entry->name_length = dirent.name_length;
+
+		if (dirent.type == VNODE_TYPE_DIRECTORY) {
+			entry->kind = UI_SERVICE_FS_KIND_DIRECTORY;
+		} else if (dirent.type == VNODE_TYPE_REGULAR) {
+			entry->kind = UI_SERVICE_FS_KIND_REGULAR;
+			entry->size_bytes = UIServiceFileSize(directory, dirent.name);
+		} else {
+			entry->kind = UI_SERVICE_FS_KIND_OTHER;
+		}
+	}
+
+	(void)vfs_close(filedesc, descriptor);
+	*count_out = count;
+	return result;
+}
 #endif
 
 bool ui_service_bootstrap(void)
@@ -400,13 +518,14 @@ bool ui_service_bootstrap(void)
 			.struct_size = sizeof(UIServiceHostV5),
 			.abi_version = UI_SERVICE_ABI_VERSION_V5
 		},
-		.capabilities = UI_SERVICE_HOST_CAPABILITIES_V3,
+		.capabilities = UI_SERVICE_HOST_CAPABILITIES_V3 | UI_SERVICE_HOST_CAP_FS,
 		.context = &context,
 		.get_surface = UIServiceGetSurface,
 		.present = UIServicePresent,
 		.poll_event = UIServicePollEvent,
 		.get_time = UIServiceGetTime,
-		.content_scale_permille = content_scale_permille
+		.content_scale_permille = content_scale_permille,
+		.list_directory = UIServiceListDirectory
 	};
 
 	if (UIServiceValidateHostV5(&host) != UI_SERVICE_STATUS_OK) {
