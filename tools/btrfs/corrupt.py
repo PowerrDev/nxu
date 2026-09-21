@@ -28,7 +28,10 @@ Kinds (the damage is applied to DST, a copy of SRC):
   data-extent:PATH:WHICH[:N]
                           flip a byte in the data of PATH's first regular extent
                           (WHICH: first = first copy only, second = second copy
-                          only, all = every copy). N picks the Nth regular extent
+                          only, all = every copy, dev=ID = the copies on device ID
+                          of a multi-device filesystem: run it on that device's
+                          image, with `btrfs_host extents` output that names the
+                          devices). N picks the Nth regular extent
                           (default 0). The info file needs `btrfs_host extents`
                           output for PATH appended (test_host.sh does that).
   nodatasum-off:PATH      clear the NODATASUM flag of PATH's inode (tree block
@@ -73,6 +76,9 @@ def read_info(path):
             info["chunk_list"].append((int(f[0]), int(f[1]), [int(x) for x in f[4:]]))
         elif k == "extent":
             info.setdefault("extents", []).append(v.split(","))
+        elif k == "extentdev":
+            f = v.split(",")
+            info.setdefault("extentdevs", {})[f[0]] = [int(x) for x in f[1:]]
         else:
             info[k] = v
     return info
@@ -186,7 +192,12 @@ def main():
             if n >= len(regular):
                 raise SystemExit("corrupt.py: %s has no regular extent %d" % (path, n))
             phys = [int(x) for x in regular[n][6:]]
-            if which == "first":
+            if which.startswith("dev="):
+                # multi-device: this image is one device; damage only the copies that live on it
+                devs = info.get("extentdevs", {}).get(regular[n][0], [])
+                want = int(which[4:])
+                phys = [p for p, d in zip(phys, devs) if d == want]
+            elif which == "first":
                 phys = phys[:1]
             elif which == "second":
                 phys = phys[1:2]

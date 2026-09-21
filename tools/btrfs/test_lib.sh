@@ -33,15 +33,34 @@ fixture_image() {
 	printf '%s' "$SCRATCH/img/$name.img"
 }
 
+# md_others NAME: "--dev IMG..." for the other devices of the multi-device fixture NAME.I
+# (empty for an ordinary fixture).
+md_others() {
+	local name=$1 base=${1%.*} idx=${1##*.} f i out=""
+	case "$name" in *.[0-9]) ;; *) return 0 ;; esac
+	for f in "$FIX/$base".[0-9].img.zst; do
+		i=${f##*/}
+		i=${i#"$base".}
+		i=${i%%.*}
+		[ "$i" = "$idx" ] && continue
+		out="$out --dev $(fixture_image "$base.$i")"
+	done
+	printf '%s' "$out"
+}
+
 damaged_image() {
 	local kind=$1 name=$2
-	local out=$SCRATCH/bad/$name.$(printf '%s' "$kind" | tr ':/' '__').img
-	"$HOST" info "$(fixture_image "$name")" > "$SCRATCH/bad/$name.info" 2>&1
+	local out=$SCRATCH/bad/$name.$(printf '%s' "$kind" | tr ':/=' '___').img
+	local others
+	others=$(md_others "$name")
+	# shellcheck disable=SC2086
+	"$HOST" info "$(fixture_image "$name")" $others > "$SCRATCH/bad/$name.info" 2>&1
 	case "$kind" in
 	data-extent:*|nodatasum-off:*)
 		# The kind names a file: add where its extents and inode item are.
 		local file=${kind#*:}
-		"$HOST" extents "$(fixture_image "$name")" "${file%%:*}" >> "$SCRATCH/bad/$name.info" 2>&1
+		# shellcheck disable=SC2086
+		"$HOST" extents "$(fixture_image "$name")" "${file%%:*}" $others >> "$SCRATCH/bad/$name.info" 2>&1
 		;;
 	esac
 	python3 "$HERE/corrupt.py" "$kind" "$(fixture_image "$name")" "$out" "$SCRATCH/bad/$name.info" || { echo "corrupt.py failed: $kind" >&2; exit 2; }
@@ -79,11 +98,15 @@ run_group() {
 	for pair in "$@"; do
 		token=${pair%%=*}
 		image=${pair#*=}
-		path=$(resolve_image "$image")
 		BT_SPEC=${BT_SPEC:+$BT_SPEC,}$token
-		BT_IMAGES="$BT_IMAGES $path"
-		hashes="$hashes $(shasum -a 256 "$path" | cut -d' ' -f1)"
-		BT_INDEX=$((BT_INDEX + 1))
+		# A multi-device spec lists its device images separated by commas.
+		local one
+		for one in ${image//,/ }; do
+			path=$(resolve_image "$one")
+			BT_IMAGES="$BT_IMAGES $path"
+			hashes="$hashes $(shasum -a 256 "$path" | cut -d' ' -f1)"
+			BT_INDEX=$((BT_INDEX + 1))
+		done
 	done
 
 	arch_boot
@@ -127,15 +150,25 @@ run_all_groups() {
 	run_group "compressed-1" "comp-lzo=comp-lzo" "comp-zstd=comp-zstd" "mix-zlib9=mix-zlib9"
 	run_group "compressed-2" "mix-lzo=mix-lzo" "mix-zstd15=mix-zstd15" "mix-random=mix-random"
 	run_group "checksums-1" "csum-xxhash=csum-xxhash" "csum-sha256=csum-sha256" "csum-blake2=csum-blake2"
+	echo "== multi-device filesystems: profiles across several virtio-blk devices =="
+	run_group "md-raid1" "md-raid1+dev2=md-raid1.0,md-raid1.1" "minimal=minimal"
+	run_group "md-raid0" "md-raid0+dev2=md-raid0.0,md-raid0.1" "!missing-device=md-raid0.0"
+	run_group "md-raid1c3" "md-raid1c3+dev3=md-raid1c3.0,md-raid1c3.1,md-raid1c3.2"
+	run_group "md-raid5" "md-raid5+dev3=md-raid5.0,md-raid5.1,md-raid5.2"
+	run_group "md-single" "md-single+dev2=md-single.0,md-single.1" "n4k=n4k"
+	run_group "md-order" "md-raid1+dev2=md-raid1.1,md-raid1.0" "!missing-device=md-raid1c3.0"
+	run_group "md-missing" "!missing-device+dev2=md-raid1c3.0,md-raid1c3.1" "minimal=minimal"
+	run_group "md-heal-1" "md-raid1+dev2=@data-extent:/dir/sub/data.bin:dev=1@md-raid1.0,md-raid1.1" "minimal=minimal"
+	run_group "md-heal-2" "md-raid1+dev2=md-raid1.0,@data-extent:/dir/sub/data.bin:dev=2@md-raid1.1" "minimal=minimal"
 	run_group "log-tree" "logtree=logtree" "logtree-base+ignorelog=logtree" "!csum=@log-block:tree:all@logtree"
 	run_group "checksums-2" "mix-zstd15+noverify=mix-zstd15" "data-dup=@data-extent:/dir/sub/data.bin:first@data-dup" "data-dup+verify=data-dup"
 
 	echo "== unsupported and damaged images: clean refusal, kernel keeps running (a good mount follows) =="
-	run_group "refusal-1" "!unsupported-profile=raid1" "!unsupported-profile=raid0" "n4k=n4k"
-	run_group "refusal-2" "!unsupported-profile=raid5" "minimal=minimal"
+	run_group "refusal-1" "!missing-device=raid1" "!missing-device=raid0" "n4k=n4k"
+	run_group "refusal-2" "!missing-device=raid5" "minimal=minimal"
 	run_group "refusal-3" "!bad-magic=@super-magic-all@minimal" "!csum=@super-csum-all@minimal" "n4k=n4k"
 	run_group "refusal-4" "!truncated=@truncate:41943040@minimal" "!corrupt=@sys-array-garbage@minimal" "n4k=n4k"
 	run_group "refusal-5" "!corrupt=@log-root@minimal" "!unsupported-feature=@incompat-bit:14@minimal" "minimal=minimal"
 	run_group "refusal-6" "!csum=@root-block:all@minimal" "!corrupt=@nodesize:12345@minimal" "n4k=n4k"
-	run_group "refusal-7" "!unsupported-profile=single2dev" "!bad-magic=@truncate:1024@minimal" "n4k=n4k"
+	run_group "refusal-7" "!missing-device=single2dev" "!bad-magic=@truncate:1024@minimal" "n4k=n4k"
 }

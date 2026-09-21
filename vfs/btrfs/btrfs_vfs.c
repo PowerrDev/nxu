@@ -65,8 +65,10 @@ struct btrfs_node {
 struct btrfs_mount {
 	mount_t mount;
 	block_device_t device;
-	btrfs_block_reader_t block;
-	btrfs_reader_t reader;
+	block_device_t devices[BTRFS_MAX_DEVICES];
+	btrfs_block_reader_t block[BTRFS_MAX_DEVICES];
+	btrfs_reader_t reader[BTRFS_MAX_DEVICES];
+	uint32_t device_count;
 	btrfs_fs_t *fs;
 	btrfs_node_t *buckets[BTRFS_NODE_BUCKETS];
 	btrfs_node_t *all;
@@ -184,6 +186,7 @@ static vfs_status_t btrfs_vfs_status(btrfs_status_t status)
 	case BTRFS_ERR_UNSUPPORTED_COMPRESSION:
 	case BTRFS_ERR_UNSUPPORTED_ENCRYPTION:
 	case BTRFS_ERR_LOG_TREE:
+	case BTRFS_ERR_MISSING_DEVICE:
 		return VFS_STATUS_NOT_SUPPORTED;
 	case BTRFS_ERR_IO:
 	case BTRFS_ERR_CSUM:
@@ -323,13 +326,18 @@ static vfs_status_t btrfs_mount_op(filesystem_t filesystem, block_device_t devic
 {
 	(void)filesystem;
 
-	btrfs_mount_options_t options = { 0ULL, false, false, false };
+	btrfs_mount_options_t options = { 0ULL, false, false, false, { 0, 0, 0 }, 0U };
 	if (g_next_options_set) options = g_next_options;
 	g_next_options_set = false;
 	g_last_mount_status = BTRFS_OK;
 
 	if (device == 0 || mount == 0 || !device->registered) return btrfs_mount_fail(BTRFS_ERR_INVALID);
 	if (options.verify_data && options.noverify) return btrfs_mount_fail(BTRFS_ERR_INVALID);
+	if (options.extra_count > BTRFS_MOUNT_EXTRA_DEVICES) return btrfs_mount_fail(BTRFS_ERR_INVALID);
+
+	for (uint32_t index = 0U; index < options.extra_count; index++) {
+		if (options.extra_devices[index] == 0 || !options.extra_devices[index]->registered) return btrfs_mount_fail(BTRFS_ERR_INVALID);
+	}
 	if (g_btrfs_mount_count >= BTRFS_MOUNT_MAX) return VFS_STATUS_NO_SPACE;
 
 	btrfs_mount_t *data = kcalloc(1U, sizeof(*data));
@@ -337,13 +345,16 @@ static vfs_status_t btrfs_mount_op(filesystem_t filesystem, block_device_t devic
 
 	data->mount = mount;
 	data->device = device;
-	btrfs_block_reader_init(&data->block, &data->reader, device);
+	data->devices[0] = device;
+	data->device_count = 1U + options.extra_count;
+	for (uint32_t index = 1U; index < data->device_count; index++) data->devices[index] = options.extra_devices[index - 1U];
+	for (uint32_t index = 0U; index < data->device_count; index++) btrfs_block_reader_init(&data->block[index], &data->reader[index], data->devices[index]);
 
 	btrfs_env_t env = { data, btrfs_env_alloc, btrfs_env_release, btrfs_env_log };
 	btrfs_open_options_t open_options = { options.subvol_id, options.noverify, options.ignore_log_tree, 0U };
 	btrfs_status_t status;
 
-	data->fs = btrfs_fs_open(&env, &data->reader, &open_options, &status);
+	data->fs = btrfs_fs_open_devices(&env, data->reader, data->device_count, &open_options, &status);
 	if (data->fs == 0) {
 		btrfs_destroy_mount(data);
 		kprintf("btrfs_mount_op: mount refused: %s\n", btrfs_status_name(status));
@@ -677,7 +688,7 @@ void btrfs_dump(void)
 
 		if (data == 0 || !data->active) continue;
 
-		kprintf("btrfs_dump: mount %s, device %s, %u resident vnodes\n", data->mount->m_path, data->device->name, data->node_count);
+		kprintf("btrfs_dump: mount %s, device %s, %u devices, %u resident vnodes\n", data->mount->m_path, data->device->name, data->device_count, data->node_count);
 		btrfs_fs_describe(data->fs);
 	}
 }

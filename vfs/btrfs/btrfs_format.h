@@ -55,7 +55,8 @@ typedef enum {
 	BTRFS_ERR_UNSUPPORTED_PROFILE, /* RAID / multi-device chunk or filesystem */
 	BTRFS_ERR_UNSUPPORTED_COMPRESSION,
 	BTRFS_ERR_UNSUPPORTED_ENCRYPTION,
-	BTRFS_ERR_LOG_TREE             /* an unreplayed log tree needs replay */
+	BTRFS_ERR_LOG_TREE,            /* the log tree holds something the replay layer does not understand */
+	BTRFS_ERR_MISSING_DEVICE       /* a device of the filesystem was not supplied (degraded mounts are refused) */
 } btrfs_status_t;
 
 const char *btrfs_status_name(btrfs_status_t status);

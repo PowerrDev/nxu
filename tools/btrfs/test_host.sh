@@ -281,11 +281,134 @@ for name in csum-xxhash csum-sha256 csum-blake2; do
 	check_tree "$name" "$name.manifest" --noverify
 done
 
+# ---- multi-device filesystems -------------------------------------------------------
+
+# mdimg NAME I: the image of device I of a multi-device fixture (NAME.I.img.zst).
+mdimg() { image "$1.$2"; }
+
+# mddevs NAME N [SKIP...]: "--dev IMG1 --dev IMG2 ..." for devices 1..N-1 (the first is the image argument).
+mddevs() {
+	local name=$1 n=$2 i out=""
+	for ((i = 1; i < n; i++)); do out="$out --dev $(mdimg "$name" $i)"; done
+	printf '%s' "$out"
+}
+
+# devid_of IMAGE: the device id in its superblock.
+devid_of() { python3 -c "import struct,sys; f=open(sys.argv[1],'rb'); f.seek(0x10000+201); print(struct.unpack('<Q', f.read(8))[0])" "$1"; }
+
+MDNAMES="md-raid1:2 md-raid0:2 md-raid10:4 md-raid1c3:3 md-raid1c4:4 md-raid5:3 md-raid6:4 md-single:2"
+
+echo "== multi-device filesystems: every profile walks byte-identically to what Linux read =="
+for spec in $MDNAMES; do
+	name=${spec%%:*} n=${spec##*:}
+	devs=$(mddevs "$name" "$n")
+	# shellcheck disable=SC2086
+	out=$("$HOST" check "$(mdimg "$name" 0)" "$FIX/$name.manifest" $devs 2>&1); rc=$?
+	if [ $rc -eq 0 ]; then pass "walk $name ($n devices: $(printf '%s' "$out" | tail -1 | sed 's/^PASS [^:]*: //'))"; else fail "walk $name ($n devices)" "$out"; fi
+	# shellcheck disable=SC2086
+	out=$("$HOST" check "$(mdimg "$name" 0)" "$FIX/$name.manifest" $devs --noverify 2>&1); rc=$?
+	if [ $rc -eq 0 ]; then pass "walk $name without data verification"; else fail "walk $name --noverify" "$out"; fi
+
+	# The devices in reverse order: the driver must not care which one is first.
+	last=$((n - 1)) rev=""
+	for ((i = last - 1; i >= 0; i--)); do rev="$rev --dev $(mdimg "$name" $i)"; done
+	# shellcheck disable=SC2086
+	out=$("$HOST" check "$(mdimg "$name" $last)" "$FIX/$name.manifest" $rev 2>&1); rc=$?
+	if [ $rc -eq 0 ]; then pass "walk $name with the devices in reverse order"; else fail "walk $name, reversed" "$out"; fi
+done
+
+echo "== multi-device: missing, foreign and duplicate devices are refused =="
+for spec in $MDNAMES; do
+	name=${spec%%:*} n=${spec##*:}
+	# The first device alone, and every device but the last.
+	expect_open "$name: device 0 alone" "$(mdimg "$name" 0)" "a device of the filesystem is missing"
+	if [ "$n" -gt 2 ]; then
+		# shellcheck disable=SC2046
+		expect_open "$name: $((n - 1)) of $n devices" "$(mdimg "$name" 0)" "a device of the filesystem is missing" $(mddevs "$name" $((n - 1)))
+	fi
+done
+expect_open "a device of another filesystem" "$(mdimg md-raid1 0)" "invalid argument" --dev "$(mdimg md-raid0 1)"
+expect_open "the same device twice" "$(mdimg md-raid1 0)" "invalid argument" --dev "$(mdimg md-raid1 0)"
+expect_open "too many devices" "$(mdimg md-raid1 0)" "invalid argument" --dev "$(mdimg md-raid1 1)" --dev "$(mdimg md-raid0 0)"
+
+echo "== multi-device: a mirror that fails its checksum falls back to another copy =="
+FILE=/dir/sub/data.bin
+# damaged NAME N WHICH...: a copy of device images with the data extent's copy on device id WHICH... damaged.
+# Prints the "--dev" argument list, with the damaged images in place of the good ones.
+damage_md() {
+	local name=$1 n=$2 target=$3 i out="" dev primary
+	shift 3
+	# shellcheck disable=SC2046
+	"$HOST" info "$(mdimg "$name" 0)" $(mddevs "$name" "$n") > "$SCRATCH/$name.md.info" 2>&1
+	# shellcheck disable=SC2046
+	"$HOST" extents "$(mdimg "$name" 0)" "$FILE" $(mddevs "$name" "$n") >> "$SCRATCH/$name.md.info" 2>&1
+	for ((i = 0; i < n; i++)); do
+		dev=$(mdimg "$name" $i)
+		id=$(devid_of "$dev")
+		case " $* " in
+		*" $id "*)
+			python3 "$HERE/corrupt.py" "data-extent:$FILE:dev=$id" "$dev" "$BAD/$name.$i.$target.img" "$SCRATCH/$name.md.info" || { echo "test_host: corrupt.py failed" >&2; exit 2; }
+			dev=$BAD/$name.$i.$target.img
+			;;
+		esac
+		if [ $i -eq 0 ]; then primary=$dev; else out="$out --dev $dev"; fi
+	done
+	printf '%s%s' "$primary" "$out"
+}
+
+md_first_copy_devices() {
+	# the device ids of the copies of the file's first extent, in copy order
+	local name=$1 n=$2
+	# shellcheck disable=SC2046
+	"$HOST" extents "$(mdimg "$name" 0)" "$FILE" $(mddevs "$name" "$n") | sed -n 's/^extentdev=[0-9]*,//p' | head -1 | tr ',' ' '
+}
+
+md_read() { # the damaged set given as one string: primary then --dev arguments
+	# shellcheck disable=SC2086
+	set -- $1
+	local primary=$1
+	shift
+	"$HOST" read "$primary" $FILE "$@"
+}
+
+for spec in md-raid1:2 md-raid1c3:3 md-raid10:4 md-raid0:2; do
+	name=${spec%%:*} n=${spec##*:}
+	# shellcheck disable=SC2046
+	want=$("$HOST" read "$(mdimg "$name" 0)" $FILE $(mddevs "$name" "$n"))
+	copies=$(md_first_copy_devices "$name" "$n")
+	ncopies=$(printf '%s\n' $copies | wc -l | tr -d ' ')
+	first=$(printf '%s\n' $copies | head -1)
+	if [ "$(rf "$want" read)" != ok ]; then fail "$name: cannot read $FILE from the good set" "$want"; continue; fi
+
+	# One copy (the first one tried) damaged.
+	set_=$(damage_md "$name" "$n" one $first)
+	out=$(md_read "$set_"); rc=$?
+	if [ "$ncopies" -ge 2 ]; then
+		if [ "$(rf "$out" read)" = ok ] && [ "$(rf "$out" crc)" = "$(rf "$want" crc)" ] && [ "$(rf "$out" csum_failures)" -ge 1 ] && [ "$(rf "$out" mirror_fallbacks)" -ge 1 ]; then pass "$name: first copy damaged: served from another device (fallback counted)"; else fail "$name: damaged first copy must heal" "$out"; fi
+	else
+		if [ $rc -eq 1 ] && [ "$(rf "$out" read)" = "checksum mismatch" ] && [ "$(rf "$out" done)" = 0 ]; then pass "$name: the only copy damaged: the read fails, nothing served"; else fail "$name: damaged only copy must fail" "$out"; fi
+	fi
+
+	# All copies but one damaged (a mirrored profile still has the last one).
+	if [ "$ncopies" -ge 3 ]; then
+		set_=$(damage_md "$name" "$n" most $(printf '%s\n' $copies | head -$((ncopies - 1)) | tr '\n' ' '))
+		out=$(md_read "$set_")
+		if [ "$(rf "$out" read)" = ok ] && [ "$(rf "$out" crc)" = "$(rf "$want" crc)" ] && [ "$(rf "$out" mirror_fallbacks)" -ge 2 ]; then pass "$name: $((ncopies - 1)) of $ncopies copies damaged: the last one serves"; else fail "$name: all but one copy damaged must heal" "$out"; fi
+	fi
+
+	# Every copy damaged.
+	if [ "$ncopies" -ge 2 ]; then
+		set_=$(damage_md "$name" "$n" all $copies)
+		out=$(md_read "$set_"); rc=$?
+		if [ $rc -eq 1 ] && [ "$(rf "$out" read)" = "checksum mismatch" ] && [ "$(rf "$out" done)" = 0 ]; then pass "$name: every copy damaged: the read fails"; else fail "$name: all copies damaged must fail (rc $rc)" "$out"; fi
+	fi
+done
+
 echo "== unsupported images are refused cleanly =="
-expect_open "raid1 (device 0 of 2)" "$(image raid1)" "unsupported RAID or multi-device profile"
-expect_open "raid0 (device 0 of 2)" "$(image raid0)" "unsupported RAID or multi-device profile"
-expect_open "raid5 (device 0 of 3)" "$(image raid5)" "unsupported RAID or multi-device profile"
-expect_open "single profile over 2 devices" "$(image single2dev)" "unsupported RAID or multi-device profile"
+expect_open "raid1 (device 0 of 2)" "$(image raid1)" "a device of the filesystem is missing"
+expect_open "raid0 (device 0 of 2)" "$(image raid0)" "a device of the filesystem is missing"
+expect_open "raid5 (device 0 of 3)" "$(image raid5)" "a device of the filesystem is missing"
+expect_open "single profile over 2 devices" "$(image single2dev)" "a device of the filesystem is missing"
 expect_open "subvolume id that does not exist" "$(image subvols)" "not found" --subvol 9999
 expect_open "mount a non-subvolume tree" "$(image subvols)" "not found" --subvol 7
 
@@ -310,7 +433,7 @@ expect_open "log tree block damaged" "$(corrupt log-block:tree:all logtree)" "ch
 expect_open "log root block damaged, told to ignore the log" "$(corrupt log-block:root:all logtree)" "ok" --ignore-log
 expect_open "nonsense nodesize" "$(corrupt nodesize:12345 minimal)" "corrupt metadata"
 expect_open "nodesize larger than allowed" "$(corrupt nodesize:131072 minimal)" "corrupt metadata"
-expect_open "claims two devices" "$(corrupt num-devices:2 minimal)" "unsupported RAID or multi-device profile"
+expect_open "claims two devices" "$(corrupt num-devices:2 minimal)" "a device of the filesystem is missing"
 expect_open "device claimed larger than the image" "$(corrupt dev-total-bytes minimal)" "device smaller than the filesystem"
 expect_open "garbage sys_chunk_array" "$(corrupt sys-array-garbage minimal)" "corrupt metadata"
 

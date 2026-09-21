@@ -23,7 +23,7 @@ real Linux stack (see [Fixtures](#fixtures-and-ground-truth)).
    btrfs_inode    INODE_ITEM, INODE_REF / INODE_EXTREF
    btrfs_root     ROOT_ITEM, subvolumes, "default", ROOT_REF / ROOT_BACKREF, subvolume points
    btrfs_tree     verified tree blocks, LRU cache, search, cross-leaf iteration (paths)
-   btrfs_chunk    logical -> physical (sys_chunk_array, then the chunk tree); SINGLE, DUP
+   btrfs_chunk    logical -> physical (sys_chunk_array, then the chunk tree); SINGLE, DUP, WIP: RAID
    btrfs_super    three superblock copies, validation, feature/device gating
    btrfs_csum     crc32c, xxh64; btrfs_hash: sha256, blake2b-256 (the four csum types)
    btrfs_io       reader interface: read N bytes at a byte offset
@@ -55,13 +55,43 @@ an unknown type number is corruption, not a feature.
 
 **Chunk map** (`btrfs_chunk.c`). Built from `sys_chunk_array`, then completed
 from the chunk tree. Sorted array, binary search, overlap and range checks
-(everything must lie inside the device). SINGLE has one stripe, DUP two: a
-tree block that fails verification on the first copy is re-read from the
-second (`mirror_fallbacks` counts it, the block is served only if the second
-copy verifies). RAID0/1/10/5/6, RAID1C3/4, any stripe on another device and
-any multi-device filesystem are parsed, then refused. `btrfs_mapping_t` and
-`btrfs_chunk_t` keep the general stripe list; a new profile only needs a case
-in `btrfs_map_logical`.
+(everything must lie inside its device). `btrfs_map_logical` turns a logical
+address into the copies of the piece it falls in, each a (device id, physical
+offset) pair, and `btrfs_read_logical` reads across pieces and devices.
+**Multi-device and RAID support is work in progress (WIP)**: it is committed
+separately (`WIP vfs/btrfs: ...`, easy to revert), it reads every profile below
+byte-identically to Linux on the host and in both kernels, but it has had far
+less testing than the single-device paths (no write, no degraded mode, no
+parity reconstruction, no fuzzing of multi-device images), so treat it as
+experimental:
+
+| Profile | Mapping |
+|---|---|
+| SINGLE | 1 stripe |
+| DUP, RAID1, RAID1C3, RAID1C4 | every stripe is a whole copy (DUP: two on one device; the others on different devices): 2, 2, 3, 4 copies |
+| RAID0 | `stripe_len` bytes on one device, then the next, round robin; 1 copy |
+| RAID10 | as RAID0 over pairs (`sub_stripes` = 2), each stripe mirrored: 2 copies |
+| RAID5, RAID6 | data stripes rotate with the row (`(column + row) mod n`), parity takes the rest; a read goes straight to the data stripe: 1 copy, **no reconstruction from parity** |
+
+A block or data extent that fails verification on one copy is re-read from the
+next copy in stripe order (`mirror_fallbacks` counts each failed copy that had a
+successor) and is served only if a later copy verifies; if none does, the read
+fails. Chunk geometry is validated per profile (stripe count, `stripe_len` a
+power of two, chunk length a multiple of a full stripe row, every stripe inside
+its device).
+
+**Devices** (`btrfs_fs_open_devices`, WIP). The caller supplies all devices of the
+filesystem in any order (`btrfs_fs_open` is the one-device case; the kernel takes
+up to 8, the virtio-blk driver 4 in total). Every device's superblock is read and
+they must agree on the fsid and have distinct device ids; the highest generation
+wins (a device that lags is used but logged), each device must be as large as its
+own device item says, and the chunk tree's DEV_ITEMs are matched with the
+supplied devices by id **and uuid**. Every device the superblock lists
+(`num_devices`) must be present: a missing one is refused with
+`BTRFS_ERR_MISSING_DEVICE`, never mounted degraded (degraded reads would serve
+holes or fall back on parity this driver does not use). More devices than the
+filesystem has, a device of another filesystem, or two devices with one id are
+`BTRFS_ERR_INVALID`.
 
 **Tree blocks** (`btrfs_tree.c`). A block is accepted only if its crc32c, own
 address, fsid (metadata_uuid when set), level, generation (equal to what the
@@ -219,7 +249,9 @@ always checked). The policy, in `btrfs_read_data_verified()`:
 | crc32c checksums | supported (table driven, in the core) |
 | xxhash64, sha256, blake2b checksums | supported (tree blocks, superblock, data) |
 | SINGLE, DUP chunks (metadata and data) | supported |
-| RAID0/1/10/5/6, RAID1C3/4, multi-device | refused: `unsupported RAID or multi-device profile` |
+| RAID0, RAID1, RAID10, RAID1C3, RAID1C4, SINGLE across devices (metadata and data) | **WIP**, verified against Linux: every device supplied (up to 8 in the core, 4 boot disks in the kernel), any order |
+| RAID5, RAID6 (all devices present) | **WIP**: plain reads only; no parity reconstruction, so a checksum failure is an error |
+| missing device (degraded mount), device of another filesystem, duplicate device id, device uuid differing from the chunk tree | refused: `a device of the filesystem is missing` / `invalid argument` (was `unsupported RAID or multi-device profile` before the WIP) |
 | Superblock mirrors, highest valid generation | supported |
 | mixed block groups, skinny/no skinny metadata, no-holes and explicit holes, free-space-tree, v1 space cache, block-group-tree, extended irefs, squota, metadata_uuid, big metadata | supported (only how metadata is written or accounted for changes) |
 | zoned, extent-tree-v2, raid-stripe-tree, unknown incompat bits | refused: `unsupported feature` |
@@ -247,7 +279,7 @@ make Btrfs available in a normal boot, add `btrfs_register()` next to
 `ext4_register()` in the two boot paths (this changes that one log line).
 
 Options for the next mount go through `btrfs_set_next_mount_options()`
-(`subvol_id`, `verify_data`, `noverify`, `ignore_log_tree`) because `vfs_mount` has no
+(`subvol_id`, `verify_data`, `noverify`, `ignore_log_tree`, `extra_devices`) because `vfs_mount` has no
 options argument; `btrfs_last_mount_status()` keeps the precise cause of a
 failed mount, since VFS statuses are coarse (`UNSUPPORTED_*` map to
 `NOT_SUPPORTED`, magic to `INVALID`, corruption/checksum/truncation to
@@ -291,8 +323,13 @@ zlib 1/9, LZO, ZSTD 1/3/15, the 128 KiB extent boundary, sparse files, extents
 only partly referenced, incompressible data) and all four checksum types, each
 walked against Linux; the decoders alone (`tools/btrfs/test_codec.sh`: streams from
 python zlib and the zstd command and an LZO generator, output cap, truncation,
-bombs, mutation sweeps under ASan/UBSan, sha256/blake2b against hashlib); refusal
-fixtures (RAID); named
+bombs, mutation sweeps under ASan/UBSan, sha256/blake2b against hashlib);
+multi-device filesystems (`md-*`, real `mkfs.btrfs` over 2 to 4 devices: RAID1, RAID0,
+RAID10, RAID1C3, RAID1C4, RAID5, RAID6, SINGLE data with DUP metadata; every
+profile walked against Linux, also with the devices in reverse order; missing,
+foreign and duplicate devices refused; a damaged copy falling back to another
+device, all-but-one copies damaged, every copy damaged, RAID0 (one copy) failing);
+refusal of what is unsupported; named
 corruptions (`tools/btrfs/corrupt.py`: superblock magic/checksum/features/log
 root/geometry, truncation at several sizes, root/chunk/subvolume tree blocks,
 DUP self-healing); the data-checksum policy (a damaged data extent fails a
@@ -307,7 +344,9 @@ alarm), out-of-bounds access, leak or different data reported as success.
 **In-kernel** (`vfs/btrfs/btrfs_selftest.c`, both architectures): boot argument
 `btrfs-test=<spec>[,<spec>...]`, the Nth spec against the Nth block device
 after the root disk (the virtio-blk driver takes four devices in total, so
-three fixtures per boot). `NAME[@SUBVOLID][+verify|+noverify]` mounts, walks through the
+three fixture devices per boot; a spec ending in `+devN` takes N consecutive
+devices for one multi-device filesystem, so the 4-device profiles run on the
+host only). `NAME[@SUBVOLID][+verify|+noverify]` mounts, walks through the
 public VFS interface against the expected listing generated from Linux's
 manifests (`btrfs_selftest_data.h`, `tools/btrfs/gen_selftest_data.py`), checks
 readdir resume, odd-offset and EOF reads, that every mutating operation
@@ -318,7 +357,8 @@ also compares each fixture disk's sha256 before and after the boot. arm64
 notes: QEMU virt hands out virtio-mmio slots top-down while the kernel probes
 bottom-up, so `test_arm64.sh` defines the fixtures in reverse and the root disk
 last; the kernel also needs the gpu/keyboard/mouse devices of the normal boot
-command. The arm64 test ends with a PSCI `SYSTEM_OFF`.
+command, and the sound device is defined after everything else so that it takes
+the lowest slot and leaves the block order alone. The arm64 test ends with a PSCI `SYSTEM_OFF`.
 
 ## Booting a Btrfs disk and looking at it
 
@@ -393,7 +433,11 @@ needed information.
 
 ## Not done / follow-ups
 
-- Multi-device and RAID profiles (`btrfs_map_logical`, a multi-device reader).
+- Multi-device and RAID (WIP, see above): finish and review it (sweeps over the
+  multi-device fixtures, a kernel mount API that takes more than three extra
+  devices, device scanning by fsid instead of the caller listing the devices),
+  RAID5/6 parity reconstruction (a checksum failure or a missing device on
+  RAID5/6 is an error today), and degraded mounts in general.
 - Write support (above).
 
 ## References

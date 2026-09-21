@@ -21,6 +21,8 @@
  *   btrfs_host codec ...                         decoder tests (btrfs_codec_test.c)
  *
  * options:  --subvol ID  --verify-data (the default)  --noverify  --ignore-log  --seed N  -v
+ *            --dev PATH   another device of a multi-device filesystem (repeatable; the
+ *                         IMAGE argument is the first device)
  *
  * The manifest was written inside the Alpine guest by Linux's own Btrfs driver
  * (tools/btrfs/guest/manifest.py), so `check` compares this driver with Linux,
@@ -804,12 +806,33 @@ typedef struct {
 	uint64_t iterations;
 	uint64_t offset;         /* read: first byte */
 	uint64_t length;         /* read: bytes (0: to the end of the file) */
+	const char *devs[BTRFS_MAX_DEVICES - 1];   /* --dev PATH: further devices of a multi-device filesystem */
+	int ndevs;
 } options_t;
+
+/* The further devices are opened once per process and shared by every open of the primary image. */
+static image_t g_extra_image[BTRFS_MAX_DEVICES - 1];
+static btrfs_reader_t g_extra_reader[BTRFS_MAX_DEVICES - 1];
+static int g_extra_open;
 
 static btrfs_fs_t *open_fs(image_t *image, btrfs_reader_t *reader, btrfs_env_t *env, const options_t *opt, btrfs_status_t *status)
 {
 	(void)image;
-	return btrfs_fs_open(env, reader, &opt->options, status);
+
+	if (opt->ndevs == 0) return btrfs_fs_open(env, reader, &opt->options, status);
+
+	btrfs_reader_t readers[BTRFS_MAX_DEVICES];
+
+	for (; g_extra_open < opt->ndevs; g_extra_open++) {
+		if (!image_open(&g_extra_image[g_extra_open], &g_extra_reader[g_extra_open], opt->devs[g_extra_open])) {
+			fprintf(stderr, "cannot open %s\n", opt->devs[g_extra_open]);
+			exit(2);
+		}
+	}
+
+	readers[0] = *reader;
+	for (int i = 0; i < opt->ndevs; i++) readers[1 + i] = g_extra_reader[i];
+	return btrfs_fs_open_devices(env, readers, (uint32_t)opt->ndevs + 1U, &opt->options, status);
 }
 
 static int cmd_info(const char *path, const options_t *opt)
@@ -837,7 +860,7 @@ static int cmd_info(const char *path, const options_t *opt)
 	printf("chunk_root=%llu\nchunk_root_level=%u\n", (unsigned long long)fs->super.chunk_root, fs->super.chunk_root_level);
 	printf("total_bytes=%llu\nbytes_used=%llu\n", (unsigned long long)fs->super.total_bytes, (unsigned long long)fs->super.bytes_used);
 	printf("sectorsize=%u\nnodesize=%u\nstripesize=%u\n", fs->super.sectorsize, fs->super.nodesize, fs->super.stripesize);
-	printf("csum_type=%u\nnum_devices=%llu\n", fs->super.csum_type, (unsigned long long)fs->super.num_devices);
+	printf("csum_type=%u\nnum_devices=%llu\ndev_id=%llu\n", fs->super.csum_type, (unsigned long long)fs->super.num_devices, (unsigned long long)fs->super.dev_id);
 	printf("incompat=%llx\ncompat_ro=%llx\nfeatures=%s\n", (unsigned long long)fs->super.incompat_flags, (unsigned long long)fs->super.compat_ro_flags, features);
 	printf("chunks=%u\ndefault_subvol=%llu\nmount_subvol=%llu\nsuper_copies_valid=%u\n", fs->chunks.count, (unsigned long long)fs->default_subvol, (unsigned long long)fs->mount_subvol, fs->super_copies_valid);
 
@@ -948,7 +971,8 @@ static btrfs_status_t resolve_path(btrfs_fs_t *fs, const char *file, btrfs_subvo
 }
 
 /*
- * Print the data extents of one file: "extent=FILEOFF,TYPE,COMPRESSION,LOGICAL,DISK_BYTES,RAM_BYTES,PHYSICAL...".
+ * Print the data extents of one file: "extent=FILEOFF,TYPE,COMPRESSION,LOGICAL,DISK_BYTES,RAM_BYTES,PHYSICAL...",
+ * each followed by "extentdev=FILEOFF,DEVID..." naming the device of every copy in the same order.
  * corrupt.py uses it to damage the data of a chosen file (kinds data-extent:...).
  */
 static int cmd_extents(const char *path, const char *file, const options_t *opt)
@@ -1005,6 +1029,13 @@ static int cmd_extents(const char *path, const char *file, const options_t *opt)
 				printf("extent=%llu,%s,%u,%llu,%llu,%llu", (unsigned long long)key.offset, e.type == BTRFS_FILE_EXTENT_PREALLOC ? "prealloc" : "regular", e.compression, (unsigned long long)e.disk_bytenr, (unsigned long long)e.disk_num_bytes, (unsigned long long)e.ram_bytes);
 				if (btrfs_map_logical(fs, e.disk_bytenr, &m) == BTRFS_OK) for (uint32_t c = 0; c < m.copies; c++) printf(",%llu", (unsigned long long)m.physical[c]);
 				printf("\n");
+
+				/* Which device holds each of those copies, in the same order (multi-device filesystems). */
+				if (btrfs_map_logical(fs, e.disk_bytenr, &m) == BTRFS_OK) {
+					printf("extentdev=%llu", (unsigned long long)key.offset);
+					for (uint32_t c = 0; c < m.copies; c++) printf(",%llu", (unsigned long long)m.devid[c]);
+					printf("\n");
+				}
 			}
 
 			status = btrfs_path_next(fs, &bp);
@@ -1460,6 +1491,7 @@ int main(int argc, char **argv)
 		else if (strcmp(argv[i], "--ignore-log") == 0) opt.options.ignore_log_tree = true;
 		else if (strcmp(argv[i], "--offset") == 0 && i + 1 < argc) opt.offset = strtoull(argv[++i], NULL, 10);
 		else if (strcmp(argv[i], "--length") == 0 && i + 1 < argc) opt.length = strtoull(argv[++i], NULL, 10);
+		else if (strcmp(argv[i], "--dev") == 0 && i + 1 < argc && opt.ndevs < (int)BTRFS_MAX_DEVICES - 1) opt.devs[opt.ndevs++] = argv[++i];
 		else if (strcmp(argv[i], "--seed") == 0 && i + 1 < argc) opt.seed = strtoull(argv[++i], NULL, 10);
 		else if (strcmp(argv[i], "--iters") == 0 && i + 1 < argc) opt.iterations = strtoull(argv[++i], NULL, 10);
 		else if (strcmp(argv[i], "-v") == 0) opt.verbose = true;

@@ -294,9 +294,15 @@ btrfs_status_t btrfs_super_check_support(const btrfs_fs_t *fs, const btrfs_super
 		return BTRFS_ERR_UNSUPPORTED_FEATURE;
 	}
 
-	if (super->num_devices != 1ULL) {
-		BTRFS_LOG(fs, "multi-device filesystem (%llu devices) is not supported", BTRFS_U64(super->num_devices));
-		return BTRFS_ERR_UNSUPPORTED_PROFILE;
+	/* Every device the filesystem lists must have been supplied: a degraded mount would serve holes. */
+	if (super->num_devices > fs->device_count) {
+		BTRFS_LOG(fs, "the filesystem has %llu devices, %u supplied", BTRFS_U64(super->num_devices), fs->device_count);
+		return BTRFS_ERR_MISSING_DEVICE;
+	}
+
+	if (super->num_devices < fs->device_count) {
+		BTRFS_LOG(fs, "%u devices supplied for a filesystem of %llu", fs->device_count, BTRFS_U64(super->num_devices));
+		return BTRFS_ERR_INVALID;
 	}
 
 	uint64_t device_bytes = super->dev_total_bytes != 0ULL ? super->dev_total_bytes : super->total_bytes;

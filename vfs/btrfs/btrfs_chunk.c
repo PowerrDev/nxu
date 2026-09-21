@@ -16,13 +16,16 @@
  *   2. walks the chunk tree and adds every CHUNK_ITEM;
  *   3. translates logical addresses for the readers.
  *
- * Supported profiles: SINGLE (one stripe) and DUP (two stripes on the one
- * device, both holding the same bytes: a read that fails a checksum on the
- * first copy is retried on the second). RAID0/1/10/5/6 and RAID1C3/4 chunks
- * are parsed and recognised but refused with BTRFS_ERR_UNSUPPORTED_PROFILE
- * when the map is built, as is any stripe on a device other than the one we
- * were given. The chunk and mapping structures keep the general stripe list,
- * so a profile only needs a case in btrfs_map_logical() (see doc/vfs/btrfs.md).
+ * Profiles: SINGLE (one stripe), DUP, RAID1, RAID1C3 and RAID1C4 (every stripe
+ * is a whole copy of the chunk, on one device or several: a read that fails a
+ * checksum on one copy is retried on the next), RAID0 and RAID10 (stripe_len
+ * bytes on one device, then the next; RAID10 mirrors each stripe on
+ * sub_stripes devices) and RAID5/6 (data stripes rotating with the row; plain
+ * reads go straight to the data stripe, parity is never used). btrfs_map_logical
+ * answers with the copies of the piece a logical address falls in, each as a
+ * (device id, physical offset) pair, and btrfs_read_logical does the reading
+ * across pieces and devices. Every stripe must be on a supplied device (see
+ * btrfs_fs_open_devices) and inside it.
  *
  * Every number from disk is range-checked: lengths and offsets are tested for
  * unsigned overflow and for lying inside the device, chunks must not overlap,
@@ -50,12 +53,50 @@ const char *btrfs_profile_name(uint64_t chunk_type)
 	return "mixed-profile";
 }
 
+/* How many devices' worth of stripes hold one copy of the chunk's data, and how many parity stripes. */
+static bool btrfs_chunk_geometry(const btrfs_chunk_t *chunk, uint32_t *data_stripes)
+{
+	uint64_t profile = chunk->type & BTRFS_BLOCK_GROUP_PROFILE_MASK;
+	uint32_t n = chunk->num_stripes;
+
+	switch (profile) {
+	case 0ULL:
+		*data_stripes = 1U;
+		return n == 1U;
+	case BTRFS_BLOCK_GROUP_DUP:
+	case BTRFS_BLOCK_GROUP_RAID1:
+		*data_stripes = 1U;
+		return n == 2U;
+	case BTRFS_BLOCK_GROUP_RAID1C3:
+		*data_stripes = 1U;
+		return n == 3U;
+	case BTRFS_BLOCK_GROUP_RAID1C4:
+		*data_stripes = 1U;
+		return n == 4U;
+	case BTRFS_BLOCK_GROUP_RAID0:
+		*data_stripes = n;
+		return n >= 2U;
+	case BTRFS_BLOCK_GROUP_RAID10:
+		*data_stripes = n / 2U;
+		return n >= 4U && (n % 2U) == 0U && chunk->sub_stripes == 2U;
+	case BTRFS_BLOCK_GROUP_RAID5:
+		*data_stripes = n - 1U;
+		return n >= 2U;
+	case BTRFS_BLOCK_GROUP_RAID6:
+		*data_stripes = n - 2U;
+		return n >= 3U;
+	default:
+		return false;
+	}
+}
+
 /* Reject a chunk the driver cannot or must not use. */
 static btrfs_status_t btrfs_chunk_check(const btrfs_fs_t *fs, const btrfs_chunk_t *chunk)
 {
 	uint64_t mask = fs->sectorsize - 1U;
 	uint64_t profile = chunk->type & BTRFS_BLOCK_GROUP_PROFILE_MASK;
 	uint64_t known = BTRFS_BLOCK_GROUP_TYPE_MASK | BTRFS_BLOCK_GROUP_PROFILE_MASK;
+	uint32_t data_stripes;
 
 	if (chunk->length == 0ULL || chunk->logical + chunk->length < chunk->logical) return BTRFS_ERR_CORRUPT;
 	if ((chunk->logical & mask) != 0ULL || (chunk->length & mask) != 0ULL) return BTRFS_ERR_CORRUPT;
@@ -68,25 +109,28 @@ static btrfs_status_t btrfs_chunk_check(const btrfs_fs_t *fs, const btrfs_chunk_
 	}
 
 	if (profile != 0ULL && (profile & (profile - 1ULL)) != 0ULL) return BTRFS_ERR_CORRUPT;
+	if (!btrfs_chunk_geometry(chunk, &data_stripes)) return BTRFS_ERR_CORRUPT;
 
-	if (profile != 0ULL && profile != BTRFS_BLOCK_GROUP_DUP) {
-		BTRFS_LOG(fs, "chunk at %llu uses the %s profile, which is not supported", BTRFS_U64(chunk->logical), btrfs_profile_name(chunk->type));
-		return BTRFS_ERR_UNSUPPORTED_PROFILE;
+	/* The striped profiles cut the chunk into stripe_len pieces, one per device in turn. */
+	uint64_t per_device = chunk->length;
+
+	if (data_stripes > 1U || profile == BTRFS_BLOCK_GROUP_RAID5 || profile == BTRFS_BLOCK_GROUP_RAID6) {
+		if (chunk->stripe_len < fs->sectorsize || chunk->stripe_len > (1ULL << 30U) || (chunk->stripe_len & (chunk->stripe_len - 1ULL)) != 0ULL) return BTRFS_ERR_CORRUPT;
+		if (chunk->length % ((uint64_t)data_stripes * chunk->stripe_len) != 0ULL) return BTRFS_ERR_CORRUPT;
+		per_device = chunk->length / data_stripes;
 	}
-
-	uint32_t expected_stripes = profile == BTRFS_BLOCK_GROUP_DUP ? 2U : 1U;
-	if (chunk->num_stripes != expected_stripes) return BTRFS_ERR_CORRUPT;
 
 	for (uint32_t index = 0U; index < chunk->num_stripes; index++) {
 		const btrfs_stripe_t *stripe = &chunk->stripes[index];
+		const btrfs_device_t *device = btrfs_device_find(fs, stripe->devid);
 
-		if (stripe->devid != fs->super.dev_id) {
-			BTRFS_LOG(fs, "chunk at %llu has a stripe on device %llu, we only have device %llu", BTRFS_U64(chunk->logical), BTRFS_U64(stripe->devid), BTRFS_U64(fs->super.dev_id));
-			return BTRFS_ERR_UNSUPPORTED_PROFILE;
+		if (device == 0) {
+			BTRFS_LOG(fs, "chunk at %llu has a stripe on device %llu, which was not supplied", BTRFS_U64(chunk->logical), BTRFS_U64(stripe->devid));
+			return BTRFS_ERR_MISSING_DEVICE;
 		}
 
-		if (stripe->offset + chunk->length < stripe->offset || stripe->offset + chunk->length > fs->reader.size) {
-			BTRFS_LOG(fs, "chunk at %llu: stripe %u [%llu, +%llu) lies outside the device", BTRFS_U64(chunk->logical), index, BTRFS_U64(stripe->offset), BTRFS_U64(chunk->length));
+		if (stripe->offset + per_device < stripe->offset || stripe->offset + per_device > device->reader.size) {
+			BTRFS_LOG(fs, "chunk at %llu: stripe %u [%llu, +%llu) lies outside device %llu", BTRFS_U64(chunk->logical), index, BTRFS_U64(stripe->offset), BTRFS_U64(per_device), BTRFS_U64(stripe->devid));
 			return BTRFS_ERR_CORRUPT;
 		}
 	}
@@ -213,8 +257,56 @@ btrfs_status_t btrfs_chunks_load(btrfs_fs_t *fs)
 	btrfs_path_t path;
 	btrfs_path_init(&path);
 
+	/* The device items say which devices exist; every supplied device must be one of them, by uuid. */
+	btrfs_key_t first_device = btrfs_key_make(BTRFS_DEV_ITEMS_OBJECTID, BTRFS_DEV_ITEM_KEY, 0ULL);
+	btrfs_status_t status = btrfs_tree_search_ge(fs, &fs->chunk_tree, &first_device, &path, 0);
+	uint32_t listed = 0U;
+
+	while (status == BTRFS_OK) {
+		btrfs_key_t key;
+		const uint8_t *data;
+		uint32_t size;
+
+		if (!btrfs_path_item(&path, &key, &data, &size)) {
+			status = BTRFS_ERR_CORRUPT;
+			break;
+		}
+
+		if (key.objectid != BTRFS_DEV_ITEMS_OBJECTID || key.type != BTRFS_DEV_ITEM_KEY) break;
+		if (size < BTRFS_DEV_ITEM_SIZE) {
+			status = BTRFS_ERR_CORRUPT;
+			break;
+		}
+
+		const btrfs_device_t *device = btrfs_device_find(fs, btrfs_get_le64(data + BTRFS_DEV_DEVID));
+
+		if (device == 0) {
+			BTRFS_LOG(fs, "device %llu is listed by the chunk tree but was not supplied", BTRFS_U64(btrfs_get_le64(data + BTRFS_DEV_DEVID)));
+			status = BTRFS_ERR_MISSING_DEVICE;
+			break;
+		}
+
+		if (memcmp(device->uuid, data + BTRFS_DEV_UUID, BTRFS_UUID_SIZE) != 0) {
+			BTRFS_LOG(fs, "device %llu is not the device the chunk tree lists under that id (uuid differs)", BTRFS_U64(device->devid));
+			status = BTRFS_ERR_INVALID;
+			break;
+		}
+
+		listed++;
+		status = btrfs_path_next(fs, &path);
+	}
+
+	btrfs_path_release(fs, &path);
+
+	if (status == BTRFS_ERR_END) status = BTRFS_OK;
+	if (status != BTRFS_OK) return status;
+	if (listed != fs->device_count) {
+		BTRFS_LOG(fs, "the chunk tree lists %u devices, %u were supplied", listed, fs->device_count);
+		return listed > fs->device_count ? BTRFS_ERR_MISSING_DEVICE : BTRFS_ERR_INVALID;
+	}
+
 	btrfs_key_t start = btrfs_key_make(BTRFS_FIRST_CHUNK_TREE_OBJECTID, BTRFS_CHUNK_ITEM_KEY, 0ULL);
-	btrfs_status_t status = btrfs_tree_search_ge(fs, &fs->chunk_tree, &start, &path, 0);
+	status = btrfs_tree_search_ge(fs, &fs->chunk_tree, &start, &path, 0);
 	uint32_t loaded = 0U;
 
 	while (status == BTRFS_OK) {
@@ -259,6 +351,14 @@ btrfs_status_t btrfs_chunks_load(btrfs_fs_t *fs)
 	return status;
 }
 
+static unsigned btrfs_chunk_shift(uint64_t power_of_two)
+{
+	unsigned shift = 0U;
+
+	while ((1ULL << shift) < power_of_two) shift++;
+	return shift;
+}
+
 btrfs_status_t btrfs_map_logical(const btrfs_fs_t *fs, uint64_t logical, btrfs_mapping_t *mapping)
 {
 	const btrfs_chunk_map_t *map = &fs->chunks;
@@ -269,15 +369,60 @@ btrfs_status_t btrfs_map_logical(const btrfs_fs_t *fs, uint64_t logical, btrfs_m
 	const btrfs_chunk_t *chunk = &map->chunks[position];
 	uint64_t inside = logical - chunk->logical;
 	uint64_t profile = chunk->type & BTRFS_BLOCK_GROUP_PROFILE_MASK;
+	uint32_t n = chunk->num_stripes;
 
-	/* Extension point: RAID0/1/10/5/6 stripe arithmetic would go here. */
-	if (profile != 0ULL && profile != BTRFS_BLOCK_GROUP_DUP) return BTRFS_ERR_UNSUPPORTED_PROFILE;
-
-	mapping->copies = chunk->num_stripes;
-	mapping->length = chunk->length - inside;
 	mapping->type = chunk->type;
-	for (uint32_t index = 0U; index < chunk->num_stripes; index++) {
-		mapping->physical[index] = chunk->stripes[index].offset + inside;
+
+	if (profile != BTRFS_BLOCK_GROUP_RAID0 && profile != BTRFS_BLOCK_GROUP_RAID10 && profile != BTRFS_BLOCK_GROUP_RAID5 && profile != BTRFS_BLOCK_GROUP_RAID6) {
+		/* SINGLE, DUP, RAID1, RAID1C3, RAID1C4: every stripe is a whole copy. */
+		mapping->copies = n;
+		mapping->length = chunk->length - inside;
+		for (uint32_t index = 0U; index < n; index++) {
+			mapping->devid[index] = chunk->stripes[index].devid;
+			mapping->physical[index] = chunk->stripes[index].offset + inside;
+		}
+
+		return BTRFS_OK;
+	}
+
+	/* Striped: stripe_len bytes on one device, then the next. */
+	unsigned shift = btrfs_chunk_shift(chunk->stripe_len);
+	uint64_t stripe_nr = inside >> shift;
+	uint64_t within = inside & (chunk->stripe_len - 1ULL);
+	uint32_t first;
+	uint64_t row;
+
+	mapping->length = chunk->stripe_len - within;
+	if (mapping->length > chunk->length - inside) mapping->length = chunk->length - inside;
+
+	if (profile == BTRFS_BLOCK_GROUP_RAID0) {
+		first = (uint32_t)(stripe_nr % n);
+		row = stripe_nr / n;
+		mapping->copies = 1U;
+	} else if (profile == BTRFS_BLOCK_GROUP_RAID10) {
+		uint32_t factor = n / chunk->sub_stripes;
+
+		first = (uint32_t)(stripe_nr % factor) * chunk->sub_stripes;
+		row = stripe_nr / factor;
+		mapping->copies = chunk->sub_stripes;
+	} else {
+		/*
+		 * RAID5/6: data stripes rotate with the row, parity takes the others. A plain read
+		 * goes straight to the data stripe; nothing is reconstructed from parity.
+		 */
+		uint32_t data = n - (profile == BTRFS_BLOCK_GROUP_RAID6 ? 2U : 1U);
+		uint32_t column = (uint32_t)(stripe_nr % data);
+
+		row = stripe_nr / data;
+		first = (uint32_t)((column + row) % n);
+		mapping->copies = 1U;
+	}
+
+	for (uint32_t index = 0U; index < mapping->copies; index++) {
+		const btrfs_stripe_t *stripe = &chunk->stripes[first + index];
+
+		mapping->devid[index] = stripe->devid;
+		mapping->physical[index] = stripe->offset + (row << shift) + within;
 	}
 
 	return BTRFS_OK;
@@ -285,16 +430,30 @@ btrfs_status_t btrfs_map_logical(const btrfs_fs_t *fs, uint64_t logical, btrfs_m
 
 btrfs_status_t btrfs_read_logical(btrfs_fs_t *fs, uint64_t logical, void *buffer, size_t length, uint32_t copy)
 {
-	btrfs_mapping_t mapping;
-	btrfs_status_t status = btrfs_map_logical(fs, logical, &mapping);
+	uint8_t *out = buffer;
 
-	if (status != BTRFS_OK) return status;
-	if (copy >= mapping.copies) return BTRFS_ERR_INVALID;
-	if ((uint64_t)length > mapping.length) return BTRFS_ERR_CORRUPT; /* would cross a chunk boundary */
+	/* A striped range is several pieces on different devices; a mirrored one is a single piece. */
+	while (length != 0U) {
+		btrfs_mapping_t mapping;
+		btrfs_status_t status = btrfs_map_logical(fs, logical, &mapping);
 
-	fs->stats.device_reads++;
-	fs->stats.device_bytes += length;
+		if (status != BTRFS_OK) return status;
+		if (copy >= mapping.copies) return BTRFS_ERR_INVALID;
 
-	if (!btrfs_reader_read(&fs->reader, mapping.physical[copy], buffer, length)) return BTRFS_ERR_IO;
+		const btrfs_device_t *device = btrfs_device_find(fs, mapping.devid[copy]);
+		size_t piece = (uint64_t)length < mapping.length ? length : (size_t)mapping.length;
+
+		if (device == 0) return BTRFS_ERR_MISSING_DEVICE;
+
+		fs->stats.device_reads++;
+		fs->stats.device_bytes += piece;
+
+		if (!btrfs_reader_read(&device->reader, mapping.physical[copy], out, piece)) return BTRFS_ERR_IO;
+
+		logical += piece;
+		out += piece;
+		length -= piece;
+	}
+
 	return BTRFS_OK;
 }

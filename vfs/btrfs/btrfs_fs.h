@@ -106,13 +106,32 @@ typedef struct {
 	uint32_t capacity;
 } btrfs_chunk_map_t;
 
-/* Where a logical range lives: up to BTRFS_CHUNK_MAX_STRIPES equivalent copies. */
+/*
+ * Where a logical range lives: up to BTRFS_CHUNK_MAX_STRIPES equivalent copies
+ * (SINGLE 1, DUP and RAID1 2, RAID1C3 3, RAID1C4 4, RAID10 2 mirrors of one
+ * stripe, RAID0 and RAID5/6 data 1). length is how many bytes from logical
+ * lie in the same piece: the end of the chunk for the mirrored profiles, the
+ * end of the current stripe for the striped ones.
+ */
 typedef struct {
-	uint32_t copies;         /* SINGLE: 1, DUP: 2 */
-	uint64_t physical[BTRFS_CHUNK_MAX_STRIPES];
-	uint64_t length;         /* bytes from logical to the end of the chunk */
+	uint32_t copies;
+	uint64_t devid[BTRFS_CHUNK_MAX_STRIPES];      /* the device each copy is on */
+	uint64_t physical[BTRFS_CHUNK_MAX_STRIPES];   /* byte offset on that device */
+	uint64_t length;
 	uint64_t type;           /* the chunk's BTRFS_BLOCK_GROUP_* flags */
 } btrfs_mapping_t;
+
+/* ---- devices ---------------------------------------------------------------------------- */
+
+#define BTRFS_MAX_DEVICES 8U
+
+/* One supplied device: the reader, and who its superblock says it is. */
+typedef struct {
+	btrfs_reader_t reader;
+	uint64_t devid;
+	uint64_t generation;       /* of the best valid superblock on it */
+	uint8_t uuid[BTRFS_UUID_SIZE];
+} btrfs_device_t;
 
 struct btrfs_replay;
 typedef struct btrfs_replay btrfs_replay_t;
@@ -180,7 +199,9 @@ typedef struct {
 
 struct btrfs_fs {
 	btrfs_env_t env;
-	btrfs_reader_t reader;
+	btrfs_reader_t reader;         /* the device the superblock in use came from */
+	btrfs_device_t devices[BTRFS_MAX_DEVICES];
+	uint32_t device_count;
 	btrfs_open_options_t options;
 
 	btrfs_super_t super;
@@ -219,7 +240,7 @@ struct btrfs_fs {
  */
 btrfs_status_t btrfs_super_load(const btrfs_fs_t *fs, const btrfs_reader_t *reader, btrfs_super_t *out, uint64_t *offset_used, uint32_t *copies_valid);
 
-/* Refuse what the driver cannot read: features, checksum type, multiple devices. */
+/* Refuse what the driver cannot read: features, missing devices, undersized devices. */
 btrfs_status_t btrfs_super_check_support(const btrfs_fs_t *fs, const btrfs_super_t *super);
 
 /* Parse one 4096-byte superblock image; verifies magic/bytenr/checksum/geometry. */
@@ -247,6 +268,19 @@ const char *btrfs_profile_name(uint64_t chunk_type);
  * the failure has already been logged. The returned filesystem is read-only.
  */
 btrfs_fs_t *btrfs_fs_open(const btrfs_env_t *env, const btrfs_reader_t *reader, const btrfs_open_options_t *options, btrfs_status_t *status);
+
+/*
+ * The same for a filesystem on several devices (up to BTRFS_MAX_DEVICES), given
+ * in any order. Every device's superblock is read; they must name the same
+ * filesystem and distinct device ids, the highest generation is used, and
+ * every device the filesystem lists (num_devices) must be present: a missing
+ * device is refused with BTRFS_ERR_MISSING_DEVICE, never mounted degraded.
+ * Device uuids are matched against the DEV_ITEMs of the chunk tree.
+ */
+btrfs_fs_t *btrfs_fs_open_devices(const btrfs_env_t *env, const btrfs_reader_t *readers, uint32_t count, const btrfs_open_options_t *options, btrfs_status_t *status);
+
+/* The supplied device with this id, or NULL. */
+const btrfs_device_t *btrfs_device_find(const btrfs_fs_t *fs, uint64_t devid);
 void btrfs_fs_close(btrfs_fs_t *fs);
 
 void *btrfs_alloc(const btrfs_fs_t *fs, size_t size);

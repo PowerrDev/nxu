@@ -60,6 +60,8 @@ typedef struct {
 	char *linkbuf;
 	char mount_path[16];
 	block_device_t device;
+	block_device_t extra[BTRFS_MOUNT_EXTRA_DEVICES];   /* the other devices of a multi-device fixture */
+	uint32_t extra_count;
 	int failures;
 	uint32_t entries;
 	uint32_t files;
@@ -383,6 +385,9 @@ static void st_check_read_only(selftest_t *t)
 {
 	char path[SELFTEST_PATH_MAX];
 	uint64_t writes_before = t->device->write_operations;
+	uint64_t extra_writes_before[BTRFS_MOUNT_EXTRA_DEVICES];
+
+	for (uint32_t index = 0U; index < t->extra_count; index++) extra_writes_before[index] = t->extra[index]->write_operations;
 	filedesc_t filedesc = &proc_kernel()->p_fd;
 	uint32_t descriptor;
 	vnode_t vnode;
@@ -448,6 +453,10 @@ static void st_check_read_only(selftest_t *t)
 
 	if (t->device->write_operations != writes_before) st_fail(t, t->mount_path, "the device was written to", t->device->write_operations, writes_before);
 
+	for (uint32_t index = 0U; index < t->extra_count; index++) {
+		if (t->extra[index]->write_operations != extra_writes_before[index]) st_fail(t, t->mount_path, "an extra device was written to", t->extra[index]->write_operations, extra_writes_before[index]);
+	}
+
 	/* The read-only volume also says so in its space report. */
 	vfs_space_info_t info;
 	if (vfs_space_info(t->mount_path, &info) != VFS_STATUS_OK || !info.read_only) st_fail(t, t->mount_path, "space_info does not report read-only", info.read_only, 1ULL);
@@ -464,7 +473,17 @@ static const btrfs_expect_fixture_t *st_fixture(const char *name)
 	return 0;
 }
 
-/* Run one positive spec: NAME[@SUBVOLID][+verify|+noverify|+ignorelog]. */
+/* "+devN" at the end of a token: N devices belong to the spec. Returns N (1 without the suffix). */
+static uint32_t st_device_span(const char *token)
+{
+	for (const char *plus = token; *plus != '\0'; plus++) {
+		if (plus[0] == '+' && plus[1] == 'd' && plus[2] == 'e' && plus[3] == 'v' && plus[4] >= '1' && plus[4] <= '9' && plus[5] == '\0') return (uint32_t)(plus[4] - '0');
+	}
+
+	return 1U;
+}
+
+/* Run one positive spec: NAME[@SUBVOLID][+verify|+noverify|+ignorelog|+devN]. */
 static bool st_run_fixture(const char *token, uint32_t device_index)
 {
 	char name[48];
@@ -483,6 +502,7 @@ static bool st_run_fixture(const char *token, uint32_t device_index)
 	if (strcmp(token + length, "+verify") == 0) verify = true;
 	if (strcmp(token + length, "+noverify") == 0) noverify = true;
 	if (strcmp(token + length, "+ignorelog") == 0) ignore_log = true;
+	uint32_t span = st_device_span(token);
 
 	const char *at = name;
 	while (*at != '\0' && *at != '@') at++;
@@ -503,6 +523,16 @@ static bool st_run_fixture(const char *token, uint32_t device_index)
 
 	t->fixture = fixture;
 	t->device = device;
+	t->extra_count = span - 1U;
+
+	for (uint32_t index = 0U; index < t->extra_count; index++) {
+		t->extra[index] = block_device_get(device_index + 1U + index);
+		if (t->extra[index] == 0) {
+			kprintf("btrfs_selftest: FAIL %s: no block device %u\n", token, device_index + 1U + index);
+			return false;
+		}
+	}
+
 	t->seen = kcalloc((size_t)fixture->count, 1U);
 	t->buffer = kmalloc(65536U + 64U);
 	t->linkbuf = kmalloc(SELFTEST_LINK_MAX);
@@ -515,6 +545,8 @@ static bool st_run_fixture(const char *token, uint32_t device_index)
 		return false;
 	}
 
+	if (span > 1U) kprintf("btrfs_selftest: %s: a filesystem on %u devices\n", token, span);
+
 	kprintf("btrfs_selftest: %s: mounting %s (%llu sectors) at %s%s%s\n", token, device->name, (unsigned long long)device->sector_count, t->mount_path, noverify ? ", data checksums off" : (verify ? ", data checksums on (explicit)" : ""), ignore_log ? ", log tree ignored" : (subvol != 0ULL ? ", explicit subvolume" : ""));
 
 	vfs_status_t status = vfs_mkdir(t->mount_path);
@@ -523,7 +555,9 @@ static bool st_run_fixture(const char *token, uint32_t device_index)
 		return false;
 	}
 
-	btrfs_mount_options_t options = { subvol, verify, ignore_log, noverify };
+	btrfs_mount_options_t options = { subvol, verify, ignore_log, noverify, { 0, 0, 0 }, t->extra_count };
+
+	for (uint32_t index = 0U; index < t->extra_count; index++) options.extra_devices[index] = t->extra[index];
 	btrfs_set_next_mount_options(&options);
 
 	status = vfs_mount("btrfs", device, t->mount_path);
@@ -593,15 +627,30 @@ static const selftest_status_name_t g_status_names[] = {
 	{ "unsupported-feature", BTRFS_ERR_UNSUPPORTED_FEATURE },
 	{ "unsupported-csum", BTRFS_ERR_UNSUPPORTED_CSUM },
 	{ "unsupported-profile", BTRFS_ERR_UNSUPPORTED_PROFILE },
+	{ "missing-device", BTRFS_ERR_MISSING_DEVICE },
+	{ "invalid", BTRFS_ERR_INVALID },
 	{ "log-tree", BTRFS_ERR_LOG_TREE },
 	{ "not-found", BTRFS_ERR_NOT_FOUND }
 };
 
 /* Run one negative spec: the mount must fail with exactly this status. */
-static bool st_run_refusal(const char *name, uint32_t device_index)
+static bool st_run_refusal(const char *token, uint32_t device_index)
 {
 	btrfs_status_t expected = BTRFS_OK;
 	bool known = false;
+	char name[32];
+	size_t name_length = 0U;
+
+	while (token[name_length] != '\0' && token[name_length] != '+' && name_length + 1U < sizeof(name)) {
+		name[name_length] = token[name_length];
+		name_length++;
+	}
+	name[name_length] = '\0';
+
+	uint32_t span = st_device_span(token);
+	block_device_t extra[BTRFS_MOUNT_EXTRA_DEVICES] = { 0, 0, 0 };
+
+	for (uint32_t index = 0U; index + 1U < span; index++) extra[index] = block_device_get(device_index + 1U + index);
 
 	for (uint32_t index = 0U; index < sizeof(g_status_names) / sizeof(g_status_names[0]); index++) {
 		if (strcmp(g_status_names[index].name, name) == 0) {
@@ -626,7 +675,9 @@ static bool st_run_refusal(const char *name, uint32_t device_index)
 	if (status != VFS_STATUS_OK && status != VFS_STATUS_EXISTS) return false;
 
 	uint32_t mounts_before = btrfs_mount_count();
-	btrfs_set_next_mount_options(0);
+	btrfs_mount_options_t options = { 0ULL, false, false, false, { extra[0], extra[1], extra[2] }, span - 1U };
+
+	btrfs_set_next_mount_options(&options);
 	status = vfs_mount("btrfs", device, path);
 
 	bool ok = status != VFS_STATUS_OK && btrfs_last_mount_status() == expected && btrfs_mount_count() == mounts_before;
@@ -677,7 +728,7 @@ bool btrfs_selftest_run(const char *spec)
 
 		bool ok = token[0] == '!' ? st_run_refusal(token + 1, device_index) : st_run_fixture(token, device_index);
 		if (!ok) g_failures_total++;
-		device_index++;
+		device_index += st_device_span(token);
 	}
 
 	if (g_failures_total == 0) kputs("btrfs_selftest: ALL PASSED\n");

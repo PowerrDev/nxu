@@ -316,7 +316,7 @@ bool btrfs_list_run(const btrfs_list_request_t *request)
 		return false;
 	}
 
-	btrfs_mount_options_t options = { request->subvolume, false, false, request->noverify };
+	btrfs_mount_options_t options = { request->subvolume, false, false, request->noverify, { 0, 0, 0 }, 0U };
 
 	btrfs_set_next_mount_options(&options);
 

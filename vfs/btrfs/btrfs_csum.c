@@ -258,6 +258,7 @@ const char *btrfs_compression_name(uint32_t compression)
 const char *btrfs_status_name(btrfs_status_t status)
 {
 	switch (status) {
+	case BTRFS_ERR_MISSING_DEVICE: return "a device of the filesystem is missing";
 	case BTRFS_OK: return "ok";
 	case BTRFS_ERR_INVALID: return "invalid argument";
 	case BTRFS_ERR_NOMEM: return "out of memory";
@@ -277,7 +278,7 @@ const char *btrfs_status_name(btrfs_status_t status)
 	case BTRFS_ERR_UNSUPPORTED_PROFILE: return "unsupported RAID or multi-device profile";
 	case BTRFS_ERR_UNSUPPORTED_COMPRESSION: return "unsupported compression";
 	case BTRFS_ERR_UNSUPPORTED_ENCRYPTION: return "unsupported encryption";
-	case BTRFS_ERR_LOG_TREE: return "unreplayed log tree";
+	case BTRFS_ERR_LOG_TREE: return "log tree cannot be replayed";
 	default: return "unknown";
 	}
 }
