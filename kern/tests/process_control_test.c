@@ -74,8 +74,8 @@ process_control_test_privileges(void)
 	return true;
 }
 
-bool
-process_control_test(void)
+static bool
+process_control_test_run(bool exclusive)
 {
 	uint64_t used_before = pmm_get_used_page_count();
 
@@ -112,6 +112,17 @@ process_control_test(void)
 
 	kprintf("process_control_test: pages in use before %llu, after %llu\n", (unsigned long long)used_before, (unsigned long long)used_after);
 
+	/*
+	 * With other work running (the unified boot) the page count moves for
+	 * reasons that are not proctest's: the audio thread reads a WAV, a
+	 * daemon starts. The count is printed, but it proves nothing there.
+	 */
+	if (!exclusive) {
+		kputln("process_control_test: page reclaim not checked: other work is running in this boot");
+		kputln("process_control_test: fork, exec, signals, copy-on-write, demand paging and capabilities all worked");
+		return true;
+	}
+
 	if (leaked > PROCESS_CONTROL_TEST_LEAK_TOLERANCE_PAGES) {
 		kprintf("process_control_test: %llu pages were not given back\n", (unsigned long long)leaked);
 		return false;
@@ -119,4 +130,16 @@ process_control_test(void)
 
 	kputln("process_control_test: fork, exec, signals, copy-on-write, demand paging and capabilities all worked and every page was reclaimed");
 	return true;
+}
+
+bool
+process_control_test(void)
+{
+	return process_control_test_run(true);
+}
+
+bool
+process_control_test_shared(void)
+{
+	return process_control_test_run(false);
 }

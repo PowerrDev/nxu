@@ -14,4 +14,12 @@
 
 bool process_control_test(void);
 
+/*
+ * The same test for a boot that runs other work at the same time: everything
+ * proctest and privtest check still holds, but the check that every page was
+ * given back is skipped, since the count of pages in use is not the test's
+ * alone there.
+ */
+bool process_control_test_shared(void);
+
 #endif
