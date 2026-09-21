@@ -168,9 +168,9 @@ thread dispatch path.
 
 ## Current limitations
 
-- SMP: every CPU comes up and schedules its own kernel threads, but threads
-  run on the boot CPU only by default and user threads never leave it; most
-  subsystems are not SMP-safe. See [SMP](kern/smp.md).
+- SMP: every CPU comes up with its own run queue; threads of user processes run on
+  every CPU, while kernel threads, the filesystems and the drivers stay on the boot
+  CPU (system calls that reach them bind themselves to it). See [SMP](kern/smp.md).
 - Ordinary EL1 kernel preemption is opt-in per thread (`TH_FLAG_PREEMPTIBLE`).
 - The bootstrap userspace program is still embedded machine code rather than an
   ELF loaded from VFS.

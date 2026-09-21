@@ -403,5 +403,6 @@ uint64_t thread_kernel_stack_top(thread_t thread);
 uint32_t thread_count(void);
 bool thread_validate(void);
 void thread_dump(void);
+void thread_dump_sched(void);
 
 #endif

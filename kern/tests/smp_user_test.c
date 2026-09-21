@@ -22,10 +22,35 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define SMP_USER_TEST_TIMEOUT_US 240000000ULL
+#define SMP_USER_TEST_TIMEOUT_US 90000000ULL
 
 /* Pages the run may legitimately keep (page-table caches, bookkeeping), not a leak. */
 #define SMP_USER_TEST_LEAK_TOLERANCE_PAGES 32ULL
+
+/* After this long the run is reported stuck (a healthy one takes a few seconds). */
+#define SMP_USER_TEST_WATCHDOG_US 14000000ULL
+
+/* Where everything is: per CPU, what runs and what is queued; per thread, its scheduling state. */
+static void smp_user_test_dump(uint32_t cpus)
+{
+	for (uint32_t cpu = 0U; cpu < cpus; cpu++) {
+		processor_t processor = processor_by_id(cpu);
+		thread_t active = processor->active_thread;
+
+		kprintf(
+			"smp_user_test: cpu%u: state %u, running tid %llu%s, %u queued, need_resched %u, %llu ticks\n",
+			cpu,
+			(unsigned)processor->state,
+			(unsigned long long)(active != 0 ? active->thread_id : 0ULL),
+			(active != 0 && thread_is_idle(active)) ? " (idle)" : "",
+			processor->runq.count,
+			processor->preemption_pending ? 1U : 0U,
+			(unsigned long long)processor->ticks
+		);
+	}
+
+	thread_dump_sched();
+}
 
 bool smp_user_test_run(void)
 {
@@ -63,14 +88,25 @@ bool smp_user_test_run(void)
 	uint64_t deadline = timer_get_microseconds() + SMP_USER_TEST_TIMEOUT_US;
 	bool reaped = false;
 
+	uint64_t watchdog = timer_get_microseconds() + SMP_USER_TEST_WATCHDOG_US;
+	bool dumped = false;
+
 	while (!reaped && timer_get_microseconds() < deadline) {
 		reaped = proc_reap(proc_kernel(), pid, &exit_status);
+
+		if (!reaped && !dumped && timer_get_microseconds() > watchdog) {
+			/* The run normally takes a few seconds: this one is stuck. Record where everything is while it still is. */
+			dumped = true;
+			kputln("smp_user_test: smptest is taking too long; scheduler state:");
+			smp_user_test_dump(cpus);
+		}
 
 		if (!reaped) (void)sched_yield();
 	}
 
 	if (!reaped) {
 		kputln("smp_user_test: FAILED: smptest did not finish");
+		smp_user_test_dump(cpus);
 		return false;
 	}
 

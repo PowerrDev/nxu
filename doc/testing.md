@@ -9,6 +9,13 @@ NXU has three layers of tests, and one command that runs the headless ones.
 | i386 suites | `tools/test_i386*.sh`, one `make test-i386-<area>` each | see [i386 port](i386/port.md) |
 | Host tests | pure code compiled natively under ASan+UBSan (`tools/audio/`, `tools/btrfs/`) | `make test-audio-host`, `make test-btrfs-host` |
 
+## SMP tests
+
+`make test TEST=smp` (kernel threads, nine cases and the user-VM races) and
+`make test TEST=smp-user` (real EL0 processes and threads on four CPUs, see
+[SMP](kern/smp.md)) boot with QEMU `-smp 4`; a test's CPU count is
+`TEST_<id>_SMP` in `makedefs/tests.mk`. `make check` runs both.
+
 ## `make check`
 
 `make check` runs the host tests (`test-audio-host`), builds and boots every

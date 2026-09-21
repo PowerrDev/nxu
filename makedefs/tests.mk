@@ -267,7 +267,7 @@ test-list:
 
 check-list:
 
-	@printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'default' '$(CHECK_TIMEOUT)' '$(CHECK_DEFAULT_PASS)' '-' '-' '-' '-' '1'
+	@printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'default' '$(CHECK_TIMEOUT)' '$(CHECK_DEFAULT_PASS)' '-' '-' '-' '-' '4'
 	@$(foreach id,$(CHECK_IDS),printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' '$(id)' '$(or $(TEST_$(id)_TIMEOUT),$(CHECK_TIMEOUT))' '$(TEST_$(id)_PASS)' '$(or $(TEST_$(id)_CFLAGS),-)' '$(if $(TEST_$(id)_CAPTURE),1,-)' '$(or $(TEST_$(id)_VERIFY),-)' '$(or $(TEST_$(id)_FRAMEWORKS),-)' '$(or $(TEST_$(id)_SMP),1)';)
 
 

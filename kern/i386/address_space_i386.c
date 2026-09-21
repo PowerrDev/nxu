@@ -195,6 +195,19 @@ bool vm_address_space_deactivate(void)
 	return true;
 }
 
+/*
+ * The i386 port has one CPU: once the caller's own use of the space is over, no CPU
+ * can be walking its tables. (See vm/address_space.h.)
+ */
+bool vm_address_space_quiesce(vm_address_space_t *space)
+{
+	if (space == 0 || space->root == 0) return false;
+
+	if (g_active_space == space) (void)vm_address_space_deactivate();
+
+	return true;
+}
+
 bool vm_address_space_map_page(
 	vm_address_space_t *space,
 	uint64_t virtual_address,

@@ -400,6 +400,69 @@ static bool test_ping_pong(void)
 	return check(g_pp.rounds[0] == PING_PONG_ROUNDS && g_pp.rounds[1] == PING_PONG_ROUNDS, name, "wrong number of rounds");
 }
 
+/* ---- 4b: the sequence-checked sleep, with no lock shared with the waker ---- */
+
+#define SEQ_ROUNDS 3000U
+
+static struct {
+	waitq_t queue[2];
+	volatile uint32_t turn;
+	volatile uint32_t rounds[2];
+	volatile uint32_t done;
+} g_seq;
+
+/*
+ * The same ping-pong as test_ping_pong, but the condition (whose turn it is) is
+ * a plain atomic word, not protected by any lock the waker also takes, so the
+ * only thing standing between "not my turn" and "asleep" is the wait queue's
+ * sequence number.
+ */
+static void seq_worker(void *argument)
+{
+	uint32_t me = (uint32_t)(uintptr_t)argument;
+	uint32_t other = 1U - me;
+
+	for (uint32_t round = 0U; round < SEQ_ROUNDS; round++) {
+		for (;;) {
+			uint32_t seq = waitq_seq(&g_seq.queue[me]);
+
+			if (__atomic_load_n(&g_seq.turn, __ATOMIC_ACQUIRE) == me) break;
+
+			(void)waitq_block_seq(&g_seq.queue[me], seq, false);
+		}
+
+		__atomic_store_n(&g_seq.turn, other, __ATOMIC_RELEASE);
+		waitq_wake_one(&g_seq.queue[other]);
+		g_seq.rounds[me]++;
+	}
+
+	__atomic_add_fetch(&g_seq.done, 1U, __ATOMIC_ACQ_REL);
+}
+
+static bool test_seq_wait(void)
+{
+	const char *name = "seqwait";
+	nxu_cpuset_t first;
+	nxu_cpuset_t second;
+
+	memset((void *)&g_seq, 0, sizeof(g_seq));
+	waitq_init(&g_seq.queue[0]);
+	waitq_init(&g_seq.queue[1]);
+
+	cpus_only(&first, g_ncpu > 2U ? 1U : 0U);
+	cpus_only(&second, g_ncpu > 2U ? 2U : 1U);
+
+	if (!check(spawn(seq_worker, (void *)0, &first, false), name, "could not start the first thread")) return false;
+	if (!check(spawn(seq_worker, (void *)1, &second, false), name, "could not start the second thread")) return false;
+
+	bool finished = wait_for(&g_seq.done, 2U, 30000000ULL);
+
+	release_threads();
+
+	if (!check(finished, name, "the threads did not finish (a wakeup was lost)")) return false;
+	return check(g_seq.rounds[0] == SEQ_ROUNDS && g_seq.rounds[1] == SEQ_ROUNDS, name, "wrong number of rounds");
+}
+
 /* ---- 5: reschedule IPIs ------------------------------------------------ */
 
 static struct {
@@ -1315,6 +1378,7 @@ bool smp_test_run(void)
 		{ "pinned", test_pinned_per_cpu },
 		{ "mlfq", test_mlfq_concurrent },
 		{ "wakeups", test_ping_pong },
+		{ "seqwait", test_seq_wait },
 		{ "ipi", test_ipi },
 		{ "affinity", test_affinity },
 		{ "balance", test_balance },

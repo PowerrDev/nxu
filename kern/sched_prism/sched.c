@@ -432,12 +432,17 @@ void sched_thread_continue(void)
 	machine_thread_enter_user(&thread->machine);
 
 	/*
-	 * The current SYS_exit path terminates the task before redirecting ERET
-	 * through arm64_return_from_el0. Any active thread reaching this point is
-	 * therefore an invalid scheduler transition.
+	 * A thread leaves EL0 for good only when it has been terminated: by its own
+	 * exit, or by another CPU that killed its process and is now waiting for it
+	 * to get here (exception_handle unwinds a terminated thread). Anything else
+	 * returning to this point is an invalid scheduler transition.
+	 *
+	 * "Terminated" is the test, not "no longer active": thread_terminate() sets
+	 * the state and then clears `active` under the thread lock, and this thread
+	 * can notice the first and get here before the second is visible to it.
 	 */
-	if (thread_is_active(thread)) {
-		sched_fatal("thread_is_active: active user thread returned to first-run trampoline");
+	if (!thread_is_terminated(thread)) {
+		sched_fatal("thread_is_terminated: user thread left EL0 without being terminated");
 	}
 
 	sched_exit_current();
@@ -775,7 +780,23 @@ static bool sched_switch(sched_switch_reason_t reason)
 		__ATOMIC_RELEASE
 	);
 
-	__atomic_store_n(&processor->preemption_pending, false, __ATOMIC_RELEASE);
+	/*
+	 * The flag is recomputed from the queue, not cleared. The run queue lock was
+	 * dropped while the address space was switched, and another CPU can have queued
+	 * a thread here in that window: it found the flag already set (by the
+	 * interrupt that got this switch going) and so sent no interrupt of its own,
+	 * because the flag is what says "an interrupt is already on its way". Clearing
+	 * it now would throw the only record of that thread away, and an idle CPU
+	 * would sleep with work queued for good.
+	 */
+	thread_t waiting = run_queue_peek(&processor->runq);
+
+	__atomic_store_n(
+		&processor->preemption_pending,
+		waiting != 0 && (thread_is_idle(next) || waiting->sched_pri > next->sched_pri),
+		__ATOMIC_RELEASE
+	);
+
 	processor->context_switch_count++;
 
 	if (reason == SCHED_SWITCH_PREEMPT) {
