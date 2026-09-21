@@ -1,4 +1,5 @@
 #include <kern/console/console.h>
+#include <kern/lock.h>
 #include <vm/vm_kern.h>
 #include <vm/pmm.h>
 #include <vm/vmm.h>
@@ -38,6 +39,13 @@ typedef struct {
 } vm_kern_state_t;
 
 static vm_kern_state_t g_vm_kern;
+
+/*
+ * Serialises the arena bitmap and the allocation records. Taken by allocate and
+ * free, around the whole operation including the page mapping they do (so the
+ * page-table lock and the page allocator's are taken under it, in that order).
+ */
+static nxu_rlock_t g_vm_kern_lock = NXU_RLOCK_INIT;
 
 static bool vm_kern_size_to_pages(
 	size_t size,
@@ -371,6 +379,8 @@ bool vm_kern_allocate(
 	void **address
 )
 {
+	NXU_RLOCK_GUARD(&g_vm_kern_lock);
+
 	if (
 		!g_vm_kern.initialized ||
 		address == 0
@@ -499,6 +509,8 @@ bool vm_kern_free(
 	size_t size
 )
 {
+	NXU_RLOCK_GUARD(&g_vm_kern_lock);
+
 	if (
 		!g_vm_kern.initialized ||
 		address == 0

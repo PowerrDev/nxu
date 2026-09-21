@@ -1,3 +1,4 @@
+#include <kern/lock.h>
 #include <vm/vmm_internal.h>
 #include <vm/pmm.h>
 
@@ -9,8 +10,17 @@
  * descriptor encoding and decoding, and the live page operations built on
  * top of them.
  *
- * The kernel is single-core and these paths run unlocked.
+ * SMP: vmm_map_page, vmm_unmap_page and vmm_protect_page take g_vmm_lock, so
+ * two CPUs editing the live tables (kernel TTBR1 mappings, the active user
+ * space) never interleave a walk with an edit. The lock covers the descriptor
+ * write and its TLB invalidation together: the invalidation is the
+ * inner-shareable form and completes on every CPU (DSB ISH) before the lock is
+ * released, so a page is never reused while some CPU can still translate it.
+ * The root-level helpers used directly by vm/address_space.c and the boot code
+ * are not locked: they edit roots that only one CPU can be running on yet.
+ * Lock order: vm_kern -> g_vmm_lock -> pmm.
  */
+static nxu_rlock_t g_vmm_lock = NXU_RLOCK_INIT;
 
 uint64_t vmm_index(uint64_t address, uint32_t shift)
 {
@@ -700,6 +710,8 @@ bool vmm_map_page(
 	vmm_protection_t protection
 )
 {
+	NXU_RLOCK_GUARD(&g_vmm_lock);
+
 	if (
 		!g_vmm.enabled ||
 		!vmm_physical_page_valid(physical_address)
@@ -760,6 +772,8 @@ bool vmm_unmap_page(
 	uint64_t *physical_address
 )
 {
+	NXU_RLOCK_GUARD(&g_vmm_lock);
+
 	if (!g_vmm.enabled) {
 		return false;
 	}
@@ -818,6 +832,8 @@ bool vmm_protect_page(
 	vmm_protection_t protection
 )
 {
+	NXU_RLOCK_GUARD(&g_vmm_lock);
+
 	if (!g_vmm.enabled) {
 		return false;
 	}

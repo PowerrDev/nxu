@@ -1,4 +1,5 @@
 #include <kern/console/console.h>
+#include <kern/lock.h>
 #include <vm/pmm.h>
 #include <vm/vmm.h>
 #include <platform/uart.h>
@@ -11,6 +12,14 @@ extern uint8_t __kernel_start[];
 extern uint8_t __kernel_end[];
 
 static pmm_state_t g_pmm;
+
+/*
+ * Serialises the page bitmap, the counters and the shared-page table across
+ * CPUs. Every public entry point that reads or writes them takes it (init runs
+ * before any other CPU exists and does not need to). Innermost of the memory
+ * locks: pmm takes no other lock while holding it except the console's.
+ */
+static nxu_rlock_t g_pmm_lock = NXU_RLOCK_INIT;
 
 /*
  * Sparse extra-ownership table for pages retained by more than their
@@ -747,6 +756,9 @@ bool pmm_init(
 
 bool pmm_allocate_page(uint64_t *physical_address)
 {
+	NXU_RLOCK_GUARD(&g_pmm_lock);
+
+
 	if (
 		!g_pmm.initialized ||
 		physical_address == 0 ||
@@ -813,6 +825,8 @@ bool pmm_allocate_contiguous_pages(
 	uint64_t *physical_address
 )
 {
+	NXU_RLOCK_GUARD(&g_pmm_lock);
+
 	if (
 		!g_pmm.initialized ||
 		physical_address == 0 ||
@@ -877,6 +891,8 @@ bool pmm_free_contiguous_pages(
 	uint64_t page_count
 )
 {
+	NXU_RLOCK_GUARD(&g_pmm_lock);
+
 	if (
 		!g_pmm.initialized ||
 		page_count == 0ULL ||
@@ -929,6 +945,8 @@ bool pmm_free_contiguous_pages(
 
 bool pmm_page_retain(uint64_t physical_address)
 {
+	NXU_RLOCK_GUARD(&g_pmm_lock);
+
 	if (
 		!g_pmm.initialized ||
 		(physical_address & (PMM_PAGE_SIZE - 1ULL)) != 0ULL
@@ -951,6 +969,8 @@ bool pmm_page_retain(uint64_t physical_address)
 
 uint32_t pmm_page_refcount(uint64_t physical_address)
 {
+	NXU_RLOCK_GUARD(&g_pmm_lock);
+
 	if (!g_pmm.initialized || (physical_address & (PMM_PAGE_SIZE - 1ULL)) != 0ULL) return 0U;
 
 	uint64_t page_index;
@@ -963,6 +983,8 @@ uint32_t pmm_page_refcount(uint64_t physical_address)
 
 bool pmm_free_page(uint64_t physical_address)
 {
+	NXU_RLOCK_GUARD(&g_pmm_lock);
+
 	if (
 		!g_pmm.initialized ||
 		(physical_address & (PMM_PAGE_SIZE - 1ULL)) != 0ULL
