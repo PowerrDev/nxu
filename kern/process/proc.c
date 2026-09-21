@@ -27,7 +27,6 @@ static proc_t g_zombproc_tail;
 
 static proc_t g_kernproc;
 static proc_t g_initproc;
-static proc_t g_current_proc;
 
 static proc_id_t g_next_pid = 1U;
 static proc_uniqueid_t g_next_uniqueid = 1ULL;
@@ -430,7 +429,6 @@ bool proc_bootstrap(void)
 	proc_all_insert_locked(kernel_proc);
 
 	g_kernproc = kernel_proc;
-	g_current_proc = kernel_proc;
 
 	g_proc_count = 1U;
 	g_zombie_count = 0U;
@@ -817,9 +815,38 @@ bool proc_continue(proc_t proc)
 	return valid;
 }
 
+/*
+ * proc_exit
+ *
+ * End a process: every thread of it, wherever it is running, then its address
+ * space, descriptors and ports, then it becomes a zombie its parent can wait for.
+ *
+ * The steps and why they are ordered so:
+ *
+ *   1. Bind to the boot CPU. Closing descriptors reaches the VFS and filesystems,
+ *      which are boot-CPU code (sched_bind_boot_cpu); this is done before any
+ *      lock is taken, because binding may switch CPUs. It also means only one
+ *      process teardown runs at a time, so two processes killing each other
+ *      cannot each wait for the other's threads to leave their CPUs.
+ *   2. Claim the exit under the process lock (PROC_FLAG_EXITING): of several
+ *      threads and killers that reach here at once, one proceeds and the rest
+ *      get `false`.
+ *   3. task_terminate WITHOUT the process lock: it terminates the task's
+ *      threads, waits until each is off its CPU (a thread of this process may be
+ *      running on any CPU), and only then frees the address space. Waiting under
+ *      the lock would stop those very threads from finishing any system call that
+ *      needs it.
+ *   4. Descriptors and ports are closed after that, again outside the lock: no
+ *      thread of the process exists any more to use them.
+ *   5. Under the lock: reparent children, move to the zombie list, tell the
+ *      parent. The parent is woken after the lock is released (waking takes the
+ *      scheduler's locks).
+ */
 bool proc_exit(proc_t proc, uint64_t status)
 {
 	if (proc == 0) return false;
+
+	sched_bind_boot_cpu();
 
 	proc_lock(&g_proc_lock);
 
@@ -827,17 +854,25 @@ bool proc_exit(proc_t proc, uint64_t status)
 		proc == g_kernproc ||
 		proc->p_stat == PROC_STATE_ZOMBIE ||
 		proc->p_stat == PROC_STATE_DEAD ||
-		proc->p_stat == PROC_STATE_EMBRYO
+		proc->p_stat == PROC_STATE_EMBRYO ||
+		(proc->p_flag & PROC_FLAG_EXITING) != 0U
 	) {
 		proc_unlock(&g_proc_lock);
+		sched_unbind_boot_cpu();
 		return false;
 	}
 
 	proc->p_flag |= PROC_FLAG_EXITING;
 	proc->p_xstat = status;
 
+	proc_unlock(&g_proc_lock);
+
 	if (!task_terminate(&proc->p_task)) {
+		proc_lock(&g_proc_lock);
+		proc->p_flag &= ~PROC_FLAG_EXITING;
 		proc_unlock(&g_proc_lock);
+
+		sched_unbind_boot_cpu();
 		return false;
 	}
 
@@ -846,6 +881,8 @@ bool proc_exit(proc_t proc, uint64_t status)
 
 	/* Close owned NXPC name-table references before the proc becomes a zombie. */
 	ipc_space_close_all(&proc->p_ipc);
+
+	proc_lock(&g_proc_lock);
 
 	proc_reparent_children_locked(proc);
 
@@ -871,6 +908,7 @@ bool proc_exit(proc_t proc, uint64_t status)
 	 * outside the process lock: waking takes the scheduler's. */
 	if (parent != 0) waitq_wake_all(&parent->p_waitq);
 
+	sched_unbind_boot_cpu();
 	return true;
 }
 
@@ -952,7 +990,7 @@ bool proc_reap(
 	if (
 		proc == 0 ||
 		proc->p_pptr != parent ||
-		proc == g_current_proc
+		proc == current_proc()
 	) {
 		proc_unlock(&g_proc_lock);
 		return false;
@@ -993,28 +1031,41 @@ bool proc_set_current(proc_t proc)
 {
 	if (proc == 0) return false;
 
+	/*
+	 * There is no "current process" variable to set any more: it is the
+	 * process of the thread running on this CPU (current_proc()). This only
+	 * says whether `proc` is one a thread could be running as.
+	 */
 	proc_lock(&g_proc_lock);
 
 	bool valid = proc->p_stat == PROC_STATE_RUNNING;
-
-	if (valid) {
-		__atomic_store_n(
-			&g_current_proc,
-			proc,
-			__ATOMIC_RELEASE
-		);
-	}
 
 	proc_unlock(&g_proc_lock);
 	return valid;
 }
 
+/*
+ * current_proc
+ *
+ * The process the calling thread belongs to. It is derived from the thread, not
+ * kept in a variable: with several CPUs running threads of different processes
+ * (and of one process) at once, there is no single "current process", and the
+ * answer must follow the thread if it moves between CPUs. The thread's home task
+ * outlives its termination, so a thread that was killed while another CPU was
+ * running it still knows whose it is until it has left the kernel.
+ *
+ * Before the scheduler exists (or on a CPU that has no thread yet) it is the
+ * kernel process.
+ */
 proc_t current_proc(void)
 {
-	return __atomic_load_n(
-		&g_current_proc,
-		__ATOMIC_ACQUIRE
-	);
+	thread_t thread = current_thread();
+
+	if (thread != 0 && thread->home_task != 0 && thread->home_task->bsd_info != 0) {
+		return thread->home_task->bsd_info;
+	}
+
+	return __atomic_load_n(&g_kernproc, __ATOMIC_ACQUIRE);
 }
 
 proc_id_t proc_selfpid(void)
@@ -1371,7 +1422,7 @@ bool proc_validate(void)
 		g_kernproc != 0 &&
 		g_kernproc->p_ident.pid ==
 			PROC_PID_KERNEL &&
-		g_current_proc != 0;
+		current_proc() != 0;
 
 	proc_unlock(&g_proc_lock);
 	return valid;

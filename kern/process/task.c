@@ -1,4 +1,5 @@
 #include <kern/process/task.h>
+#include <kern/console/console.h>
 #include <kern/sched_prism/sched.h>
 #include <kern/process/thread.h>
 #include <kern/machine/user.h>
@@ -272,6 +273,9 @@ bool task_terminate(task_t task)
 	task->halting = true;
 	task->state = TASK_STATE_HALTING;
 
+	thread_t self = current_thread();
+	bool all_off_cpu = true;
+
 	for (;;) {
 		thread_t thread = task_first_thread_ref(task);
 
@@ -291,24 +295,45 @@ bool task_terminate(task_t task)
 		}
 
 		/*
+		 * The thread is terminated but may still be running: on another CPU, in
+		 * user mode or in the middle of a system call. Nothing of the task can
+		 * be freed while that is so, so wait for it to be off its CPU (it is
+		 * interrupted to notice). A thread that is asleep, queued or never ran is
+		 * off already. The calling thread is excluded (it is the one running this,
+		 * and leaves by returning): it is still on its CPU by definition.
+		 */
+		if (thread != self && sched_is_initialized() && !sched_wait_thread_off_cpu(thread)) {
+			all_off_cpu = false;
+			kprintf("task_terminate: a thread of the task would not stop; its memory is leaked\n");
+		}
+
+		/*
 		 * Reaping may legitimately fail for the current thread because its
 		 * kernel stack cannot be reclaimed until another thread is running.
 		 */
-		thread_reap(thread);
+		if (all_off_cpu) thread_reap(thread);
 		thread_deallocate(thread);
 	}
 
-	/* Every thread of this task is gone by this point, so there is no
-	 * concurrent access left to guard against; reclaim its mmap'd memory
-	 * before the address space itself goes away. */
-	vm_map_destroy_all(&task->map);
+	/*
+	 * Every thread of this task has been terminated and is off its CPU, so
+	 * nothing will touch its memory again... except that a CPU may still have the
+	 * address space loaded in TTBR0 until it has switched away for the last time.
+	 * Wait for that too (the calling CPU leaves it here), then reclaim.
+	 */
+	bool memory_free = all_off_cpu && (task_is_kernel(task) || vm_address_space_quiesce(&task->map));
 
-	/* Give back every remaining page (the image, the stack, shared
-	 * mappings' references) and then the page tables themselves. When the
-	 * task is the one running this, the address space is deactivated first. */
-	if (!task_is_kernel(task)) {
-		(void)vm_address_space_release_pages(&task->map);
-		(void)vm_address_space_destroy(&task->map);
+	if (memory_free) {
+		vm_map_destroy_all(&task->map);
+
+		/* Give back every remaining page (the image, the stack, shared
+		 * mappings' references) and then the page tables themselves. */
+		if (!task_is_kernel(task)) {
+			(void)vm_address_space_release_pages(&task->map);
+			(void)vm_address_space_destroy(&task->map);
+		}
+	} else {
+		kprintf("task_terminate: address space not released (a CPU still uses it): leaked\n");
 	}
 
 	task->active = false;

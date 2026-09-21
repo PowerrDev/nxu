@@ -1137,6 +1137,20 @@ void kern_init(const void *dtb_address)
 		kputln("sched: new threads may run on any CPU (sched.affinity=all)");
 	}
 
+	/*
+	 * `sched.user=smp` lets threads of user processes run on every CPU (they
+	 * start on the boot CPU only otherwise). System calls that reach single-CPU
+	 * kernel code bind themselves to the boot CPU (sched_bind_boot_cpu), so this
+	 * is about user code, not the kernel's own threads.
+	 */
+	if (boot_arg_value("sched.user", affinity_policy, sizeof(affinity_policy)) && strcmp(affinity_policy, "smp") == 0) {
+		nxu_cpuset_t everywhere;
+
+		cpuset_fill(&everywhere, NXU_MAX_CPUS);
+		processor_set_default_user_affinity(&everywhere);
+		kputln("sched: user threads may run on any CPU (sched.user=smp)");
+	}
+
 	kern_dump_boot_dtb(device_tree);
 
 	kputln("dtb: walking structure block");

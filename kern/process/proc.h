@@ -116,6 +116,13 @@ struct proc {
 	struct ipc_space p_ipc;
 	uint32_t p_ipc_bootstrap_name;
 
+	/*
+	 * p_siglock protects p_sigact and p_sigpending (threads of this process on
+	 * different CPUs send, catch and dequeue signals at the same time). It is a
+	 * leaf: taken with interrupts masked, nothing is called while it is held,
+	 * and it may be taken under the process table lock.
+	 */
+	nxu_spinlock_t p_siglock;
 	nxu_sigaction_t p_sigact[NXU_NSIG];
 	waitq_t p_waitq;
 	uint32_t p_sigpending;

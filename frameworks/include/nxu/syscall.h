@@ -124,6 +124,16 @@ int64_t nxu_thread_exit(uint64_t status);
 int64_t nxu_thread_self(void);
 
 /*
+ * nxu_getcpu returns the logical id of the CPU the calling thread is running on
+ * (it can move before the caller looks at it). nxu_setaffinity restricts the
+ * calling thread to the CPUs whose bits are set in mask (bit n = logical CPU n)
+ * and moves it at once if it is on one that is no longer allowed; it fails if
+ * the mask names no online CPU.
+ */
+int64_t nxu_getcpu(void);
+int64_t nxu_setaffinity(uint64_t mask);
+
+/*
  * Streaming, blocking, arbitrary-length local sockets (kern/ipc/socket.h)
  * -- unlike NXPC (nxu_ipc_send/receive), not bounded to 4096 bytes per
  * message and not poll-based. All three return an ordinary fd: read/write/

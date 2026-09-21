@@ -18,11 +18,13 @@
  * object's own fields -- nothing in this file ever holds two sockets'
  * locks at once (socket_close locks itself, unlocks, then locks its former
  * peer; socket_write locks only the target it is writing into). Blocking
- * (sched_block) only ever happens with the lock already dropped -- see the
- * loops in socket_connect/socket_accept/socket_read/socket_write, all of
- * which push the current thread onto the relevant socket's own wait queue
- * (thread_sched_links_t.waitq, kern/process/thread.h) before unlocking and
- * blocking, then re-lock and re-check on wakeup.
+ * (waitq_block_seq) only ever happens with the lock already dropped -- see
+ * the loops in socket_connect/socket_accept/socket_read/socket_write. Each
+ * takes the socket's wait-queue sequence number while it still holds the lock
+ * (after finding the condition false), unlocks, and sleeps only if no wakeup
+ * has bumped the sequence since; every waker changes the condition under the
+ * same lock and then wakes. That closes the window in which a wakeup on another
+ * CPU could fall between "the condition is false" and "I am asleep".
  */
 
 #include <kern/ipc/socket.h>
@@ -86,14 +88,6 @@ typedef struct {
 
 static socket_registry_entry_t g_socket_registry[SOCKET_REGISTRY_MAX];
 static nxu_spinlock_t g_socket_registry_lock;
-
-static void
-socket_waitq_push(socket_t s, thread_t thread)
-{
-	/* Not interruptible: socket loops re-check their condition on every
-	 * wakeup but have no way to report "interrupted" to their callers. */
-	waitq_enqueue(&s->waiters, thread, false);
-}
 
 static void
 socket_wake_one(socket_t s)
@@ -333,9 +327,12 @@ bool socket_connect(const char *name, bool block, socket_t *result)
 	nxu_spin_lock(&client->lock);
 	while (client->peer == SOCKET_NULL && !client->refused) {
 		if (!block) break;
-		socket_waitq_push(client, current_thread());
+		/* Sequence taken under the lock, after the condition was checked: a wakeup made
+		 * after the unlock (the waker changes the condition under this same lock, then wakes)
+		 * moves it and the sleep below returns at once instead of missing it. */
+		uint32_t seq = waitq_seq(&client->waiters);
 		nxu_spin_unlock(&client->lock);
-		sched_block(false);
+		(void)waitq_block_seq(&client->waiters, seq, false);
 		nxu_spin_lock(&client->lock);
 	}
 	bool connected = client->peer != SOCKET_NULL;
@@ -367,9 +364,12 @@ bool socket_accept(socket_t listener, bool block, socket_t *result)
 			nxu_spin_unlock(&listener->lock);
 			return false;
 		}
-		socket_waitq_push(listener, current_thread());
+		/* Sequence taken under the lock, after the condition was checked: a wakeup made
+		 * after the unlock (the waker changes the condition under this same lock, then wakes)
+		 * moves it and the sleep below returns at once instead of missing it. */
+		uint32_t seq = waitq_seq(&listener->waiters);
 		nxu_spin_unlock(&listener->lock);
-		sched_block(false);
+		(void)waitq_block_seq(&listener->waiters, seq, false);
 		nxu_spin_lock(&listener->lock);
 
 		if (listener->state != SOCKET_STATE_LISTENING) {
@@ -429,9 +429,12 @@ int64_t socket_read(socket_t s, void *buffer, uint64_t length)
 	}
 
 	while (s->ring_count == 0U && !s->peer_closed) {
-		socket_waitq_push(s, current_thread());
+		/* Sequence taken under the lock, after the condition was checked: a wakeup made
+		 * after the unlock (the waker changes the condition under this same lock, then wakes)
+		 * moves it and the sleep below returns at once instead of missing it. */
+		uint32_t seq = waitq_seq(&s->waiters);
 		nxu_spin_unlock(&s->lock);
-		sched_block(false);
+		(void)waitq_block_seq(&s->waiters, seq, false);
 		nxu_spin_lock(&s->lock);
 	}
 
@@ -465,9 +468,12 @@ int64_t socket_write(socket_t s, const void *buffer, uint64_t length)
 
 		uint32_t free_space = socket_ring_free_space(target);
 		if (free_space == 0U) {
-			socket_waitq_push(target, current_thread());
+			/* Sequence taken under the lock, after the condition was checked: a wakeup made
+			 * after the unlock (the waker changes the condition under this same lock, then wakes)
+			 * moves it and the sleep below returns at once instead of missing it. */
+			uint32_t seq = waitq_seq(&target->waiters);
 			nxu_spin_unlock(&target->lock);
-			sched_block(false);
+			(void)waitq_block_seq(&target->waiters, seq, false);
 			nxu_spin_lock(&target->lock);
 			continue;
 		}

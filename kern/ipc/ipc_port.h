@@ -32,6 +32,14 @@ ipc_return_t ipc_port_dequeue(ipc_port_t port, ipc_kmsg_t *kmsgp);
  */
 bool ipc_port_wait(ipc_port_t port);
 
+/*
+ * Lost-wakeup-free receive: see ipc_port_wait_prepare in ipc_port.c. Take the
+ * sequence number, try ipc_port_dequeue, and only if it found nothing sleep with
+ * ipc_port_wait_seq (false: a signal interrupted the wait).
+ */
+uint32_t ipc_port_wait_prepare(ipc_port_t port);
+bool ipc_port_wait_seq(ipc_port_t port, uint32_t seq);
+
 ipc_object_id_t ipc_port_object_id(ipc_port_t port);
 uint32_t ipc_port_qlen(ipc_port_t port);
 uint32_t ipc_port_qlimit(ipc_port_t port);
