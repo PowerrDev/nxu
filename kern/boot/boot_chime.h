@@ -38,6 +38,16 @@
 void boot_chime_arm(void);
 void boot_chime_start(void);
 
+typedef enum {
+	BOOT_CHIME_IDLE,	/* not started: disabled, not armed, or the volume is not mounted yet */
+	BOOT_CHIME_PLAYING,	/* the thread is waiting for the device and the file, or streaming */
+	BOOT_CHIME_PLAYED,	/* played in full without an underrun */
+	BOOT_CHIME_FAILED	/* the thread ended and the chime did not play */
+} boot_chime_state_t;
+
+/* Where the boot chime thread is; for a test that must wait for the sound device to be free. */
+boot_chime_state_t boot_chime_state(void);
+
 /*
  * boot_chime_play:
  *
