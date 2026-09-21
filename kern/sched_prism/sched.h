@@ -232,6 +232,14 @@ bool sched_mlfq_self_test(void);
  */
 bool sched_validate(void);
 
+/*
+ * The most CPUs that have been executing threads of user processes at the same
+ * time since the peak was last reset (a user thread counts while it is on a CPU,
+ * in user mode or inside a system call). For the SMP tests.
+ */
+uint32_t sched_user_running_peak(void);
+void sched_user_running_reset_peak(void);
+
 /* The cross-CPU run queue invariants (see sched.c); walks every queue, for tests. */
 bool sched_validate_all(void);
 

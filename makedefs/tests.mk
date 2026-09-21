@@ -60,6 +60,7 @@ TEST_IDS := \
     windowserver-process \
     about-sevos-process \
     smp \
+    smp-user \
     sound
 
 
@@ -197,6 +198,13 @@ TEST_smp_PASS := smp_test: passed
 TEST_smp_CFLAGS := -DNXU_SMP_TEST
 TEST_smp_SMP := 4
 TEST_smp_TIMEOUT := 120
+
+TEST_smp-user_GROUP := Kernel
+TEST_smp-user_DESC := SMP userland: EL0 processes and threads on four CPUs, concurrently
+TEST_smp-user_PASS := smp_user_test: passed
+TEST_smp-user_CFLAGS := -DNXU_SMP_USER_TEST
+TEST_smp-user_SMP := 4
+TEST_smp-user_TIMEOUT := 300
 
 TEST_sound_GROUP := Sound
 TEST_sound_DESC := Tone, boot chime and playsound through VirtIO Sound (audible)

@@ -90,6 +90,30 @@ static sched_state_t g_sched;
 /* Every this many ticks an idle or underloaded CPU looks for work to pull from a busier one. */
 #define SCHED_BALANCE_INTERVAL_TICKS 4U
 
+/*
+ * Statistics for the SMP tests: how many CPUs are executing threads of user
+ * processes at this moment, and the largest that number has been since it was
+ * last reset. Updated in sched_switch, under the switching CPU's run queue lock,
+ * with atomics (they are shared by all CPUs).
+ */
+static uint32_t g_sched_user_running;
+static uint32_t g_sched_user_peak;
+
+static bool sched_thread_is_user(thread_t thread)
+{
+	return thread != 0 && (thread->flags & TH_FLAG_KERNEL) == 0U && !thread_is_idle(thread);
+}
+
+uint32_t sched_user_running_peak(void)
+{
+	return __atomic_load_n(&g_sched_user_peak, __ATOMIC_ACQUIRE);
+}
+
+void sched_user_running_reset_peak(void)
+{
+	__atomic_store_n(&g_sched_user_peak, __atomic_load_n(&g_sched_user_running, __ATOMIC_ACQUIRE), __ATOMIC_RELEASE);
+}
+
 static bool sched_switch(sched_switch_reason_t reason);
 static processor_t sched_select_cpu(thread_t thread);
 static bool sched_enqueue_on(processor_t target, thread_t thread, run_queue_placement_t placement);
@@ -756,6 +780,21 @@ static bool sched_switch(sched_switch_reason_t reason)
 
 	if (reason == SCHED_SWITCH_PREEMPT) {
 		processor->preemption_count++;
+	}
+
+	/* How many CPUs are running threads of user processes right now, and the most there ever were. */
+	bool leaving_user = sched_thread_is_user(current);
+	bool entering_user = sched_thread_is_user(next);
+
+	if (entering_user) processor->user_dispatch_count++;
+
+	if (entering_user && !leaving_user) {
+		uint32_t running = __atomic_add_fetch(&g_sched_user_running, 1U, __ATOMIC_ACQ_REL);
+		uint32_t peak = __atomic_load_n(&g_sched_user_peak, __ATOMIC_RELAXED);
+
+		while (running > peak && !__atomic_compare_exchange_n(&g_sched_user_peak, &peak, running, false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {}
+	} else if (leaving_user && !entering_user) {
+		(void)__atomic_sub_fetch(&g_sched_user_running, 1U, __ATOMIC_ACQ_REL);
 	}
 
 	sched_quantum_reset(next);

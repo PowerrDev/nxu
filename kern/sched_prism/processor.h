@@ -79,6 +79,7 @@ struct processor {
 	/* (own) ticks since this CPU's run queue was last boosted. */
 	uint32_t boost_ticks;
 
+	uint64_t user_dispatch_count;		/* times this CPU switched to a thread of a user process */
 	uint64_t ipi_reschedule_count;		/* reschedule IPIs taken */
 	uint64_t migrate_in_count;		/* threads placed or moved here by another CPU */
 	uint64_t migrate_out_count;		/* threads this CPU's balancer moved elsewhere */
