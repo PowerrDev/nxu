@@ -102,6 +102,48 @@ void processor_online_set(nxu_cpuset_t *set)
 }
 
 /*
+ * The affinity new threads get. Written at boot or by a test before the threads
+ * it concerns exist, read by every thread creation: plain reads of a word-sized
+ * set are enough.
+ */
+static nxu_cpuset_t g_default_affinity = { { 1ULL } };
+
+void processor_default_affinity(nxu_cpuset_t *affinity)
+{
+	*affinity = g_default_affinity;
+}
+
+void processor_set_default_affinity(const nxu_cpuset_t *affinity)
+{
+	if (affinity != 0 && !cpuset_empty(affinity)) g_default_affinity = *affinity;
+}
+
+/*
+ * processor_is_online
+ */
+bool processor_is_online(const struct processor *processor)
+{
+	if (processor == 0) return false;
+
+	processor_state_t state = __atomic_load_n(&processor->state, __ATOMIC_ACQUIRE);
+
+	return state == PROCESSOR_RUNNING || state == PROCESSOR_IDLE;
+}
+
+/*
+ * processor_load
+ */
+uint32_t processor_load(const struct processor *processor)
+{
+	if (processor == 0) return 0U;
+
+	thread_t active = __atomic_load_n(&processor->active_thread, __ATOMIC_RELAXED);
+	uint32_t queued = __atomic_load_n(&processor->runq.count, __ATOMIC_RELAXED);
+
+	return queued + ((active != 0 && !thread_is_idle(active)) ? 1U : 0U);
+}
+
+/*
  * processor_validate
  */
 bool processor_validate(processor_t processor)

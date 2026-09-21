@@ -67,6 +67,13 @@ struct processor {
 	/* Timer interrupts this CPU has taken. */
 	uint64_t ticks;
 
+	/* (own) ticks since this CPU's run queue was last boosted. */
+	uint32_t boost_ticks;
+
+	uint64_t ipi_reschedule_count;		/* reschedule IPIs taken */
+	uint64_t migrate_in_count;		/* threads placed or moved here by another CPU */
+	uint64_t migrate_out_count;		/* threads this CPU's balancer moved elsewhere */
+
 	/*
 	 * Set by the timer tick, by another CPU's reschedule IPI, or when a
 	 * better thread is queued here: the next safe return point must enter the
@@ -115,6 +122,34 @@ uint32_t processor_count(void);
 
 /* The CPUs currently able to run threads (state RUNNING or IDLE). */
 void processor_online_set(nxu_cpuset_t *set);
+
+/*
+ * processor_default_affinity / processor_set_default_affinity
+ *
+ * The affinity a new thread starts with. It is the boot CPU alone until the
+ * kernel subsystems threads run in have been made SMP-safe (see
+ * doc/smp.md); code that knows its threads are safe widens it (SMP tests,
+ * the `sched.affinity=all` boot argument) or sets a thread's own with
+ * thread_set_affinity().
+ */
+void processor_default_affinity(nxu_cpuset_t *affinity);
+void processor_set_default_affinity(const nxu_cpuset_t *affinity);
+
+/*
+ * processor_is_online
+ *
+ * Whether a CPU can take threads: it is running its idle loop or a thread.
+ */
+bool processor_is_online(const struct processor *processor);
+
+/*
+ * processor_load
+ *
+ * How many threads want this CPU: queued plus running (idle does not count).
+ * Read without the run queue lock, so it is only an estimate; placement and
+ * balancing decisions made from it are re-checked under the lock.
+ */
+uint32_t processor_load(const struct processor *processor);
 
 /*
  * processor_validate

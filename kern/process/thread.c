@@ -3,6 +3,7 @@
 #include <kern/process/task.h>
 
 #include <kern/machine/cpu.h>
+#include <kern/sched_prism/processor.h>
 
 #include <platform/uart.h>
 #include <vm/vm_kern.h>
@@ -29,7 +30,6 @@ static bool g_thread_slot_used[THREAD_MAX];
 
 static thread_t g_threads_head;
 static thread_t g_threads_tail;
-static thread_t g_current_thread;
 
 static thread_id_t g_next_thread_id = 1ULL;
 static uint32_t g_thread_count;
@@ -80,6 +80,11 @@ static void thread_reset_locked(thread_t thread, uint32_t slot)
 			}
 		},
 		.runq = 0,
+		.sched_lock = NXU_SPINLOCK_INIT,
+		.on_cpu = 0,
+		.wakeup_deferred = false,
+		.affinity = { { 0 } },
+		.last_cpu = 0U,
 		.task = 0,
 		.thread_id = THREAD_ID_INVALID,
 		.ref_count = 0U,
@@ -305,6 +310,7 @@ static bool thread_create_common(
 	thread->ref_count = 1U;
 	thread->state = TH_SUSP;
 	thread->flags = kernel_thread ? TH_FLAG_KERNEL : TH_FLAG_NONE;
+	processor_default_affinity(&thread->affinity);
 	thread->active = true;
 	thread->started = false;
 	thread->suspend_count = 1U;
@@ -369,7 +375,6 @@ bool thread_bootstrap(void)
 
 	g_threads_head = 0;
 	g_threads_tail = 0;
-	g_current_thread = 0;
 	g_next_thread_id = 1ULL;
 	g_thread_count = 0U;
 	g_thread_initialized = true;
@@ -462,6 +467,7 @@ bool thread_create_bootstrap(task_t task, thread_t *result)
 	thread->ref_count = 1U;
 	thread->state = TH_RUN;
 	thread->flags = TH_FLAG_KERNEL | TH_FLAG_BOOTSTRAP;
+	processor_default_affinity(&thread->affinity);
 	thread->active = true;
 	thread->started = true;
 	thread->suspend_count = 0U;
@@ -483,6 +489,85 @@ bool thread_create_bootstrap(task_t task, thread_t *result)
 
 	thread_unlock(&g_thread_lock);
 	return true;
+}
+
+/*
+ * thread_create_cpu_idle
+ *
+ * The idle thread of a secondary CPU. It represents the context that CPU
+ * booted on (no stack of its own: it idles on the boot stack), so it is a
+ * bootstrap thread that is also idle, running and pinned to `cpu`.
+ */
+bool thread_create_cpu_idle(task_t task, uint32_t cpu, thread_t *result)
+{
+	if (result == 0 || cpu >= NXU_MAX_CPUS) return false;
+
+	if (!thread_create_bootstrap(task, result)) return false;
+
+	thread_t thread = *result;
+
+	thread_lock(&g_thread_lock);
+
+	thread->state |= TH_IDLE;
+	cpuset_clear(&thread->affinity);
+	cpuset_add(&thread->affinity, cpu);
+	thread->last_cpu = cpu;
+
+	thread_unlock(&g_thread_lock);
+	return true;
+}
+
+/*
+ * thread_set_affinity
+ */
+bool thread_set_affinity(thread_t thread, const nxu_cpuset_t *affinity)
+{
+	if (thread == 0 || affinity == 0 || cpuset_empty(affinity)) return false;
+
+	thread_lock(&g_thread_lock);
+
+	bool valid = thread->active && (thread->state & (TH_IDLE | TH_TERMINATE)) == 0U;
+
+	if (valid) thread->affinity = *affinity;
+
+	thread_unlock(&g_thread_lock);
+	return valid;
+}
+
+/*
+ * thread_get_affinity
+ */
+bool thread_get_affinity(thread_t thread, nxu_cpuset_t *affinity)
+{
+	if (thread == 0 || affinity == 0) return false;
+
+	thread_lock(&g_thread_lock);
+	*affinity = thread->affinity;
+	thread_unlock(&g_thread_lock);
+	return true;
+}
+
+/*
+ * thread_set_preemptible
+ */
+bool thread_set_preemptible(thread_t thread, bool preemptible)
+{
+	if (thread == 0) return false;
+
+	thread_lock(&g_thread_lock);
+
+	bool valid = thread->active && (thread->flags & TH_FLAG_KERNEL) != 0U;
+
+	if (valid && preemptible) thread->flags |= TH_FLAG_PREEMPTIBLE;
+	if (valid && !preemptible) thread->flags &= ~TH_FLAG_PREEMPTIBLE;
+
+	thread_unlock(&g_thread_lock);
+	return valid;
+}
+
+bool thread_is_preemptible(thread_t thread)
+{
+	return thread != 0 && (thread->flags & TH_FLAG_PREEMPTIBLE) != 0U;
 }
 
 /*
@@ -745,7 +830,7 @@ bool thread_reap(thread_t thread)
 		thread->active ||
 		thread->task != 0 ||
 		(thread->state & TH_TERMINATE) == 0U ||
-		g_current_thread == thread ||
+		__atomic_load_n(&thread->on_cpu, __ATOMIC_ACQUIRE) != 0 ||
 		thread->ref_count == 0U
 	) {
 		thread_unlock(&g_thread_lock);
@@ -856,7 +941,7 @@ bool thread_stack_free(thread_t thread)
 
 	if (
 		thread->kernel_stack == 0 ||
-		g_current_thread == thread
+		__atomic_load_n(&thread->on_cpu, __ATOMIC_ACQUIRE) != 0
 	) {
 		thread_unlock(&g_thread_lock);
 		return false;
@@ -876,12 +961,15 @@ bool thread_stack_free(thread_t thread)
 /*
  * thread_set_current
  *
- * Establish the single-CPU current thread. The scheduler replaces this
- * global pointer with processor-local scheduler state.
+ * Make `thread` the executing CPU's active thread, if it is in a state that can
+ * run. The caller has interrupts masked (the scheduler does), so the CPU
+ * cannot change under it.
  */
 bool thread_set_current(thread_t thread)
 {
-	if (thread == 0) return false;
+	processor_t processor = current_processor();
+
+	if (thread == 0 || processor == 0) return false;
 
 	thread_lock(&g_thread_lock);
 
@@ -894,7 +982,7 @@ bool thread_set_current(thread_t thread)
 
 	if (valid) {
 		__atomic_store_n(
-			&g_current_thread,
+			&processor->active_thread,
 			thread,
 			__ATOMIC_RELEASE
 		);
@@ -906,11 +994,18 @@ bool thread_set_current(thread_t thread)
 
 /*
  * current_thread
+ *
+ * The thread running on this CPU. Only this CPU ever writes its active_thread,
+ * so a caller that cannot be moved to another CPU reads a stable value.
  */
 thread_t current_thread(void)
 {
+	processor_t processor = current_processor();
+
+	if (processor == 0) return 0;
+
 	return __atomic_load_n(
-		&g_current_thread,
+		&processor->active_thread,
 		__ATOMIC_ACQUIRE
 	);
 }

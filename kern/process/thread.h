@@ -1,6 +1,8 @@
 #ifndef NXU_KERN_THREAD_H
 #define NXU_KERN_THREAD_H
 
+#include <kern/cpuset.h>
+#include <kern/lock.h>
 #include <kern/machine/thread.h>
 
 #include <stdbool.h>
@@ -38,7 +40,17 @@
 #define TH_FLAG_REAPED 0x00000002U
 #define TH_FLAG_BOOTSTRAP 0x00000004U
 
+/*
+ * A kernel thread that may be preempted where an interrupt arrives, not only at
+ * the scheduler's own switch points. Only for code that takes no lock without
+ * masking interrupts and holds no CPU-local state across a possible switch:
+ * the scheduler treats an interrupted preemptible thread like an interrupted
+ * EL0 one.
+ */
+#define TH_FLAG_PREEMPTIBLE 0x00000008U
+
 struct task;
+struct processor;
 struct thread;
 struct run_queue;
 struct waitq;
@@ -100,6 +112,25 @@ struct thread {
 
 	thread_sched_links_t sched_links;
 	struct run_queue *runq;
+
+	/*
+	 * SMP scheduler state (rules in kern/sched_prism/sched.c).
+	 *
+	 * on_cpu is the CPU whose stack this thread's context is live on, from the
+	 * moment that CPU chooses it until the CPU has switched away from it and is
+	 * off its stack. While it is set the thread may be woken but must not be
+	 * queued anywhere, or a second CPU could resume a context the first is still
+	 * running on; a wakeup that arrives in that window is recorded in
+	 * wakeup_deferred and acted on by the CPU that is switching away. Both are
+	 * protected by sched_lock, a leaf lock taken with interrupts masked.
+	 */
+	nxu_spinlock_t sched_lock;
+	struct processor *on_cpu;
+	bool wakeup_deferred;
+
+	/* The CPUs this thread may run on (thread_set_affinity), and the one it last ran on. */
+	nxu_cpuset_t affinity;
+	uint32_t last_cpu;
 
 	task_t task;
 	thread_id_t thread_id;
@@ -214,6 +245,28 @@ bool kernel_thread_create(
 bool thread_create_bootstrap(task_t task, thread_t *result);
 
 /*
+ * thread_create_cpu_idle
+ *
+ * Like thread_create_bootstrap, for a secondary CPU: the idle thread of a CPU
+ * that idles on the stack it booted on. It is idle (never queued), pinned to
+ * the given CPU and already running there.
+ */
+bool thread_create_cpu_idle(task_t task, uint32_t cpu, thread_t *result);
+
+/*
+ * thread_set_affinity / thread_get_affinity
+ *
+ * The set of CPUs a thread may run on. An empty set, or one with no CPU the
+ * scheduler can use, is refused. Changing it takes effect at the thread's next
+ * placement; a thread already on a disallowed CPU is moved when it next leaves
+ * that CPU. Idle threads are pinned and cannot be changed.
+ */
+bool thread_set_affinity(thread_t thread, const nxu_cpuset_t *affinity);
+bool thread_get_affinity(thread_t thread, nxu_cpuset_t *affinity);
+bool thread_set_preemptible(thread_t thread, bool preemptible);
+bool thread_is_preemptible(thread_t thread);
+
+/*
  * Thread reference management.
  */
 bool thread_reference(thread_t thread);
@@ -264,8 +317,8 @@ bool thread_stack_free(thread_t thread);
 /*
  * Current thread access.
  *
- * This is global while NXU is single-processor. The scheduler will later
- * move current-thread ownership into processor-local state.
+ * The current thread is the executing CPU's active_thread (struct processor).
+ * It is only stable while the caller cannot migrate; see current_processor().
  */
 bool thread_set_current(thread_t thread);
 thread_t current_thread(void);
