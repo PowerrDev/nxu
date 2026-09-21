@@ -257,15 +257,38 @@ static uint32_t UIServiceSelectButtonMask(uint32_t mask)
  * Drain VirtIO Input directly as an early-boot fallback and return at most one
  * normalized event per call. IRQ-driven delivery remains enabled as well.
  */
+/* At most this many events are handed out back to back before the UI thread lets the rest of the system run. */
+#define UI_SERVICE_EVENTS_PER_YIELD 8U
+
+/*
+ * The session runs on the boot thread; when other threads and processes share
+ * the boot they need their turn, and this is where they get it. It used to be
+ * once per poll, and a poll returns a single event: a burst of mouse packets
+ * cost a whole scheduler round each, every round with every other thread's
+ * address space switched in and out, and the cursor trailed behind while the
+ * queue drained. So a burst is now handed out back to back and the others run
+ * when the queue is empty, or after UI_SERVICE_EVENTS_PER_YIELD events so a
+ * steady stream cannot starve them.
+ */
+static void UIServiceYieldAfterPoll(bool delivered_event)
+{
+	static uint32_t delivered_since_yield;
+
+	if (!g_ui_service_cooperative) return;
+
+	if (delivered_event && ++delivered_since_yield < UI_SERVICE_EVENTS_PER_YIELD) return;
+
+	delivered_since_yield = 0U;
+	(void)sched_yield();
+}
+
 static uint32_t UIServicePollEvent(void *opaque, UIServiceHostEvent *event)
 {
 	if (opaque == 0 || event == 0) return UI_SERVICE_STATUS_INVALID_ARGUMENT;
 
 	UIServiceContext *context = (UIServiceContext *)opaque;
 
-	/* The session runs on the boot thread; when other threads and processes share the boot, give them their turn. */
 	g_ui_service_polls++;
-	if (g_ui_service_cooperative) (void)sched_yield();
 
 	virtio_input_service();
 	UIServiceRefreshPointer(context);
@@ -282,6 +305,7 @@ static uint32_t UIServicePollEvent(void *opaque, UIServiceHostEvent *event)
 	if (context->pending_move) {
 		context->pending_move = false;
 		event->event_type = UI_SERVICE_EVENT_POINTER_MOVED;
+		UIServiceYieldAfterPoll(true);
 		return UI_SERVICE_STATUS_OK;
 	}
 
@@ -290,6 +314,7 @@ static uint32_t UIServicePollEvent(void *opaque, UIServiceHostEvent *event)
 		context->pending_down &= ~button_mask;
 		event->event_type = UI_SERVICE_EVENT_POINTER_DOWN;
 		event->button = UIServiceButtonFromMask(button_mask);
+		UIServiceYieldAfterPoll(true);
 		return UI_SERVICE_STATUS_OK;
 	}
 
@@ -298,8 +323,11 @@ static uint32_t UIServicePollEvent(void *opaque, UIServiceHostEvent *event)
 		context->pending_up &= ~button_mask;
 		event->event_type = UI_SERVICE_EVENT_POINTER_UP;
 		event->button = UIServiceButtonFromMask(button_mask);
+		UIServiceYieldAfterPoll(true);
+		return UI_SERVICE_STATUS_OK;
 	}
 
+	UIServiceYieldAfterPoll(false);
 	return UI_SERVICE_STATUS_OK;
 }
 
