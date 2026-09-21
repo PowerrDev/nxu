@@ -39,4 +39,15 @@ void sound_test_fill_tone(int16_t *frames, uint32_t first_frame, uint32_t count)
  */
 bool sound_test_run(void);
 
+/*
+ * sound_test_run_shared:
+ *
+ * The same test for a boot that has other work going on and has played the
+ * boot chime itself: the tone waits for the chime's thread to release the
+ * device and the chime is not played a second time (playsound still plays it
+ * once from user space). Callable from any kernel thread once the scheduler
+ * and interrupts run.
+ */
+bool sound_test_run_shared(void);
+
 #endif

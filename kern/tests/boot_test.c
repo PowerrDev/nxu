@@ -23,6 +23,7 @@
 #include <kern/tests/socket_process_test.h>
 #include <kern/tests/sound_test.h>
 #include <kern/tests/thread_process_test.h>
+#include <kern/tests/unified_boot.h>
 #include <kern/tests/windowserver_process_test.h>
 #include <kern/tests/xamethyst_process_test.h>
 #include <drivers/video/ui_service_host.h>
@@ -186,6 +187,11 @@ void boot_test_storage(display_device_t *boot_display)
 		for (;;) __asm__ volatile("wfe");
 	}
 
+#if defined(NXU_UNIFIED_BOOT_TEST)
+	/* Nothing halts: the boot goes on to start bootd, and boot_test_unified takes over later. */
+	unified_boot_prepare();
+#endif
+
 #if defined(NXU_JOURNAL_CRASH_TEST)
 	boot_test_run_jbd2_crash();
 #endif
@@ -256,5 +262,12 @@ void boot_test_storage(display_device_t *boot_display)
 	if (!about_sevos_process_test()) boot_test_fail("about_sevos_process_test: failed");
 	kputln("about_sevos_process_test: passed; halting (test build)");
 	for (;;) __asm__ volatile("wfe");
+#endif
+}
+
+void boot_test_unified(void)
+{
+#if defined(NXU_UNIFIED_BOOT_TEST)
+	unified_boot_run();
 #endif
 }

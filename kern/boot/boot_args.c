@@ -74,6 +74,24 @@ boot_arg_present(const char *argument)
 }
 
 bool
+boot_args_append(const char *argument)
+{
+	if (!g_boot_args_initialized || argument == 0 || argument[0] == '\0') return false;
+	if (boot_arg_present(argument)) return true;
+
+	uint32_t length = boot_arg_string_length(g_boot_args);
+	uint32_t argument_length = boot_arg_string_length(argument);
+	uint32_t separator = length != 0U ? 1U : 0U;
+
+	if (length + separator + argument_length > BOOT_ARGS_MAX) return false;
+
+	if (separator != 0U) g_boot_args[length] = ' ';
+	memcpy(g_boot_args + length + separator, argument, argument_length + 1U);
+	kconsole_set_verbose(boot_args_verbose());
+	return true;
+}
+
+bool
 boot_arg_value(const char *name, char *value, uint32_t capacity)
 {
 	if (!g_boot_args_initialized || name == 0 || value == 0 || capacity == 0U) return false;

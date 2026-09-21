@@ -18,6 +18,12 @@ typedef enum {
 bool boot_args_init(void);
 const char *boot_args_raw(void);
 bool boot_arg_present(const char *argument);
+/*
+ * Add one argument to the boot arguments the kernel and its user processes see
+ * (bootd reads them through the boot-args syscall). For a boot that decides
+ * something the command line did not; false when it does not fit.
+ */
+bool boot_args_append(const char *argument);
 bool boot_arg_value(const char *name, char *value, uint32_t capacity);
 bool boot_arg_bool(const char *name, bool default_value);
 uint32_t boot_arg_uint32(const char *name, uint32_t default_value);

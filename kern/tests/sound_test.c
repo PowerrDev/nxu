@@ -45,6 +45,9 @@ void sound_test_fill_tone(int16_t *frames, uint32_t first_frame, uint32_t count)
 static volatile bool g_sound_test_done;
 static volatile bool g_sound_test_ok;
 
+/* Set when the boot already played the chime: wait for it, and do not play it again. */
+static bool g_sound_test_shared;
+
 /* Play the tone and the silence after it through /dev/audio0; true when nothing went wrong. */
 static bool sound_test_play_tone(void)
 {
@@ -144,12 +147,17 @@ static void sound_test_thread(void *parameter)
 {
 	(void)parameter;
 
+	/* The device is exclusive: the boot chime's thread has it until it is done. */
+	while (g_sound_test_shared && boot_chime_state() == BOOT_CHIME_PLAYING) {
+		if (!sched_yield()) break;
+	}
+
 	bool ok = sound_test_play_tone();
 
 	SOUND_TEST_LOG("the tone %s\n", ok ? "played" : "did not play");
 
 	/* Then the chime, through the code the boot uses (its WAV is read from the system volume). */
-	if (ok) {
+	if (ok && !g_sound_test_shared) {
 		bool chime = boot_chime_play();
 
 		SOUND_TEST_LOG("the boot chime %s\n", chime ? "played" : "did not play");
@@ -202,8 +210,9 @@ static bool sound_test_run_playsound(uint32_t caps, uint64_t expected, const cha
 	return true;
 }
 
-bool sound_test_run(void)
+static bool sound_test_run_all(bool shared)
 {
+	g_sound_test_shared = shared;
 	g_sound_test_done = false;
 	g_sound_test_ok = false;
 
@@ -231,4 +240,14 @@ bool sound_test_run(void)
 	bool played = refused && sound_test_run_playsound(NXU_CAP_AUDIO, 0ULL, "with NXU_CAP_AUDIO");
 
 	return refused && played;
+}
+
+bool sound_test_run(void)
+{
+	return sound_test_run_all(false);
+}
+
+bool sound_test_run_shared(void)
+{
+	return sound_test_run_all(true);
 }

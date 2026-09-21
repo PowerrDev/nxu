@@ -27,6 +27,7 @@
 
 static bool g_boot_chime_armed;
 static bool g_boot_chime_started;
+static volatile boot_chime_state_t g_boot_chime_state = BOOT_CHIME_IDLE;
 static uint64_t g_boot_chime_display_us;
 
 static uint64_t boot_chime_ms(uint64_t microseconds)
@@ -291,6 +292,12 @@ static void boot_chime_thread(void *parameter)
 	bool ok = boot_chime_play();
 
 	BOOT_CHIME_LOG("boot chime %s\n", ok ? "finished" : "did not play");
+	g_boot_chime_state = ok ? BOOT_CHIME_PLAYED : BOOT_CHIME_FAILED;
+}
+
+boot_chime_state_t boot_chime_state(void)
+{
+	return g_boot_chime_state;
 }
 
 void boot_chime_start(void)
@@ -303,11 +310,13 @@ void boot_chime_start(void)
 	}
 
 	g_boot_chime_started = true;
+	g_boot_chime_state = BOOT_CHIME_PLAYING;
 
 	thread_t thread;
 
 	if (!kernel_thread_create(proc_task(proc_kernel()), boot_chime_thread, 0, &thread) || !sched_thread_start(thread)) {
 		BOOT_CHIME_LOG("the boot chime thread could not be started\n");
+		g_boot_chime_state = BOOT_CHIME_FAILED;
 		return;
 	}
 

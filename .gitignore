@@ -12,3 +12,5 @@
 *.swo
 *~
 /doc/agents/CLAUDE-SESSION.MD
+.img
+btrfs_disk.img

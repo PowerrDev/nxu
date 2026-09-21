@@ -344,6 +344,7 @@ C_SOURCES := \
     kern/tests/xamethyst_process_test.c \
     kern/tests/windowserver_process_test.c \
     kern/tests/about_sevos_process_test.c \
+    kern/tests/unified_boot.c \
     kern/syscall/syscall.c \
     kern/process/thread.c \
     vfs/btrfs/btrfs_chunk.c \
@@ -932,12 +933,15 @@ $(DISK_FORMAT_STAMP):
 # Normal boot
 # =============================================================================
 
-# `run` boots the full graphical stack (WindowServer + UIService, Voyager app)
-# -- equivalent to `make test TEST=ui-voyager` (see makedefs/tests.mk). For the plain kernel-only console boot (no sibling framework
-# repos required; what `run` used to be), use `run-console`.
+# `run` boots everything that can share one boot at once -- the graphical stack
+# (WindowServer + UIService, Voyager app), bootd with its daemons, the boot
+# chime, and the userland tests, with one summary at the end -- equivalent to
+# `make test TEST=everything` (see makedefs/tests.mk and kern/tests/unified_boot.h).
+# For the plain kernel-only console boot (no sibling framework repos required;
+# what `run` used to be), use `run-console`.
 run:
 
-	$(MAKE) test TEST=ui-voyager
+	$(MAKE) test TEST=everything
 
 
 run-console: $(KERNEL_IMAGE) $(DISK) $(DISK_FORMAT_STAMP)

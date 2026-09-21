@@ -8,6 +8,7 @@
 #include <kern/boot/boot_args.h>
 #include <kern/console/console.h>
 #include <kern/memory/heap.h>
+#include <kern/sched_prism/sched.h>
 #include <platform/rtc.h>
 
 #include <stdbool.h>
@@ -23,6 +24,25 @@
 #endif
 
 #define UI_SERVICE_FRAME_INTERVAL_US 16667ULL
+
+static bool g_ui_service_cooperative;
+static volatile bool g_ui_service_running;
+static volatile uint64_t g_ui_service_polls;
+
+void ui_service_set_cooperative(bool cooperative)
+{
+	g_ui_service_cooperative = cooperative;
+}
+
+bool ui_service_running(void)
+{
+	return g_ui_service_running;
+}
+
+uint64_t ui_service_poll_count(void)
+{
+	return g_ui_service_polls;
+}
 
 #if defined(NXU_UI_SERVICE)
 typedef struct {
@@ -76,7 +96,8 @@ static void UIServicePaceFrame(UIServiceContext *context)
 	if (context->last_present_us != 0ULL) {
 		uint64_t elapsed = now - context->last_present_us;
 		while (elapsed < UI_SERVICE_FRAME_INTERVAL_US) {
-			__asm__ volatile("yield");
+			if (g_ui_service_cooperative) (void)sched_yield();
+			else __asm__ volatile("yield");
 			now = timer_get_microseconds();
 			elapsed = now - context->last_present_us;
 		}
@@ -239,6 +260,11 @@ static uint32_t UIServicePollEvent(void *opaque, UIServiceHostEvent *event)
 	if (opaque == 0 || event == 0) return UI_SERVICE_STATUS_INVALID_ARGUMENT;
 
 	UIServiceContext *context = (UIServiceContext *)opaque;
+
+	/* The session runs on the boot thread; when other threads and processes share the boot, give them their turn. */
+	g_ui_service_polls++;
+	if (g_ui_service_cooperative) (void)sched_yield();
+
 	virtio_input_service();
 	UIServiceRefreshPointer(context);
 
@@ -406,12 +432,15 @@ bool ui_service_bootstrap(void)
 	}
 
 #if defined(NXU_UI_SERVICE_APP_VOYAGER)
-	uint32_t status = UIServiceRunVoyager(&host);
 	const char *app_name = "Voyager.app";
+	g_ui_service_running = true;
+	uint32_t status = UIServiceRunVoyager(&host);
 #else
-	uint32_t status = UIServiceRunAbout(&host);
 	const char *app_name = "About.app";
+	g_ui_service_running = true;
+	uint32_t status = UIServiceRunAbout(&host);
 #endif
+	g_ui_service_running = false;
 	if (using_ramfb) (void)ramfb_console_set_mirroring(true);
 
 	kprintf("[com.butterscotch.UIService.framework]: %s exited unexpectedly with status %u\n", app_name, status);

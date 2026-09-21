@@ -59,15 +59,48 @@ record() {
 	esac
 }
 
-# run_kernel_test <id> <timeout> <pass string> <kernel defines> <capture: 1|-> <verify command|->
+# pass_lines_shown <serial log> <pass strings>: 0 when every one of the pass
+# strings (several are separated by "|", a test that must print more than one
+# line) is in the log.
+pass_lines_shown() {
+	local serial=$1 rest=$2 one
+
+	while [ -n "$rest" ]; do
+		one=${rest%%|*}
+		case "$rest" in
+			*"|"*) rest=${rest#*|} ;;
+			*) rest="" ;;
+		esac
+		grep -qF -e "$one" "$serial" 2>/dev/null || return 1
+	done
+
+	return 0
+}
+
+# first_missing_pass_line <serial log> <pass strings>: the first that is not in the log.
+first_missing_pass_line() {
+	local serial=$1 rest=$2 one
+
+	while [ -n "$rest" ]; do
+		one=${rest%%|*}
+		case "$rest" in
+			*"|"*) rest=${rest#*|} ;;
+			*) rest="" ;;
+		esac
+		grep -qF -e "$one" "$serial" 2>/dev/null || { echo "$one"; return; }
+	done
+}
+
+# run_kernel_test <id> <timeout> <pass strings> <kernel defines> <capture: 1|-> <verify command|-> <frameworks|->
 # "-" stands for an empty column (read would fold empty fields together).
 run_kernel_test() {
-	local id=$1 timeout=$2 pass=$3 cflags=$4 capture=$5 verify=$6
+	local id=$1 timeout=$2 pass=$3 cflags=$4 capture=$5 verify=$6 frameworks=$7
 	local build_log="$SCRATCH/$id.build.log" serial="$SCRATCH/$id.serial.log"
 	local started=$SECONDS qpid i
 	local audio="-audiodev none,id=snd0" recording="$SCRATCH/$id.wav"
 
 	[ "$cflags" = "-" ] && cflags=""
+	[ "$frameworks" = "-" ] && frameworks=""
 	[ "$capture" = "1" ] && audio="-audiodev wav,id=snd0,path=$recording"
 
 	rm -f "$SCRATCH/disk.img" "$SCRATCH/format.stamp" "$SCRATCH/staged.stamp"
@@ -79,7 +112,7 @@ run_kernel_test() {
 	fi
 
 	if ! "$MAKE_CMD" --no-print-directory "${DISK_OVERRIDES[@]}" BUILD_ROOT=BUILD CONFIG="$id" \
-			EXTRA_CFLAGS="$cflags" all >>"$build_log" 2>&1 </dev/null; then
+			$frameworks EXTRA_CFLAGS="$cflags" all >>"$build_log" 2>&1 </dev/null; then
 		record "FAIL  $id  kernel build failed (log: $build_log)"
 		grep -E 'error' "$build_log" | head -10
 		return
@@ -99,7 +132,7 @@ run_kernel_test() {
 
 	for ((i = 0; i < timeout; i++)); do
 		sleep 1
-		if grep -qF -e "$pass" "$serial" 2>/dev/null; then break; fi
+		if pass_lines_shown "$serial" "$pass"; then break; fi
 		if grep -qE 'FAILED|panic\(|kern_fail|: failed[[:space:]]*$' "$serial" 2>/dev/null; then break; fi
 		kill -0 "$qpid" 2>/dev/null || break
 	done
@@ -108,7 +141,7 @@ run_kernel_test() {
 	wait "$qpid" 2>/dev/null
 
 	local took=$((SECONDS - started))
-	if grep -qF -e "$pass" "$serial" && [ "$verify" != "-" ]; then
+	if pass_lines_shown "$serial" "$pass" && [ "$verify" != "-" ]; then
 		# The recording of a test that plays sound: what QEMU's audio backend got, checked on the host.
 		local command=${verify//@CAPTURE@/$recording}
 
@@ -119,13 +152,13 @@ run_kernel_test() {
 			cat "$SCRATCH/$id.verify.log"
 			record "FAIL  $id  the recording did not verify (log: $SCRATCH/$id.verify.log)"
 		fi
-	elif grep -qF -e "$pass" "$serial"; then
+	elif pass_lines_shown "$serial" "$pass"; then
 		record "ok    $id  (${took}s)"
 	elif grep -qE 'FAILED|panic\(|kern_fail|: failed[[:space:]]*$' "$serial"; then
 		record "FAIL  $id  reported a failure after ${took}s (serial log: $serial)"
 		tail -25 "$serial"
 	else
-		record "FAIL  $id  no pass line within ${timeout}s (serial log: $serial)"
+		record "FAIL  $id  no pass line \"$(first_missing_pass_line "$serial" "$pass")\" within ${timeout}s (serial log: $serial)"
 		tail -25 "$serial"
 	fi
 }
@@ -147,11 +180,11 @@ for target in $host_targets; do
 	fi
 done
 
-while IFS=$'\t' read -r id timeout pass cflags capture verify; do
+while IFS=$'\t' read -r id timeout pass cflags capture verify frameworks; do
 	[ -n "$id" ] || continue
 	selected "$id" || continue
 	echo "check: $id"
-	run_kernel_test "$id" "$timeout" "$pass" "$cflags" "$capture" "$verify"
+	run_kernel_test "$id" "$timeout" "$pass" "$cflags" "$capture" "$verify" "$frameworks"
 done <<EOF
 $registry
 EOF

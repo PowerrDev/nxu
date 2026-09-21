@@ -968,6 +968,9 @@ void kern_start_scheduler(const driverkit_config_t *drivers)
 		kprintf("sched: dispatching %s PID %u\n", boot_mode_is_triage_os() ? "triageOS" : "bootd", g_boot_process->p_ident.pid);
 		kputln(boot_mode_is_triage_os() ? "kern_init: recovery userspace active" : "kern_init: root userspace services active");
 
+		/* The unified boot runs its UI session here, on this thread, yielding to everything else. */
+		boot_test_unified();
+
 		for (;;) {
 			if (!sched_yield()) kern_fail("sched: userspace dispatch failed");
 		}

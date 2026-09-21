@@ -61,6 +61,16 @@ Recovery UI is deliberately isolated from the main sevOS UI stack: Shift+R selec
 `triageOS`, which links `Recovery.framework`/StartupOptionsUI only, while normal
 sevOS continues to use the external UIService.framework. See `doc/recovery-ui.md`.
 
+`make run` boots everything that can share one boot in a single QEMU instance:
+bootd with logd and patchd, the boot chime, the UIService session (WindowServer
+and the Voyager app, graphical, audio on the host's speakers) and the userland
+tests (IPC, threads, process control, sockets, sound) running against that live
+system, ending in one `unified_boot_summary` block on the serial console. It needs
+the sibling `WindowServer.framework` and `UIService.framework`; `make run-console`
+is the plain boot without them. What is left out of it, and why, is in
+`doc/testing.md`; any test can still be booted alone with `make test TEST=<id>`
+or picked from `make tests`.
+
 Development boot arguments are passed with `BOOT_ARGS`, for example
 `make run-console BOOT_ARGS="-v -no-gpu"`. See `doc/boot-args.md` for the current
 read-only Device Tree NVRAM backend and supported switches.
