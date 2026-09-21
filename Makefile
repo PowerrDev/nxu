@@ -950,7 +950,7 @@ run-console: $(KERNEL_IMAGE) $(DISK) $(DISK_FORMAT_STAMP)
 		-machine virt,gic-version=3 \
 		-cpu cortex-a72 \
 		-smp 1 \
-		-m 512M \
+		-m 4G \
 		-kernel $(KERNEL_IMAGE) \
 		-append "$(BOOT_ARGS) ui.scale=$(QEMU_UI_SCALE_PERMILLE)" \
 		$(QEMU_DISPLAY) \
