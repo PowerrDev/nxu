@@ -279,6 +279,7 @@ C_SOURCES := \
     kern/arm64/cache.c \
     kern/arm64/exception.c \
     kern/arm64/gic.c \
+    kern/arm64/smp.c \
     kern/arm64/thread.c \
     kern/arm64/user.c \
     kern/arm64/timer.c \
@@ -400,6 +401,7 @@ C_SOURCES := \
 
 ASM_SOURCES := \
     kern/arm64/start.S \
+    kern/arm64/smp_entry.S \
     kern/arm64/context_switch.S \
     kern/arm64/exception_vectors.S \
     kern/arm64/transition.S

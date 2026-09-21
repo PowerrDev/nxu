@@ -8,6 +8,7 @@
 #include <kern/arm64/cache.h>
 #include <kern/arm64/exception.h>
 #include <kern/arm64/gic.h>
+#include <kern/arm64/smp.h>
 #include <kern/arm64/system.h>
 #include <kern/machine/machine_routines.h>
 #include <kern/arm64/timer.h>
@@ -50,7 +51,6 @@
 
 /* Timer configuration. */
 #define KERNEL_TIMER_HZ 100U
-#define PHYSICAL_TIMER_INTID 30U
 
 /* Live VMM mapping test. */
 #define KERNEL_VMM_TEST_ADDRESS 0xFFFFFFE100000000ULL
@@ -960,6 +960,9 @@ void kern_start_scheduler(const driverkit_config_t *drivers)
 	timer_start_periodic(KERNEL_TIMER_HZ);
 
 	kprintf("kern_init: periodic timer started at %u Hz\n", KERNEL_TIMER_HZ);
+
+	/* After the boot CPU's timer (the secondaries copy its rate) and before it takes its first interrupt. */
+	(void)smp_boot_secondaries();
 
 	arm64_enable_irqs();
 	kputln("kern_init: IRQs enabled");

@@ -1,9 +1,11 @@
 #include <kern/console/console.h>
 #include <kern/arm64/exception.h>
 #include <kern/arm64/gic.h>
+#include <kern/arm64/smp.h>
 #include <kern/arm64/system.h>
 #include <kern/arm64/timer.h>
 #include <kern/arm64/transition.h>
+#include <kern/sched_prism/processor.h>
 #include <kern/sched_prism/sched.h>
 #include <kern/irq/irq.h>
 #include <kern/syscall/syscall.h>
@@ -382,9 +384,12 @@ static void irq_handle(void)
 		return;
 	}
 
-	if (intid == 30U) {
+	if (intid == PHYSICAL_TIMER_INTID) {
 		timer_handle_interrupt();
-		sched_tick();
+		current_processor()->ticks++;
+
+		/* Until per-CPU scheduling lands, only the boot CPU runs the scheduler. */
+		if (machine_cpu_id() == 0U) sched_tick();
 	} else if (!irq_dispatch(intid)) {
 		kputs("irq: unhandled INTID ");
 		kputu64(intid);
@@ -715,6 +720,9 @@ static void exception_dispatch(arm64_exception_frame_t *frame)
 
 	if (kind == ARM64_EXCEPTION_KIND_IRQ) {
 		irq_handle();
+
+		/* A CPU that is not scheduling yet has nothing to preempt. */
+		if (machine_cpu_id() != 0U) return;
 
 		thread_t thread = current_thread();
 		bool scheduler_safe =

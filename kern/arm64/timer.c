@@ -1,3 +1,4 @@
+#include <kern/arm64/smp.h>
 #include <kern/arm64/timer.h>
 
 #include <stdint.h>
@@ -147,6 +148,21 @@ void timer_start_periodic(uint32_t frequency_hz)
 	arm64_write_physical_timer_control(1U);
 }
 
+void timer_start_local(void)
+{
+	/*
+	 * CNTP_* are banked per CPU, so this arms only the caller's timer. The
+	 * interval is the one timer_start_periodic() chose on the boot CPU; it is
+	 * written once before any secondary starts and only read afterwards.
+	 */
+	if (g_timer_interval_ticks == 0U) {
+		return;
+	}
+
+	arm64_write_physical_timer_value(g_timer_interval_ticks);
+	arm64_write_physical_timer_control(1U);
+}
+
 void timer_handle_interrupt(void)
 {
 	/*
@@ -155,7 +171,16 @@ void timer_handle_interrupt(void)
 	 */
 	arm64_write_physical_timer_value(g_timer_interval_ticks);
 
-	g_timer_interrupt_count++;
+	/*
+	 * The global count is the boot CPU's timeline: it is the wall-clock tick
+	 * that sleep deadlines and the scheduler's boost period are measured in.
+	 * Secondary CPUs tick their own timers at the same rate but must not
+	 * advance it, or time would run N times too fast. Each CPU's own count
+	 * lives in its processor (see irq_handle()).
+	 */
+	if (machine_cpu_id() == 0U) {
+		g_timer_interrupt_count++;
+	}
 }
 
 uint64_t timer_get_interrupt_count(void)
