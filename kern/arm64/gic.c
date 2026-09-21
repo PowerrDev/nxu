@@ -1,4 +1,6 @@
 #include <kern/arm64/gic.h>
+#include <kern/cpuset.h>
+#include <kern/machine/smp.h>
 #include <vm/vmm.h>
 
 #include <stdbool.h>
@@ -31,7 +33,21 @@
 #define GICD_IROUTER      0x6100UL
 
 /* Redistributor control-frame registers. */
+#define GICR_TYPER 0x0008UL
 #define GICR_WAKER 0x0014UL
+
+/*
+ * GICR_TYPER: bits [63:32] are the owning CPU's affinity (Aff3:Aff2:Aff1:Aff0,
+ * one byte each), bit 4 marks the last redistributor of a region, and bit 1
+ * (VLPIS) means each redistributor has two more 64 KiB frames (GICv4 layout).
+ */
+#define GICR_TYPER_VLPIS (1ULL << 1U)
+#define GICR_TYPER_LAST  (1ULL << 4U)
+#define GICR_FRAME_STRIDE_V3 0x20000ULL
+#define GICR_FRAME_STRIDE_V4 0x40000ULL
+
+/* ICC_SGI1R_EL1 fields. */
+#define ICC_SGI1R_IRM (1ULL << 40U)
 
 /* Redistributor SGI/PPI-frame registers. */
 #define GICR_IGROUPR0     0x0080UL
@@ -51,9 +67,26 @@ static uint64_t g_gicd_base = GICD_EARLY_BASE;
 static uint64_t g_gicr_base = GICR_EARLY_BASE;
 static bool g_gic_higher_half;
 
+/*
+ * Each CPU has its own redistributor frame: the one that is banked per CPU,
+ * where PPIs and SGIs (the timer, IPIs) are configured. Logical CPU 0 uses
+ * g_gicr_base, which tracks the early/higher-half alias switch; the others are
+ * found by matching GICR_TYPER's affinity against their MPIDR and cached here.
+ * Each slot is written only by its own CPU, before that CPU takes interrupts.
+ */
+static uint64_t g_gicr_frames[NXU_MAX_CPUS];
+
+static uint64_t gic_local_redistributor(void)
+{
+	uint32_t cpu = machine_cpu_id();
+
+	if (cpu == 0U || cpu >= NXU_MAX_CPUS) return g_gicr_base;
+	return g_gicr_frames[cpu];
+}
+
 static uint64_t gicr_sgi_base(void)
 {
-	return g_gicr_base + GICR_SGI_OFFSET;
+	return gic_local_redistributor() + GICR_SGI_OFFSET;
 }
 
 bool gic_enter_higher_half(void)
@@ -191,13 +224,13 @@ static void gic_distributor_init(void)
 	gic_wait_for_distributor();
 }
 
-static void gic_redistributor_init(void)
+static void gic_redistributor_init(uint64_t frame)
 {
-	uint64_t waker_address = g_gicr_base + GICR_WAKER;
+	uint64_t waker_address = frame + GICR_WAKER;
 	uint32_t waker = mmio_read32(waker_address);
 
 	/*
-	 * Tell the Redistributor that CPU 0 is awake.
+	 * Tell the Redistributor that its CPU is awake.
 	 */
 	waker &= ~GICR_WAKER_PROCESSOR_SLEEP;
 	mmio_write32(waker_address, waker);
@@ -267,8 +300,133 @@ static void gic_cpu_interface_init(void)
 void gic_init(void)
 {
 	gic_distributor_init();
-	gic_redistributor_init();
+	gic_redistributor_init(g_gicr_base);
 	gic_cpu_interface_init();
+}
+
+static inline uint64_t mmio_read64(uint64_t address)
+{
+	return *(volatile uint64_t *)address;
+}
+
+/*
+ * The affinity value GICR_TYPER[63:32] holds for a CPU whose MPIDR affinity is
+ * `mpidr`: Aff3 in the top byte, then Aff2, Aff1, Aff0 (MPIDR keeps Aff3
+ * apart from the other three, at bits 39:32).
+ */
+static uint32_t gic_typer_affinity(uint64_t mpidr)
+{
+	return (uint32_t)(((mpidr >> 32U) & 0xFFU) << 24U) | (uint32_t)(mpidr & 0xFFFFFFU);
+}
+
+/*
+ * Find the redistributor frame belonging to the CPU with affinity `mpidr`.
+ * The region is an array of frames, each 128 KiB (256 KiB with vLPI support),
+ * ended by the one whose TYPER.Last is set. Returns 0 if none matches.
+ */
+static uint64_t gic_find_redistributor(uint64_t mpidr)
+{
+	uint32_t wanted = gic_typer_affinity(mpidr);
+	uint64_t frame = g_gicr_base;
+
+	for (uint32_t index = 0U; index < 1024U; index++) {
+		uint64_t typer = mmio_read64(frame + GICR_TYPER);
+
+		if ((uint32_t)(typer >> 32U) == wanted) return frame;
+		if ((typer & GICR_TYPER_LAST) != 0ULL) return 0ULL;
+
+		frame += (typer & GICR_TYPER_VLPIS) != 0ULL ? GICR_FRAME_STRIDE_V4 : GICR_FRAME_STRIDE_V3;
+	}
+
+	return 0ULL;
+}
+
+bool gic_init_secondary(uint32_t cpu, uint64_t mpidr)
+{
+	if (cpu == 0U || cpu >= NXU_MAX_CPUS) return false;
+
+	uint64_t frame = gic_find_redistributor(mpidr);
+
+	if (frame == 0ULL) return false;
+
+	g_gicr_frames[cpu] = frame;
+
+	/*
+	 * The distributor is shared and was brought up by the boot CPU. What is
+	 * per CPU is its redistributor (woken here) and its ICC_* CPU interface;
+	 * neither is touched by anything the boot CPU did.
+	 */
+	gic_redistributor_init(frame);
+	gic_cpu_interface_init();
+	return true;
+}
+
+/*
+ * SGIs (interrupt IDs 0-15) are how one CPU interrupts another. Each CPU
+ * enables them in its own redistributor; whether a CPU takes one is decided
+ * by the sender, not by anything in the distributor. SGIs are always
+ * edge-triggered (their ICFGR bits are read-only).
+ */
+void gic_enable_sgi(uint32_t intid, uint8_t priority)
+{
+	if (intid > 15U) return;
+
+	uint32_t mask = 1U << intid;
+	uint64_t base = gicr_sgi_base();
+
+	mmio_write32(base + GICR_IGROUPR0, mmio_read32(base + GICR_IGROUPR0) | mask);
+	mmio_write8(base + GICR_IPRIORITYR0 + intid, priority);
+	mmio_write32(base + GICR_ICPENDR0, mask);
+	mmio_write32(base + GICR_ISENABLER0, mask);
+
+	arm64_dsb_sy();
+}
+
+/*
+ * ICC_SGI1R_EL1 names the target by affinity: Aff3, Aff2, Aff1 fields plus a
+ * 16-bit target list of Aff0 values within that cluster.
+ *
+ * The DSB publishes whatever the sender wrote to memory (the state the
+ * receiver is being told about) before the interrupt can be observed; the ISB
+ * makes the system-register write take effect before later instructions.
+ */
+static void gic_write_sgi1r(uint64_t value)
+{
+	__asm__ volatile(
+		"dsb ishst\n"
+		"msr ICC_SGI1R_EL1, %0\n"
+		"isb"
+		:
+		: "r"(value)
+		: "memory"
+	);
+}
+
+void gic_send_sgi(uint64_t target_mpidr, uint32_t intid)
+{
+	if (intid > 15U) return;
+
+	uint64_t aff0 = target_mpidr & 0xFFULL;
+
+	/* A target list holds Aff0 values 0-15; a cluster with more CPUs would need a range selector. */
+	if (aff0 > 15U) return;
+
+	uint64_t value =
+		(((target_mpidr >> 32U) & 0xFFULL) << 48U) |	/* Aff3 */
+		(((target_mpidr >> 16U) & 0xFFULL) << 32U) |	/* Aff2 */
+		((uint64_t)intid << 24U) |
+		(((target_mpidr >> 8U) & 0xFFULL) << 16U) |	/* Aff1 */
+		(1ULL << aff0);					/* target list */
+
+	gic_write_sgi1r(value);
+}
+
+void gic_send_sgi_others(uint32_t intid)
+{
+	if (intid > 15U) return;
+
+	/* IRM = 1: every CPU but the sender. */
+	gic_write_sgi1r(ICC_SGI1R_IRM | ((uint64_t)intid << 24U));
 }
 
 void gic_enable_ppi(uint32_t intid, uint8_t priority)
