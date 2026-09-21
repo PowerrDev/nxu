@@ -387,9 +387,9 @@ static void irq_handle(void)
 	if (intid == PHYSICAL_TIMER_INTID) {
 		timer_handle_interrupt();
 		current_processor()->ticks++;
-
-		/* Until per-CPU scheduling lands, only the boot CPU runs the scheduler. */
-		if (machine_cpu_id() == 0U) sched_tick();
+		sched_tick();
+	} else if (intid < 16U) {
+		smp_handle_ipi(intid);
 	} else if (!irq_dispatch(intid)) {
 		kputs("irq: unhandled INTID ");
 		kputu64(intid);
@@ -721,13 +721,16 @@ static void exception_dispatch(arm64_exception_frame_t *frame)
 	if (kind == ARM64_EXCEPTION_KIND_IRQ) {
 		irq_handle();
 
-		/* A CPU that is not scheduling yet has nothing to preempt. */
-		if (machine_cpu_id() != 0U) return;
-
+		/*
+		 * Where it is safe to enter the scheduler from an interrupt: the
+		 * interrupted code is EL0, the CPU's idle loop, or a kernel thread
+		 * that declared itself preemptible. Ordinary kernel threads switch
+		 * only where they ask to.
+		 */
 		thread_t thread = current_thread();
 		bool scheduler_safe =
 			exception_vector_from_aarch64_el0(frame->vector_id) ||
-			(thread != 0 && thread_is_idle(thread));
+			(thread != 0 && (thread_is_idle(thread) || thread_is_preemptible(thread)));
 
 		if (scheduler_safe && sched_preemption_pending()) {
 			if (!sched_preempt()) {
@@ -763,11 +766,12 @@ static void exception_dispatch(arm64_exception_frame_t *frame)
 	 * Never recursively panic. If the panic path itself faults, immediately
 	 * stop instead of consuming the EL1 stack with nested exception frames.
 	 */
-	if (g_panic_active) {
+	if (__atomic_exchange_n(&g_panic_active, true, __ATOMIC_ACQ_REL)) {
 		panic_halt();
 	}
 
-	g_panic_active = true;
+	/* The first CPU to panic reports alone: the others stop before they scribble on the console. */
+	smp_stop_other_cpus();
 
 	uint8_t ec = exception_class(frame->esr);
 	uint8_t trap_type = panic_trap_type(ec);

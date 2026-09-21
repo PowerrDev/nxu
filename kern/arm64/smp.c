@@ -29,10 +29,12 @@
 #include <kern/arm64/timer.h>
 #include <kern/console/console.h>
 #include <kern/cpuset.h>
+#include <kern/ipi.h>
 #include <kern/machine/cache.h>
 #include <kern/machine/cpu.h>
 #include <kern/machine/machine_routines.h>
 #include <kern/sched_prism/processor.h>
+#include <kern/sched_prism/sched.h>
 #include <platform/platform.h>
 #include <vm/vm_kern.h>
 #include <vm/vmm.h>
@@ -267,27 +269,89 @@ void smp_secondary_main(processor_t cpu)
 		for (;;) cpu_wait_for_interrupt();
 	}
 
-	/* The physical timer's PPI is per CPU: each CPU enables and arms its own. */
+	/* The physical timer's PPI and the IPI SGIs are per CPU: each CPU enables its own and arms its own timer. */
 	gic_enable_ppi(PHYSICAL_TIMER_INTID, 0x80U);
+	smp_enable_local_ipis();
 	timer_start_local();
 
-	/*
-	 * The console is not yet safe against two CPUs printing, and the boot CPU
-	 * prints as soon as it sees this CPU online: so report first, then
-	 * publish. Publishing is last for the same reason as always, everything
-	 * above must be visible before the boot CPU acts on it (this release store
-	 * pairs with its acquire load of `state`).
-	 */
 	kprintf("cpu%u: online\n", cpu->cpu_id);
 
 	__atomic_add_fetch(&g_cpu_online, 1U, __ATOMIC_ACQ_REL);
-	__atomic_store_n(&cpu->state, PROCESSOR_IDLE, __ATOMIC_RELEASE);
 
-	/* Until the scheduler takes over these CPUs they idle: interrupts (the timer) wake them. */
-	for (;;) {
-		ml_irq_enable();
-		cpu_wait_for_interrupt();
+	/*
+	 * From here the CPU is the scheduler's: sched_cpu_idle() publishes it as
+	 * schedulable (a release store the boot CPU's acquire load of `state`
+	 * pairs with, so everything above is visible first) and idles. The
+	 * "online" line is printed before that because the boot CPU prints as
+	 * soon as it sees the CPU online and the console has one writer at a time.
+	 */
+	sched_cpu_idle();
+}
+
+/* ---- inter-processor interrupts ----------------------------------------- */
+
+/*
+ * SGIs 0-15 are the IPI vectors (kern/ipi.h names the ones in use). Each CPU
+ * enables them in its own redistributor: an SGI is delivered to the target
+ * CPU's redistributor, so a CPU that never enabled it never takes it.
+ */
+void smp_enable_local_ipis(void)
+{
+	for (uint32_t vector = 0U; vector < IPI_TYPE_COUNT; vector++) gic_enable_sgi(vector, 0x80U);
+}
+
+void machine_ipi_raise(uint32_t cpu, uint32_t vector)
+{
+	if (cpu >= g_cpu_total || cpu == machine_cpu_id()) return;
+
+	gic_send_sgi(g_cpu_mpidr[cpu], vector);
+}
+
+void machine_ipi_raise_others(uint32_t vector)
+{
+	if (g_cpu_total <= 1U) return;
+
+	gic_send_sgi_others(vector);
+}
+
+void smp_handle_ipi(uint32_t vector)
+{
+	processor_t self = current_processor();
+
+	switch (vector) {
+	case IPI_RESCHEDULE:
+		/*
+		 * Nothing to do but note it: the interrupt itself woke the CPU, and
+		 * the flag makes the return path (exception_dispatch) enter the
+		 * scheduler. The sender queued the thread under this CPU's runq_lock
+		 * before it raised the SGI, so the queue is already visible.
+		 */
+		self->ipi_reschedule_count++;
+		__atomic_store_n(&self->preemption_pending, true, __ATOMIC_RELEASE);
+		break;
+
+	case IPI_CPU_STOP:
+		/* Never returns: this CPU takes no further interrupts and stops touching memory. */
+		ml_irq_disable();
+		__atomic_store_n(&self->state, PROCESSOR_SHUTDOWN, __ATOMIC_RELEASE);
+
+		for (;;) cpu_wait_for_event();
+
+	default:
+		break;
 	}
+}
+
+void smp_stop_other_cpus(void)
+{
+	if (g_cpu_total <= 1U) return;
+
+	ipi_send_others(IPI_CPU_STOP);
+
+	/* Bounded: a CPU with interrupts masked for ever cannot be stopped, and the panic must go on. */
+	uint64_t deadline = timer_get_microseconds() + 20000ULL;
+
+	while (timer_get_microseconds() < deadline) cpu_relax();
 }
 
 /* ---- the boot CPU ------------------------------------------------------- */
@@ -307,6 +371,11 @@ static bool smp_start_cpu(
 
 	if (cpu == 0) {
 		kprintf("SMP: cannot register CPU%u\n", cpu_id);
+		return false;
+	}
+
+	if (!sched_cpu_prepare(cpu_id)) {
+		kprintf("SMP: cannot create the CPU%u idle thread\n", cpu_id);
 		return false;
 	}
 
@@ -359,7 +428,8 @@ static bool smp_start_cpu(
 
 	uint64_t deadline = timer_get_microseconds() + SMP_ONLINE_TIMEOUT_US;
 
-	while (__atomic_load_n(&cpu->state, __ATOMIC_ACQUIRE) != PROCESSOR_IDLE) {
+	/* Online is IDLE, or already RUNNING if the scheduler gave it work first. */
+	while (!processor_is_online(cpu)) {
 		if (__atomic_load_n(&cpu->state, __ATOMIC_ACQUIRE) == PROCESSOR_SHUTDOWN || timer_get_microseconds() > deadline) {
 			kprintf("SMP: CPU%u did not come online\n", cpu_id);
 			return false;
@@ -428,10 +498,21 @@ uint32_t smp_boot_secondaries(void)
 		return 1U;
 	}
 
+	/* The boot CPU takes IPIs too (a secondary queueing work on it, a panic elsewhere). */
+	smp_enable_local_ipis();
+
 	for (uint32_t cpu = 1U; cpu < g_cpu_total; cpu++) {
 		(void)smp_start_cpu(cpu, g_cpu_mpidr[cpu], platform->psci_method, entry_physical, trampoline_root);
 	}
 
-	kprintf("SMP: %u of %u CPU(s) online\n", smp_online_count(), g_cpu_total);
-	return smp_online_count();
+	uint32_t online = smp_online_count();
+
+	if (online == g_cpu_total) {
+		kprintf("SMP: %u CPUs online\n", online);
+	} else {
+		kprintf("SMP: %u of %u CPUs online\n", online, g_cpu_total);
+	}
+
+	if (online > 1U) kprintf("sched: SMP scheduling enabled, %u run queues\n", online);
+	return online;
 }

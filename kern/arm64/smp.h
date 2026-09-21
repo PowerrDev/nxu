@@ -52,6 +52,40 @@ static inline uint64_t machine_cpu_mpidr(void)
 	return value & 0xFF00FFFFFFULL;
 }
 
+/*
+ * machine_ipi_raise / machine_ipi_raise_others
+ *
+ * Deliver IPI vector `vector` (an ipi_type_t, see kern/ipi.h) to logical CPU
+ * `cpu`, or to every CPU but this one. On arm64 a vector is the number of a
+ * GICv3 SGI, which each CPU enables in its own redistributor.
+ */
+void machine_ipi_raise(uint32_t cpu, uint32_t vector);
+void machine_ipi_raise_others(uint32_t vector);
+
+/*
+ * smp_handle_ipi
+ *
+ * The IRQ handler's entry for an acknowledged SGI (INTID 0-15), on the CPU it
+ * was sent to. Interrupt context.
+ */
+void smp_handle_ipi(uint32_t vector);
+
+/*
+ * smp_enable_local_ipis
+ *
+ * Enable the IPI SGIs in the calling CPU's redistributor. Every CPU calls it
+ * once, after its GIC interface is up.
+ */
+void smp_enable_local_ipis(void);
+
+/*
+ * smp_stop_other_cpus
+ *
+ * Halt every other CPU (a panic is about to print). Does not wait for them
+ * beyond a short bounded pause, and is safe to call more than once.
+ */
+void smp_stop_other_cpus(void);
+
 /* ---- bring-up (kern/arm64/smp.c) ---------------------------------------- */
 
 /*

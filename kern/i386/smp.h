@@ -33,4 +33,16 @@ static inline uint64_t machine_cpu_mpidr(void)
 	return 0ULL;
 }
 
+/* Uniprocessor: there is nobody to interrupt. */
+static inline void machine_ipi_raise(uint32_t cpu, uint32_t vector)
+{
+	(void)cpu;
+	(void)vector;
+}
+
+static inline void machine_ipi_raise_others(uint32_t vector)
+{
+	(void)vector;
+}
+
 #endif
