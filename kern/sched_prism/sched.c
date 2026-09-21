@@ -1457,9 +1457,11 @@ bool sched_validate(void)
  *
  * The cross-CPU invariants, checked with every CPU's run queue locked in
  * ascending id order: each queued thread is on exactly the queue its runq
- * pointer names, is runnable, is not running anywhere, may run on the CPU that
- * holds it, and appears on no other queue. Costly (it walks every queue), so
- * only tests call it.
+ * pointer names, is runnable, is not running anywhere, and appears on no other
+ * queue. (Whether it may run on the CPU that holds it is not checked: a thread
+ * whose affinity was narrowed while it was queued stays queued until it next
+ * runs or is balanced away.) Costly (it walks every queue), so only tests call
+ * it.
  */
 bool sched_validate_all(void)
 {
@@ -1482,8 +1484,7 @@ bool sched_validate_all(void)
 					thread->runq != &processor->runq ||
 					thread_is_idle(thread) ||
 					!thread_is_runnable(thread) ||
-					thread->on_cpu != 0 ||
-					!sched_cpu_may_run(thread, cpu)
+					thread->on_cpu != 0
 				) {
 					ok = false;
 				}
