@@ -767,6 +767,14 @@ bool sched_bootstrap(task_t kernel_task)
 	processor->previous_requeue = false;
 	processor->state = PROCESSOR_RUNNING;
 
+	/*
+	 * The boot thread carries the boot CPU's identity (the UI session, EL0
+	 * excursions parked on its stack, the boot-time kernel state): it stays on
+	 * the boot CPU whatever the default affinity is.
+	 */
+	cpuset_clear(&bootstrap_thread->affinity);
+	cpuset_add(&bootstrap_thread->affinity, processor->cpu_id);
+
 	bootstrap_thread->on_cpu = processor;
 	bootstrap_thread->last_cpu = processor->cpu_id;
 

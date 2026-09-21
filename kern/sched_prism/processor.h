@@ -128,7 +128,7 @@ void processor_online_set(nxu_cpuset_t *set);
  *
  * The affinity a new thread starts with. It is the boot CPU alone until the
  * kernel subsystems threads run in have been made SMP-safe (see
- * doc/smp.md); code that knows its threads are safe widens it (SMP tests,
+ * doc/kern/smp.md); code that knows its threads are safe widens it (SMP tests,
  * the `sched.affinity=all` boot argument) or sets a thread's own with
  * thread_set_affinity().
  */

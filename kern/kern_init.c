@@ -1122,6 +1122,21 @@ void kern_init(const void *dtb_address)
 	kputln("boot_args_init: initialization complete");
 	boot_args_dump();
 
+	/*
+	 * New threads may run on the boot CPU only until the subsystems they run in
+	 * are SMP-safe (doc/kern/smp.md lists what is not). `sched.affinity=all` lifts
+	 * that for every thread created from here on, to find out what breaks.
+	 */
+	char affinity_policy[8];
+
+	if (boot_arg_value("sched.affinity", affinity_policy, sizeof(affinity_policy)) && strcmp(affinity_policy, "all") == 0) {
+		nxu_cpuset_t everywhere;
+
+		cpuset_fill(&everywhere, NXU_MAX_CPUS);
+		processor_set_default_affinity(&everywhere);
+		kputln("sched: new threads may run on any CPU (sched.affinity=all)");
+	}
+
 	kern_dump_boot_dtb(device_tree);
 
 	kputln("dtb: walking structure block");
