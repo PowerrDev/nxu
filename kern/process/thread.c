@@ -85,6 +85,8 @@ static void thread_reset_locked(thread_t thread, uint32_t slot)
 		.wakeup_deferred = false,
 		.affinity = { { 0 } },
 		.last_cpu = 0U,
+		.legacy_depth = 0U,
+		.home_task = 0,
 		.task = 0,
 		.thread_id = THREAD_ID_INVALID,
 		.ref_count = 0U,
@@ -216,6 +218,7 @@ static void thread_global_remove_locked(thread_t thread)
 static void thread_task_insert_locked(task_t task, thread_t thread)
 {
 	thread->task = task;
+	thread->home_task = task;
 	thread->task_prev = 0;
 	thread->task_next = task->threads;
 
@@ -310,7 +313,13 @@ static bool thread_create_common(
 	thread->ref_count = 1U;
 	thread->state = TH_SUSP;
 	thread->flags = kernel_thread ? TH_FLAG_KERNEL : TH_FLAG_NONE;
-	processor_default_affinity(&thread->affinity);
+
+	if (kernel_thread) {
+		processor_default_affinity(&thread->affinity);
+	} else {
+		processor_default_user_affinity(&thread->affinity);
+	}
+
 	thread->active = true;
 	thread->started = false;
 	thread->suspend_count = 1U;

@@ -75,6 +75,17 @@ __attribute__((noreturn))
 void sched_cpu_idle(void);
 
 /*
+ * sched_bind_boot_cpu / sched_unbind_boot_cpu
+ *
+ * Bracket a call into kernel code that assumes a single CPU (VFS, filesystems,
+ * drivers, process creation): the calling thread moves to the boot CPU and stays
+ * there until the matching unbind. Nests. Hold no spinlock across the bind.
+ * See kern/sched_prism/sched.c and doc/kern/smp.md.
+ */
+void sched_bind_boot_cpu(void);
+void sched_unbind_boot_cpu(void);
+
+/*
  * sched_thread_can_run_on
  *
  * Whether the scheduler would ever place `thread` on `cpu`: its affinity
@@ -82,6 +93,15 @@ void sched_cpu_idle(void);
  * only for now). thread_can_run_on_cpu() in the design notes.
  */
 bool sched_thread_can_run_on(thread_t thread, uint32_t cpu);
+
+/*
+ * sched_kick_thread / sched_wait_thread_off_cpu
+ *
+ * For tearing a thread down that may be running on another CPU: interrupt that
+ * CPU so the thread notices its new state, and wait until the thread is off it.
+ */
+void sched_kick_thread(thread_t thread);
+bool sched_wait_thread_off_cpu(thread_t thread);
 
 /*
  * thread_setrun
