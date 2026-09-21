@@ -30,5 +30,6 @@ ioreg_id_t ioreg_family_platform(void);
 ioreg_id_t ioreg_family_hid(void);
 ioreg_id_t ioreg_family_storage(void);
 ioreg_id_t ioreg_family_graphics(void);
+ioreg_id_t ioreg_family_audio(void);
 
 #endif

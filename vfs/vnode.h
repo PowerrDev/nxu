@@ -39,7 +39,10 @@ typedef enum {
 	VFS_STATUS_NAME_TOO_LONG,
 	VFS_STATUS_PATH_TOO_LONG,
 	VFS_STATUS_BUSY,
-	VFS_STATUS_END_OF_DIRECTORY
+	VFS_STATUS_END_OF_DIRECTORY,
+	VFS_STATUS_WOULD_BLOCK,
+	VFS_STATUS_INTERRUPTED,
+	VFS_STATUS_DENIED
 } vfs_status_t;
 
 typedef struct {
@@ -85,6 +88,19 @@ typedef struct {
 	/* Optional: filesystems that do not provide them answer NOT_SUPPORTED. */
 	vfs_status_t (*getattr)(vnode_t vnode, vnode_attr_t *attr);
 	vfs_status_t (*readlink)(vnode_t vnode, char *buffer, uint64_t capacity, uint64_t *length);
+
+	/*
+	 * Optional, for device nodes. open runs when a file is opened on the
+	 * vnode and may refuse it (exclusive devices, missing privileges);
+	 * close runs once, when the last reference to that open file goes.
+	 * ioctl carries a device-specific request: command encodes the
+	 * direction and size of argument (NXU_IOC_* in syscall_defs.h), which is
+	 * a kernel buffer of that size. A vnode without them answers
+	 * NOT_SUPPORTED to ioctl and opens and closes freely.
+	 */
+	vfs_status_t (*open)(vnode_t vnode, uint32_t flags);
+	void (*close)(vnode_t vnode, uint32_t flags);
+	vfs_status_t (*ioctl)(vnode_t vnode, uint32_t command, void *argument);
 } vnode_operations_t;
 
 /*
@@ -145,5 +161,8 @@ vfs_status_t vnode_write(vnode_t vnode, uint64_t offset, const void *buffer, uin
 vfs_status_t vnode_truncate(vnode_t vnode, uint64_t size);
 vfs_status_t vnode_getattr(vnode_t vnode, vnode_attr_t *attr);
 vfs_status_t vnode_readlink(vnode_t vnode, char *buffer, uint64_t capacity, uint64_t *length);
+vfs_status_t vnode_open(vnode_t vnode, uint32_t flags);
+void vnode_close(vnode_t vnode, uint32_t flags);
+vfs_status_t vnode_ioctl(vnode_t vnode, uint32_t command, void *argument);
 
 #endif

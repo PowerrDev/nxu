@@ -23,6 +23,10 @@ I386_C_SOURCES += \
     drivers/virtio/virtio_block.c \
     drivers/virtio/virtio_input.c \
     drivers/virtio/virtio_pci.c \
+    drivers/virtio/virtio_sound.c \
+    drivers/virtio/virtio_sound_core.c \
+    drivers/virtio/virtio_sound_dev.c \
+    drivers/virtio/virtio_sound_pcm.c \
     drivers/virtio/virtqueue.c \
     kern/console/ioregistry.c \
     platform/i386/devices_init.c \

@@ -83,6 +83,9 @@ syscall_vfs_error(vfs_status_t status)
 	case VFS_STATUS_NOT_SUPPORTED: return SYSCALL_ERROR_NOT_SUPPORTED;
 	case VFS_STATUS_INVALID: return SYSCALL_ERROR_INVALID_ARGUMENT;
 	case VFS_STATUS_BUSY: return SYSCALL_ERROR_BUSY;
+	case VFS_STATUS_WOULD_BLOCK: return SYSCALL_ERROR_AGAIN;
+	case VFS_STATUS_INTERRUPTED: return SYSCALL_ERROR_INTERRUPTED;
+	case VFS_STATUS_DENIED: return SYSCALL_ERROR_DENIED;
 	default: return SYSCALL_ERROR_IO;
 	}
 }
@@ -397,19 +400,72 @@ syscall_read(uint64_t file_descriptor, uint64_t user_buffer, uint64_t length)
 	return syscall_return(complete);
 }
 
+/*
+ * syscall_open_may_modify:
+ *
+ * Whether the caller may use these flags on this path. Anything that could
+ * change or create a file needs NXU_CAP_FS_WRITE; opening an existing device
+ * node for writing is the one exception, because writing to a device does not
+ * change the filesystem: the device decides for itself whom to let in (the
+ * audio device wants NXU_CAP_AUDIO, checked when it is opened).
+ */
+static bool
+syscall_open_may_modify(const char *path, uint32_t flags)
+{
+	if ((flags & NXU_O_MODIFYING) == 0U || syscall_has_caps(NXU_CAP_FS_WRITE)) return true;
+
+	if ((flags & (NXU_O_CREATE | NXU_O_TRUNCATE | NXU_O_APPEND)) != 0U) return false;
+
+	vnode_t vnode;
+	if (vfs_lookup(path, &vnode) != VFS_STATUS_OK) return false;
+
+	bool device = vnode->v_type == VNODE_TYPE_CHARACTER;
+	vnode_rele(vnode);
+	return device;
+}
+
 static syscall_result_t
 syscall_open(uint64_t user_path, uint64_t flags)
 {
-	/* The same 32 bits vfs_open sees, so a high bit cannot get past the check. */
-	if (((uint32_t)flags & NXU_O_MODIFYING) != 0U && !syscall_has_caps(NXU_CAP_FS_WRITE)) return syscall_error(SYSCALL_ERROR_DENIED);
-
 	char path[SYSCALL_PATH_BUFFER_SIZE];
 	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
+	/* The same 32 bits vfs_open sees, so a high bit cannot get past the check. */
+	if (!syscall_open_may_modify(path, (uint32_t)flags)) return syscall_error(SYSCALL_ERROR_DENIED);
 
 	uint32_t descriptor;
 	vfs_status_t status = vfs_open(&current_proc()->p_fd, path, (uint32_t)flags, &descriptor);
 	if (status != VFS_STATUS_OK) return syscall_error(syscall_vfs_error(status));
 	return syscall_return(descriptor);
+}
+
+/*
+ * ioctl: a device-specific request on an open descriptor. The command says
+ * which way the argument goes and how big it is, so the copy in and out
+ * happens here and the device sees a kernel buffer.
+ */
+static syscall_result_t
+syscall_ioctl(uint64_t descriptor, uint64_t command, uint64_t user_argument)
+{
+	if (descriptor < VFS_FD_FIRST_FILE || descriptor >= VFS_FD_MAX) return syscall_error(SYSCALL_ERROR_BAD_FD);
+	if (command > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
+	uint32_t request = (uint32_t)command;
+	uint32_t size = NXU_IOC_SIZE(request);
+	uint32_t direction = NXU_IOC_DIRECTION(request);
+
+	if (size > NXU_IOC_SIZE_MAX || (size == 0U) != (direction == NXU_IOC_NONE)) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
+	uint64_t argument[NXU_IOC_SIZE_MAX / sizeof(uint64_t)];
+	memset(argument, 0, sizeof(argument));
+
+	if ((direction & NXU_IOC_IN) != 0U && !vm_copy_from_user(argument, user_argument, size)) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
+	vfs_status_t status = vfs_ioctl(&current_proc()->p_fd, (uint32_t)descriptor, request, argument);
+	if (status != VFS_STATUS_OK) return syscall_error(syscall_vfs_error(status));
+
+	if ((direction & NXU_IOC_OUT) != 0U && !vm_copy_to_user(user_argument, argument, size)) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	return syscall_return(0ULL);
 }
 
 static syscall_result_t
@@ -1410,6 +1466,7 @@ syscall_dispatch(const syscall_request_t *request)
 	case SYSCALL_GETPPID: return syscall_getppid();
 	case SYSCALL_WAIT: return syscall_wait(request->arguments[0], request->arguments[1]);
 	case SYSCALL_GET_CAPS: return syscall_return(current_proc() != 0 ? current_proc()->p_caps : 0ULL);
+	case SYSCALL_IOCTL: return syscall_ioctl(request->arguments[0], request->arguments[1], request->arguments[2]);
 	case SYSCALL_IPC_RECEIVE_WAIT: return syscall_ipc_receive_wait(request->arguments[0], request->arguments[1], request->arguments[2], request->arguments[3], request->arguments[4]);
 	default: return syscall_error(SYSCALL_ERROR_UNKNOWN);
 	}

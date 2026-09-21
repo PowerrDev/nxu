@@ -195,6 +195,7 @@ void file_rele(file_t file)
 	file_type_t type = FILE_TYPE_VNODE;
 	vnode_t vnode = 0;
 	socket_t socket = SOCKET_NULL;
+	uint32_t flags = 0U;
 
 	file_lock(&g_file_table_lock);
 
@@ -205,6 +206,7 @@ void file_rele(file_t file)
 			type = file->f_type;
 			if (type == FILE_TYPE_VNODE) {
 				vnode = file->f_vnode;
+				flags = file->f_flags;
 			} else {
 				socket = file->f_socket;
 			}
@@ -216,7 +218,10 @@ void file_rele(file_t file)
 	file_unlock(&g_file_table_lock);
 
 	if (type == FILE_TYPE_VNODE) {
-		if (vnode != 0) vnode_rele(vnode);
+		if (vnode != 0) {
+			vnode_close(vnode, flags);
+			vnode_rele(vnode);
+		}
 	} else {
 		if (socket != SOCKET_NULL) socket_close(socket);
 	}
@@ -365,4 +370,12 @@ vfs_status_t file_seek(file_t file, uint64_t offset)
 	if (file->f_type == FILE_TYPE_SOCKET) return VFS_STATUS_NOT_SUPPORTED;
 	file->f_offset = offset;
 	return VFS_STATUS_OK;
+}
+
+vfs_status_t file_ioctl(file_t file, uint32_t command, void *argument)
+{
+	if (file == 0 || !file->f_active) return VFS_STATUS_INVALID;
+	if (file->f_type == FILE_TYPE_SOCKET) return VFS_STATUS_NOT_SUPPORTED;
+
+	return vnode_ioctl(file->f_vnode, command, argument);
 }

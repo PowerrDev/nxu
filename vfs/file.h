@@ -16,6 +16,8 @@
 #define VFS_OPEN_CREATE (1U << 2U)
 #define VFS_OPEN_TRUNCATE (1U << 3U)
 #define VFS_OPEN_APPEND (1U << 4U)
+/* Device files only: a read or write that would have to wait returns WOULD_BLOCK (or a short count) instead. */
+#define VFS_OPEN_NONBLOCK (1U << 5U)
 
 struct file;
 typedef struct file *file_t;
@@ -99,5 +101,6 @@ vfs_status_t file_read(file_t file, void *buffer, uint64_t size, uint64_t *read_
 vfs_status_t file_readdir(file_t file, vfs_dirent_t *entry);
 vfs_status_t file_write(file_t file, const void *buffer, uint64_t size, uint64_t *written_size);
 vfs_status_t file_seek(file_t file, uint64_t offset);
+vfs_status_t file_ioctl(file_t file, uint32_t command, void *argument);
 
 #endif

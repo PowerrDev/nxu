@@ -88,6 +88,7 @@ deviates from that rule in two places; both are recorded in
 - [Files and descriptor tables](vfs/file-descriptors.md) — per-open state and per-process descriptors.
 - [ramfs](vfs/ramfs.md) — heap-backed validation filesystem.
 - [ext4](vfs/ext4.md) — writable allocation, metadata CRC32C, extents, directories and ordered transactions.
+- [devfs](vfs/devfs.md) — `/dev`, character devices, and the open, close and `ioctl` hooks on vnodes.
 - [Btrfs](vfs/btrfs.md) — read-only driver: layered pure core, subvolumes, tests against real Linux-made images.
 - [JBD2](vfs/jbd2.md) — write-ahead metadata transactions, commit ordering and crash recovery.
 
@@ -164,6 +165,7 @@ without notice. See [Core kernel initialization](kern/initialization.md).
 ## Drivers
 
 - [VirtIO core](drivers/virtio.md)
+- [VirtIO Sound](drivers/virtio-sound.md) — output-only sound driver, `/dev/audio0`, `playsound` and the boot chime.
 - [Input subsystem](drivers/input.md)
 - [Keyboard](drivers/keyboard.md)
 - [Mouse](drivers/mouse.md)

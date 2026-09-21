@@ -33,7 +33,8 @@ character
 block
 ```
 
-Only regular files and directories are created by the current VFS APIs.
+Only regular files and directories are created by the current VFS APIs; character
+vnodes are the device nodes of [devfs](devfs.md).
 
 ## Operation vector
 
@@ -47,6 +48,10 @@ read
 write
 truncate
 ```
+
+Device vnodes also use three optional operations, `open`, `close` and `ioctl`
+(see [devfs](devfs.md)); a filesystem that does not provide them opens and closes
+freely and answers `NOT_SUPPORTED` to `ioctl`.
 
 The wrappers in `vnode.c` enforce common type and argument checks before
 entering filesystem code.

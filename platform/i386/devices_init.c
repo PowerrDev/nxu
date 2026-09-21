@@ -269,6 +269,7 @@ bool i386_init_drivers(const i386_boot_info_t *boot)
 		.input = true,
 		.block = true,
 		.gpu = false,
+		.sound = true,
 		.on_gpu_ready = 0
 	};
 

@@ -93,6 +93,7 @@ vfs_status_t vfs_read(filedesc_t filedesc, uint32_t descriptor, void *buffer, ui
 vfs_status_t vfs_readdir(filedesc_t filedesc, uint32_t descriptor, vfs_dirent_t *entry);
 vfs_status_t vfs_write(filedesc_t filedesc, uint32_t descriptor, const void *buffer, uint64_t size, uint64_t *written_size);
 vfs_status_t vfs_seek(filedesc_t filedesc, uint32_t descriptor, uint64_t offset);
+vfs_status_t vfs_ioctl(filedesc_t filedesc, uint32_t descriptor, uint32_t command, void *argument);
 
 mount_t vfs_root_mount(void);
 uint32_t vfs_mount_count(void);

@@ -96,6 +96,18 @@ covers: PCI and RTC (against the host clock), block read/write/flush with the
 result checked on the host image, polling and interrupt delivery, a missing
 disk, and key/mouse events injected through the QEMU monitor.
 
+## Sound
+
+`virtio-sound-pci` (modern-only, like the input devices) is driven by the same VirtIO
+Sound driver as arm64's `virtio-sound-device`, over the capability transport in memory
+BARs. Without `virtio-irq=1` the driver polls the rings (the writer collects the
+completions and yields); with it the completions arrive on the device's PIC line and
+the writer sleeps on a wait queue. `sound-test=1` on the command line (with a disk
+that holds the system volume) plays a tone, the boot chime and `playsound` and
+replaces the userland launch. `make test-i386-sound` records that with QEMU's `wav`
+audio backend in both modes and checks the recording sample by sample, and boots
+with no sound device. See [VirtIO Sound](../drivers/virtio-sound.md).
+
 ## Known gaps
 
 No MSI/MSI-X, no PCI-to-PCI bridge resource assignment (firmware's BAR

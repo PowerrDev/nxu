@@ -29,6 +29,9 @@ changing boot-argument consumers.
 - `-no-gpu` prevents VirtIO GPU attachment.
 - `-no-input` prevents VirtIO keyboard/mouse attachment.
 - `-no-block` prevents VirtIO block attachment and therefore disk userspace.
+- `-no-sound` prevents VirtIO Sound attachment.
+- `-no-chime` keeps the boot chime from playing (see
+  [VirtIO Sound](drivers/virtio-sound.md)).
 - `-no-logd` prevents `bootd` from starting `logd`.
 - `-no-patchd` prevents `bootd` from starting `patchd`.
 

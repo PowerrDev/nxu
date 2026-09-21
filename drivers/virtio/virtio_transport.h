@@ -1,6 +1,7 @@
 #ifndef NXU_DRIVERS_VIRTIO_VIRTIO_TRANSPORT_H
 #define NXU_DRIVERS_VIRTIO_VIRTIO_TRANSPORT_H
 
+#include <drivers/virtio/virtio_features.h>
 #include <drivers/virtio/virtqueue.h>
 #include <kern/irq/irq.h>
 #include <platform/platform.h>
@@ -15,18 +16,17 @@
 #define VIRTIO_STATUS_DEVICE_NEEDS_RESET 0x40U
 #define VIRTIO_STATUS_FAILED 0x80U
 
-#define VIRTIO_F_VERSION_1 32U
-
 #define VIRTIO_DEVICE_ID_NONE 0U
 #define VIRTIO_DEVICE_ID_BLOCK 2U
 #define VIRTIO_DEVICE_ID_GPU 16U
 #define VIRTIO_DEVICE_ID_INPUT 18U
+#define VIRTIO_DEVICE_ID_SOUND 25U
 
 /* Interrupt status bits: identical for the MMIO register and the PCI ISR byte. */
 #define VIRTIO_INTERRUPT_USED_BUFFER 0x01U
 #define VIRTIO_INTERRUPT_CONFIG 0x02U
 
-/* Queues a modern PCI device may have programmed; blk 1, input 2, gpu 2. */
+/* Queues a modern PCI device may have programmed; blk 1, input 2, gpu 2, sound 4. */
 #define VIRTIO_PCI_MAX_QUEUES 4U
 
 struct virtio_device;
@@ -111,6 +111,9 @@ typedef struct virtio_device {
 	uint64_t driver_features;
 	bool initialized;
 	bool driver_ok;
+
+	/* Set by irq_attach when the handler really is on the device's interrupt line (a polled transport leaves it clear). */
+	bool irq_bound;
 	virtio_pci_state_t pci;
 } virtio_device_t;
 

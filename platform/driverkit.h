@@ -27,6 +27,7 @@ typedef struct {
 	bool input_enabled;
 	bool block_enabled;
 	bool gpu_enabled;
+	bool sound_enabled;
 } driverkit_config_t;
 
 /*

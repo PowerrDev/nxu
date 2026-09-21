@@ -146,6 +146,7 @@ boot_args_component_disabled(boot_component_t component)
 	case BOOT_COMPONENT_GPU: return boot_arg_present("-no-gpu");
 	case BOOT_COMPONENT_INPUT: return boot_arg_present("-no-input");
 	case BOOT_COMPONENT_BLOCK: return boot_arg_present("-no-block");
+	case BOOT_COMPONENT_SOUND: return boot_arg_present("-no-sound");
 	case BOOT_COMPONENT_LOGD: return boot_arg_present("-no-logd");
 	case BOOT_COMPONENT_PATCHD: return boot_arg_present("-no-patchd");
 	default: return false;
@@ -157,12 +158,13 @@ boot_args_dump(void)
 {
 	kputs("boot-args: ");
 	kputln(g_boot_args[0] != '\0' ? g_boot_args : "<none>");
-	kprintf("boot-args: verbose=%u safe=%u gpu=%s input=%s block=%s logd=%s patchd=%s\n",
+	kprintf("boot-args: verbose=%u safe=%u gpu=%s input=%s block=%s sound=%s logd=%s patchd=%s\n",
 		boot_args_verbose() ? 1U : 0U,
 		boot_args_safe_mode() ? 1U : 0U,
 		boot_args_component_disabled(BOOT_COMPONENT_GPU) ? "off" : "on",
 		boot_args_component_disabled(BOOT_COMPONENT_INPUT) ? "off" : "on",
 		boot_args_component_disabled(BOOT_COMPONENT_BLOCK) ? "off" : "on",
+		boot_args_component_disabled(BOOT_COMPONENT_SOUND) ? "off" : "on",
 		boot_args_component_disabled(BOOT_COMPONENT_LOGD) ? "off" : "on",
 		boot_args_component_disabled(BOOT_COMPONENT_PATCHD) ? "off" : "on");
 }

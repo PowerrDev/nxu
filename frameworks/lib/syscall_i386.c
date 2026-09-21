@@ -214,6 +214,14 @@ nxu_get_caps(void)
 }
 
 int64_t
+nxu_ioctl(uint64_t descriptor, uint64_t command, void *argument)
+{
+	NXU_REQUIRE_U32(descriptor);
+	NXU_REQUIRE_U32(command);
+	return nxu_syscall3(NXU_SYS_IOCTL, (uint32_t)descriptor, (uint32_t)command, NXU_PTR(argument));
+}
+
+int64_t
 nxu_waitpid(uint64_t pid, uint64_t *status)
 {
 	NXU_REQUIRE_U32(pid);

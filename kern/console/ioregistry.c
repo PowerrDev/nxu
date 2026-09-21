@@ -22,6 +22,7 @@ static ioreg_id_t g_ioreg_platform;
 static ioreg_id_t g_ioreg_hid;
 static ioreg_id_t g_ioreg_storage;
 static ioreg_id_t g_ioreg_graphics;
+static ioreg_id_t g_ioreg_audio;
 
 static void ioreg_copy(char *destination, const char *source)
 {
@@ -86,6 +87,12 @@ ioreg_id_t ioreg_family_graphics(void)
 {
 	if (g_ioreg_graphics == 0U) g_ioreg_graphics = ioreg_add_raw(ioreg_family_platform(), "IOGraphicsFamily", "IOGraphicsFamily");
 	return g_ioreg_graphics;
+}
+
+ioreg_id_t ioreg_family_audio(void)
+{
+	if (g_ioreg_audio == 0U) g_ioreg_audio = ioreg_add_raw(ioreg_family_platform(), "DriverKitAudioFamily", "DriverKitAudioFamily");
+	return g_ioreg_audio;
 }
 
 static void ioreg_dump_node(ioreg_id_t id, uint32_t depth)

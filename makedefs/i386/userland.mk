@@ -96,13 +96,15 @@ I386_USER_PROGRAMS := \
     ipctest_b \
     threadtest \
     sockettest_server \
-    sockettest_client
+    sockettest_client \
+    playsound
 
 I386_USER_BINARIES := $(addprefix $(I386_USER_BUILD)/,$(I386_USER_PROGRAMS))
 
 I386_USER_OBJECTS := \
     $(I386_USER_COMMON_OBJECTS) \
     $(I386_USER_BUILD)/libk/udivmoddi4.o \
+    $(I386_USER_BUILD)/libk/wav.o \
     $(I386_USER_COREFOUNDATION_OBJECTS) \
     $(I386_USER_BOOTD_OBJECTS) \
     $(addprefix $(I386_USER_BUILD)/$(I386_USER_DAEMON_DIR)/,$(addsuffix .o,$(filter-out bootd,$(I386_USER_PROGRAMS))))
@@ -121,7 +123,9 @@ I386_USER_PLISTS := \
 # arm64 DiskRoot without modifying it.
 I386_DISK_STATIC_FILES := \
     tools/DiskRoot/hello.txt \
-    tools/DiskRoot/System/README.txt
+    tools/DiskRoot/System/README.txt \
+    tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.mp3 \
+    tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.wav
 
 I386_DISK_SIZE ?= 16M
 
@@ -184,6 +188,15 @@ $(I386_USER_BUILD)/logd $(I386_USER_BUILD)/patchd $(I386_USER_BUILD)/threadtest 
 
 	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
 
+# playsound reads WAV files with the kernel's own reader, built for user space too.
+$(I386_USER_BUILD)/playsound: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/$(I386_USER_DAEMON_DIR)/playsound.o $(I386_USER_BUILD)/libk/wav.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
+
+	@mkdir -p $(dir $@)
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
+
 $(I386_USER_BUILD)/ipctest_a $(I386_USER_BUILD)/ipctest_b: $(I386_USER_BUILD)/%: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BOOTSTRAP_CLIENT) $(I386_USER_BUILD)/$(I386_USER_DAEMON_DIR)/%.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
 
 	@mkdir -p $(dir $@)
@@ -204,11 +217,13 @@ $(I386_USER_STAMP): $(I386_USER_BINARIES) $(I386_USER_PLISTS) $(I386_DISK_STATIC
 
 	$(Q)rm -rf $(I386_DISKROOT)
 
-	$(Q)mkdir -p $(I386_DISKROOT)/System/Library/CoreServices $(I386_DISKROOT)/System/Library/BootDaemons $(I386_DISKROOT)/System/Recovery $(I386_DISKROOT)/var/log $(I386_DISKROOT)/var/db/patchd
+	$(Q)mkdir -p $(I386_DISKROOT)/System/Library/CoreServices $(I386_DISKROOT)/System/Library/BootDaemons $(I386_DISKROOT)/System/Recovery $(I386_DISKROOT)/System/Library/Resources/Audio $(I386_DISKROOT)/var/log $(I386_DISKROOT)/var/db/patchd
 
 	$(Q)cp tools/DiskRoot/hello.txt $(I386_DISKROOT)/hello.txt
 
 	$(Q)cp tools/DiskRoot/System/README.txt $(I386_DISKROOT)/System/README.txt
+
+	$(Q)cp tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.mp3 tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.wav $(I386_DISKROOT)/System/Library/Resources/Audio/
 
 	$(Q)cp $(I386_USER_BUILD)/bootd $(I386_DISKROOT)/System/Library/CoreServices/bootd
 
@@ -222,7 +237,7 @@ $(I386_USER_STAMP): $(I386_USER_BINARIES) $(I386_USER_PLISTS) $(I386_DISK_STATIC
 
 	$(Q)cp $(I386_USER_BUILD)/patchd $(I386_DISKROOT)/System/Library/CoreServices/patchd.recovery
 
-	$(Q)cp $(I386_USER_BUILD)/ipctest_a $(I386_USER_BUILD)/ipctest_b $(I386_USER_BUILD)/threadtest $(I386_USER_BUILD)/sockettest_server $(I386_USER_BUILD)/sockettest_client $(I386_DISKROOT)/System/Library/CoreServices/
+	$(Q)cp $(I386_USER_BUILD)/ipctest_a $(I386_USER_BUILD)/ipctest_b $(I386_USER_BUILD)/threadtest $(I386_USER_BUILD)/sockettest_server $(I386_USER_BUILD)/sockettest_client $(I386_USER_BUILD)/playsound $(I386_DISKROOT)/System/Library/CoreServices/
 
 	$(Q)cp $(I386_USER_PLISTS) $(I386_DISKROOT)/System/Library/BootDaemons/
 

@@ -18,6 +18,7 @@
 #include <drivers/virtio/virtio.h>
 #include <drivers/virtio/virtio_input.h>
 #include <kern/boot/boot_args.h>
+#include <kern/boot/boot_chime.h>
 #include <kern/boot/boot_mode.h>
 #include <kern/boot/splash.h>
 #include <kern/console/bootlog.h>
@@ -90,6 +91,9 @@ static void driverkit_show_splash_if_needed(void)
 
 	if (!boot_splash_show(display)) driverkit_fatal("driverkit_show_splash_if_needed: initialization failed");
 	g_boot_splash_shown = true;
+
+	/* The first frame is on its way to the screen: the boot chime is due as soon as the sound device and its file are there. */
+	boot_chime_arm();
 }
 
 bool driverkit_init(driverkit_config_t *config)
@@ -136,11 +140,13 @@ bool driverkit_init(driverkit_config_t *config)
 	config->input_enabled = !boot_args_component_disabled(BOOT_COMPONENT_INPUT);
 	config->block_enabled = !boot_args_component_disabled(BOOT_COMPONENT_BLOCK);
 	config->gpu_enabled = !boot_args_component_disabled(BOOT_COMPONENT_GPU);
+	config->sound_enabled = !boot_args_component_disabled(BOOT_COMPONENT_SOUND);
 
 	virtio_probe_policy_t virtio_policy = {
 		.input = config->input_enabled,
 		.block = config->block_enabled,
 		.gpu = config->gpu_enabled,
+		.sound = config->sound_enabled,
 		.on_gpu_ready = config->gpu_enabled ? driverkit_show_splash_if_needed : 0
 	};
 
@@ -155,6 +161,7 @@ bool driverkit_init(driverkit_config_t *config)
 	if (!config->input_enabled) kputln("input: disabled by boot-args");
 	if (!config->block_enabled) kputln("VirtIOBlockFamily: disabled by boot-args");
 	if (!config->gpu_enabled) kputln("DriverKitDisplayFamily: VirtIO GPU disabled by boot-args");
+	if (!config->sound_enabled) kputln("DriverKitAudioFamily: VirtIO Sound disabled by boot-args");
 
 	if (config->gpu_enabled && (display_primary() == 0 || virtio_gpu_count() == 0U)) {
 		kputln("DriverKitDisplayFamily: VirtIO GPU not found");

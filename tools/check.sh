@@ -59,11 +59,16 @@ record() {
 	esac
 }
 
-# run_kernel_test <id> <timeout> <pass string> <kernel defines>
+# run_kernel_test <id> <timeout> <pass string> <kernel defines> <capture: 1|-> <verify command|->
+# "-" stands for an empty column (read would fold empty fields together).
 run_kernel_test() {
-	local id=$1 timeout=$2 pass=$3 cflags=$4
+	local id=$1 timeout=$2 pass=$3 cflags=$4 capture=$5 verify=$6
 	local build_log="$SCRATCH/$id.build.log" serial="$SCRATCH/$id.serial.log"
 	local started=$SECONDS qpid i
+	local audio="-audiodev none,id=snd0" recording="$SCRATCH/$id.wav"
+
+	[ "$cflags" = "-" ] && cflags=""
+	[ "$capture" = "1" ] && audio="-audiodev wav,id=snd0,path=$recording"
 
 	rm -f "$SCRATCH/disk.img" "$SCRATCH/format.stamp" "$SCRATCH/staged.stamp"
 
@@ -88,6 +93,7 @@ run_kernel_test() {
 		-drive if=none,format=raw,file="$SCRATCH/disk.img",id=nxudisk \
 		-device virtio-blk-device,drive=nxudisk \
 		-device virtio-gpu-device -device virtio-keyboard-device -device virtio-mouse-device \
+		$audio -device virtio-sound-device,audiodev=snd0 \
 		-serial file:"$serial" -monitor none -no-reboot >/dev/null 2>&1 </dev/null &
 	qpid=$!
 
@@ -102,7 +108,18 @@ run_kernel_test() {
 	wait "$qpid" 2>/dev/null
 
 	local took=$((SECONDS - started))
-	if grep -qF -e "$pass" "$serial"; then
+	if grep -qF -e "$pass" "$serial" && [ "$verify" != "-" ]; then
+		# The recording of a test that plays sound: what QEMU's audio backend got, checked on the host.
+		local command=${verify//@CAPTURE@/$recording}
+
+		if $command >"$SCRATCH/$id.verify.log" 2>&1; then
+			tail -1 "$SCRATCH/$id.verify.log" | sed 's/^/      /'
+			record "ok    $id  (${took}s, recording verified)"
+		else
+			cat "$SCRATCH/$id.verify.log"
+			record "FAIL  $id  the recording did not verify (log: $SCRATCH/$id.verify.log)"
+		fi
+	elif grep -qF -e "$pass" "$serial"; then
 		record "ok    $id  (${took}s)"
 	elif grep -qE 'FAILED|panic\(|kern_fail|: failed[[:space:]]*$' "$serial"; then
 		record "FAIL  $id  reported a failure after ${took}s (serial log: $serial)"
@@ -115,11 +132,26 @@ run_kernel_test() {
 
 registry=$("$MAKE_CMD" --no-print-directory -s check-list) || { echo "check: make check-list failed"; exit 1; }
 
-while IFS=$'\t' read -r id timeout pass cflags; do
+# The host tests: pure code compiled natively under ASan and UBSan, no QEMU.
+host_targets=$("$MAKE_CMD" --no-print-directory -s check-host-list) || { echo "check: make check-host-list failed"; exit 1; }
+
+for target in $host_targets; do
+	selected "$target" || selected host || continue
+	echo "check: $target"
+	started=$SECONDS
+	if "$MAKE_CMD" --no-print-directory "$target" >"$SCRATCH/$target.log" 2>&1 </dev/null; then
+		record "ok    $target  ($((SECONDS - started))s)"
+	else
+		record "FAIL  $target  (log: $SCRATCH/$target.log)"
+		tail -30 "$SCRATCH/$target.log"
+	fi
+done
+
+while IFS=$'\t' read -r id timeout pass cflags capture verify; do
 	[ -n "$id" ] || continue
 	selected "$id" || continue
 	echo "check: $id"
-	run_kernel_test "$id" "$timeout" "$pass" "${cflags:-}"
+	run_kernel_test "$id" "$timeout" "$pass" "$cflags" "$capture" "$verify"
 done <<EOF
 $registry
 EOF

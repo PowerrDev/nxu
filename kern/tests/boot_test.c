@@ -21,6 +21,7 @@
 #include <kern/tests/ipc_process_test.h>
 #include <kern/tests/process_control_test.h>
 #include <kern/tests/socket_process_test.h>
+#include <kern/tests/sound_test.h>
 #include <kern/tests/thread_process_test.h>
 #include <kern/tests/windowserver_process_test.h>
 #include <kern/tests/xamethyst_process_test.h>
@@ -210,6 +211,12 @@ void boot_test_storage(display_device_t *boot_display)
 #if defined(NXU_PROCESS_CONTROL_TEST)
 	if (!process_control_test()) boot_test_fail("process_control_test: failed");
 	kputln("process_control_test: passed; halting (test build, no bootd)");
+	for (;;) __asm__ volatile("wfe");
+#endif
+
+#if defined(NXU_SOUND_TEST)
+	if (!sound_test_run()) boot_test_fail("sound_test: failed");
+	kputln("sound_test: passed; halting (test build, no bootd)");
 	for (;;) __asm__ volatile("wfe");
 #endif
 

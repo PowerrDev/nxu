@@ -65,6 +65,14 @@ QEMU_DISPLAY_BACKEND ?= cocoa
 
 QEMU_DISPLAY := -display $(QEMU_DISPLAY_BACKEND)
 
+# The sound device every arm64 boot gets (the VirtIO Sound driver, /dev/audio0
+# and the boot chime): the host's speakers for the boot you watch. `make check`
+# and the headless tests never use them, they record with the wav backend (see
+# tools/check.sh) or discard with `none`. Override with e.g.
+# QEMU_AUDIODEV='-audiodev none,id=snd0' to keep a run quiet.
+QEMU_AUDIODEV ?= -audiodev coreaudio,id=snd0
+QEMU_SOUND_DEVICE := -device virtio-sound-device,audiodev=snd0
+
 RAMFB ?= 0
 
 ifeq ($(RAMFB),1)
@@ -288,8 +296,13 @@ C_SOURCES := \
     drivers/virtio/virtio_gpu.c \
     drivers/virtio/virtio_input.c \
     drivers/virtio/virtio_mmio.c \
+    drivers/virtio/virtio_sound.c \
+    drivers/virtio/virtio_sound_core.c \
+    drivers/virtio/virtio_sound_dev.c \
+    drivers/virtio/virtio_sound_pcm.c \
     drivers/virtio/virtqueue.c \
     kern/boot/boot_args.c \
+    kern/boot/boot_chime.c \
     kern/boot/boot_mode.c \
     kern/boot/nvram.c \
     kern/boot/splash.c \
@@ -327,6 +340,7 @@ C_SOURCES := \
     kern/tests/fault_process_test.c \
     kern/tests/process_control_test.c \
     kern/tests/socket_process_test.c \
+    kern/tests/sound_test.c \
     kern/tests/xamethyst_process_test.c \
     kern/tests/windowserver_process_test.c \
     kern/tests/about_sevos_process_test.c \
@@ -345,6 +359,7 @@ C_SOURCES := \
     vfs/btrfs/btrfs_super.c \
     vfs/btrfs/btrfs_tree.c \
     vfs/btrfs/btrfs_vfs.c \
+    vfs/devfs.c \
     vfs/ext4.c \
     vfs/jbd2.c \
     vfs/file.c \
@@ -372,7 +387,9 @@ C_SOURCES := \
     platform/arm64/rtc.c \
     platform/arm64/uart.c \
     libk/crc32c.c \
-    libk/string.c
+    libk/mp3.c \
+    libk/string.c \
+    libk/wav.c
 
 
 ASM_SOURCES := \
@@ -415,6 +432,8 @@ USER_C_SOURCES := \
     frameworks/BootDaemons.framework/proctest.c \
     frameworks/BootDaemons.framework/execchild.c \
     frameworks/BootDaemons.framework/privtest.c \
+    frameworks/BootDaemons.framework/playsound.c \
+    libk/wav.c \
     frameworks/BootDaemons.framework/sockettest_server.c \
     frameworks/BootDaemons.framework/sockettest_client.c \
     frameworks/BootDaemons.framework/xamethyst.c \
@@ -479,6 +498,7 @@ USER_DAEMONS := \
     $(USER_BUILD)/proctest \
     $(USER_BUILD)/execchild \
     $(USER_BUILD)/privtest \
+    $(USER_BUILD)/playsound \
     $(USER_BUILD)/sockettest_server \
     $(USER_BUILD)/sockettest_client \
     $(USER_BUILD)/xamethyst \
@@ -654,6 +674,13 @@ $(USER_BUILD)/privtest: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaem
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 
+$(USER_BUILD)/playsound: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/playsound.o $(USER_BUILD)/libk/wav.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+
 $(USER_BUILD)/sockettest_server: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/sockettest_server.o
 
 	$(QUIET_PRINT) "LD" "$@"
@@ -746,6 +773,8 @@ $(USER_STAGE_STAMP): $(USER_DAEMONS) $(USER_SERVICE_PLISTS)
 	$(Q)cp $(USER_BUILD)/execchild $(DISK_ROOT)/System/Library/CoreServices/execchild
 
 	$(Q)cp $(USER_BUILD)/privtest $(DISK_ROOT)/System/Library/CoreServices/privtest
+
+	$(Q)cp $(USER_BUILD)/playsound $(DISK_ROOT)/System/Library/CoreServices/playsound
 
 	$(Q)cp $(USER_BUILD)/sockettest_server $(DISK_ROOT)/System/Library/CoreServices/sockettest_server
 
@@ -923,6 +952,8 @@ run-console: $(KERNEL_IMAGE) $(DISK) $(DISK_FORMAT_STAMP)
 		$(QEMU_GPU_DEVICE) \
 		-device virtio-keyboard-device \
 		-device virtio-mouse-device \
+		$(QEMU_AUDIODEV) \
+		$(QEMU_SOUND_DEVICE) \
 		-serial stdio \
 		-monitor none
 
@@ -1014,6 +1045,33 @@ test-btrfs-host: $(BTRFS_HOST_TOOL)
 test-arm64-btrfs: $(KERNEL_IMAGE) $(BTRFS_HOST_TOOL)
 
 	tools/btrfs/test_arm64.sh $(KERNEL_IMAGE) $(DISK) $(BUILD_ROOT)/btrfs-arm64 $(BTRFS_HOST_TOOL)
+
+
+# =============================================================================
+# Audio: host tests
+# =============================================================================
+#
+#   make test-audio-host    the pure audio code (sound core, WAV parser) natively
+#                           with ASan+UBSan (tools/audio/test_host.sh)
+#
+# The kernel-side tests (a tone and the boot chime played through the VirtIO
+# Sound driver into QEMU's wav backend, then checked on the host) are in the
+# registry in makedefs/tests.mk.
+
+.PHONY: test-audio-host boot-audio
+
+test-audio-host:
+
+	tools/audio/test_host.sh $(BUILD_ROOT)/audio-host
+
+
+# The kernel cannot decode MP3: decode the boot chime with macOS afconvert into
+# the WAV that ships next to it, check it with the kernel's own WAV reader, and
+# commit the result. Both files land in the system volume under
+# /System/Library/Resources/Audio.
+boot-audio:
+
+	tools/audio/make_boot_audio.sh
 
 
 include makedefs/tests.mk

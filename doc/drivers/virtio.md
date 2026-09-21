@@ -46,6 +46,14 @@ including its architectural GIC INTID and interrupt trigger flags.
 
 Empty transport frames are normal on QEMU `virt` and are ignored.
 
+The class drivers are block (`virtio_block.c`), GPU, input (keyboard, mouse) and
+sound; the sound driver, which also runs on VirtIO-PCI, has its own page:
+[VirtIO Sound](virtio-sound.md). A transport reports through
+`virtio_device_t.irq_bound` whether `irq_attach` really put the handler on the
+device's interrupt or the transport polls (VirtIO-PCI on x86 polls unless
+`virtio-irq=1` is given), which a driver that wants to sleep until the device
+interrupts needs to know.
+
 ## Transport state
 
 NXU currently accepts modern VirtIO-MMIO version 2 and requires

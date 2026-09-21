@@ -17,6 +17,7 @@ I386_C_SOURCES += \
     kern/i386/mmio_map.c \
     kern/i386/userland_init.c \
     kern/boot/boot_args.c \
+    kern/boot/boot_chime.c \
     kern/boot/boot_mode.c \
     drivers/video/display.c \
     kern/boot/nvram.c \
@@ -25,8 +26,12 @@ I386_C_SOURCES += \
     kern/tests/ipc_process_test.c \
     kern/tests/ipc_test.c \
     kern/tests/socket_process_test.c \
+    kern/tests/sound_test.c \
     kern/tests/thread_process_test.c \
     libk/crc32c.c \
+    libk/mp3.c \
+    libk/wav.c \
+    vfs/devfs.c \
     vfs/ext4.c \
     vfs/file.c \
     vfs/jbd2.c \

@@ -28,6 +28,7 @@
 #include <kern/sched_prism/sched.h>
 #include <kern/tests/ipc_process_test.h>
 #include <kern/tests/socket_process_test.h>
+#include <kern/tests/sound_test.h>
 #include <kern/tests/thread_process_test.h>
 #include <vfs/btrfs/btrfs_list.h>
 #include <vfs/btrfs/btrfs_selftest.h>
@@ -142,6 +143,20 @@ bool i386_init_userland(const i386_boot_info_t *boot)
 	char test[16];
 
 	if (i386_boot_arg("process-test", test, sizeof(test))) return userland_run_process_test(test);
+
+	/*
+	 * "sound-test=1": play the test tone through the VirtIO Sound driver
+	 * (kern/tests/sound_test.h); the host then checks what QEMU's audio
+	 * backend recorded. Like the tests above it replaces the userland launch.
+	 */
+	char sound_arg[8];
+
+	if (i386_boot_arg("sound-test", sound_arg, sizeof(sound_arg))) {
+		bool sound_ok = sound_test_run();
+
+		kprintf("i386_init_userland: sound-test %s\n", sound_ok ? "passed" : "FAILED");
+		return sound_ok;
+	}
 
 	/* "fs-test=<write|journal-crash|journal-verify>": see fs_test.h. */
 	char fs_mode[24];

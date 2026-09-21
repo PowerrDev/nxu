@@ -87,6 +87,7 @@ int64_t nxu_close(uint64_t descriptor) { return nxu_syscall1(NXU_SYS_CLOSE, desc
 int64_t nxu_spawn(const char *path, const char *name) { return nxu_syscall3(NXU_SYS_SPAWN, (uint64_t)path, (uint64_t)name, 0ULL); }
 int64_t nxu_spawn_caps(const char *path, const char *name, uint64_t caps) { return nxu_syscall3(NXU_SYS_SPAWN, (uint64_t)path, (uint64_t)name, caps); }
 int64_t nxu_get_caps(void) { return nxu_syscall0(NXU_SYS_GET_CAPS); }
+int64_t nxu_ioctl(uint64_t descriptor, uint64_t command, void *argument) { return nxu_syscall3(NXU_SYS_IOCTL, descriptor, command, (uint64_t)argument); }
 int64_t nxu_waitpid(uint64_t pid, uint64_t *status) { return nxu_syscall2(NXU_SYS_WAITPID, pid, (uint64_t)status); }
 int64_t nxu_getpid(void) { return nxu_syscall0(NXU_SYS_GETPID); }
 int64_t nxu_yield(void) { return nxu_syscall0(NXU_SYS_YIELD); }
