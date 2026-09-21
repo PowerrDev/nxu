@@ -301,13 +301,17 @@ counters and I/O counters.
 ## Tests
 
 ```
-make test-btrfs-host BUILD_ROOT=<scratch>        # native, ASan + UBSan, 236 checks
-make test-i386-btrfs BUILD_ROOT=<scratch>        # in-kernel, second..fourth virtio-blk-pci
-make test-arm64-btrfs BUILD_ROOT=<scratch> CONFIG=base   # in-kernel, virtio-blk-device
+make test-btrfs-host BUILD_ROOT=<scratch>        # native, ASan + UBSan, 294 checks
+make test-i386-btrfs BUILD_ROOT=<scratch>        # in-kernel, second..fourth virtio-blk-pci, 50 checks
+make test-arm64-btrfs BUILD_ROOT=<scratch> CONFIG=base   # in-kernel, virtio-blk-device, 50 checks
 ```
 
 Always pass a scratch `BUILD_ROOT`. None of them touches `disk.img` or
-`tools/DiskRoot` (the arm64 test copies `disk.img`).
+`tools/DiskRoot` (the arm64 test copies `disk.img`); if `disk.img` looks stale to
+make, pass `DISK=`, `DISK_ROOT=` and `DISK_FORMAT_STAMP=` pointing at scratch copies
+so the rebuild does not dirty the tracked files. Counts above are from the last run
+of the commands as written (2026-09-20); the sweep length is `BTRFS_SWEEP_ITERS`
+(default 300) times `BTRFS_SWEEP_SEEDS` (default 2).
 
 **Host** (`tools/btrfs/test_host.sh`, tool `tools/btrfs/host/btrfs_host.c`):
 superblock facts against `btrfs inspect-internal dump-super`; a full walk of
@@ -438,6 +442,11 @@ needed information.
   devices, device scanning by fsid instead of the caller listing the devices),
   RAID5/6 parity reconstruction (a checksum failure or a missing device on
   RAID5/6 is an error today), and degraded mounts in general.
+- Not verified: multi-device images under the corruption sweeps (only the
+  single-device fixtures are swept); a multi-device set larger than three extra
+  devices in a kernel (the virtio-blk driver has four devices in all, so RAID10,
+  RAID1C4 and RAID6 run on the host only); real hardware (everything runs under
+  QEMU).
 - Write support (above).
 
 ## References
