@@ -114,6 +114,9 @@ typedef struct {
 	uint64_t type;           /* the chunk's BTRFS_BLOCK_GROUP_* flags */
 } btrfs_mapping_t;
 
+struct btrfs_replay;
+typedef struct btrfs_replay btrfs_replay_t;
+
 /* ---- decompression hook -------------------------------------------------------------- */
 
 /*
@@ -157,7 +160,7 @@ typedef struct {
 typedef struct {
 	uint64_t subvol_id;        /* 0: the filesystem's default subvolume */
 	bool skip_data_csums;      /* do NOT check data checksums (the default is to check) */
-	bool ignore_log_tree;      /* mount despite an unreplayed log tree (may show stale data) */
+	bool ignore_log_tree;      /* do not replay the log tree: show the state of the last commit */
 	uint32_t cache_blocks;     /* tree-block cache size in blocks; 0: automatic */
 } btrfs_open_options_t;
 
@@ -198,6 +201,7 @@ struct btrfs_fs {
 	uint64_t default_subvol;      /* the filesystem's default subvolume id */
 	uint64_t mount_subvol;         /* the subvolume this mount serves */
 
+	btrfs_replay_t *replays;       /* the log tree, layered over the fs trees (btrfs_replay.h) */
 	btrfs_decompressor_t decompressors[4];   /* indexed by BTRFS_COMPRESS_* */
 	btrfs_codec_ctx_t codec;
 	btrfs_extent_cache_t extent_cache;

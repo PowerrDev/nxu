@@ -8,6 +8,7 @@
  */
 
 #include "btrfs_dir.h"
+#include "btrfs_replay.h"
 #include "btrfs_tree.h"
 
 #include <string.h>
@@ -33,7 +34,7 @@ static btrfs_status_t btrfs_dirent_fill(const btrfs_dir_item_t *entry, uint64_t 
 	return BTRFS_OK;
 }
 
-btrfs_status_t btrfs_dir_lookup(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t dir, const uint8_t *name, size_t length, btrfs_dirent_t *out)
+static btrfs_status_t btrfs_dir_lookup_committed(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t dir, const uint8_t *name, size_t length, btrfs_dirent_t *out)
 {
 	if (length == 0U) return BTRFS_ERR_NOT_FOUND;
 	if (length > BTRFS_NAME_LEN) return BTRFS_ERR_NAME_TOO_LONG;
@@ -78,7 +79,7 @@ btrfs_status_t btrfs_dir_lookup(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint
 	return status;
 }
 
-btrfs_status_t btrfs_dir_next(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t dir, uint64_t *cursor, btrfs_dirent_t *out)
+btrfs_status_t btrfs_dir_next_committed(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t dir, uint64_t *cursor, btrfs_dirent_t *out)
 {
 	btrfs_key_t target = btrfs_key_make(dir, BTRFS_DIR_INDEX_KEY, *cursor);
 	btrfs_path_t path;
@@ -117,4 +118,83 @@ btrfs_status_t btrfs_dir_next(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64
 	}
 
 	return status;
+}
+
+/* ---- the log's view of a directory ---------------------------------------------------------- */
+
+static void btrfs_dirent_from_log(const btrfs_replay_t *replay, const btrfs_log_dirent_t *logged, btrfs_dirent_t *out)
+{
+	out->location = btrfs_key_make(logged->ino, BTRFS_INODE_ITEM_KEY, 0ULL);
+	out->transid = 0ULL;
+	out->index = logged->index;
+	out->type = logged->type;
+	out->name_len = logged->name_len;
+	memcpy(out->name, replay->data + logged->name_offset, logged->name_len);
+	out->name[logged->name_len] = '\0';
+}
+
+/*
+ * By index, the entry the log has, else the committed one unless the log removes
+ * it: what a replay would leave. Log entries win an index they share with the
+ * committed tree (Linux unlinks the old name there).
+ */
+btrfs_status_t btrfs_dir_next(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t dir, uint64_t *cursor, btrfs_dirent_t *out)
+{
+	const btrfs_replay_t *replay = btrfs_replay_find(fs, subvol->objectid);
+
+	if (replay == 0 || !btrfs_replay_dir_touched(replay, dir)) return btrfs_dir_next_committed(fs, subvol, dir, cursor, out);
+
+	uint64_t from = *cursor;
+
+	for (;;) {
+		const btrfs_log_dirent_t *logged = btrfs_replay_dirent_ge(replay, dir, from);
+		uint64_t committed_cursor = from;
+		btrfs_dirent_t committed;
+		btrfs_status_t status = btrfs_dir_next_committed(fs, subvol, dir, &committed_cursor, &committed);
+
+		if (status != BTRFS_OK && status != BTRFS_ERR_END) return status;
+
+		if (logged != 0 && (status != BTRFS_OK || logged->index <= committed.index)) {
+			if (logged->index == UINT64_MAX) return BTRFS_ERR_CORRUPT;
+
+			btrfs_dirent_from_log(replay, logged, out);
+			*cursor = logged->index + 1ULL;
+			return BTRFS_OK;
+		}
+
+		if (status == BTRFS_ERR_END) return BTRFS_ERR_END;
+
+		if (!btrfs_replay_dir_removes(replay, dir, committed.index)) {
+			*out = committed;
+			*cursor = committed_cursor;
+			return BTRFS_OK;
+		}
+
+		from = committed_cursor;
+	}
+}
+
+btrfs_status_t btrfs_dir_lookup(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t dir, const uint8_t *name, size_t length, btrfs_dirent_t *out)
+{
+	const btrfs_replay_t *replay = btrfs_replay_find(fs, subvol->objectid);
+
+	if (replay == 0 || !btrfs_replay_dir_touched(replay, dir)) return btrfs_dir_lookup_committed(fs, subvol, dir, name, length, out);
+
+	if (length == 0U) return BTRFS_ERR_NOT_FOUND;
+	if (length > BTRFS_NAME_LEN) return BTRFS_ERR_NAME_TOO_LONG;
+
+	/* A directory the log touched: walk the merged listing (names are hashed only in the committed tree). */
+	uint64_t cursor = 0ULL;
+
+	for (;;) {
+		btrfs_status_t status = btrfs_dir_next(fs, subvol, dir, &cursor, out);
+
+		if (status == BTRFS_ERR_END) return BTRFS_ERR_NOT_FOUND;
+		if (status != BTRFS_OK) return status;
+
+		if (out->name_len == length && memcmp(out->name, name, length) == 0) {
+			out->index = 0ULL;
+			return BTRFS_OK;
+		}
+	}
 }

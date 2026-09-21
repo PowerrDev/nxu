@@ -24,6 +24,7 @@ I386_C_SOURCES += \
     vfs/btrfs/btrfs_io_block.c \
     vfs/btrfs/btrfs_list.c \
     vfs/btrfs/btrfs_lzo.c \
+    vfs/btrfs/btrfs_replay.c \
     vfs/btrfs/btrfs_root.c \
     vfs/btrfs/btrfs_selftest.c \
     vfs/btrfs/btrfs_super.c \

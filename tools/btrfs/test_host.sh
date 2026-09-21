@@ -270,6 +270,11 @@ for name in comp-zlib comp-lzo comp-zstd mix-zlib1 mix-zlib9 mix-lzo mix-zstd1 m
 	check_tree "$name" "$name.manifest" --noverify
 done
 
+echo "== log tree: fsynced changes not yet committed are replayed in memory =="
+check_tree logtree logtree.manifest
+check_tree logtree logtree.manifest --noverify
+check_tree logtree logtree.base.manifest --ignore-log
+
 echo "== every checksum type: metadata and data verified, compared with Linux's view =="
 for name in csum-xxhash csum-sha256 csum-blake2; do
 	check_tree "$name" "$name.manifest"
@@ -296,8 +301,13 @@ expect_open "raid-stripe-tree (incompat bit 14)" "$(corrupt incompat-bit:14 mini
 expect_open "zoned (incompat bit 12)" "$(corrupt incompat-bit:12 minimal)" "unsupported feature"
 expect_open "checksum type 1 (xxhash) claimed by a crc32c image" "$(corrupt csum-type:1 minimal)" "checksum mismatch"
 expect_open "checksum type 9" "$(corrupt csum-type:9 minimal)" "corrupt metadata"
-expect_open "unreplayed log tree" "$(corrupt log-root minimal)" "unreplayed log tree"
-expect_open "unreplayed log tree, told to ignore it" "$(corrupt log-root minimal)" "ok" --ignore-log
+expect_open "log_root that is not a log tree" "$(corrupt log-root minimal)" "corrupt metadata"
+expect_open "log_root that is not a log tree, told to ignore the log" "$(corrupt log-root minimal)" "ok" --ignore-log
+expect_open "real log tree" "$(image logtree)" "ok"
+expect_open "real log tree, told to ignore it" "$(image logtree)" "ok" --ignore-log
+expect_open "log root block damaged" "$(corrupt log-block:root:all logtree)" "checksum mismatch"
+expect_open "log tree block damaged" "$(corrupt log-block:tree:all logtree)" "checksum mismatch"
+expect_open "log root block damaged, told to ignore the log" "$(corrupt log-block:root:all logtree)" "ok" --ignore-log
 expect_open "nonsense nodesize" "$(corrupt nodesize:12345 minimal)" "corrupt metadata"
 expect_open "nodesize larger than allowed" "$(corrupt nodesize:131072 minimal)" "corrupt metadata"
 expect_open "claims two devices" "$(corrupt num-devices:2 minimal)" "unsupported RAID or multi-device profile"
@@ -324,7 +334,7 @@ out=$("$HOST" walk "$(corrupt fs-block:first tree)" 2>&1)
 if printf '%s\n' "$out" | grep -q 'walk=ok' && printf '%s\n' "$out" | grep -qE 'mirror_fallbacks=[1-9]'; then pass "DUP heals a damaged subvolume root block (mirror fallback used)"; else fail "DUP did not heal the subvolume root" "$out"; fi
 
 echo "== corruption sweeps (seeded, ${ITERS} iterations x ${SEEDS} seeds) =="
-for name in empty minimal n4k meta-single data-dup mixed no-holes-off subvols nodatasum comp-zlib mix-zstd3 mix-lzo csum-blake2 csum-xxhash; do
+for name in empty minimal n4k meta-single data-dup mixed no-holes-off subvols nodatasum comp-zlib mix-zstd3 mix-lzo csum-blake2 csum-xxhash logtree; do
 	seed=1
 	while [ $seed -le "$SEEDS" ]; do
 		out=$("$HOST" sweep "$(image "$name")" --seed $seed --iters "$ITERS" 2>&1)

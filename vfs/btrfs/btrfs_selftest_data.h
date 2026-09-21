@@ -349,6 +349,42 @@ static const btrfs_expect_t g_expect_data_dup[] = {
 	{ "/sparse", 'f', 0100644U, 1048576ULL, 266ULL, 1789840394ULL, 0x260c6616U, 0, 0 },
 };
 
+static const btrfs_expect_t g_expect_logtree[] = {
+	{ "/", 'd', 040755U, 210ULL, 256ULL, 1789939440ULL, 0x00000000U, 0, 0 },
+	{ "/dir", 'd', 040755U, 20ULL, 257ULL, 1789939440ULL, 0x00000000U, 0, 0 },
+	{ "/dir/untouched2", 'f', 0100644U, 3000ULL, 267ULL, 1789939439ULL, 0x95ad0cb0U, 0, 0 },
+	{ "/keep_append", 'f', 0100644U, 150000ULL, 258ULL, 1789939440ULL, 0xbd3e044bU, 0, 0 },
+	{ "/keep_hole", 'f', 0100644U, 200000ULL, 265ULL, 1789939440ULL, 0x949d0596U, 0, 0 },
+	{ "/keep_link", 'f', 0100644U, 6000ULL, 262ULL, 1789939439ULL, 0xd54a9882U, 0, 0 },
+	{ "/keep_meta", 'f', 0100600U, 9000ULL, 260ULL, 1700000123ULL, 0x8cdbb00bU, 0, 0 },
+	{ "/keep_overwrite", 'f', 0100644U, 300000ULL, 259ULL, 1789939440ULL, 0x5fd6ad9eU, 0, 0 },
+	{ "/keep_trunc", 'f', 0100644U, 70000ULL, 261ULL, 1789939440ULL, 0x36b586f1U, 0, 0 },
+	{ "/n_big", 'f', 0100644U, 300000ULL, 270ULL, 1789939440ULL, 0x9cde56f1U, 0, 0 },
+	{ "/n_small", 'f', 0100644U, 5000ULL, 269ULL, 1789939440ULL, 0x02b06a4cU, 0, 0 },
+	{ "/nd", 'd', 040755U, 14ULL, 271ULL, 1789939440ULL, 0x00000000U, 0, 0 },
+	{ "/nd/alias", 'f', 0100644U, 6000ULL, 262ULL, 1789939439ULL, 0xd54a9882U, 0, 0 },
+	{ "/nd/f1", 'f', 0100644U, 20000ULL, 272ULL, 1789939440ULL, 0x26f924eeU, 0, 0 },
+	{ "/newlink", 'l', 0120777U, 7ULL, 273ULL, 1789939440ULL, 0x00000000U, "n_small", 0 },
+	{ "/renamed_ok", 'f', 0100644U, 8000ULL, 264ULL, 1789939439ULL, 0x436bbdb8U, 0, 0 },
+	{ "/untouched", 'f', 0100644U, 30000ULL, 266ULL, 1789939439ULL, 0xf877875cU, 0, 0 },
+};
+
+static const btrfs_expect_t g_expect_logtree_base[] = {
+	{ "/", 'd', 040755U, 180ULL, 256ULL, 1789939439ULL, 0x00000000U, 0, 0 },
+	{ "/dir", 'd', 040755U, 38ULL, 257ULL, 1789939439ULL, 0x00000000U, 0, 0 },
+	{ "/dir/keep_del2", 'f', 0100644U, 3000ULL, 268ULL, 1789939439ULL, 0xc35387b1U, 0, 0 },
+	{ "/dir/untouched2", 'f', 0100644U, 3000ULL, 267ULL, 1789939439ULL, 0x95ad0cb0U, 0, 0 },
+	{ "/keep_append", 'f', 0100644U, 100000ULL, 258ULL, 1789939439ULL, 0x3b630940U, 0, 0 },
+	{ "/keep_del", 'f', 0100644U, 7000ULL, 263ULL, 1789939439ULL, 0xf7d29725U, 0, 0 },
+	{ "/keep_hole", 'f', 0100644U, 200000ULL, 265ULL, 1789939439ULL, 0x1bc4c141U, 0, 0 },
+	{ "/keep_link", 'f', 0100644U, 6000ULL, 262ULL, 1789939439ULL, 0xd54a9882U, 0, 0 },
+	{ "/keep_meta", 'f', 0100644U, 9000ULL, 260ULL, 1789939439ULL, 0x8cdbb00bU, 0, 0 },
+	{ "/keep_overwrite", 'f', 0100644U, 300000ULL, 259ULL, 1789939439ULL, 0x92388fc9U, 0, 0 },
+	{ "/keep_ren", 'f', 0100644U, 8000ULL, 264ULL, 1789939439ULL, 0x436bbdb8U, 0, 0 },
+	{ "/keep_trunc", 'f', 0100644U, 200000ULL, 261ULL, 1789939439ULL, 0x8c03926cU, 0, 0 },
+	{ "/untouched", 'f', 0100644U, 30000ULL, 266ULL, 1789939439ULL, 0xf877875cU, 0, 0 },
+};
+
 static const btrfs_expect_t g_expect_nodatasum[] = {
 	{ "/", 'd', 040755U, 74ULL, 256ULL, 1789840418ULL, 0x00000000U, 0, 0 },
 	{ "/dir", 'd', 040755U, 92ULL, 257ULL, 1789840418ULL, 0x00000000U, 0, 0 },
@@ -416,6 +452,8 @@ static const btrfs_expect_fixture_t g_expect_fixtures[] = {
 	{ "csum-sha256", g_expect_csum_sha256, 13, 0 },
 	{ "csum-blake2", g_expect_csum_blake2, 13, 0 },
 	{ "data-dup", g_expect_data_dup, 13, 0 },
+	{ "logtree", g_expect_logtree, 17, 0 },
+	{ "logtree-base", g_expect_logtree_base, 13, 0 },
 	{ "nodatasum", g_expect_nodatasum, 13, 0 },
 	{ "no-holes-off", g_expect_no_holes_off, 13, 0 },
 	{ "n64k", g_expect_n64k, 13, 0 },

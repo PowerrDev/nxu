@@ -21,6 +21,9 @@ Kinds (the damage is applied to DST, a copy of SRC):
   root-block:all|first    flip a byte in the root tree's root block (all copies / one)
   chunk-block:all|first   the same for the chunk tree's root block
   fs-block:all|first      the same for the mounted subvolume's root block
+  log-block:root|tree:all|first
+                          flip a byte in the log root tree's block (super.log_root) or in
+                          the root block of the first subvolume log tree it names
   truncate:N              cut the image to N bytes
   data-extent:PATH:WHICH[:N]
                           flip a byte in the data of PATH's first regular extent
@@ -156,6 +159,21 @@ def main():
             key = {"root-block": "root", "chunk-block": "chunk_root", "fs-block": "mount_tree_bytenr"}[name]
             offsets = physical(info, int(info[key]))
             if arg == "first":
+                offsets = offsets[:1]
+            for off in offsets:
+                flip_byte(f, off)
+        elif name == "log-block":
+            which, copies = arg.split(":")
+            offsets = physical(info, int(info["log_root"]))
+            if which == "tree":
+                # The log root tree's first item is (TREE_LOG, ROOT_ITEM, subvol): its bytenr is at +176.
+                nodesize = int(info["nodesize"])
+                f.seek(offsets[0])
+                leaf = f.read(nodesize)
+                data_off = struct.unpack_from("<I", leaf, 101 + 17)[0]
+                logical = struct.unpack_from("<Q", leaf, 101 + data_off + 176)[0]
+                offsets = physical(info, logical)
+            if copies == "first":
                 offsets = offsets[:1]
             for off in offsets:
                 flip_byte(f, off)

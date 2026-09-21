@@ -15,6 +15,7 @@
 
 #include "btrfs_codec.h"
 #include "btrfs_file.h"
+#include "btrfs_replay.h"
 #include "btrfs_root.h"
 #include "btrfs_tree.h"
 
@@ -84,6 +85,19 @@ static btrfs_status_t btrfs_csum_scan_find(btrfs_fs_t *fs, btrfs_csum_scan_t *sc
 
 	if (scan->window == 0 || address < scan->window_start || address >= scan->window_end) {
 		scan->window = 0;
+
+		/* Data written since the last commit has its checksums in the log. */
+		uint64_t logged_start;
+		uint64_t logged_end;
+		const uint8_t *logged = btrfs_replay_csum(fs, address, &logged_start, &logged_end);
+
+		if (logged != 0) {
+			scan->window = logged;
+			scan->window_start = logged_start;
+			scan->window_end = logged_end;
+			*expected = scan->window + ((address - scan->window_start) >> btrfs_log2_u32(fs->sectorsize)) * fs->csum_size;
+			return BTRFS_OK;
+		}
 
 		btrfs_status_t status = btrfs_csum_tree_open(fs);
 		if (status == BTRFS_ERR_NOT_FOUND) return BTRFS_OK;
@@ -435,6 +449,233 @@ static btrfs_status_t btrfs_read_extent(btrfs_fs_t *fs, const btrfs_inode_t *ino
 	return btrfs_read_data(fs, inode, logical, buffer, amount, &verified);
 }
 
+/* ---- a file the log changed ------------------------------------------------------------------- */
+
+/*
+ * A file with logged EXTENT_DATA items: the committed extents with every logged
+ * extent laid over them (a replay drops the extents a logged one overlaps).
+ * The list is built in memory, sorted by file offset and non-overlapping; an
+ * inline extent's bytes are copied because the leaf is not held.
+ */
+#define BTRFS_MERGED_EXTENTS_MAX 65536U
+
+typedef struct {
+	btrfs_extent_view_t view;
+	uint8_t *inline_copy;
+} btrfs_merged_extent_t;
+
+typedef struct {
+	btrfs_merged_extent_t *list;
+	uint32_t count;
+	uint32_t capacity;
+} btrfs_merged_t;
+
+static void btrfs_merged_free(btrfs_fs_t *fs, btrfs_merged_t *m)
+{
+	for (uint32_t i = 0U; i < m->count; i++) btrfs_free(fs, m->list[i].inline_copy);
+	btrfs_free(fs, m->list);
+	m->list = 0;
+	m->count = 0U;
+	m->capacity = 0U;
+}
+
+static btrfs_status_t btrfs_merged_reserve(btrfs_fs_t *fs, btrfs_merged_t *m, uint32_t needed)
+{
+	if (needed <= m->capacity) return BTRFS_OK;
+	if (needed > BTRFS_MERGED_EXTENTS_MAX) return BTRFS_ERR_UNSUPPORTED;
+
+	uint32_t grown = m->capacity == 0U ? 16U : m->capacity * 2U;
+
+	if (grown < needed) grown = needed;
+
+	btrfs_merged_extent_t *bigger = btrfs_alloc(fs, (size_t)grown * sizeof(*bigger));
+	if (bigger == 0) return BTRFS_ERR_NOMEM;
+
+	if (m->list != 0) {
+		memcpy(bigger, m->list, (size_t)m->count * sizeof(*bigger));
+		btrfs_free(fs, m->list);
+	}
+
+	m->list = bigger;
+	m->capacity = grown;
+	return BTRFS_OK;
+}
+
+/* Append a parsed extent; an inline one gets a private copy of its item. */
+static btrfs_status_t btrfs_merged_append(btrfs_fs_t *fs, btrfs_merged_t *m, const btrfs_extent_view_t *view)
+{
+	btrfs_status_t status = btrfs_merged_reserve(fs, m, m->count + 1U);
+	if (status != BTRFS_OK) return status;
+
+	btrfs_merged_extent_t *entry = &m->list[m->count];
+
+	entry->view = *view;
+	entry->inline_copy = 0;
+
+	if (view->extent.type == BTRFS_FILE_EXTENT_INLINE) {
+		entry->inline_copy = btrfs_alloc(fs, view->item_size);
+		if (entry->inline_copy == 0) return BTRFS_ERR_NOMEM;
+
+		memcpy(entry->inline_copy, view->item, view->item_size);
+		entry->view.item = entry->inline_copy;
+	}
+
+	m->count++;
+	return BTRFS_OK;
+}
+
+/*
+ * Lay a logged extent over the list: whatever it overlaps is trimmed away, then
+ * it is inserted in order. A regular or preallocated extent keeps the part
+ * before and after the logged range (the tail starts further into the disk
+ * extent); an inline extent cannot be cut from the front.
+ */
+static btrfs_status_t btrfs_merged_lay(btrfs_fs_t *fs, btrfs_merged_t *m, const btrfs_extent_view_t *logged)
+{
+	btrfs_merged_t out = { 0, 0U, 0U };
+	uint64_t cut_start = logged->key.offset;
+	uint64_t cut_end = cut_start + logged->length;
+	bool inserted = false;
+	btrfs_status_t status = btrfs_merged_reserve(fs, &out, m->count + 2U);
+
+	for (uint32_t i = 0U; status == BTRFS_OK && i < m->count; i++) {
+		btrfs_extent_view_t view = m->list[i].view;
+		uint64_t start = view.key.offset;
+		uint64_t end = start + view.length;
+
+		if (end <= cut_start || start >= cut_end) {
+			if (!inserted && start >= cut_end) {
+				status = btrfs_merged_append(fs, &out, logged);
+				inserted = true;
+				if (status != BTRFS_OK) break;
+			}
+
+			status = btrfs_merged_append(fs, &out, &view);
+			continue;
+		}
+
+		if (start < cut_start) {
+			btrfs_extent_view_t head = view;
+
+			head.length = cut_start - start;
+			if (head.extent.type != BTRFS_FILE_EXTENT_INLINE) head.extent.num_bytes = head.length;
+			status = btrfs_merged_append(fs, &out, &head);
+			if (status != BTRFS_OK) break;
+		}
+
+		if (!inserted) {
+			status = btrfs_merged_append(fs, &out, logged);
+			inserted = true;
+			if (status != BTRFS_OK) break;
+		}
+
+		if (end > cut_end) {
+			btrfs_extent_view_t tail = view;
+			uint64_t skipped = cut_end - start;
+
+			if (tail.extent.type == BTRFS_FILE_EXTENT_INLINE) {
+				status = BTRFS_ERR_UNSUPPORTED;
+				break;
+			}
+
+			tail.key.offset = cut_end;
+			tail.length = end - cut_end;
+			tail.extent.offset += skipped;
+			tail.extent.num_bytes = tail.length;
+			status = btrfs_merged_append(fs, &out, &tail);
+		}
+	}
+
+	if (status == BTRFS_OK && !inserted) status = btrfs_merged_append(fs, &out, logged);
+
+	if (status != BTRFS_OK) {
+		btrfs_merged_free(fs, &out);
+		return status;
+	}
+
+	btrfs_merged_free(fs, m);
+	*m = out;
+	return BTRFS_OK;
+}
+
+static btrfs_status_t btrfs_file_read_merged(btrfs_fs_t *fs, const btrfs_tree_t *subvol, const btrfs_replay_t *replay, const btrfs_inode_t *inode, uint64_t offset, uint8_t *out, uint64_t end)
+{
+	btrfs_merged_t merged = { 0, 0U, 0U };
+	btrfs_path_t path;
+	btrfs_key_t key;
+	const uint8_t *item;
+	uint32_t item_size;
+	btrfs_key_t first = btrfs_key_make(inode->ino, BTRFS_EXTENT_DATA_KEY, 0ULL);
+	btrfs_status_t status;
+
+	/* The committed extents of this inode. */
+	btrfs_path_init(&path);
+	status = btrfs_tree_search_ge(fs, subvol, &first, &path, 0);
+
+	while (status == BTRFS_OK) {
+		btrfs_extent_view_t view;
+
+		if (!btrfs_path_item(&path, &key, &item, &item_size)) {
+			status = BTRFS_ERR_CORRUPT;
+			break;
+		}
+
+		if (key.objectid != inode->ino || key.type != BTRFS_EXTENT_DATA_KEY) break;
+
+		status = btrfs_extent_parse(fs, &key, item, item_size, &view);
+		if (status == BTRFS_OK) status = btrfs_merged_append(fs, &merged, &view);
+		if (status != BTRFS_OK) break;
+
+		status = btrfs_path_next(fs, &path);
+	}
+
+	btrfs_path_release(fs, &path);
+	if (status == BTRFS_ERR_END) status = BTRFS_OK;
+
+	/* The logged ones, in key order. */
+	for (uint32_t i = btrfs_replay_lower_bound(replay, &first); status == BTRFS_OK && i < replay->count; i++) {
+		const btrfs_log_item_t *logged = &replay->items[i];
+		btrfs_extent_view_t view;
+
+		if (logged->key.objectid != inode->ino || logged->key.type != BTRFS_EXTENT_DATA_KEY) break;
+
+		status = btrfs_extent_parse(fs, &logged->key, btrfs_replay_bytes(replay, logged), logged->size, &view);
+		if (status == BTRFS_OK) status = btrfs_merged_lay(fs, &merged, &view);
+	}
+
+	uint64_t position = offset;
+
+	for (uint32_t i = 0U; status == BTRFS_OK && position < end; i++) {
+		if (i >= merged.count) {
+			memset(out + (position - offset), 0, (size_t)(end - position));
+			position = end;
+			break;
+		}
+
+		const btrfs_extent_view_t *view = &merged.list[i].view;
+		uint64_t extent_start = view->key.offset;
+		uint64_t extent_end = extent_start + view->length;
+
+		if (extent_end <= position) continue;
+
+		if (extent_start > position) {
+			uint64_t hole_end = extent_start < end ? extent_start : end;
+
+			memset(out + (position - offset), 0, (size_t)(hole_end - position));
+			position = hole_end;
+			if (position >= end) break;
+		}
+
+		uint64_t stop = extent_end < end ? extent_end : end;
+
+		status = btrfs_read_extent(fs, inode, view, position - extent_start, out + (position - offset), (size_t)(stop - position));
+		if (status == BTRFS_OK) position = stop;
+	}
+
+	btrfs_merged_free(fs, &merged);
+	return status;
+}
+
 /* ---- the read loop ---------------------------------------------------------------------------- */
 
 btrfs_status_t btrfs_file_read(btrfs_fs_t *fs, const btrfs_tree_t *subvol, const btrfs_inode_t *inode, uint64_t offset, void *buffer, uint64_t length, uint64_t *done)
@@ -451,6 +692,23 @@ btrfs_status_t btrfs_file_read(btrfs_fs_t *fs, const btrfs_tree_t *subvol, const
 
 	uint64_t end = offset + length < offset ? UINT64_MAX : offset + length;
 	if (end > size) end = size;
+
+	/* The log holds extents of this file: read through the merged list. */
+	const btrfs_replay_t *replay = btrfs_replay_find(fs, subvol->objectid);
+
+	if (replay != 0) {
+		btrfs_key_t logged_first = btrfs_key_make(inode->ino, BTRFS_EXTENT_DATA_KEY, 0ULL);
+		uint32_t index = btrfs_replay_lower_bound(replay, &logged_first);
+
+		if (index < replay->count && replay->items[index].key.objectid == inode->ino && replay->items[index].key.type == BTRFS_EXTENT_DATA_KEY) {
+			btrfs_status_t merged_status = btrfs_file_read_merged(fs, subvol, replay, inode, offset, out, end);
+
+			if (merged_status != BTRFS_OK) return merged_status;
+
+			*done = end - offset;
+			return BTRFS_OK;
+		}
+	}
 
 	uint64_t position = offset;
 	btrfs_path_t path;

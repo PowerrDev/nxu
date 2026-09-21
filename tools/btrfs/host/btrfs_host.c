@@ -833,6 +833,7 @@ static int cmd_info(const char *path, const options_t *opt)
 	printf("label=%s\n", fs->super.label);
 	printf("generation=%llu\n", (unsigned long long)fs->super.generation);
 	printf("root=%llu\nroot_level=%u\n", (unsigned long long)fs->super.root, fs->super.root_level);
+	printf("log_root=%llu\n", (unsigned long long)fs->super.log_root);
 	printf("chunk_root=%llu\nchunk_root_level=%u\n", (unsigned long long)fs->super.chunk_root, fs->super.chunk_root_level);
 	printf("total_bytes=%llu\nbytes_used=%llu\n", (unsigned long long)fs->super.total_bytes, (unsigned long long)fs->super.bytes_used);
 	printf("sectorsize=%u\nnodesize=%u\nstripesize=%u\n", fs->super.sectorsize, fs->super.nodesize, fs->super.stripesize);
@@ -898,6 +899,8 @@ static int cmd_walk(const char *path, const options_t *opt)
 	btrfs_host_env_init(&host, &env);
 	host.verbose = opt->verbose;
 
+	image.fail_read_at = opt->offset;   /* walk --offset N: fail the Nth device read (debugging aid) */
+
 	btrfs_fs_t *fs = open_fs(&image, &reader, &env, opt, &status);
 	if (fs == NULL) { printf("open=%s\n", btrfs_status_name(status)); image_close(&image, &reader); return 3; }
 
@@ -910,6 +913,7 @@ static int cmd_walk(const char *path, const options_t *opt)
 	w.rng.state = 12345;
 	walk_mount(&w);
 
+	printf("digest=%016llx reads=%llu\n", (unsigned long long)w.digest, (unsigned long long)image.reads);
 	printf("walk=%s entries=%llu files=%llu mirror_fallbacks=%llu csum_failures=%llu\n", w.failures == 0 ? "ok" : "fail", (unsigned long long)w.entries, (unsigned long long)w.files, (unsigned long long)fs->stats.mirror_fallbacks, (unsigned long long)fs->stats.csum_failures);
 	btrfs_fs_close(fs);
 
@@ -1231,6 +1235,7 @@ static int cmd_sweep(const char *path, const options_t *opt)
 	walk_mount(&base);
 
 	uint32_t nodesize = fs->nodesize;
+	bool baseline_has_log = fs->super.log_root != 0ULL;
 	uint64_t super_offsets[3] = { BTRFS_SUPER_INFO_OFFSET, 64ULL << 20, 0 };
 	btrfs_fs_close(fs);
 
@@ -1384,11 +1389,19 @@ static int cmd_sweep(const char *path, const options_t *opt)
 			w.node_budget = 10 * 1000 * 1000;
 
 			walk_mount(&w);
+
+			/*
+			 * fsync writes only the primary superblock (the mirrors are written at commit), so
+			 * an image with an unreplayed log whose primary is damaged mounts from a mirror
+			 * that predates the log: the last commit, which is what Linux mounts too.
+			 */
+			bool mirror_before_log = baseline_has_log && fs->super.log_root == 0ULL && fs->super_offset != BTRFS_SUPER_INFO_OFFSET;
+
 			btrfs_fs_close(fs);
 
 			if (w.failures != 0) {
 				stats.walk_failures++;
-			} else if (w.digest == baseline_digest) {
+			} else if (w.digest == baseline_digest || mirror_before_log) {
 				stats.healed_or_unharmed++;
 			} else if (exact) {
 				printf("FAIL %s: iteration %llu (%s) succeeded with DIFFERENT data than the good image\n", base_name(path), (unsigned long long)iteration, g_kind_names[kind]);

@@ -15,6 +15,7 @@ real Linux stack (see [Fixtures](#fixtures-and-ground-truth)).
         |
    ---- pure core: no kernel headers; allocator, reader and log are injected ----
         |
+   btrfs_replay   the log tree, read into memory and layered over dir/inode/file/csum lookups
    btrfs_file     EXTENT_DATA -> bytes: inline, regular, prealloc, holes, compressed extents,
                   data checksums
    btrfs_codec    zlib, LZO and ZSTD decoders (btrfs_zlib.c, btrfs_lzo.c, btrfs_zstd.c)
@@ -98,6 +99,51 @@ item. Data checksums are verified on every read (see
 [Bad extents](#bad-extents-and-data-checksums)); compressed extents are decoded
 (see [Compression](#compression)).
 
+### Log tree replay
+
+`fsync()` does not commit a transaction. It writes what changed into a log tree
+and points `super.log_root` at it; if the machine stops before the next commit,
+Linux replays the log at the next mount. This driver never writes, so instead of
+replaying into the trees it reads the log into memory in `btrfs_fs_open()`
+(`btrfs_replay.c`: the log root tree, one log tree per subvolume, every item
+copied into one pool, capped at 16 MiB and 256 Ki items) and layers it over the
+committed trees, so a volume that Linux would replay shows the same thing here:
+
+- **Inodes**: a logged INODE_ITEM replaces the committed item; inodes that exist
+  only in the log are found. A directory the log changed keeps its committed
+  size plus 2 x name length for every entry the replay links and minus that for
+  every entry it unlinks (Linux's rule; a new directory starts from the logged
+  size).
+- **Directory entries**: DIR_INDEX items of the log and the names of logged
+  INODE_REF items (Linux replays those as links) add or replace entries by index
+  (the log wins an index it shares); entries in a logged range (`DIR_LOG_INDEX`
+  `[first, last]`) that the log does not repeat and names that a logged INODE_REF
+  no longer lists (rename, unlink) are removed. A directory the log touched is
+  looked up by walking the merged listing (the hash items exist only in the
+  committed tree).
+- **File extents**: logged EXTENT_DATA items replace what they overlap. A file
+  with logged extents is read through a merged extent list (committed extents
+  trimmed around the logged ones, so a tail keeps its offset into the disk
+  extent; holes punched by the log are explicit hole extents), which also covers
+  truncation, appends, overwrites inside an extent and compressed extents.
+- **Checksums**: the EXTENT_CSUM items of the log verify the logged data (they
+  are consulted before the csum tree), so replayed data is verified like any
+  other.
+- **INODE_REF enumeration** (hard-link counts): a logged item replaces the
+  committed item of the same (inode, parent).
+
+`ignore_log_tree` skips all of this (the state of the last commit). Not
+understood, so the mount is refused with `log-tree` rather than showing
+something wrong: item types the log tree of a subvolume should not hold for this
+driver (extended inode refs, `DIR_ITEM`, orphan items, root items in a subvolume
+log, entries that lead into another subvolume), a log with more than 32 subvolume
+trees, an inode that is referenced but exists neither in the log nor in the
+tree, and a logged extent that would have to cut the front off an inline extent.
+XATTR items and `DIR_LOG_ITEM` (the name-hash range) are ignored: this driver
+does not interpret xattrs and looks names up by walking. Inodes that the log
+unlinks completely disappear because their directory entries do (Linux removes
+the orphan later; nothing here can show it). The device is never written.
+
 ### Compression
 
 `btrfs_fs_open()` registers the three decoders in `fs->decompressors[]`; a
@@ -177,7 +223,7 @@ always checked). The policy, in `btrfs_read_data_verified()`:
 | Superblock mirrors, highest valid generation | supported |
 | mixed block groups, skinny/no skinny metadata, no-holes and explicit holes, free-space-tree, v1 space cache, block-group-tree, extended irefs, squota, metadata_uuid, big metadata | supported (only how metadata is written or accounted for changes) |
 | zoned, extent-tree-v2, raid-stripe-tree, unknown incompat bits | refused: `unsupported feature` |
-| unreplayed log tree | refused (`log-tree`); `ignore_log_tree` mounts anyway and may show stale data |
+| unreplayed log tree (fsynced, not yet committed) | replayed in memory over the trees (see [Log tree](#log-tree-replay)); `ignore_log_tree` shows the last commit instead; a log this layer does not understand is refused (`log-tree`) |
 | Subvolumes, snapshots, read-only snapshots, nested subvolumes, default subvolume, mount by id | supported, read-only |
 | Inline, regular, prealloc, hole, partial-extent reads | supported |
 | Compressed extents (zlib, lzo, zstd; any level; inline, partial references, sparse) | supported |
@@ -341,13 +387,13 @@ needed information.
 - **VFS.** The mutating vnode operations exist and return `READ_ONLY`; they are
   the entry points a writable mount would fill in, together with the mount's
   sync/unmount.
-- **Log tree.** Refused today; replay is a prerequisite for mounting a volume
-  that was not cleanly committed.
+- **Log tree.** Read-only replay exists (below); a writer has to do it for real
+  (apply the log into the trees in a transaction and clear `log_root`) before it
+  writes anything.
 
 ## Not done / follow-ups
 
 - Multi-device and RAID profiles (`btrfs_map_logical`, a multi-device reader).
-- Log tree replay.
 - Write support (above).
 
 ## References

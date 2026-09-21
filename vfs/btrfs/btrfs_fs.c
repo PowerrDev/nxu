@@ -16,6 +16,7 @@
 
 #include "btrfs_codec.h"
 #include "btrfs_fs.h"
+#include "btrfs_replay.h"
 #include "btrfs_root.h"
 #include "btrfs_tree.h"
 
@@ -197,12 +198,6 @@ btrfs_fs_t *btrfs_fs_open(const btrfs_env_t *env, const btrfs_reader_t *reader, 
 	fs->decompressors[BTRFS_COMPRESS_ZSTD].ctx = &fs->codec;
 	memcpy(fs->header_fsid, (fs->super.incompat_flags & BTRFS_FEATURE_INCOMPAT_METADATA_UUID) != 0ULL ? fs->super.metadata_uuid : fs->super.fsid, BTRFS_FSID_SIZE);
 
-	if (fs->super.log_root != 0ULL && !fs->options.ignore_log_tree) {
-		BTRFS_LOG(fs, "log tree at %llu holds fsynced changes that need replay; refusing", BTRFS_U64(fs->super.log_root));
-		btrfs_open_fail(fs, BTRFS_ERR_LOG_TREE, status);
-		goto fail;
-	}
-
 	btrfs_cache_init(fs);
 
 	result = btrfs_chunks_bootstrap(fs);
@@ -225,6 +220,13 @@ btrfs_fs_t *btrfs_fs_open(const btrfs_env_t *env, const btrfs_reader_t *reader, 
 		goto fail;
 	}
 
+	/* fsynced changes the last commit does not have yet: read the log tree and layer it over the trees. */
+	result = btrfs_replay_open(fs);
+	if (result != BTRFS_OK) {
+		btrfs_open_fail(fs, result, status);
+		goto fail;
+	}
+
 	*status = BTRFS_OK;
 	return fs;
 
@@ -237,6 +239,7 @@ void btrfs_fs_close(btrfs_fs_t *fs)
 {
 	if (fs == 0) return;
 
+	btrfs_replay_close(fs);
 	btrfs_cache_release(fs);
 	btrfs_chunks_release(fs);
 

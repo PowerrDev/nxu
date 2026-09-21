@@ -38,6 +38,8 @@ TABLES = [
     ("csum-sha256", "csum-sha256.manifest", [], 0),
     ("csum-blake2", "csum-blake2.manifest", [], 0),
     ("data-dup", "data-dup.manifest", [], 0),
+    ("logtree", "logtree.manifest", [], 0),
+    ("logtree-base", "logtree.base.manifest", [], 0),
     ("nodatasum", "nodatasum.manifest", [], 0),
     ("no-holes-off", "no-holes-off.manifest", [], 0),
     ("n64k", "n64k.manifest", [], 0),

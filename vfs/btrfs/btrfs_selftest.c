@@ -464,13 +464,14 @@ static const btrfs_expect_fixture_t *st_fixture(const char *name)
 	return 0;
 }
 
-/* Run one positive spec: NAME[@SUBVOLID][+verify|+noverify]. */
+/* Run one positive spec: NAME[@SUBVOLID][+verify|+noverify|+ignorelog]. */
 static bool st_run_fixture(const char *token, uint32_t device_index)
 {
 	char name[48];
 	size_t length = 0U;
 	bool verify = false;
 	bool noverify = false;
+	bool ignore_log = false;
 	uint64_t subvol = 0ULL;
 
 	while (token[length] != '\0' && length + 1U < sizeof(name)) {
@@ -481,6 +482,7 @@ static bool st_run_fixture(const char *token, uint32_t device_index)
 	name[length] = '\0';
 	if (strcmp(token + length, "+verify") == 0) verify = true;
 	if (strcmp(token + length, "+noverify") == 0) noverify = true;
+	if (strcmp(token + length, "+ignorelog") == 0) ignore_log = true;
 
 	const char *at = name;
 	while (*at != '\0' && *at != '@') at++;
@@ -513,7 +515,7 @@ static bool st_run_fixture(const char *token, uint32_t device_index)
 		return false;
 	}
 
-	kprintf("btrfs_selftest: %s: mounting %s (%llu sectors) at %s%s%s\n", token, device->name, (unsigned long long)device->sector_count, t->mount_path, noverify ? ", data checksums off" : (verify ? ", data checksums on (explicit)" : ""), subvol != 0ULL ? ", explicit subvolume" : "");
+	kprintf("btrfs_selftest: %s: mounting %s (%llu sectors) at %s%s%s\n", token, device->name, (unsigned long long)device->sector_count, t->mount_path, noverify ? ", data checksums off" : (verify ? ", data checksums on (explicit)" : ""), ignore_log ? ", log tree ignored" : (subvol != 0ULL ? ", explicit subvolume" : ""));
 
 	vfs_status_t status = vfs_mkdir(t->mount_path);
 	if (status != VFS_STATUS_OK && status != VFS_STATUS_EXISTS) {
@@ -521,7 +523,7 @@ static bool st_run_fixture(const char *token, uint32_t device_index)
 		return false;
 	}
 
-	btrfs_mount_options_t options = { subvol, verify, false, noverify };
+	btrfs_mount_options_t options = { subvol, verify, ignore_log, noverify };
 	btrfs_set_next_mount_options(&options);
 
 	status = vfs_mount("btrfs", device, t->mount_path);

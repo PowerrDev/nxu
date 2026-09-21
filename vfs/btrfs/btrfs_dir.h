@@ -49,4 +49,11 @@ btrfs_status_t btrfs_dir_lookup(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint
  */
 btrfs_status_t btrfs_dir_next(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t dir, uint64_t *cursor, btrfs_dirent_t *out);
 
+/*
+ * The same over the committed tree alone, ignoring the log (btrfs_replay.h).
+ * btrfs_dir_next and btrfs_dir_lookup layer the log's additions and removals
+ * over it, so a directory shows what a replay of the log tree would leave.
+ */
+btrfs_status_t btrfs_dir_next_committed(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t dir, uint64_t *cursor, btrfs_dirent_t *out);
+
 #endif
