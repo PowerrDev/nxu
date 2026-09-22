@@ -9,8 +9,13 @@
  * virtio_init() still scans the platform's VirtIO-MMIO frames; the PC has none
  * (platform->virtio_mmio_count is zero), so the MMIO probe is never asked
  * anything and virtio_mmio.c, which is written for the GIC, is not built.
- * The display stack (virtio-gpu, ramfb, fw_cfg) is UI-side and out of scope
- * for the i386 port, so the GPU class driver reports "not attached".
+ *
+ * The virtio-gpu entry points below are weak: makedefs/i386/devices.mk always
+ * links the real drivers/virtio/virtio_gpu.c alongside this file, so these
+ * definitions are dead code there. They stay as a safety net for any other
+ * i386 build fragment that links virtio.c (which calls virtio_gpu_attach())
+ * without also linking virtio_gpu.c -- reporting "not attached" rather than
+ * failing to link.
  */
 
 #include <drivers/virtio/virtio_gpu.h>

@@ -6,12 +6,12 @@
 #                            keyboard and mouse PCI devices and check the
 #                            platform and drivers self-tests
 #
-# Included from makedefs/i386.mk. The shared block, input and VirtIO sources
-# are the ones the arm64 kernel builds; virtio_mmio.c (GIC specific) and
-# virtio_gpu.c (UI side) are not built here, platform/i386/virtio_stubs.c
-# stands in for what the VirtIO core calls from them. The pmm/vmm/irq entry
-# points come from the VM and interrupts areas now, so devices_shim.c (weak
-# stand-ins for them) is no longer linked.
+# Included from makedefs/i386.mk. The shared block, input, GPU and VirtIO
+# sources are the ones the arm64 kernel builds; only virtio_mmio.c (GIC
+# specific, the PC has no VirtIO-MMIO devices) is not built here,
+# platform/i386/virtio_stubs.c stands in for what the VirtIO core calls from
+# it. The pmm/vmm/irq entry points come from the VM and interrupts areas now,
+# so devices_shim.c (weak stand-ins for them) is no longer linked.
 
 I386_C_SOURCES += \
     drivers/block/block_device.c \
@@ -19,8 +19,10 @@ I386_C_SOURCES += \
     drivers/input/input.c \
     drivers/input/keyboard.c \
     drivers/input/mouse.c \
+    drivers/video/display.c \
     drivers/virtio/virtio.c \
     drivers/virtio/virtio_block.c \
+    drivers/virtio/virtio_gpu.c \
     drivers/virtio/virtio_input.c \
     drivers/virtio/virtio_pci.c \
     drivers/virtio/virtio_sound.c \
