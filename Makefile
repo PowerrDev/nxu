@@ -850,6 +850,12 @@ apply-assets:
 
 	cp tools/UI/Cursors/*.cur "$(UISERVICE_DIR)/assets/Cursors/"
 
+	@mkdir -p "$(UISERVICE_DIR)/assets/Backgrounds"
+
+	@if [ -f tools/DiskRoot/System/Library/Resources/Images/DefaultWallpaper.jpg ]; then \
+		cp tools/DiskRoot/System/Library/Resources/Images/DefaultWallpaper.jpg "$(UISERVICE_DIR)/assets/Backgrounds/DefaultWallpaper.jpg"; \
+	fi
+
 	@echo "Applied sevOS UIService assets to $(UISERVICE_DIR)/assets"
 
 
@@ -948,15 +954,20 @@ $(DISK_FORMAT_STAMP):
 # Normal boot
 # =============================================================================
 
-# `run` boots everything that can share one boot at once -- the graphical stack
-# (WindowServer + UIService, Voyager app), bootd with its daemons, the boot
-# chime, and the userland tests, with one summary at the end -- equivalent to
-# `make test TEST=everything` (see makedefs/tests.mk and kern/tests/unified_boot.h).
+# `run` boots the normal desktop -- the graphical stack (WindowServer + UIService,
+# Voyager app), bootd with its daemons, the boot chime -- on 4 CPUs (real SMP, not
+# a single boot CPU with idle secondaries): equivalent to `make test TEST=desktop`
+# (see makedefs/tests.mk). "Is the kernel in a good state to boot" is not a
+# separate suite bundled in here: it is kernel_do_post()'s startup self-test
+# suite (kern/kern_init.c), which already gates every boot, this one included,
+# on kern_fail() before bootd even starts. `make test TEST=everything` is the
+# same boot plus a live regression run of the ipc/thread/process-control/socket/
+# sound tests against it, for `make check`, not for every day.
 # For the plain kernel-only console boot (no sibling framework repos required;
 # what `run` used to be), use `run-console`.
 run:
 
-	$(MAKE) test TEST=everything
+	$(MAKE) test TEST=desktop
 
 
 run-console: $(KERNEL_IMAGE) $(DISK) $(DISK_FORMAT_STAMP)
