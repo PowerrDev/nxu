@@ -25,6 +25,17 @@ typedef enum {
  */
 loader_status_t loader_spawn(proc_t parent, const char *path, const char *name, proc_t *result);
 
+/* Leave the child with the set it would get by default (every capability for PID 1, none otherwise). */
+#define LOADER_CAPS_DEFAULT 0xFFFFFFFFU
+
+/*
+ * As loader_spawn, but the child starts holding `caps` (NXU_CAP_*). They are set
+ * before its thread becomes runnable: with several CPUs the child may already
+ * be running elsewhere by the time this returns, so setting them afterwards
+ * (proc_set_caps) would let it see an empty set.
+ */
+loader_status_t loader_spawn_caps(proc_t parent, const char *path, const char *name, uint32_t caps, proc_t *result);
+
 /*
  * argv for loader_exec: argc NUL-terminated strings packed back to back in
  * strings, length bytes in all (terminators included).

@@ -415,6 +415,16 @@ STANDIN loader_status_t loader_spawn(proc_t parent, const char *path, const char
 	return LOADER_STATUS_NOT_FOUND;
 }
 
+STANDIN loader_status_t loader_spawn_caps(proc_t parent, const char *path, const char *name, uint32_t caps, proc_t *result)
+{
+	(void)parent;
+	(void)path;
+	(void)name;
+	(void)caps;
+	(void)result;
+	return LOADER_STATUS_NOT_FOUND;
+}
+
 STANDIN block_device_t block_device_get(uint32_t index)
 {
 	(void)index;

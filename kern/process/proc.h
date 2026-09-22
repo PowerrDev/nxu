@@ -97,7 +97,8 @@ typedef struct {
  *     What this process may do to the system beyond computing and IPC: a mask
  *     of NXU_CAP_* (kern/syscall/syscall_defs.h). Default-deny: none, unless
  *     it is PID 1 (all of them), its parent granted a subset when spawning it,
- *     or the kernel set them on a test process (proc_set_caps). fork and exec
+ *     or the kernel set them on a test process (loader_spawn_caps, before its thread can run
+ *     on any CPU; proc_set_caps after the fact would race). fork and exec
  *     keep the caller's mask. There are no credentials; this mask is the whole
  *     security model for the system calls that change the machine.
  */

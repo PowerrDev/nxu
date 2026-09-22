@@ -308,6 +308,12 @@ loader_images_equal(const char *left_path, const char *right_path, bool *equal)
 loader_status_t
 loader_spawn(proc_t parent, const char *path, const char *name, proc_t *result)
 {
+	return loader_spawn_caps(parent, path, name, LOADER_CAPS_DEFAULT, result);
+}
+
+loader_status_t
+loader_spawn_caps(proc_t parent, const char *path, const char *name, uint32_t caps, proc_t *result)
+{
 	if (result != 0) *result = 0;
 	if (parent == 0 || path == 0 || name == 0 || result == 0) return LOADER_STATUS_INVALID;
 
@@ -387,6 +393,7 @@ loader_spawn(proc_t parent, const char *path, const char *name, proc_t *result)
 		return LOADER_STATUS_PROCESS_ERROR;
 	}
 
+	if (caps != LOADER_CAPS_DEFAULT) proc_set_caps(proc, caps);
 	loader_handoff_bootstrap_port(proc);
 
 	vm_address_space_t *map = proc_vm_map(proc);
