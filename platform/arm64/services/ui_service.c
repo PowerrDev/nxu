@@ -92,6 +92,19 @@ static uint32_t UIServiceGetSurface(void *opaque, UIServiceSurfaceDescriptor *su
  * Pace software presents near 60 Hz. RAMFB has no real vblank handshake, so
  * this cannot provide hardware VSYNC, but it avoids flooding Cocoa with many
  * partially overlapping updates while a window is being dragged.
+ *
+ * Cooperative waits do it by sleeping (sched_sleep_us), not by spinning on
+ * sched_yield(): a yield only gives up *this* turn and immediately asks for
+ * another, so a wait of several milliseconds became dozens of scheduler
+ * round trips fighting everything else on the boot CPU for a turn --
+ * including every VFS/driver syscall the boot-CPU compatibility mechanism
+ * binds there (see doc/kern/smp.md) -- which is what actually made the
+ * session feel like it was fighting for priority rather than owning the
+ * screen. A thread that blocks instead keeps its MLFQ level (only *using* a
+ * full quantum without blocking demotes it -- see sched.c), so pacing this
+ * way is also what keeps the UI thread's own scheduling priority high
+ * without a manual override that MLFQ's own demotion would just undo on the
+ * next quantum anyway.
  */
 static void UIServicePaceFrame(UIServiceContext *context)
 {
@@ -101,7 +114,7 @@ static void UIServicePaceFrame(UIServiceContext *context)
 	if (context->last_present_us != 0ULL) {
 		uint64_t elapsed = now - context->last_present_us;
 		while (elapsed < UI_SERVICE_FRAME_INTERVAL_US) {
-			if (g_ui_service_cooperative) (void)sched_yield();
+			if (g_ui_service_cooperative) (void)sched_sleep_us(1000ULL);
 			else __asm__ volatile("yield");
 			now = timer_get_microseconds();
 			elapsed = now - context->last_present_us;
@@ -294,7 +307,18 @@ static void UIServiceYieldAfterPoll(bool delivered_event)
 	if (delivered_event && ++delivered_since_yield < UI_SERVICE_EVENTS_PER_YIELD) return;
 
 	delivered_since_yield = 0U;
-	(void)sched_yield();
+
+	/*
+	 * A real event (or a burst's last one): give everyone else a single
+	 * turn, same as before, then come straight back -- the next poll may
+	 * already have more queued. An empty poll means nothing is happening;
+	 * sleep briefly instead of immediately asking to be rescheduled, same
+	 * reasoning as UIServicePaceFrame's cooperative wait. A person cannot
+	 * perceive this as latency (well under a frame), and it is where a
+	 * mostly-idle desktop session spends nearly all its polls.
+	 */
+	if (delivered_event) (void)sched_yield();
+	else (void)sched_sleep_us(1000ULL);
 }
 
 static uint32_t UIServicePollEvent(void *opaque, UIServiceHostEvent *event)
