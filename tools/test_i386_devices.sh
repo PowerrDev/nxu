@@ -2,7 +2,8 @@
 #
 # Boots the i386 kernel under QEMU with the legacy PC devices and checks the
 # platform and drivers self-tests (PCI enumeration, RTC, virtio-blk over
-# legacy VirtIO-PCI, virtio keyboard and mouse). Behind `make test-i386-devices`.
+# legacy VirtIO-PCI, virtio keyboard and mouse, virtio-gpu display). Behind
+# `make test-i386-devices`.
 #
 # Exit status is the isa-debug-exit device's: a clean shutdown (qemu-exit=1)
 # exits 1, a failed phase exits 3. A watchdog kills QEMU that never exits
@@ -25,12 +26,19 @@ failures=0
 count=0
 
 # The QEMU devices under test. virtio-blk has a transitional (legacy, I/O BAR)
-# interface; virtio-input is modern-only, so its devices are reached through
-# the capability transport in memory BARs.
+# interface; virtio-input and virtio-gpu are modern-only, so those devices are
+# reached through the capability transport in memory BARs. -vga none removes
+# the PC machine's default legacy VGA card so the screendump-based checks
+# below are unambiguously reading virtio-gpu's scanout.
+DISPLAY_XRES=640
+DISPLAY_YRES=480
+
 DEVICE_FLAGS=(
+	-vga none
 	-device virtio-blk-pci,drive=d0,disable-modern=on
 	-device virtio-keyboard-pci,disable-modern=on
 	-device virtio-mouse-pci,disable-modern=on
+	-device virtio-gpu-pci,xres=$DISPLAY_XRES,yres=$DISPLAY_YRES
 )
 
 SECTORS=16384
@@ -126,9 +134,9 @@ SCRATCH_FIRST=$((SECTORS - 16))
 DISK=$WORK/platform.img
 make_disk "$DISK"
 
-boot "$DISK" "test=platform qemu-exit=1 expect-virtio=3 expect-time=$(date -u +%s)"
+boot "$DISK" "test=platform qemu-exit=1 expect-virtio=4 expect-time=$(date -u +%s)"
 verify platform "$STATUS" $STATUS_CLEAN "$OUTPUT" \
-	"i386_init_platform_selftest: 3 VirtIO function(s)" \
+	"i386_init_platform_selftest: 4 VirtIO function(s)" \
 	"i386_init_platform_selftest: PCI enumeration and RTC ok" \
 	"platform self-test passed"
 
@@ -139,14 +147,17 @@ make_disk "$DISK"
 before_marker=$(sector_hash "$DISK" 0 1)
 before_scratch=$(sector_hash "$DISK" $SCRATCH_FIRST 16)
 
-boot "$DISK" "test=drivers qemu-exit=1 expect-input=2"
+boot "$DISK" "test=drivers qemu-exit=1 expect-input=2 expect-display=1"
 verify drivers "$STATUS" $STATUS_CLEAN "$OUTPUT" \
 	"VirtIOBlockFamily: matched virtio-blk" \
 	"block device disk0, 16384 sectors of 512 bytes, read-write, flush supported" \
 	"sector 0 begins 4E 58 55 2D 44 45 56 30" \
 	"wrote, flushed and read back 16 sectors at $SCRATCH_FIRST" \
 	"2 input device(s), keyboard present, mouse present" \
-	"block round trip and input ok" \
+	"VirtIOGPUFamily: scanout 0 online at ${DISPLAY_XRES}x${DISPLAY_YRES}" \
+	"painting test pattern, ${DISPLAY_XRES}x${DISPLAY_YRES}" \
+	"test pattern presented" \
+	"block round trip, input and display ok" \
 	"drivers self-test passed"
 
 # The self-test restores what it overwrote: the image must be as it was.
@@ -183,10 +194,10 @@ fi
 DISK=$WORK/irq.img
 make_disk "$DISK"
 
-boot "$DISK" "test=drivers qemu-exit=1 expect-input=2 virtio-irq=1"
+boot "$DISK" "test=drivers qemu-exit=1 expect-input=2 expect-display=1 virtio-irq=1"
 verify virtio-irq "$STATUS" $STATUS_CLEAN "$OUTPUT" \
 	"VirtIO interrupts enabled" \
-	"block round trip and input ok"
+	"block round trip, input and display ok"
 
 # ---- negative: a missing block device fails the phase ------------------------
 
@@ -265,6 +276,126 @@ if printf '%s\n' "$OUTPUT" | grep -qF "input delivered by interrupt"; then
 	echo "      (input-irq: events were delivered by PIC interrupt)"
 else
 	echo "      (input-irq: no interrupt path linked, events were polled)"
+fi
+
+# ---- display: virtio-gpu's scanout reaches the host, not just the driver -----
+#
+# Everything above only checks what the guest's own log says. This boots
+# without qemu-exit=1 (so QEMU stays up once the test pattern is painted and
+# presented), takes a monitor screendump once the guest says it presented the
+# pattern, and checks the actual host-visible pixels: proof the VirtIO-GPU
+# command stream (RESOURCE_CREATE_2D, ATTACH_BACKING, SET_SCANOUT, TRANSFER,
+# FLUSH) really reached QEMU's scanout, not just that the driver's own
+# round trips said "ok".
+
+display_case() {
+	DISK=$WORK/display.img
+	make_disk "$DISK"
+	SERIAL=$WORK/display.serial
+	MONITOR=$WORK/display.sock
+	DUMP=$WORK/display.ppm
+	: > "$SERIAL"
+
+	qemu-system-i386 -M pc \
+		-kernel "$KERNEL" -m 512M \
+		-display none -serial file:"$SERIAL" -monitor unix:"$MONITOR",server,nowait -no-reboot \
+		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+		-drive if=none,format=raw,file="$DISK",id=d0 \
+		"${DEVICE_FLAGS[@]}" \
+		-append "test=drivers expect-display=1" < /dev/null > /dev/null 2>&1 &
+	QEMU_PID=$!
+
+	local waited=0
+	while ! grep -qF "test pattern presented" "$SERIAL" 2>/dev/null; do
+		sleep 0.2
+		waited=$((waited + 1))
+		if [ "$waited" -gt 100 ] || ! kill -0 $QEMU_PID 2>/dev/null; then break; fi
+	done
+
+	sleep 0.3
+	(printf 'screendump %s\n' "$DUMP"; sleep 0.5) | nc -U "$MONITOR" > /dev/null 2>&1
+	sleep 0.3
+
+	kill $QEMU_PID 2>/dev/null
+	wait $QEMU_PID 2>/dev/null
+	DISPLAY_SERIAL=$(cat "$SERIAL")
+}
+
+display_case
+count=$((count + 1))
+
+if ! printf '%s\n' "$DISPLAY_SERIAL" | grep -qF "test pattern presented"; then
+	failures=$((failures + 1))
+	printf 'FAIL  %-14s guest never reported presenting the pattern\n' "gpu-scanout"
+	printf '%s\n' "$DISPLAY_SERIAL" | sed 's/^/      | /'
+elif [ ! -s "$DUMP" ]; then
+	failures=$((failures + 1))
+	printf 'FAIL  %-14s screendump produced no file\n' "gpu-scanout"
+else
+	RESULT=$(python3 - "$DUMP" "$DISPLAY_XRES" "$DISPLAY_YRES" << 'PYEOF'
+import sys
+
+path, xres, yres = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+
+with open(path, "rb") as f:
+    data = f.read()
+
+# Minimal binary PPM (P6) header parser: magic, three whitespace-separated
+# integers (width, height, maxval), one whitespace byte, then raw pixels.
+assert data[:2] == b"P6"
+pos = 2
+values = []
+while len(values) < 3:
+    while data[pos:pos + 1] in b" \t\r\n":
+        pos += 1
+    if data[pos:pos + 1] == b"#":
+        while data[pos:pos + 1] not in b"\r\n":
+            pos += 1
+        continue
+    start = pos
+    while data[pos:pos + 1] not in b" \t\r\n":
+        pos += 1
+    values.append(int(data[start:pos]))
+width, height, _maxval = values
+pos += 1
+
+
+def pixel(x, y):
+    offset = pos + (y * width + x) * 3
+    return data[offset], data[offset + 1], data[offset + 2]
+
+
+def close(got, want, tolerance=24):
+    return all(abs(g - w) <= tolerance for g, w in zip(got, want))
+
+
+if width < xres or height < yres:
+    print("FAIL size %dx%d smaller than expected %dx%d" % (width, height, xres, yres))
+    sys.exit(1)
+
+quarter_x, quarter_y = xres // 4, yres // 4
+checks = [
+    ("top-left/red", quarter_x, quarter_y, (255, 0, 0)),
+    ("top-right/green", xres - quarter_x, quarter_y, (0, 255, 0)),
+    ("bottom-left/blue", quarter_x, yres - quarter_y, (0, 0, 255)),
+    ("bottom-right/white", xres - quarter_x, yres - quarter_y, (255, 255, 255)),
+]
+
+failed = [name for name, x, y, want in checks if not close(pixel(x, y), want)]
+if failed:
+    print("FAIL quadrant(s) wrong: %s" % ", ".join(failed))
+    sys.exit(1)
+
+print("ok")
+PYEOF
+	)
+
+	if [ "$RESULT" = "ok" ]; then
+		printf 'ok    %-14s\n' "gpu-scanout"
+	else
+		failures=$((failures + 1))
+		printf 'FAIL  %-14s %s\n' "gpu-scanout" "$RESULT"
+	fi
 fi
 
 echo
