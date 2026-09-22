@@ -43,4 +43,16 @@ void unified_boot_prepare(void);
  */
 void unified_boot_run(void);
 
+/*
+ * unified_boot_run_ui_only:
+ *
+ * unified_boot_run() without the test thread: just the UI session (WindowServer
+ * + the Voyager app) on the calling (boot) thread, for a normal boot that wants
+ * Voyager but not a live regression run sharing its CPU (make run, NXU_DESKTOP_BOOT
+ * -- see makedefs/tests.mk's `desktop` test id). Same return convention as
+ * unified_boot_run(). unified_boot_prepare() must still run first, same as for
+ * unified_boot_run(), so bootd does not also start its own display server.
+ */
+void unified_boot_run_ui_only(void);
+
 #endif

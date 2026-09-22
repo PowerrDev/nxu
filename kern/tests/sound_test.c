@@ -232,8 +232,21 @@ static bool sound_test_run_all(bool shared)
 
 	if (!g_sound_test_ok) return false;
 
-	/* The same sound once more, from user space: refused without the audio capability, played with it. */
+	/* The same sound once more, from user space: refused without the audio capability. */
 	bool refused = sound_test_run_playsound(0U, SOUND_TEST_PLAYSOUND_DENIED, "without NXU_CAP_AUDIO");
+
+	/*
+	 * playsound's only file (its default, the boot chime -- see
+	 * SOUND_TEST_PLAYSOUND_PATH's comment) is the very thing shared mode is
+	 * waiting on above. The real boot chime thread already proved a real
+	 * device-level playback works; spawning playsound with the capability
+	 * here would just play that same file a second time, exactly the
+	 * "twice" this shared variant is documented (doc/testing.md) not to do.
+	 * The standalone sound test (shared == false, no chime thread racing
+	 * it) keeps the full positive check.
+	 */
+	if (shared) return refused;
+
 	bool played = refused && sound_test_run_playsound(NXU_CAP_AUDIO, 0ULL, "with NXU_CAP_AUDIO");
 
 	return refused && played;

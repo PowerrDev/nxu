@@ -88,27 +88,34 @@ The graphical tests (`ui-*`, `windowserver-*`, `about-sevos-process`) and
 line yet, so none of them are in `make check`. `everything` is the exception: the
 UI session draws into the virtio-gpu framebuffer, so it runs headless too.
 
-## Everything at once: `make run`
+## The normal boot: `make run`
 
-`make run` is `make test TEST=everything`: one kernel and one QEMU instance in
-which everything that can share a boot runs together (`kern/tests/unified_boot.c`).
-It is a normal boot, bootd as PID 1 with logd and patchd and the boot chime, plus
+`make run` is `make test TEST=desktop`: one kernel, one QEMU instance, `-smp 4`,
+a normal boot -- bootd as PID 1 with logd and patchd, the boot chime, and the
+UIService session (WindowServer and the Voyager app) on the boot thread, owning
+the display and taking input, cooperatively yielding to the scheduler (Voyager
+lists the real volume through the host's directory hook, `UIServiceListDirectory`
+in `platform/arm64/services/ui_service.c`, which reads the VFS the way a system
+call would). "Is the kernel in a good state to boot" is not a separate suite
+bundled into this boot: it is `kernel_do_post()`'s startup self-test suite
+(`kern/tests/post*.c`), which every boot runs unconditionally, `desktop` included,
+and which halts (`kern_fail`) before bootd even starts if anything is wrong.
 
-- the UIService session (WindowServer and the Voyager app) on the boot thread,
-  owning the display and taking input, cooperatively yielding to the scheduler
-  (Voyager lists the real volume through the host's directory hook,
-  `UIServiceListDirectory` in `platform/arm64/services/ui_service.c`, which
-  reads the VFS the way a system call would);
-- a kernel thread that, as soon as bootd has published the bootstrap registry
-  (while the chime is still playing), runs the ipc, thread, process control,
-  socket and sound tests against that live system (the same tests as
-  the standalone ones; `ipc_process_test` reuses the running bootd instead of
-  starting a second, `process_control_test_shared` skips the check that every
-  page was given back, since other work moves the page count, and
-  `sound_test_run_shared` waits for the chime and does not play it twice);
-- one `unified_boot_summary` block at the end, one fact per line: each test
-  passed or FAILED, what the boot chime did, whether the UI loop is still
-  cycling, and the processes still running.
+## Everything at once: `make test TEST=everything`
+
+`TEST=everything` is `desktop`'s exact boot plus a kernel thread that, as soon as
+bootd has published the bootstrap registry (while the chime is still playing),
+runs the ipc, thread, process control, socket and sound tests against that live
+system (the same tests as the standalone ones; `ipc_process_test` reuses the
+running bootd instead of starting a second, `process_control_test_shared` skips
+the check that every page was given back, since other work moves the page count,
+and `sound_test_run_shared` waits for the chime and does not play it twice), then
+one `unified_boot_summary` block at the end, one fact per line: each test passed
+or FAILED, what the boot chime did, whether the UI loop is still cycling, and the
+processes still running. It is a regression check (`kern/tests/unified_boot.c`),
+not the everyday boot -- that extra thread's CPU load, log lines and its own
+sound/chime traffic have no reason to be in `make run`'s session, which is why
+`desktop` exists as `everything` minus exactly that thread.
 
 Because the tests still print their pass lines, `make check` has an `everything`
 row that boots it once (`-display none`) and needs all of them:

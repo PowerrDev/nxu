@@ -249,3 +249,20 @@ void unified_boot_run(void)
 		g_unified_ui_failed = true;
 	}
 }
+
+void unified_boot_run_ui_only(void)
+{
+	/* The session below never returns while it works, so it has to share the CPU or nothing else would run. */
+	ui_service_set_cooperative(true);
+
+	if (!windowserver_bootstrap()) {
+		UNIFIED_BOOT_LOG("WindowServer bootstrap failed: no UI session\n");
+		g_unified_ui_failed = true;
+		return;
+	}
+
+	if (!ui_service_bootstrap()) {
+		UNIFIED_BOOT_LOG("the UI session ended or did not start\n");
+		g_unified_ui_failed = true;
+	}
+}

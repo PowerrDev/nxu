@@ -187,7 +187,7 @@ void boot_test_storage(display_device_t *boot_display)
 		for (;;) __asm__ volatile("wfe");
 	}
 
-#if defined(NXU_UNIFIED_BOOT_TEST)
+#if defined(NXU_UNIFIED_BOOT_TEST) || defined(NXU_DESKTOP_BOOT)
 	/* Nothing halts: the boot goes on to start bootd, and boot_test_unified takes over later. */
 	unified_boot_prepare();
 #endif
@@ -269,5 +269,8 @@ void boot_test_unified(void)
 {
 #if defined(NXU_UNIFIED_BOOT_TEST)
 	unified_boot_run();
+#elif defined(NXU_DESKTOP_BOOT)
+	/* Voyager, without the live regression run sharing its CPU -- see unified_boot.h. */
+	unified_boot_run_ui_only();
 #endif
 }

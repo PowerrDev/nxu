@@ -2,8 +2,8 @@
 # Kernel tests
 # =============================================================================
 #
-#   make run                everything that can share one boot, in one QEMU
-#                           (make test TEST=everything, see below)
+#   make run                the normal graphical boot on 4 CPUs, gated on the
+#                           kernel's own startup self-tests (make test TEST=desktop)
 #   make tests              interactive picker (tools/test_menu.sh)
 #   make test TEST=<id>     build and boot a single test directly
 #   make test-list          machine-readable registry (id, group, description)
@@ -47,6 +47,7 @@ TEST_GUI_DISPLAY := $(QEMU_DISPLAY_BACKEND)
 
 TEST_IDS := \
     everything \
+    desktop \
     ui-about \
     ui-voyager \
     windowserver-about \
@@ -66,12 +67,14 @@ TEST_IDS := \
 
 # -- Everything at once --------------------------------------------------------
 
-# What `make run` boots: one kernel, one QEMU, everything that can share a boot
-# running in it (kern/tests/unified_boot.h). The boot is a normal one -- bootd
-# as PID 1 with logd and patchd, the boot chime -- with the UIService session
-# (WindowServer + the Voyager app) on the boot thread and a kernel thread that
-# runs ipc-process, thread-process, process-control, socket-process and sound
-# against the live system, then prints one unified_boot_summary block.
+# The `make check` regression row for the normal boot (see `desktop` below,
+# what `make run` actually boots): one kernel, one QEMU, everything that can
+# share a boot running in it (kern/tests/unified_boot.h). The boot is a normal
+# one -- bootd as PID 1 with logd and patchd, the boot chime -- with the
+# UIService session (WindowServer + the Voyager app) on the boot thread and a
+# kernel thread that runs ipc-process, thread-process, process-control,
+# socket-process and sound against the live system, then prints one
+# unified_boot_summary block.
 #
 # Left out, and why (the code decides, not the names):
 #   journal-crash        halts the kernel after crashing mid-transaction on purpose
@@ -90,7 +93,7 @@ TEST_IDS := \
 # underruns here while the UI loop and the tests share the CPU (known, see
 # doc/testing.md), so the recording is checked by the sound row instead.
 TEST_everything_GROUP := Everything at once
-TEST_everything_DESC := Everything that can run together, in action (what make run boots)
+TEST_everything_DESC := Everything that can run together, in action (the make check regression row; make run boots the desktop test instead)
 TEST_everything_CFLAGS := -DNXU_UNIFIED_BOOT_TEST -DNXU_UI_SERVICE_APP_VOYAGER
 TEST_everything_FRAMEWORKS := $(TEST_GUI_STACK)
 TEST_everything_DISPLAY := $(TEST_GUI_DISPLAY)
@@ -100,6 +103,29 @@ TEST_everything_PASS := ipc_process_test: passed|thread_process_test: passed|pro
 TEST_everything_TIMEOUT := 240
 # Four CPUs: the secondaries are up and idle while the whole system runs on the boot CPU.
 TEST_everything_SMP := 4
+
+
+# -- Normal desktop boot: `make run` --------------------------------------------
+
+# What `make run` boots. Exactly `everything`'s boot -- bootd as PID 1 with logd
+# and patchd, the boot chime, the UIService session (WindowServer + Voyager) on
+# the boot thread, on 4 CPUs so user processes actually spread across them --
+# minus the kernel thread that runs the ipc/thread/process-control/socket/sound
+# tests against the live system. Those are regression tests, not a boot-health
+# check: they add their own CPU load, log noise and (before sound_test_run_shared
+# was fixed to match its own doc comment) a second boot chime playback, none of
+# which belongs in an everyday interactive boot. What "make sure the kernel is
+# in a good state to boot" actually needs is already unconditional on every
+# boot, `desktop` included: kernel_do_post()'s self-test suite (kern/kern_init.c),
+# which halts the boot (kern_fail) on the first failure, before bootd even starts.
+TEST_desktop_GROUP := Everything at once
+TEST_desktop_DESC := The normal desktop boot (what make run boots)
+TEST_desktop_CFLAGS := -DNXU_DESKTOP_BOOT -DNXU_UI_SERVICE_APP_VOYAGER
+TEST_desktop_FRAMEWORKS := $(TEST_GUI_STACK)
+TEST_desktop_DISPLAY := $(TEST_GUI_DISPLAY)
+TEST_desktop_GPU := ,xres=$(QEMU_GPU_XRES),yres=$(QEMU_GPU_YRES)
+TEST_desktop_RAMFB := $(QEMU_RAMFB_DEVICE)
+TEST_desktop_SMP := 4
 
 
 # -- Graphical boot ------------------------------------------------------------
