@@ -62,6 +62,13 @@ i386-desktop:
 		EXTRA_CFLAGS="-DNXU_UI_SERVICE_APP_VOYAGER"
 
 
+# QEMU_GPU_XRES/YRES and QEMU_UI_SCALE_PERMILLE (root Makefile) are the same
+# host-resolution/backingScaleFactor detection arm64's `make run` uses, not
+# i386-specific: reusing them here (instead of some other fixed resolution)
+# is what keeps the window sized to the host's real usable desktop area and
+# UIService's chrome/fonts scaled correctly for it, rather than picking an
+# arbitrary size that happens to render but isn't actually correct for this
+# host.
 run-i386-desktop: i386-desktop
 
 	$(MAKE) i386-disk BUILD_ROOT=$(I386_DESKTOP_BUILD_ROOT)
@@ -74,6 +81,6 @@ run-i386-desktop: i386-desktop
 		-drive if=none,format=raw,file=$(I386_DESKTOP_BUILD_ROOT)/i386/disk.img,id=d0 \
 		-device virtio-keyboard-pci,disable-modern=on \
 		-device virtio-mouse-pci,disable-modern=on \
-		-device virtio-gpu-pci,xres=1024,yres=768 \
+		-device virtio-gpu-pci,xres=$(QEMU_GPU_XRES),yres=$(QEMU_GPU_YRES) \
 		-serial stdio -no-reboot \
-		-append "test=desktop"
+		-append "test=desktop ui.scale=$(QEMU_UI_SCALE_PERMILLE)"
