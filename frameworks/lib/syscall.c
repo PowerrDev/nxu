@@ -124,6 +124,8 @@ int64_t nxu_ipc_register_bootstrap(uint32_t port_name) { return nxu_syscall1(NXU
 int64_t nxu_display_claim(void) { return nxu_syscall0(NXU_SYS_DISPLAY_CLAIM); }
 int64_t nxu_shm_create(uint64_t size) { return nxu_syscall1(NXU_SYS_SHM_CREATE, size); }
 int64_t nxu_shm_map(uint64_t id) { return nxu_syscall1(NXU_SYS_SHM_MAP, id); }
+int64_t nxu_shm_unmap(uint64_t va) { return nxu_syscall1(NXU_SYS_SHM_UNMAP, va); }
+int64_t nxu_shm_withdraw(uint64_t id) { return nxu_syscall1(NXU_SYS_SHM_WITHDRAW, id); }
 int64_t nxu_mmap(uint64_t size, uint64_t prot_flags) { return nxu_syscall2(NXU_SYS_MMAP, size, prot_flags); }
 int64_t nxu_munmap(uint64_t address, uint64_t size) { return nxu_syscall2(NXU_SYS_MUNMAP, address, size); }
 int64_t nxu_thread_create(void (*entry)(void *arg), void *stack, void *arg) { return nxu_syscall3(NXU_SYS_THREAD_CREATE, (uint64_t)entry, (uint64_t)stack, (uint64_t)arg); }

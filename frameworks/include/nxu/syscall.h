@@ -89,11 +89,27 @@ int64_t nxu_ipc_receive_wait(uint32_t port_name, void *buffer, uint64_t capacity
  * _INPUT outside triageOS/recovery boot -- see kern/console/display_owner.h. */
 int64_t nxu_display_claim(void);
 
-/* Returns a new shared-memory region's id (> 0), shareable as plain data in
- * an NXPC message; nxu_shm_map attaches to it from any process that learns
- * the id. See kern/ipc/shm_registry.h. */
+/*
+ * Returns a new shared-memory region's id (> 0), shareable as plain data in
+ * an NXPC message; nxu_shm_map attaches to it -- mapping it into the caller's
+ * own address space and returning the base VA -- from any process that
+ * learns the id. See kern/ipc/shm_registry.h.
+ *
+ * nxu_shm_unmap(va) undoes one nxu_shm_map: unmaps it and releases this
+ * process's reference (address/size need not be a fresh nxu_shm_map result
+ * of this process's own if the process exits without calling it --
+ * task_terminate releases it then).
+ *
+ * nxu_shm_withdraw(id) removes id from the registry so no further
+ * nxu_shm_map can find it, and releases the reference nxu_shm_create's
+ * publish took out. Processes already mapped in (via nxu_shm_map) keep
+ * their own mapping and reference regardless -- it just stops being
+ * something a new process can attach to by id.
+ */
 int64_t nxu_shm_create(uint64_t size);
 int64_t nxu_shm_map(uint64_t id);
+int64_t nxu_shm_unmap(uint64_t va);
+int64_t nxu_shm_withdraw(uint64_t id);
 
 /*
  * General-purpose private anonymous memory (heap growth, thread stacks) --

@@ -65,6 +65,8 @@
 #define NXU_SYS_IOCTL 61ULL
 #define NXU_SYS_GETCPU 62ULL
 #define NXU_SYS_SETAFFINITY 63ULL
+#define NXU_SYS_SHM_UNMAP 64ULL
+#define NXU_SYS_SHM_WITHDRAW 65ULL
 
 /* wait(): pass as the pid to wait for any child. */
 #define NXU_WAIT_ANY UINT64_MAX
