@@ -68,6 +68,18 @@ bool i386_init_vm(const i386_boot_info_t *boot)
 	/* Keep the loader's data (command line above all) out of the allocator. */
 	(void)i386_memory_map_boot_ranges(boot->multiboot, vm_init_reserve_boot_range, &reserved);
 
+	/*
+	 * SMP_TRAMPOLINE_PHYS (kern/i386/smp.c/smp_trampoline.S): a page-aligned,
+	 * sub-1-MiB physical page a secondary CPU's real-mode SIPI vector must be
+	 * able to address, and where smp_boot_secondaries() copies the trampoline
+	 * and writes its parameter block before starting anything. Reserved here,
+	 * before the allocator ever hands out a single page, whether or not this
+	 * boot ever actually brings up a second CPU: the address must stay free
+	 * the whole time regardless, and reserving it after the fact would race
+	 * whatever else had already claimed it.
+	 */
+	vm_init_reserve_boot_range(0x8000ULL, 0x1000ULL, &reserved);
+
 	if (!pmm_init(&platform, 0)) {
 		kputln("i386_init_vm: pmm_init failed");
 		return false;
