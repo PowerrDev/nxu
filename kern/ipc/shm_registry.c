@@ -82,3 +82,32 @@ shm_registry_attach(uint32_t id, vm_shm_region_t *out_region)
 	*out_region = entry.region;
 	return true;
 }
+
+bool
+shm_registry_withdraw(uint32_t id)
+{
+	if (id == SHM_REGISTRY_ID_INVALID || id > SHM_REGISTRY_MAX) return false;
+
+	/*
+	 * Take the entry and invalidate the slot atomically with the lookup, the
+	 * same way attach takes its reference under the lock: otherwise two CPUs
+	 * withdrawing the same id race to double-release, and a third attaching
+	 * it in between could be handed a reference to a region this call is
+	 * about to drop its own reference on.
+	 */
+	shm_registry_lock();
+
+	shm_registry_entry_t entry = g_shm_registry[id - 1U];
+
+	if (entry.valid) {
+		g_shm_registry[id - 1U].valid = false;
+		g_shm_registry[id - 1U].region = VM_SHM_REGION_NULL;
+	}
+
+	shm_registry_unlock();
+
+	if (!entry.valid) return false;
+
+	vm_shm_release(entry.region);
+	return true;
+}

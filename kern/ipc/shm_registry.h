@@ -38,4 +38,14 @@ bool shm_registry_publish(vm_shm_region_t region, uint32_t *out_id);
  */
 bool shm_registry_attach(uint32_t id, vm_shm_region_t *out_region);
 
+/*
+ * Removes id from the registry and releases the reference publish gave it
+ * (vm_shm_release): false if id is unknown (already withdrawn, or never
+ * valid). Any reference a concurrent or earlier shm_registry_attach handed
+ * out is untouched and keeps the region alive for that caller regardless of
+ * this call -- see vm/vm_shm.h's usage protocol. Once withdrawn, id is free
+ * to be handed out again by a future shm_registry_publish.
+ */
+bool shm_registry_withdraw(uint32_t id);
+
 #endif
