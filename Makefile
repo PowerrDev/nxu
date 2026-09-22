@@ -35,7 +35,20 @@ BOOT_ARGS ?=
 # fails (non-macOS host, or `osascript`/AppKit unavailable). Override
 # explicitly with e.g. `make test TEST=windowserver-about QEMU_GPU_XRES=... QEMU_GPU_YRES=...`
 # if you want a different guest resolution than your host's usable desktop area.
-DETECTED_RESOLUTION := $(shell osascript -l JavaScript -e 'ObjC.import("AppKit"); var s = $$.NSScreen.mainScreen; var f = s.visibleFrame; var k = s.backingScaleFactor; Math.round(f.size.width * k) + " " + Math.round(f.size.height * k);' 2>/dev/null)
+#
+# Rounded down to a multiple of 4 in both dimensions: virtio-gpu's software
+# scanout (both transports -- confirmed on virtio-gpu-pci while bringing the
+# compositor up on i386, see doc/i386/devices.md, but the driver code this
+# exercises is shared with arm64's virtio-gpu-device) corrupts the frame into
+# a progressive diagonal shear when the declared width is not a multiple of
+# 4, independent of height or content scale. 2732x1536 and every resolution
+# this has been run against by hand happened to already be a multiple of 4,
+# which is why this went unnoticed until a host reporting an odd width (a
+# non-Retina or oddly-paneled display) hit it. Rounding here, not in the
+# driver, because there is no principled "right" pixel to drop otherwise --
+# better to lose at most 3 physical pixels of usable width/height than to
+# silently corrupt the scanout.
+DETECTED_RESOLUTION := $(shell osascript -l JavaScript -e 'ObjC.import("AppKit"); var s = $$.NSScreen.mainScreen; var f = s.visibleFrame; var k = s.backingScaleFactor; var round4 = function(n) { return 4 * Math.floor(Math.round(n) / 4); }; round4(f.size.width * k) + " " + round4(f.size.height * k);' 2>/dev/null)
 DETECTED_GPU_XRES := $(word 1,$(DETECTED_RESOLUTION))
 DETECTED_GPU_YRES := $(word 2,$(DETECTED_RESOLUTION))
 
