@@ -21,6 +21,8 @@
 #include <kern/i386/timer.h>
 
 #include <drivers/block/block_device.h>
+#include <drivers/video/ui_service_host.h>
+#include <kern/aqua/window_server.h>
 #include <kern/boot/boot_mode.h>
 #include <kern/console/console.h>
 #include <kern/loader/elf.h>
@@ -79,12 +81,14 @@ bool i386_init_userland(const i386_boot_info_t *boot)
 	 * A boot that asks for another phase's self-test (test=drivers, ...) is
 	 * exercising that phase in isolation, often on a scratch disk that is
 	 * not a filesystem at all. Launching userland from it would turn a
-	 * passing self-test into a fatal mount failure, so only test=userland
-	 * (or no test) goes on to mount and spawn.
+	 * passing self-test into a fatal mount failure, so only test=userland,
+	 * test=desktop (the compositor bring-up below, which needs this same
+	 * mount) or no test at all goes on to mount and spawn.
 	 */
 	char selected[16];
+	bool selected_present = i386_boot_arg("test", selected, sizeof(selected));
 
-	if (i386_boot_arg("test", selected, sizeof(selected)) && strcmp(selected, "userland") != 0) {
+	if (selected_present && strcmp(selected, "userland") != 0 && strcmp(selected, "desktop") != 0) {
 		kputln("i386_init_userland: self-test run for another phase, userland launch skipped");
 		return true;
 	}
@@ -180,6 +184,28 @@ bool i386_init_userland(const i386_boot_info_t *boot)
 
 		kprintf("i386_init_userland: btrfs-test %s\n", btrfs_ok ? "passed" : "FAILED");
 		return btrfs_ok;
+	}
+
+	/*
+	 * "test=desktop": the compositor's kernel-embedded bring-up (see
+	 * platform/i386/services/ui_service.c and kern/aqua/window_server.c),
+	 * the same mechanism arm64's "desktop" test id uses -- WindowServer and
+	 * UIService run directly on this boot context, not spawned through
+	 * bootd/PID 1, so this replaces the normal userland launch the way
+	 * process-test/sound-test/fs-test/btrfs-test above do. Voyager still
+	 * browses "/disk" (already mounted above) through UIServiceListDirectory.
+	 * ui_service_bootstrap() blocks until the app exits and only returns
+	 * false (nothing about this boot mode is meant to hand off to bootd
+	 * afterward), so its result is this phase's result outright.
+	 */
+	if (selected_present && strcmp(selected, "desktop") == 0) {
+		if (!windowserver_bootstrap()) {
+			kputln("i386_init_userland: WindowServer bootstrap failed");
+			return false;
+		}
+
+		ui_service_set_cooperative(true);
+		return ui_service_bootstrap();
 	}
 
 	/* Same policy as arm64: prefer bootd, fall back to its recovery image. */

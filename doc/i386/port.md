@@ -3,9 +3,21 @@
 The goal is to run the whole NXU kernel on 32-bit x86 (i386) under
 `qemu-system-i386 -M pc`: boot, memory management, interrupts, threads and the
 scheduler, ring 3 userland with syscalls, virtio devices, the ext4 root
-filesystem, and bootd/logd/patchd plus the test daemons. UI frameworks
+filesystem, and bootd/logd/patchd plus the test daemons.
+
+Wave 1 (this document's original scope, below) treated UI frameworks
 (UIService, WindowServer, Recovery/triageOS, aqua, XAmethyst, the GUI test
-daemons) are out of scope. The serial console is the display.
+daemons) as out of scope, with the serial console as the only display. That
+has since changed for UIService and WindowServer specifically: `make
+i386-desktop` (see `makedefs/i386/ui.mk`) builds a kernel with the same
+kernel-embedded compositor bring-up arm64's "desktop" test id uses, over
+VirtIO-GPU/keyboard/mouse-over-PCI (see `doc/i386/devices.md`). Both
+frameworks' Rust crates needed zero source changes for this -- they were
+already architecture-neutral `no_std` code; the work was a custom bare-metal
+`i686-nxu-none.json` Rust target (no built-in rustc triple covers freestanding
+i686) plus `platform/i386/services/ui_service.c`, the i386 side of the C
+bridge (`platform/arm64/services/ui_service.c`'s counterpart). Recovery/
+triageOS, aqua and XAmethyst remain out of scope.
 
 The arm64 kernel must keep building and behaving exactly as before. Shared
 code stays shared; anything that differs by architecture goes behind a
