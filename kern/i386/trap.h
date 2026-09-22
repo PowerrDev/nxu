@@ -54,6 +54,27 @@
 
 #define T_SYSCALL 0x80U
 
+/*
+ * Local APIC vectors: IPIs the boot CPU or a secondary sends (see
+ * kern/i386/smp.c, kern/ipi.h), and the mandatory spurious-interrupt vector
+ * (its low 4 bits must be 1s architecturally, which 0xFF already satisfies;
+ * conventionally the highest usable vector). Chosen high and away from
+ * T_IRQ_BASE.. / T_SYSCALL so nothing else ever collides with them.
+ */
+#define T_IPI_RESCHEDULE 0xF0U
+#define T_IPI_CPU_STOP 0xF1U
+
+/*
+ * A private i386 mechanism, not one of kern/ipi.h's logical IPI types: this
+ * port has no per-CPU Local APIC timer (see apic.h's file comment), so a
+ * secondary's scheduler tick is a broadcast from the boot CPU's own PIT
+ * handler (kern/i386/smp.c's smp_tick_others()) instead of a real local
+ * interrupt. Dispatched straight to sched_tick(), not through smp_handle_ipi.
+ */
+#define T_IPI_TICK 0xF2U
+
+#define T_LAPIC_SPURIOUS 0xFFU
+
 /* Vectors with a stub in i386_isr_table: exceptions plus the 16 IRQs. */
 #define I386_ISR_COUNT (T_IRQ_BASE + T_IRQ_COUNT)
 
@@ -117,9 +138,19 @@ static inline bool x86_saved_state_is_user(const x86_saved_state_t *state)
 /* Per-vector entry stubs, defined in trap_vectors.S. */
 extern const uint32_t i386_isr_table[I386_ISR_COUNT];
 void i386_isr_syscall(void);
+void i386_isr_ipi_reschedule(void);
+void i386_isr_ipi_cpu_stop(void);
+void i386_isr_ipi_tick(void);
+void i386_isr_lapic_spurious(void);
 
 /* Common C entry point for every stub. */
 void i386_trap_handler(x86_saved_state_t *state);
+
+/*
+ * Strong-overridden by kern/i386/smp.c: an IPI or the Local APIC's spurious
+ * vector arrived (T_IPI_RESCHEDULE, T_IPI_CPU_STOP, T_LAPIC_SPURIOUS).
+ */
+void i386_trap_ipi(x86_saved_state_t *state);
 
 /*
  * Extension points. Each has a weak default in trap.c so the trap layer works

@@ -150,6 +150,7 @@ I386_WEAK_PHASE(i386_init_interrupts)
 I386_WEAK_PHASE(i386_init_vm)
 I386_WEAK_PHASE(i386_init_kernel)
 I386_WEAK_PHASE(i386_init_threads)
+I386_WEAK_PHASE(i386_init_smp)
 I386_WEAK_PHASE(i386_init_drivers)
 I386_WEAK_PHASE(i386_init_userland)
 I386_WEAK_PHASE(i386_init_run)
@@ -159,6 +160,7 @@ I386_WEAK_PHASE(i386_init_interrupts_selftest)
 I386_WEAK_PHASE(i386_init_vm_selftest)
 I386_WEAK_PHASE(i386_init_kernel_selftest)
 I386_WEAK_PHASE(i386_init_threads_selftest)
+I386_WEAK_PHASE(i386_init_smp_selftest)
 I386_WEAK_PHASE(i386_init_drivers_selftest)
 I386_WEAK_PHASE(i386_init_userland_selftest)
 
@@ -174,6 +176,7 @@ static const i386_phase_t g_phases[] = {
 	{ "vm", i386_init_vm, i386_init_vm_selftest },
 	{ "kernel", i386_init_kernel, i386_init_kernel_selftest },
 	{ "threads", i386_init_threads, i386_init_threads_selftest },
+	{ "smp", i386_init_smp, i386_init_smp_selftest },
 	{ "drivers", i386_init_drivers, i386_init_drivers_selftest },
 	{ "userland", i386_init_userland, i386_init_userland_selftest }
 };
@@ -193,6 +196,19 @@ void i386_init(uint32_t magic, const multiboot_info_t *info)
 	if (magic == MULTIBOOT_BOOTLOADER_MAGIC && info != 0 && (info->flags & MULTIBOOT_INFO_CMDLINE) != 0U && info->cmdline != 0U) {
 		g_boot_info.cmdline = (const char *)(uintptr_t)info->cmdline;
 	}
+
+	/*
+	 * Before anything prints: kvprintf (kern/console/console.c, shared with
+	 * arm64) calls machine_cpu_local() on every entry, and i386's is now a
+	 * real %fs:0 read (see smp.h), not the old always-safe "return 0" stub.
+	 * %fs is still whatever the Multiboot loader's own protected-mode setup
+	 * left it as until this runs, so the very first kprintf() call used to
+	 * be safe by accident and no longer is -- moved here, ahead of
+	 * timer_calibrate() and every print, so GDT_PERCPU_SEL (a real,
+	 * zero-initialized percpu cell) is live before the first one.
+	 */
+	i386_gdt_init();
+	i386_idt_init();
 
 	uint64_t frequency = timer_calibrate();
 
@@ -238,9 +254,6 @@ void i386_init(uint32_t magic, const multiboot_info_t *info)
 			kprintf("i386_init: boot-args \"%s\"\n", (const char *)(uintptr_t)info->cmdline);
 		}
 	}
-
-	i386_gdt_init();
-	i386_idt_init();
 
 	if (!i386_trap_self_test()) {
 		kputln("i386_init: trap self-test failed");

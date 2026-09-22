@@ -61,7 +61,18 @@ bool i386_trap_user_terminate(x86_saved_state_t *state)
 	state->efl = I386_EFLAGS_KERNEL_RESUME;
 	state->ds = GDT_KERNEL_DATA_SEL;
 	state->es = GDT_KERNEL_DATA_SEL;
-	state->fs = GDT_KERNEL_DATA_SEL;
+	/*
+	 * Not GDT_KERNEL_DATA_SEL: %fs is this CPU's percpu segment throughout
+	 * kernel execution (see gdt.h's file comment), and this frame resumes
+	 * in the kernel (cs above is GDT_KERNEL_CODE_SEL, not a ring-3
+	 * selector). i386_trap_common's epilogue pops this straight into %fs;
+	 * leaving it GDT_KERNEL_DATA_SEL here left the code that runs right
+	 * after (freeing the exiting thread, picking the next one to run) with
+	 * a %fs that reads current_processor() as a null-page dereference
+	 * instead of this CPU's processor object -- reliably, immediately
+	 * after any user process's exit(), including on a single-CPU boot.
+	 */
+	state->fs = GDT_PERCPU_SEL;
 	state->gs = GDT_KERNEL_DATA_SEL;
 
 	return true;

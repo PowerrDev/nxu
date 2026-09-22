@@ -25,11 +25,16 @@
  *
  *   platform     multiboot memory map and PCI/legacy device discovery, into
  *                platform_t. Nothing else is up: serial console, GDT, IDT.
- *   interrupts   PIC (later APIC) remapped and masked, PIT tick, irq_init()
+ *   interrupts   8259 PIC remapped and masked, PIT tick, irq_init()
  *                dispatch, timer interrupt. Interrupts stay disabled.
  *   vm           paging on, higher-half kernel, pmm, vmm, vm_kern.
  *   kernel       heap, ipc, proc/task tables, vfs core.
  *   threads      thread/sched bootstrap, context switch, preemption.
+ *   smp          MP table scan, Local APIC, secondary CPUs (kern/i386/smp.c);
+ *                a uniprocessor MP table (or none) leaves this a no-op. The
+ *                8259 PIC still delivers every device IRQ to the boot CPU
+ *                only (see doc/i386/smp.md's known gaps); the Local APIC is
+ *                used only for IPIs and INIT-SIPI-SIPI.
  *   drivers      virtio-pci block/input, block layer, filesystem mount.
  *   userland     ring 3 entry, syscalls, load and start bootd.
  */
@@ -65,6 +70,7 @@ bool i386_init_interrupts(const i386_boot_info_t *boot);
 bool i386_init_vm(const i386_boot_info_t *boot);
 bool i386_init_kernel(const i386_boot_info_t *boot);
 bool i386_init_threads(const i386_boot_info_t *boot);
+bool i386_init_smp(const i386_boot_info_t *boot);
 bool i386_init_drivers(const i386_boot_info_t *boot);
 bool i386_init_userland(const i386_boot_info_t *boot);
 
@@ -82,6 +88,7 @@ bool i386_init_interrupts_selftest(const i386_boot_info_t *boot);
 bool i386_init_vm_selftest(const i386_boot_info_t *boot);
 bool i386_init_kernel_selftest(const i386_boot_info_t *boot);
 bool i386_init_threads_selftest(const i386_boot_info_t *boot);
+bool i386_init_smp_selftest(const i386_boot_info_t *boot);
 bool i386_init_drivers_selftest(const i386_boot_info_t *boot);
 bool i386_init_userland_selftest(const i386_boot_info_t *boot);
 

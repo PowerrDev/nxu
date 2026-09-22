@@ -29,6 +29,15 @@
  */
 __attribute__((weak)) void sched_tick(void);
 
+/*
+ * kern/i386/smp.c's broadcast to every other online CPU (kern/i386/smp.h).
+ * Weak, like sched_tick above: this area builds and boots without smp.c
+ * linked (every isolated test-i386-<area> build does), and a uniprocessor
+ * boot's own strong smp_tick_others() (defined once SMP is linked in, see
+ * makedefs/i386/smp.mk) is a no-op below one CPU regardless.
+ */
+__attribute__((weak)) void smp_tick_others(void);
+
 static volatile uint32_t g_irq_unhandled_count;
 
 uint32_t i386_irq_unhandled_count(void)
@@ -48,6 +57,9 @@ static void i386_timer_irq(uint32_t intid, void *context)
 	timer_handle_interrupt();
 
 	if (sched_tick != 0) sched_tick();
+
+	/* Every other online CPU: this port has no per-CPU Local APIC timer, see smp.h's smp_tick_others() doc comment. */
+	if (smp_tick_others != 0) smp_tick_others();
 }
 
 bool i386_trap_irq(x86_saved_state_t *state)

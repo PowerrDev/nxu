@@ -33,6 +33,14 @@
 
 void i386_idt_init(void);
 
+/*
+ * lidt the same table i386_idt_init already built, on the calling CPU. The
+ * IDT is one shared table (unlike the GDT, see gdt.h): every CPU's IDTR
+ * points at the exact same physical table, so a secondary only needs its own
+ * `lidt`, not its own copy.
+ */
+void i386_idt_load_secondary(void);
+
 void i386_idt_set_gate(uint8_t vector, uint32_t offset, uint16_t selector, uint8_t attributes);
 
 #endif
