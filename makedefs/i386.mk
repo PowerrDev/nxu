@@ -61,6 +61,11 @@ I386_OBJECTS := \
     $(sort $(I386_C_SOURCES:%.c=$(I386_BUILD)/%.o)) \
     $(sort $(I386_ASM_SOURCES:%.S=$(I386_BUILD)/%.o))
 
+# Extra static archives (e.g. a Rust framework's staticlib) a fragment wants
+# on the final link line, beyond this port's own objects. Empty by default,
+# so a fragment that never sets it changes nothing about the default build.
+I386_EXTRA_LIBS ?=
+
 I386_QEMU_FLAGS ?= -display none -serial stdio -monitor none -no-reboot -device isa-debug-exit,iobase=0xf4,iosize=0x04
 
 # run-i386 has a sound device on the host's speakers (the VirtIO Sound driver's
@@ -90,13 +95,13 @@ $(I386_BUILD)/%.o: %.S
 	$(Q)$(I386_CC) $(I386_ASFLAGS) -c $< -o $@
 
 
-$(I386_KERNEL): $(I386_OBJECTS) makedefs/linker-i386.ld
+$(I386_KERNEL): $(I386_OBJECTS) $(I386_EXTRA_LIBS) makedefs/linker-i386.ld
 
 	@mkdir -p $(dir $@)
 
 	$(QUIET_PRINT) "LD" "$@"
 
-	$(Q)$(LD) -m elf_i386 -z max-page-size=4096 --build-id=none -nostdlib -T makedefs/linker-i386.ld $(I386_OBJECTS) -o $@
+	$(Q)$(LD) -m elf_i386 -z max-page-size=4096 --build-id=none -nostdlib -T makedefs/linker-i386.ld $(I386_OBJECTS) $(I386_EXTRA_LIBS) -o $@
 
 
 i386: $(I386_KERNEL)
