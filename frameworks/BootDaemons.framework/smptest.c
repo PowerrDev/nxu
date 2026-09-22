@@ -909,6 +909,76 @@ case_vm_stress(void)
 	return g_vm_bad == 0U ? 0 : fail(9, "the address space gave a wrong answer under concurrent map, fault, unmap and fork");
 }
 
+/* ---- case 10: shm registry churn ------------------------------------------ */
+
+/*
+ * More than the registry's fixed slot count (SHM_REGISTRY_MAX, 64 --
+ * kern/ipc/shm_registry.c) so a withdraw that failed to free its slot runs
+ * the registry out of room well before this loop ends: shm_create would
+ * start failing with NO_SPACE partway through instead of at the very end.
+ */
+#define SHM_CHURN_ITERATIONS 96U
+#define SHM_CHURN_BYTES 4096ULL
+
+static int
+case_shm_churn(void)
+{
+	for (uint32_t iteration = 0U; iteration < SHM_CHURN_ITERATIONS; iteration++) {
+		int64_t id = nxu_shm_create(SHM_CHURN_BYTES);
+		if (id <= 0) return fail(10, "shm_create");
+
+		int64_t va = nxu_shm_map((uint64_t)id);
+		if (va <= 0) return fail(10, "shm_map");
+
+		*(volatile uint32_t *)va = iteration;
+		if (*(volatile uint32_t *)va != iteration) return fail(10, "wrote through a mapping and read something else back");
+
+		if (nxu_shm_unmap((uint64_t)va) != 0) return fail(10, "shm_unmap");
+		if (nxu_shm_withdraw((uint64_t)id) != 0) return fail(10, "shm_withdraw");
+	}
+
+	say("smptest: 10 shm churn: ");
+	say_number(SHM_CHURN_ITERATIONS);
+	say(" publish/attach/detach/withdraw cycles, all succeeded\n");
+
+	return 0;
+}
+
+/* ---- case 11: withdraw does not disturb an existing attachment ----------- */
+
+static int
+case_shm_withdraw_ordering(void)
+{
+	int64_t id = nxu_shm_create(SHM_CHURN_BYTES);
+	if (id <= 0) return fail(11, "shm_create");
+
+	int64_t va = nxu_shm_map((uint64_t)id);
+	if (va <= 0) return fail(11, "shm_map");
+
+	*(volatile uint32_t *)va = 0xC0FFEEU;
+
+	/*
+	 * Withdrawing while still mapped stops the id from resolving to a new
+	 * attach, but must not touch this process's own reference or mapping --
+	 * shm_registry_withdraw only ever releases the reference publish itself
+	 * took out.
+	 */
+	if (nxu_shm_withdraw((uint64_t)id) != 0) return fail(11, "shm_withdraw");
+	if (nxu_shm_map((uint64_t)id) != -NXU_SYS_E_NOT_FOUND) return fail(11, "a withdrawn id still resolved to shm_map");
+	if (*(volatile uint32_t *)va != 0xC0FFEEU) return fail(11, "withdraw corrupted an attachment made before it");
+
+	if (nxu_shm_unmap((uint64_t)va) != 0) return fail(11, "shm_unmap");
+
+	/* The registry slot was freed by the withdraw above, not by this unmap:
+	 * a fresh create must be able to reuse it right away. */
+	int64_t reused = nxu_shm_create(SHM_CHURN_BYTES);
+	if (reused <= 0) return fail(11, "shm_create did not reuse the withdrawn slot");
+	if (nxu_shm_withdraw((uint64_t)reused) != 0) return fail(11, "shm_withdraw (cleanup)");
+
+	say("smptest: 11 shm withdraw ordering: withdraw-before-unmap kept the mapping alive and freed the id\n");
+	return 0;
+}
+
 /* ---- main ---------------------------------------------------------------- */
 
 int
@@ -939,6 +1009,8 @@ main(void)
 	if ((result = case_termination()) != 0) return result;
 	if ((result = case_migration()) != 0) return result;
 	if ((result = case_vm_stress()) != 0) return result;
+	if ((result = case_shm_churn()) != 0) return result;
+	if ((result = case_shm_withdraw_ordering()) != 0) return result;
 
 	say("smptest: passed\n");
 	return 0;
