@@ -173,12 +173,17 @@ windowserver_handle_request(const wsmsg_request_t *request, wsmsg_reply_t *reply
 
 	switch (request->opcode) {
 	case WSMSG_CREATE_WINDOW: {
+		/* No corner radius over this IPC protocol yet: a client asking this
+		 * server for a window gets a square one, unaffected by the shadow's
+		 * own rounding (WS_Create_Window's new last argument -- see
+		 * WindowServer.framework's WindowFlags::corner_radius). */
 		WSWindowID id = WS_Create_Window(
 			request->create_window.x,
 			request->create_window.y,
 			request->create_window.width,
 			request->create_window.height,
-			true
+			true,
+			0U
 		);
 		reply->status = id != 0U ? 0 : -1;
 		reply->window_id = id;
