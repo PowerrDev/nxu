@@ -13,6 +13,7 @@
 #include <kern/tests/vm_shm_test.h>
 
 #include <kern/console/console.h>
+#include <kern/ipc/shm_registry.h>
 #include <vm/address_space.h>
 #include <vm/pmm.h>
 #include <vm/vm_shm.h>
@@ -22,6 +23,8 @@
 
 #define VM_SHM_TEST_PATTERN_A 0xA5A5A5A5U
 #define VM_SHM_TEST_PATTERN_B 0x5A5A5A5AU
+
+#define SHM_REGISTRY_SELF_TEST_ITERATIONS 50U
 
 bool vm_shm_self_test(void)
 {
@@ -106,5 +109,49 @@ cleanup:
 	if (!passed) return false;
 
 	kputln("vm_shm: self-test passed (page shared read/write across two address spaces)");
+	return true;
+}
+
+bool shm_registry_self_test(void)
+{
+	uint64_t free_before = pmm_get_free_page_count();
+
+	for (uint32_t iteration = 0U; iteration < SHM_REGISTRY_SELF_TEST_ITERATIONS; iteration++) {
+		vm_shm_region_t region;
+		if (!vm_shm_create(PMM_PAGE_SIZE, &region)) return false;
+
+		uint64_t physical_page = vm_shm_physical_page(region, 0ULL);
+		if (physical_page == 0ULL || pmm_page_refcount(physical_page) != 1U) return false;
+
+		uint32_t id;
+		if (!shm_registry_publish(region, &id)) {
+			vm_shm_release(region);
+			return false;
+		}
+
+		/* An attach hands out its own reference to the very same region --
+		 * a handle-only reference, so the page's own PMM count (nothing here
+		 * maps it anywhere) does not move. */
+		vm_shm_region_t attached;
+		if (!shm_registry_attach(id, &attached) || attached != region) return false;
+		if (pmm_page_refcount(physical_page) != 1U) return false;
+
+		/* Withdrawing drops the registry's own reference (there is still the
+		 * attach's above outstanding, so nothing is freed yet), frees the id
+		 * for reuse, and cannot be done twice. */
+		if (!shm_registry_withdraw(id)) return false;
+		if (shm_registry_withdraw(id)) return false;
+		if (pmm_page_refcount(physical_page) != 1U) return false;
+
+		/* The last reference: the region, and the page's owning PMM
+		 * reference, actually go away now. */
+		vm_shm_release(attached);
+		if (pmm_page_refcount(physical_page) != 0U) return false;
+	}
+
+	uint64_t free_after = pmm_get_free_page_count();
+	if (free_after != free_before) return false;
+
+	kputln("shm_registry: self-test passed (publish/attach/withdraw/release left nothing behind)");
 	return true;
 }

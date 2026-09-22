@@ -1202,12 +1202,51 @@ syscall_shm_create(uint64_t size)
 }
 
 /*
- * Maps the region registered under id into the caller's own address space.
- * The handle reference shm_registry_attach hands back is intentionally
- * never released afterward -- there is no unmap syscall yet (out of scope
- * for this milestone) and no vm_address_space_destroy either, matching the
- * existing "no address-space teardown on process exit" gap already
- * documented in kern/tests/vm_shm_test.c.
+ * Records a shm handle reference this task now owns at va, so a later
+ * syscall_shm_unmap (or, failing that, task_terminate) can find it to
+ * release. False if the task's fixed-size table (TASK_SHM_ATTACH_MAX) is
+ * already full -- the caller must then undo whatever it just did, since a
+ * reference this table cannot track would otherwise leak permanently.
+ */
+static bool
+task_shm_attach_record(task_t task, vm_shm_region_t region, uint64_t va)
+{
+	for (uint32_t index = 0U; index < TASK_SHM_ATTACH_MAX; index++) {
+		if (task->shm_attachments[index].region != VM_SHM_REGION_NULL) continue;
+
+		task->shm_attachments[index].region = region;
+		task->shm_attachments[index].va = va;
+		return true;
+	}
+
+	return false;
+}
+
+/*
+ * Finds and clears the attachment recorded at va, handing back the region it
+ * held a reference to. False if nothing is recorded there (an unknown va, or
+ * one already unmapped).
+ */
+static bool
+task_shm_attach_take(task_t task, uint64_t va, vm_shm_region_t *out_region)
+{
+	for (uint32_t index = 0U; index < TASK_SHM_ATTACH_MAX; index++) {
+		if (task->shm_attachments[index].region == VM_SHM_REGION_NULL || task->shm_attachments[index].va != va) continue;
+
+		*out_region = task->shm_attachments[index].region;
+		task->shm_attachments[index].region = VM_SHM_REGION_NULL;
+		task->shm_attachments[index].va = 0ULL;
+		return true;
+	}
+
+	return false;
+}
+
+/*
+ * Maps the region registered under id into the caller's own address space
+ * and records the reference shm_registry_attach hands back so syscall_shm_unmap
+ * (or task_terminate, for whatever a process never explicitly unmapped) can
+ * release it later -- see task_shm_attach_record.
  */
 static syscall_result_t
 syscall_shm_map(uint64_t id)
@@ -1218,13 +1257,55 @@ syscall_shm_map(uint64_t id)
 	if (!shm_registry_attach((uint32_t)id, &region)) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
 
 	proc_t proc = current_proc();
+	task_t task = proc_task(proc);
 	uint64_t va;
-	if (!vm_shm_map_into(proc_vm_map(proc), &proc->p_task.shm_next_va, region, VM_USER_PROTECTION_READ_WRITE, &va)) {
+	if (!vm_shm_map_into(proc_vm_map(proc), &task->shm_next_va, region, VM_USER_PROTECTION_READ_WRITE, &va)) {
 		vm_shm_release(region);
 		return syscall_error(SYSCALL_ERROR_NO_MEMORY);
 	}
 
+	if (!task_shm_attach_record(task, region, va)) {
+		(void)vm_shm_unmap_from(proc_vm_map(proc), va, region);
+		vm_shm_release(region);
+		return syscall_error(SYSCALL_ERROR_NO_SPACE);
+	}
+
 	return syscall_return(va);
+}
+
+/*
+ * Unmaps a region syscall_shm_map returned va for and releases the handle
+ * reference that attach took out for it. Does not touch the registry entry
+ * itself (see syscall_shm_withdraw) -- another process may still be attached.
+ */
+static syscall_result_t
+syscall_shm_unmap(uint64_t va)
+{
+	proc_t proc = current_proc();
+	task_t task = proc_task(proc);
+
+	vm_shm_region_t region;
+	if (!task_shm_attach_take(task, va, &region)) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+
+	bool unmapped = vm_shm_unmap_from(proc_vm_map(proc), va, region);
+	vm_shm_release(region);
+
+	return unmapped ? syscall_return(0ULL) : syscall_error(SYSCALL_ERROR_IO);
+}
+
+/*
+ * Removes id from the registry so no further syscall_shm_map can find it,
+ * and releases the reference the original syscall_shm_create's publish took
+ * out. Processes already mapped into it (this caller included, if it never
+ * called syscall_shm_unmap) keep their own reference and stay mapped -- see
+ * kern/ipc/shm_registry.h.
+ */
+static syscall_result_t
+syscall_shm_withdraw(uint64_t id)
+{
+	if (id == 0ULL || id > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	if (!shm_registry_withdraw((uint32_t)id)) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+	return syscall_return(0ULL);
 }
 
 static bool
@@ -1491,6 +1572,8 @@ syscall_is_cpu_agnostic(uint64_t number)
 	case SYSCALL_MUNMAP:
 	case SYSCALL_SHM_CREATE:
 	case SYSCALL_SHM_MAP:
+	case SYSCALL_SHM_UNMAP:
+	case SYSCALL_SHM_WITHDRAW:
 	case SYSCALL_THREAD_CREATE:
 	case SYSCALL_THREAD_EXIT:
 	case SYSCALL_THREAD_SELF:
@@ -1573,6 +1656,8 @@ syscall_dispatch_inner(const syscall_request_t *request)
 	case SYSCALL_DISPLAY_CLAIM: return syscall_display_claim();
 	case SYSCALL_SHM_CREATE: return syscall_shm_create(request->arguments[0]);
 	case SYSCALL_SHM_MAP: return syscall_shm_map(request->arguments[0]);
+	case SYSCALL_SHM_UNMAP: return syscall_shm_unmap(request->arguments[0]);
+	case SYSCALL_SHM_WITHDRAW: return syscall_shm_withdraw(request->arguments[0]);
 	case SYSCALL_MMAP: return syscall_mmap(request->arguments[0], request->arguments[1]);
 	case SYSCALL_MUNMAP: return syscall_munmap(request->arguments[0], request->arguments[1]);
 	case SYSCALL_THREAD_CREATE: return syscall_thread_create(request->arguments[0], request->arguments[1], request->arguments[2]);

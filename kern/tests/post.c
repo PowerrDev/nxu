@@ -476,6 +476,10 @@ static bool post_core(void)
 		return post_fail("vm_shm: self-test failed");
 	}
 
+	if (!shm_registry_self_test()) {
+		return post_fail("shm_registry: self-test failed");
+	}
+
 	if (!vm_map_self_test()) {
 		return post_fail("vm_map: self-test failed");
 	}
