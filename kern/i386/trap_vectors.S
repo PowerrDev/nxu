@@ -11,6 +11,7 @@
  */
 
 #define KERNEL_DATA_SEL 0x10
+#define KERNEL_PERCPU_SEL 0x40
 
 /* Vector with no hardware error code: push a dummy 0, then the vector. */
 .macro ISR_NOERR vector
@@ -104,6 +105,39 @@ i386_isr_syscall:
 	pushl $0x80
 	jmp i386_trap_common
 
+	.text
+	.p2align 4
+	.global i386_isr_ipi_reschedule
+i386_isr_ipi_reschedule:
+	pushl $0
+	pushl $0xF0
+	jmp i386_trap_common
+
+	.text
+	.p2align 4
+	.global i386_isr_ipi_cpu_stop
+i386_isr_ipi_cpu_stop:
+	pushl $0
+	pushl $0xF1
+	jmp i386_trap_common
+
+	.text
+	.p2align 4
+	.global i386_isr_ipi_tick
+i386_isr_ipi_tick:
+	pushl $0
+	pushl $0xF2
+	jmp i386_trap_common
+
+	.text
+	.p2align 4
+	.global i386_isr_lapic_spurious
+i386_isr_lapic_spurious:
+	/* Spurious by architectural definition: no EOI, nothing to acknowledge. */
+	pushl $0
+	pushl $0xFF
+	jmp i386_trap_common
+
 /*
  * Common trap path. On entry the stack holds, from the top: trapno, err and
  * the hardware frame (eip, cs, efl [, uesp, ss]).
@@ -120,12 +154,20 @@ i386_trap_common:
 	movl %cr2, %eax
 	movl %eax, 28(%esp)
 
-	/* Trap from ring 3 arrives with user data selectors loaded. */
+	/*
+	 * Trap from ring 3 arrives with user data selectors loaded (%fs
+	 * included: the kernel's percpu segment is not the user's to see).
+	 * %fs specifically gets the percpu selector, not KERNEL_DATA_SEL --
+	 * see gdt.h's file comment and GDT_PERCPU_SEL -- so machine_cpu_id()
+	 * (an %fs:0 read) is correct for the rest of this trap, including in
+	 * an IPI or any other interrupt handler.
+	 */
 	movw $KERNEL_DATA_SEL, %ax
 	movw %ax, %ds
 	movw %ax, %es
-	movw %ax, %fs
 	movw %ax, %gs
+	movw $KERNEL_PERCPU_SEL, %ax
+	movw %ax, %fs
 	cld
 
 	pushl %esp

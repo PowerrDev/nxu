@@ -14,6 +14,7 @@
 
 #include <kern/i386/gdt.h>
 #include <kern/i386/io.h>
+#include <kern/i386/smp.h>
 
 #include <kern/console/console.h>
 #include <string.h>
@@ -306,6 +307,38 @@ __attribute__((weak)) bool i386_trap_irq(x86_saved_state_t *state)
 	return false;
 }
 
+/*
+ * IPIs and the Local APIC's spurious vector (see kern/i386/smp.c). Weak so
+ * this file builds and every non-SMP i386 test still passes without smp.c
+ * linked; on a uniprocessor build these vectors are simply never raised.
+ */
+__attribute__((weak)) void i386_trap_ipi(x86_saved_state_t *state)
+{
+	(void)state;
+}
+
+/*
+ * kern/machine/smp.h's IPI senders: kern/sched_prism/sched.c
+ * (kern/ipi.h's ipi_send/ipi_send_others) calls these unconditionally
+ * whenever it queues work onto another CPU, in every i386 build that links
+ * the scheduler -- which is every build, including every isolated
+ * test-i386-<area> one that never links smp.c at all. Weak so those still
+ * link; smp.c's real, Local-APIC-backed definitions override this whenever
+ * it is linked (makedefs/i386/smp.mk). Nothing calls either with a `cpu`
+ * that is not the caller itself when only one CPU is actually online, so a
+ * no-op default is correct either way, not just link-safe.
+ */
+__attribute__((weak)) void machine_ipi_raise(uint32_t cpu, uint32_t vector)
+{
+	(void)cpu;
+	(void)vector;
+}
+
+__attribute__((weak)) void machine_ipi_raise_others(uint32_t vector)
+{
+	(void)vector;
+}
+
 __attribute__((weak)) void i386_trap_syscall(x86_saved_state_t *state)
 {
 	/*
@@ -348,6 +381,13 @@ void i386_trap_handler(x86_saved_state_t *state)
 
 	if (vector == T_SYSCALL) {
 		i386_trap_syscall(state);
+		i386_trap_exit(state);
+		return;
+	}
+
+	if (vector == T_IPI_RESCHEDULE || vector == T_IPI_CPU_STOP || vector == T_IPI_TICK || vector == T_LAPIC_SPURIOUS) {
+		/* The spurious vector is architecturally not acknowledged; i386_trap_ipi knows not to EOI it (see smp.c). */
+		i386_trap_ipi(state);
 		i386_trap_exit(state);
 		return;
 	}
