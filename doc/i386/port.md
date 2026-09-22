@@ -32,8 +32,13 @@ logic unless there is no better seam.
   a panic report. See `trap.h`, `gdt.h`, `idt.h`.
 * `kern/machine/{machine_routines,timer,vm_param}.h`: dispatch headers.
 * `kern/i386/boot_info.h`: the ordered boot **phases** (platform, interrupts,
-  vm, kernel, threads, drivers, userland) as weak hooks in `i386_init.c`. Read
-  the comment in that header; it is the integration contract.
+  vm, kernel, threads, smp, drivers, userland) as weak hooks in
+  `i386_init.c`. Read the comment in that header; it is the integration
+  contract.
+* Real multi-CPU SMP: ACPI MADT (falling back to the legacy MP table) for
+  discovery, a Local APIC driver, the real-mode AP trampoline, and a
+  per-CPU GDT/TSS/percpu segment every other area's code can rely on being
+  correct regardless of CPU count. See `doc/i386/smp.md`.
 * `kern/i386/trap.h`: weak **trap extension points** (`i386_trap_irq`,
   `i386_trap_syscall`, `i386_trap_user_exception`, `i386_trap_page_fault`,
   `i386_trap_exit`).
