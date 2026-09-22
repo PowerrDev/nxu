@@ -129,6 +129,8 @@ int64_t nxu_munmap(uint64_t address, uint64_t size) { return nxu_syscall2(NXU_SY
 int64_t nxu_thread_create(void (*entry)(void *arg), void *stack, void *arg) { return nxu_syscall3(NXU_SYS_THREAD_CREATE, (uint64_t)entry, (uint64_t)stack, (uint64_t)arg); }
 int64_t nxu_thread_exit(uint64_t status) { return nxu_syscall1(NXU_SYS_THREAD_EXIT, status); }
 int64_t nxu_thread_self(void) { return nxu_syscall0(NXU_SYS_THREAD_SELF); }
+int64_t nxu_getcpu(void) { return nxu_syscall0(NXU_SYS_GETCPU); }
+int64_t nxu_setaffinity(uint64_t mask) { return nxu_syscall1(NXU_SYS_SETAFFINITY, mask); }
 int64_t nxu_socket_listen(const char *name, uint32_t backlog) { return nxu_syscall2(NXU_SYS_SOCKET_LISTEN, (uint64_t)name, backlog); }
 int64_t nxu_socket_connect(const char *name) { return nxu_syscall1(NXU_SYS_SOCKET_CONNECT, (uint64_t)name); }
 int64_t nxu_socket_accept(uint64_t listen_descriptor) { return nxu_syscall1(NXU_SYS_SOCKET_ACCEPT, listen_descriptor); }

@@ -51,14 +51,12 @@ static bool
 process_control_test_privileges(void)
 {
 	proc_t proc = 0;
-	loader_status_t loaded = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/privtest", "privtest", &proc);
+	loader_status_t loaded = loader_spawn_caps(proc_kernel(), "/disk/System/Library/CoreServices/privtest", "privtest", NXU_CAP_FS_WRITE | NXU_CAP_DISPLAY, &proc);
 	if (loaded != LOADER_STATUS_OK) {
 		kputs("process_control_test: spawning privtest failed: ");
 		kputln(loader_status_name(loaded));
 		return false;
 	}
-
-	proc_set_caps(proc, NXU_CAP_FS_WRITE | NXU_CAP_DISPLAY);
 
 	uint64_t exit_status = 0ULL;
 	if (!process_control_test_wait(proc_kernel(), proc->p_ident.pid, &exit_status)) {
@@ -80,19 +78,12 @@ process_control_test_run(bool exclusive)
 	uint64_t used_before = pmm_get_used_page_count();
 
 	proc_t proc = 0;
-	loader_status_t loaded = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/proctest", "proctest", &proc);
+	loader_status_t loaded = loader_spawn_caps(proc_kernel(), "/disk/System/Library/CoreServices/proctest", "proctest", 0U, &proc);
 	if (loaded != LOADER_STATUS_OK) {
 		kputs("process_control_test: spawning proctest failed: ");
 		kputln(loader_status_name(loaded));
 		return false;
 	}
-
-	/*
-	 * Nothing else was started, so proctest is PID 1 and would hold every
-	 * capability. It checks that an ordinary process is refused, so take them
-	 * away before it runs.
-	 */
-	proc_set_caps(proc, 0U);
 
 	uint64_t exit_status = 0ULL;
 	if (!process_control_test_wait(proc_kernel(), proc->p_ident.pid, &exit_status)) {

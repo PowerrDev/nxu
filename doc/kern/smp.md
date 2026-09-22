@@ -2,12 +2,18 @@
 
 The arm64 kernel starts every CPU the Device Tree lists, gives each one its own
 MLFQ run queue, idle thread and timer, and lets them wake each other with
-inter-processor interrupts. Whether *threads* actually run on more than one CPU
-is a policy the kernel keeps conservative for now, because most of the kernel was
-written for one core: see [What is not SMP-safe](#what-is-not-smp-safe).
+inter-processor interrupts. Threads of **user processes run on every CPU**, several
+threads of one process and threads of different processes at the same time (see
+[Userland on many CPUs](#userland-on-many-cpus)). Kernel threads still start on the
+boot CPU only, and the system calls that reach the filesystems and drivers run bound
+to the boot CPU (see [Boot-CPU compatibility](#boot-cpu-compatibility-for-single-cpu-kernel-code));
+what is still not SMP-safe is listed in [What is not SMP-safe](#what-is-not-smp-safe).
 
 Source: `kern/arm64/smp.c`, `kern/arm64/smp_entry.S`, `kern/sched_prism/`,
-`kern/ipi.h`, `kern/lock.h`, `kern/cpuset.h`. Test: `kern/tests/smp_test.c`.
+`kern/ipi.h`, `kern/lock.h`, `kern/cpuset.h`, and for userland `vm/address_space.c`,
+`vm/vm_fault.c`, `kern/process/{proc,task,signal}.c`, `kern/syscall/syscall.c`.
+Tests: `kern/tests/smp_test.c`, `kern/tests/smp_user_test.c` and
+`frameworks/BootDaemons.framework/smptest.c`.
 
 ## Initialization sequence
 
@@ -82,8 +88,9 @@ full; in short:
 | `g_thread_lock` (`thread.c`) | thread state bits, task membership, affinity |
 | `waitq.lock` (one per wait queue) | that queue and the threads on it |
 
-Order: `runq_lock(a) -> runq_lock(b > a) -> g_thread_lock`. `sched_lock` is a leaf,
-never held with a `runq_lock`. All are taken with interrupts masked (`nxu_spin_*
+Order: `runq_lock(a) -> runq_lock(b > a) -> g_thread_lock`. `sched_lock` is a leaf:
+it may be taken under a `runq_lock` (the switch marks its incoming thread), never
+the other way round. All are taken with interrupts masked (`nxu_spin_*
 _irqsave`). The hot paths (`sched_switch`, `sched_tick`) take only the CPU's own
 `runq_lock`; another CPU's is taken only to place or migrate a thread onto it, and
 two are taken together only by migration, lowest logical id first.
@@ -133,12 +140,15 @@ the CPU's own queue every 400 of its ticks.
 - `thread->affinity` is an `nxu_cpuset_t`. `thread_set_affinity()` /
   `thread_get_affinity()` change and read it; idle threads are pinned.
   `sched_thread_can_run_on()` says whether a placement is allowed.
-- **New threads start on the boot CPU only** (`processor_default_affinity()`),
-  and threads of user tasks are restricted to the boot CPU whatever their
-  affinity says. Both are deliberate: see the next section. The boot argument
-  `sched.affinity=all` widens the default for threads created after boot-args
-  parsing (an experiment, not the supported configuration); SMP tests set
-  affinity explicitly. The boot thread is always pinned to CPU 0.
+- **Kernel threads start on the boot CPU only** (`processor_default_affinity()`):
+  they call the VFS, drivers and other single-CPU code directly. The boot argument
+  `sched.affinity=all` widens that default for kernel threads created after boot-args
+  parsing (an experiment, not the supported configuration); SMP tests set affinity
+  explicitly. The boot thread is always pinned to CPU 0.
+- **Threads of user processes start on every CPU**
+  (`processor_default_user_affinity()`); `sched.user=boot` puts them back on the
+  boot CPU alone. A user thread narrows its own with the `setaffinity` system call
+  (`nxu_setaffinity(mask)`), and `nxu_getcpu()` says where it is running.
 - `sched_select_cpu()` picks the CPU when a thread becomes runnable: its last CPU
   if that is idle; otherwise the least-loaded CPU it may run on (an idle one if
   any), staying on the last CPU when that is within one queue place of the best.
@@ -191,29 +201,164 @@ There is no TLB IPI (next section).
   `smp_test` "memory" catches a non-shareable invalidate (verified by
   mutation: it fails with "a CPU read through a stale translation").
 
+## Userland on many CPUs
+
+What had to change so threads of user processes can run anywhere, and how.
+
+### Per-CPU address-space state
+
+Each CPU owns its TTBR0: `struct processor.active_space` is the space loaded in it
+(0 when TTBR0 walks are disabled), and nothing else writes it.
+`vm_address_space_activate()` installs a space on the calling CPU only
+(`dsb`, `msr TTBR0/TCR`, `isb`, `tlbi vmalle1`, `dsb nsh`, `isb`);
+`vm_address_space_deactivate()` disables TTBR0 walks on the calling CPU. The
+scheduler activates the incoming thread's space on the CPU that is about to run it
+(`sched_activate_thread`), and *deactivates* whatever was loaded when the incoming
+thread is a kernel thread, so an idle CPU never keeps a dead process's tables
+reachable. The old global "active space" and its mirror in `g_vmm` are gone; the
+translation-table count is per space. There are no ASIDs: a TTBR0 switch flushes the
+switching CPU's TLB, and every change to a live entry invalidates by address on all
+CPUs (below), so there is no ASID allocator, reuse or rollover to get wrong.
+`vm_address_space_t.active_cpus` records which CPUs have the space loaded.
+
+`current_proc()` is not a variable any more: it is the process of the running thread
+(`thread->home_task`, kept until the thread is reaped, so a thread that was killed
+while another CPU ran it still knows whose it is until it has left the kernel).
+
+### Address-space lifetime
+
+A space must not be freed while any CPU can still walk it, and a page must not be
+reused while any CPU can still translate through an entry for it.
+
+- A CPU adds itself to `active_cpus` and executes a full barrier **before** it
+  installs the root, and removes itself only **after** it has installed another
+  (or disabled TTBR0) and flushed its own TLB.
+- `task_terminate()` terminates every thread of the process, then for each one that
+  is not the caller waits until it is off its CPU (`sched_wait_thread_off_cpu`,
+  which interrupts the CPU every half millisecond so a thread in user mode reaches
+  the exit path). A terminated thread leaves EL0 at its next exception: the return
+  path of `exception_handle()` unwinds it into the exit path instead of returning to
+  user mode. Only then `vm_address_space_quiesce()` waits for `active_cpus` to
+  empty, and only then are the pages and tables freed. If a CPU never leaves, the
+  memory is **leaked, not freed**, and a line says so.
+- A thread taken off a run queue and then terminated (or held) before it became
+  current is given up by `sched_switch` (`sched_abandon`) instead of being run.
+- `proc_exit()` claims the exit with `PROC_FLAG_EXITING` under the process lock, then
+  does the teardown **without** holding it (holding it would stop the very threads
+  being waited for from finishing a system call that needs it). It runs on the boot
+  CPU, so two processes killing each other cannot each wait for the other's threads.
+
+### Page faults and the VM
+
+`vm_fault_user()` treats a fault as a hint: by the time it looks another CPU may have
+fixed it. "The page is present and allows this access" is success. Otherwise the
+region check and the page install are one critical section under `space->lock`
+(the page is allocated before the lock is taken), so:
+
+- two CPUs faulting on one page leave exactly one mapping and the loser gives its
+  page back (it does not fail, which would have killed the process);
+- an `munmap` cannot be followed by a fault that maps a page into the removed region;
+- `vm_address_space_cow_break()` copies outside the lock and installs only if the entry
+  is still the one it copied from; if not it starts over, and a page another thread
+  already made writable counts as done;
+- `vm_shm_map_into()` reserves its address range under the space lock and
+  `shm_registry_attach()` takes its reference under the registry lock;
+- `vm_address_space_unmap_page()` invalidates by address, inner-shareable, whether or
+  not the space is loaded anywhere, with the space lock held across the invalidate;
+- fork write-protects the parent's pages under its lock and flushes all CPUs.
+
+### Process, signal and thread locking
+
+| Lock | Protects |
+| --- | --- |
+| `g_proc_lock` | the process table, lists, `p_stat`, `p_flag`, zombie state |
+| `proc.p_siglock` | `p_sigact`, `p_sigpending` (a leaf; taken with interrupts masked) |
+| `space->lock` | that address space's tables, region list, `mmap_next_va` |
+| `ipc_port.ip_lock` | one port's queue, references, active flag |
+| `socket.lock`, `ipc_space` lock | as before |
+| `waitq.lock` | a wait queue (and its sequence number) |
+
+Order: `g_proc_lock -> p_siglock`, `space->lock -> pmm`, `runq_lock -> g_thread_lock`.
+The thread list of a task is walked with references
+(`task_first_thread_ref`/`thread_next_task_thread_ref`), never through the raw links.
+`syscall_thread_exit` terminates the calling thread first and only then asks whether
+any thread is left, so two threads exiting together on two CPUs cannot both conclude
+"not the last" and leave the process without an exit. A signal sent to a process kicks
+the CPUs running its threads so it is delivered at the next return to user mode.
+
+### Sleep and wakeup: no lost wakeups
+
+`waitq_seq()` / `waitq_block_seq()` (kern/sched_prism/waitq.h) close the window
+between "the condition is false" and "I am on the wait queue" without any lock
+shared with the waker: the sleeper takes the queue's sequence number before it tests
+the condition, and sleeps only if the number has not moved; every wake moves it.
+`wait()`, NXPC receive (`ipc_port_wait_prepare`/`ipc_port_wait_seq`) and the socket
+loops use it. `waitq_block_unlock()` is the variant for a caller that holds a
+condition lock. The scheduler side (a wakeup during a switch-out is deferred to the
+CPU switching away) is described above.
+
+`sched_sleep_us()` is a timed sleep built on the same primitive (the boot CPU's tick
+wakes all sleepers, so the resolution is one 10 ms tick). Use it instead of a
+`sched_yield()` loop to wait: a yielding thread stays on a run queue and counts as
+load, which stops the balancer from moving work onto its CPU (the `smp-user` harness
+waiting for `smptest` used to cause the rare ring stall this way).
+
+### User-thread migration
+
+A runnable user thread moves like any other: only queued threads migrate, under both
+queues' locks. Everything a user thread needs is in the thread and on its own kernel
+stack, none of it on a CPU: its EL0 registers are the exception frame on its kernel
+stack, the kernel registers `arm64_enter_el0` parked are on the same stack, its
+address space is looked up from its task and installed on whatever CPU runs it next,
+and signal state is the thread's `sig_blocked` and the process's pending set. FP/SIMD
+is not supported: the kernel and userland are built `-mgeneral-regs-only`, the kernel
+never enables FP access or saves FP registers, so a thread has no FP context to
+migrate (an FP instruction at EL0 is not something NXU handles; if the CPU were to
+allow it, its state would be shared by whatever ran on that CPU, as it is on one
+CPU). There is no thread-local-storage register (`TPIDR_EL0`) support either. A
+thread that is on a CPU (`thread->on_cpu`) is never queued anywhere else.
+
+### Boot-CPU compatibility for single-CPU kernel code
+
+The VFS and filesystems, the drivers (VirtIO block, input, sound, display), the
+display and audio system calls, and process creation (spawn, fork, exec, which read
+the image through the VFS and copy descriptor tables) have no locking. Instead of
+wrapping them in one big lock, a thread that is about to call them moves to the boot
+CPU and stays there until it is done (`sched_bind_boot_cpu()` /
+`sched_unbind_boot_cpu()`, nesting, tracked in `thread->legacy_depth`): on that CPU
+kernel code runs to completion or to an explicit sleep, exactly as before, so no two
+threads are in it at once except at a sleep, and device interrupts arrive on the
+same CPU. `syscall_dispatch()` does this for every system call not listed in
+`syscall_is_cpu_agnostic()` (the default is *bound*: a new system call is safe until
+someone audits it), and `proc_exit()` does it itself because it closes descriptors.
+
+Limits: those calls are serialised on one CPU, so the boot CPU is where all file and
+device I/O of every process is executed; the move is a scheduling switch, so it must
+not be done holding a spinlock; and a thread that is bound cannot use its affinity to
+stay off the boot CPU during the call.
+
 ## What is not SMP-safe
 
-Found in the audit and **not** made safe. Threads that use them run on the boot CPU
-only (default affinity; user threads pinned), which keeps their single-CPU
-assumptions valid; interrupts from devices are all routed to CPU 0.
+Not made safe. Threads that use them run on the boot CPU only (kernel threads by
+default affinity, user threads by the boot-CPU binding of the system calls that reach
+them); interrupts from devices are all routed to CPU 0.
 
-- **User address spaces and process identity**: which space is live in TTBR0
-  (`g_active_address_space`, `g_vmm.root`), `current_proc()`, the EL0 entry/return
-  state parked by `arm64_enter_el0`. One CPU's worth of state. Running user threads
-  on secondary CPUs needs these per CPU.
-- `vm_map`, `vm_shm`, `vm_fault`, `user_copy`, COW: assume one CPU changes a space.
-- Processes, tasks, signals, `syscall`: `proc.c`/`task.c` tables and signal state
-  are not locked (only `thread.c` and IPC spaces have their own locks).
-- IPC ports and sockets: sleep-then-check patterns that mask interrupts on one CPU
-  (`socket.c` enqueues on a wait queue, drops its lock, then blocks). Safe only when
-  sleeper and waker share a CPU. `waitq_block_unlock()` is the primitive that fixes
-  this for a subsystem that adopts it.
-- VFS, ramfs, devfs, ext4 (with JBD2), btrfs: no locking.
-- Drivers: VirtIO block (one synchronous request), input, GPU/ramfb, sound; the
-  UART driver used outside `kprintf`; `irq_dispatch` tables; the WindowServer and
-  UIService in the kernel.
+- VFS, ramfs, devfs, ext4 (with JBD2), btrfs: no locking (see the compatibility
+  section: reached only from the boot CPU).
+- Drivers: VirtIO block (one synchronous request), input, GPU/ramfb, sound; the UART
+  driver used outside `kprintf`; `irq_dispatch` tables; the WindowServer and UIService
+  in the kernel (they run on the boot thread, pinned to CPU 0).
+- Process creation (`spawn`, `fork`, `exec`): boot-CPU bound. `exec` in a process
+  with more than one thread does not stop the other threads (unchanged behaviour).
+- The descriptor table (`p_fd`) is used only by boot-CPU-bound system calls; a
+  process's own threads are serialised there.
 - The console history ring is read without the console lock (racy, tolerable).
-- The `libk` allocation-free helpers are fine; `kmalloc` users are fine.
+- Kernel threads other than the tests' own use the single-CPU subsystems directly and
+  keep the boot CPU by default.
+- `sched.affinity=all` (kernel threads on any CPU) is an experiment: those threads
+  call the subsystems above without the boot-CPU binding.
+- Exec/process IDs, `p_fd` and the ELF loader assume one process is being created at a
+  time (boot-CPU bound, so true).
 
 ## Assumptions about the platform
 
@@ -261,6 +406,41 @@ Add `-append "sched.affinity=all"` to let new kernel threads run on any CPU.
 | `balance` | 12 threads queued on CPU 1 with wider affinity: spread over the other CPUs by the balancer, and faster than one CPU |
 | `stress` | 4 CPUs contending one lock (exact count); threads created and exiting on every CPU, all reaped |
 | `memory` | page allocator, kernel VM and heap hammered from every CPU; a TLB shootdown check that unmaps and remaps a page under a reader's cached translation |
+| `seqwait` | 3000 sleep/wake rounds between two CPUs using only the wait-queue sequence number (no lock shared with the waker) |
+| `usertlb` | a user page unmapped and a different one mapped at the same address while another CPU holds the old translation in its TLB |
+| `vmrace` | two CPUs faulting in pages while the region is unmapped under them: no page may reappear in the removed region, none may leak |
+| `cowrace` | two CPUs breaking the same copy-on-write page at once: both succeed, one copy, no leak |
 
 Every case was also checked to fail when its subject is broken (mutations: a
 non-shareable `tlbi`, no reschedule IPI, no deferred wakeup, no page allocator lock).
+
+### What `smp-user` checks
+
+`make check CHECK_ONLY=smp-user` (QEMU `-smp 4`, an otherwise idle machine: no bootd,
+no boot chime) spawns `smptest`, a user process that runs, at EL0:
+
+| Case | Proves |
+| --- | --- |
+| 1 threads of one process | a token ring of 4 spinning threads completes in ~0.1 s (it needs all four on a CPU at once; sharing one CPU costs a 40 ms quantum per hand-off), on 4 CPUs |
+| 2 processes | the same across 4 forked processes over shared memory |
+| 3 address-space isolation | 4 processes use the same virtual addresses with different contents while being forced onto other CPUs 480 times; nothing is seen from another space or lost |
+| 4 concurrent page faults | 4 threads fault the same fresh page at the same instant, 192 times; all writes survive, pages are zero-filled |
+| 5 shared memory | atomic increments and a published block across CPUs are exact |
+| 6 IPC | 400 blocking NXPC round trips between two processes pinned to different CPUs |
+| 7 termination | processes killed (SIGKILL) and processes that `exit` while their other threads spin on other CPUs; each is reaped with the right status and leaves nothing behind |
+| 8 migration | a computation forced across CPUs (400 moves) gives the same result as unmoved |
+| 9 VM stress | map/touch/unmap in 4 threads with a fork in flight, no errors |
+
+The kernel then checks that user threads ran on every CPU, that up to four CPUs ran
+them **at the same time** (`sched_user_running_peak()`), that the run-queue invariants
+hold and that no pages leaked.
+
+### Mutation checks
+
+Each protection was removed on purpose and the intended test failed (then the change
+was reverted): a non-shareable TLB invalidate on user unmap (`usertlb`); a COW break
+that loses the race and reports failure (`cowrace`); a fault installed without the
+region re-check (`vmrace`); the same without the space lock (`vmrace`); no wait for a
+dying process's threads and no address-space quiesce (`smp-user`: SIGSEGV kills and a
+panic); no IPC wakeup on enqueue (`smp-user`: the receive hangs); the sequence number
+ignored (`seqwait`: a lost wakeup).

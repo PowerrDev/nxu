@@ -28,19 +28,24 @@ struct vm_map_entry;
  * a real (if simple: bump-allocated, never reclaiming a freed gap) region
  * list, unlike vm/vm_shm.h's opaque per-caller bump cursor.
  */
-typedef struct {
+typedef struct vm_address_space {
 	uint64_t *root;
 	uint64_t root_physical;
+
+	/* Translation tables this space owns; only ever changed under `lock`. */
 	uint64_t table_count;
+
+	/* True while at least one CPU runs with this space in TTBR0. */
 	bool active;
 
 	/*
-	 * The CPUs whose TTBR0 currently points at this space (set on activate,
-	 * cleared when that CPU leaves it). Only the boot CPU runs user threads
-	 * today, so it is empty or {0}; it is what a page unmap consults to know
-	 * which CPUs may hold a translation, and the TLB strategy is written so
-	 * nothing else changes when more CPUs are added: page invalidations are
-	 * inner-shareable and reach every CPU whether or not it is in this set.
+	 * The CPUs whose TTBR0 points at this space: added (release, with a full
+	 * barrier) before a CPU installs the space and removed after it has
+	 * installed another one (or disabled TTBR0) and flushed its own TLB. So a
+	 * CPU that could still walk these tables is always in the set, and
+	 * vm_address_space_destroy() waits for the set to empty before it frees a
+	 * page table. Page invalidations do not consult it: they are
+	 * inner-shareable and reach every CPU (see vm/address_space.c).
 	 */
 	nxu_cpuset_t active_cpus;
 	nxu_spinlock_t lock;
@@ -186,5 +191,30 @@ bool vm_address_space_cow_break(
  */
 uint64_t vm_address_space_release_pages(vm_address_space_t *space);
 bool vm_address_space_destroy(vm_address_space_t *space);
+
+/*
+ * vm_address_space_quiesce
+ *
+ * Wait until no CPU has the space loaded in TTBR0 (this CPU leaves it if it
+ * has). Call it after every thread of the space has been terminated and before
+ * pages or tables are freed; vm_address_space_destroy() calls it too. Returns
+ * false if a CPU still has it after about two seconds, in which case nothing
+ * may be freed.
+ */
+bool vm_address_space_quiesce(vm_address_space_t *space);
+
+/*
+ * vm_address_space_map_page_locked
+ *
+ * vm_address_space_map_page for a caller that already holds space->lock (a fault
+ * that checks the region list and installs the page as one step). Same rules: the
+ * slot must be empty.
+ */
+bool vm_address_space_map_page_locked(
+	vm_address_space_t *space,
+	uint64_t virtual_address,
+	uint64_t physical_address,
+	vm_user_protection_t protection
+);
 
 #endif

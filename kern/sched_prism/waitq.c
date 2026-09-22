@@ -27,6 +27,7 @@ void waitq_init(waitq_t *queue)
 	queue->head = 0;
 	queue->tail = 0;
 	queue->lock.value = 0U;
+	queue->seq = 0U;
 }
 
 static void waitq_enqueue_locked(waitq_t *queue, thread_t thread, bool interruptible)
@@ -130,8 +131,24 @@ bool waitq_remove(thread_t thread)
 	}
 }
 
+uint32_t waitq_seq(waitq_t *queue)
+{
+	return queue == 0 ? 0U : __atomic_load_n(&queue->seq, __ATOMIC_ACQUIRE);
+}
+
+/*
+ * The bump comes before the dequeue and needs no lock: a sleeper checks the
+ * sequence under the queue's lock and joins the queue in the same critical
+ * section, and the dequeue below takes that lock, so a wake either changes the
+ * sequence before the sleeper's check (the sleeper does not sleep) or dequeues
+ * after the sleeper joined (it finds it).
+ */
 void waitq_wake_one(waitq_t *queue)
 {
+	if (queue == 0) return;
+
+	(void)__atomic_add_fetch(&queue->seq, 1U, __ATOMIC_ACQ_REL);
+
 	thread_t thread = waitq_dequeue(queue);
 
 	if (thread != 0) (void)sched_thread_wakeup(thread);
@@ -140,6 +157,10 @@ void waitq_wake_one(waitq_t *queue)
 void waitq_wake_all(waitq_t *queue)
 {
 	thread_t thread;
+
+	if (queue == 0) return;
+
+	(void)__atomic_add_fetch(&queue->seq, 1U, __ATOMIC_ACQ_REL);
 
 	while ((thread = waitq_dequeue(queue)) != 0) {
 		(void)sched_thread_wakeup(thread);
@@ -168,7 +189,13 @@ bool waitq_interrupt(thread_t thread)
  * and switch away. The caller has interrupts masked (irq_state is what to restore)
  * and, when it holds a guard, releases it after the thread is on the queue.
  */
-static bool waitq_sleep(waitq_t *queue, bool interruptible, nxu_spinlock_t *guard, uint64_t irq_state)
+static bool waitq_sleep(
+	waitq_t *queue,
+	bool interruptible,
+	nxu_spinlock_t *guard,
+	uint64_t irq_state,
+	const uint32_t *expected_seq
+)
 {
 	thread_t thread = current_thread();
 
@@ -181,6 +208,17 @@ static bool waitq_sleep(waitq_t *queue, bool interruptible, nxu_spinlock_t *guar
 	thread->wait_interrupted = false;
 
 	nxu_spin_lock(&queue->lock);
+
+	if (expected_seq != 0 && __atomic_load_n(&queue->seq, __ATOMIC_ACQUIRE) != *expected_seq) {
+		/* A wakeup has happened since the caller looked: do not sleep, look again. */
+		nxu_spin_unlock(&queue->lock);
+
+		if (guard != 0) nxu_spin_unlock(guard);
+
+		ml_irq_restore(irq_state);
+		return true;
+	}
+
 	waitq_enqueue_locked(queue, thread, interruptible);
 
 	bool waiting = sched_thread_wait(thread, false);
@@ -211,7 +249,16 @@ bool waitq_block(waitq_t *queue, bool interruptible)
 
 	uint64_t irq_state = ml_irq_save();
 
-	return waitq_sleep(queue, interruptible, 0, irq_state);
+	return waitq_sleep(queue, interruptible, 0, irq_state, 0);
+}
+
+bool waitq_block_seq(waitq_t *queue, uint32_t seq, bool interruptible)
+{
+	if (queue == 0 || current_thread() == 0) return false;
+
+	uint64_t irq_state = ml_irq_save();
+
+	return waitq_sleep(queue, interruptible, 0, irq_state, &seq);
 }
 
 bool waitq_block_unlock(waitq_t *queue, bool interruptible, nxu_spinlock_t *guard, uint64_t irq_state)
@@ -222,5 +269,5 @@ bool waitq_block_unlock(waitq_t *queue, bool interruptible, nxu_spinlock_t *guar
 		return false;
 	}
 
-	return waitq_sleep(queue, interruptible, guard, irq_state);
+	return waitq_sleep(queue, interruptible, guard, irq_state, 0);
 }

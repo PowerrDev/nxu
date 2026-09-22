@@ -54,6 +54,13 @@ typedef struct waitq {
 	thread_t head;
 	thread_t tail;
 	nxu_spinlock_t lock;
+
+	/*
+	 * Counts wakeups (waitq_wake_one/all). waitq_block_seq() refuses to sleep if
+	 * it changed since the sleeper looked, which is what closes the window
+	 * between "the condition is false" and "I am on the queue".
+	 */
+	uint32_t seq;
 } waitq_t;
 
 /* An all-zero waitq is valid and empty; this is for readability. */
@@ -68,6 +75,28 @@ void waitq_init(waitq_t *queue);
  * queue on return.
  */
 bool waitq_block(waitq_t *queue, bool interruptible);
+
+/*
+ * waitq_seq / waitq_block_seq
+ *
+ * The sleep-then-check pattern with no lost wakeup and no lock shared with the
+ * waker. Take the sequence number BEFORE testing the condition:
+ *
+ *     for (;;) {
+ *         uint32_t seq = waitq_seq(&queue);
+ *         if (condition()) break;
+ *         if (!waitq_block_seq(&queue, seq, true)) return interrupted;
+ *     }
+ *
+ * and have the waker make the condition true first and then call
+ * waitq_wake_one/all, which bump the sequence. If that wake ran between the
+ * sleeper's test and its sleep, the sequence has moved and waitq_block_seq
+ * returns at once (true: look again) instead of sleeping; if it runs after the
+ * sleeper has joined the queue, it finds and wakes it. Either way the sleeper
+ * re-tests. It returns false only for an interruptible wait a signal cut short.
+ */
+uint32_t waitq_seq(waitq_t *queue);
+bool waitq_block_seq(waitq_t *queue, uint32_t seq, bool interruptible);
 
 /*
  * waitq_block_unlock

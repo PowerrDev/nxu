@@ -63,6 +63,8 @@
 #define NXU_SYS_IPC_RECEIVE_WAIT 59ULL
 #define NXU_SYS_GET_CAPS 60ULL
 #define NXU_SYS_IOCTL 61ULL
+#define NXU_SYS_GETCPU 62ULL
+#define NXU_SYS_SETAFFINITY 63ULL
 
 /* wait(): pass as the pid to wait for any child. */
 #define NXU_WAIT_ANY UINT64_MAX

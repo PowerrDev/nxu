@@ -1,9 +1,15 @@
 #include <vm/address_space.h>
 #include <vm/vmm_internal.h>
 
+#include <kern/console/console.h>
+#include <kern/ipi.h>
 #include <kern/lock.h>
+#include <kern/machine/cpu.h>
+#include <kern/machine/machine_routines.h>
 #include <kern/machine/smp.h>
+#include <kern/machine/timer.h>
 #include <kern/machine/vm_param.h>
+#include <kern/sched_prism/processor.h>
 #include <vm/pmm.h>
 
 #include <stdbool.h>
@@ -28,12 +34,29 @@
 #define VM_PAR_FAULT (1ULL << 0U)
 
 /*
- * Lesson 18 begins with one address space and ASID 0.
+ * Which space a CPU runs with is that CPU's own state (struct processor's
+ * active_space, see kern/sched_prism/processor.h): nothing here is global, so
+ * two CPUs can run threads of different processes, or of the same one, at the
+ * same time. The accessors below are only meaningful while the caller cannot
+ * change CPU (interrupts masked, or code that never migrates: kernel code runs
+ * to completion or to an explicit sleep, and the scheduler switches spaces with
+ * interrupts masked).
  *
- * Every activation invalidates the EL1 TLB. ASIDs become useful only once
- * NXU can keep multiple user address spaces alive and switch between them.
+ * There are no ASIDs. Switching TTBR0 invalidates the switching CPU's TLB
+ * (vmalle1, local), and every change to a live page-table entry invalidates by
+ * address, inner-shareable, on all CPUs (vmm_invalidate_page). That is correct
+ * with or without ASIDs and never has to reason about ASID reuse or rollover;
+ * the cost is a full local flush per address-space switch, which is what NXU has
+ * always paid.
+ *
+ * Lock order for the paths below: space->lock -> (pmm, via vmm_root_get_l3_entry).
  */
-static vm_address_space_t *g_active_address_space;
+static vm_address_space_t *vm_cpu_space(void)
+{
+	processor_t processor = current_processor();
+
+	return processor == 0 ? 0 : processor->active_space;
+}
 
 static bool vm_user_descriptor(
 	uint64_t physical_address,
@@ -174,7 +197,7 @@ static bool vm_address_space_translate(
 
 const vm_address_space_t *vm_address_space_current(void)
 {
-	return g_active_address_space;
+	return vm_cpu_space();
 }
 
 bool vm_address_space_create(vm_address_space_t *space)
@@ -207,6 +230,47 @@ bool vm_address_space_create(vm_address_space_t *space)
 	return true;
 }
 
+/*
+ * Take this CPU out of a space's membership. Called once the CPU has installed
+ * another root (or disabled TTBR0) and flushed its TLB: from then on it can no
+ * longer walk the space's tables.
+ */
+static void vm_space_leave(vm_address_space_t *space, processor_t cpu)
+{
+	cpuset_remove_atomic(&space->active_cpus, cpu->cpu_id);
+	__atomic_store_n(&space->active, !cpuset_empty(&space->active_cpus), __ATOMIC_RELEASE);
+}
+
+/* Stop this CPU's TTBR0 walks and drop what it cached (local: nobody else's TTBR0 changed). */
+static void vm_ttbr0_disable_local(void)
+{
+	uint64_t tcr = vmm_read_tcr() | VMM_TCR_EPD0;
+
+	__asm__ volatile(
+		"msr ttbr0_el1, xzr\n"
+		"msr tcr_el1, %0\n"
+		"isb\n"
+		"tlbi vmalle1\n"
+		"dsb nsh\n"
+		"isb\n"
+		:
+		: "r"(tcr)
+		: "memory"
+	);
+}
+
+/*
+ * vm_address_space_activate
+ *
+ * Load `space` into this CPU's TTBR0. Only this CPU's translation state
+ * changes; other CPUs keep running whatever they run.
+ *
+ * Ordering: the CPU joins the space's membership set and publishes that with a
+ * full barrier BEFORE it installs the root, so anyone who checks the set after
+ * the CPU could have started to walk the tables sees it (this is the store half
+ * of the pairing with the load in vm_address_space_quiesce). It leaves the
+ * previous space only afterwards.
+ */
 bool vm_address_space_activate(vm_address_space_t *space)
 {
 	if (
@@ -220,35 +284,29 @@ bool vm_address_space_activate(vm_address_space_t *space)
 		return false;
 	}
 
-	if (
-		g_active_address_space == space &&
-		!g_vmm.ttbr0_disabled
-	) {
+	uint64_t irq_state = ml_irq_save();
+	processor_t cpu = current_processor();
+	vm_address_space_t *previous = cpu->active_space;
+
+	if (previous == space) {
+		ml_irq_restore(irq_state);
 		return true;
 	}
 
-	/* Preserve table accounting before leaving a previous address space. */
-	if (g_active_address_space != 0) {
-		g_active_address_space->table_count = g_vmm.table_count;
-		g_active_address_space->active = false;
-		cpuset_remove_atomic(&g_active_address_space->active_cpus, machine_cpu_id());
-	}
+	cpuset_add_atomic(&space->active_cpus, cpu->cpu_id);
+	__atomic_store_n(&space->active, true, __ATOMIC_RELEASE);
+	__asm__ volatile("dsb ish" ::: "memory");
 
 	uint64_t tcr = vmm_read_tcr() & ~VMM_TCR_EPD0;
 	uint64_t ttbr0 = space->root_physical & VMM_DESC_ADDRESS_MASK;
 
 	/*
-	 * TTBR0 was disabled at the end of Lesson 17. Install the new root,
-	 * allow TTBR0 walks again, and remove translations from the previous
-	 * lower address space before any user mapping can be observed.
-	 *
-	 * The flush is this CPU's own (not inner-shareable): it is this CPU's
-	 * TTBR0 that changed, so only this CPU can hold the previous space's
-	 * translations that must go, and a broadcast would also empty every idle
-	 * CPU's TLB of kernel (TTBR1) entries on each process switch. What other
-	 * CPUs might hold of *this* space is dealt with when its tables change:
-	 * every unmap and permission change invalidates by address, inner-shareable
-	 * (vmm_invalidate_page), which reaches all CPUs.
+	 * Install the new root, allow TTBR0 walks, and remove translations of the
+	 * previous lower address space before any user mapping can be observed. The
+	 * flush is this CPU's own: only its TTBR0 changed, so only it can hold the
+	 * previous space's translations that must go. What other CPUs hold of this
+	 * space is dealt with when its tables change (every unmap and permission
+	 * change invalidates by address on all CPUs).
 	 */
 	__asm__ volatile(
 		"dsb ishst\n"
@@ -263,15 +321,11 @@ bool vm_address_space_activate(vm_address_space_t *space)
 		: "memory"
 	);
 
-	g_vmm.root = space->root;
-	g_vmm.root_physical = space->root_physical;
-	g_vmm.table_count = space->table_count;
-	g_vmm.ttbr0_disabled = false;
+	cpu->active_space = space;
 
-	space->active = true;
-	cpuset_add_atomic(&space->active_cpus, machine_cpu_id());
-	g_active_address_space = space;
+	if (previous != 0) vm_space_leave(previous, cpu);
 
+	ml_irq_restore(irq_state);
 	return true;
 }
 
@@ -279,16 +333,134 @@ bool vm_address_space_deactivate(void)
 {
 	if (!g_vmm.enabled || !g_vmm.kernel_pointers_rebased) return false;
 
-	if (g_active_address_space != 0) {
-		g_active_address_space->table_count = g_vmm.table_count;
-		g_active_address_space->active = false;
-		cpuset_remove_atomic(&g_active_address_space->active_cpus, machine_cpu_id());
+	uint64_t irq_state = ml_irq_save();
+	processor_t cpu = current_processor();
+	vm_address_space_t *previous = cpu->active_space;
+
+	if (previous == 0) {
+		/* Nothing loaded. The boot CPU's boot-time identity map is torn down once, here or in kern_init. */
+		bool ok = true;
+
+		if (cpu->cpu_id == 0U && !g_vmm.ttbr0_disabled) ok = vmm_disable_ttbr0();
+
+		ml_irq_restore(irq_state);
+		return ok;
 	}
 
-	if (!g_vmm.ttbr0_disabled && !vmm_disable_ttbr0()) return false;
+	vm_ttbr0_disable_local();
+	cpu->active_space = 0;
+	vm_space_leave(previous, cpu);
 
-	g_active_address_space = 0;
+	ml_irq_restore(irq_state);
 	return true;
+}
+
+/*
+ * vm_address_space_quiesce
+ *
+ * Wait until no CPU has `space` in TTBR0 (its members set is empty), so its page
+ * tables and pages can be freed. The caller has already made sure no thread of the
+ * space will run again (every thread terminated); the CPUs still in the set are
+ * finishing their last switch away from it, or are running a terminated thread up to
+ * its next exception, and are pushed with a reschedule interrupt to get there
+ * promptly. This CPU leaves the space itself if it is in it. Holds no lock, and
+ * waits with interrupts as they were: nothing it waits for needs this CPU.
+ *
+ * Pairing: the load of the set here is preceded by a full barrier, and a CPU adds
+ * itself to the set and executes a full barrier before it can walk the tables, so
+ * either this sees the CPU or the CPU sees every change made to the tables so far.
+ *
+ * Returns false (without freeing anything: the caller must leak rather than free)
+ * if the set has not emptied after about two seconds.
+ */
+bool vm_address_space_quiesce(vm_address_space_t *space)
+{
+	if (space == 0 || space->root == 0) return false;
+
+	processor_t self = current_processor();
+
+	if (self->active_space == space) (void)vm_address_space_deactivate();
+
+	uint64_t deadline = timer_get_microseconds() + 2000000ULL;
+	uint64_t next_kick = 0ULL;
+
+	for (;;) {
+		__asm__ volatile("dsb ish" ::: "memory");
+
+		if (cpuset_empty(&space->active_cpus)) return true;
+
+		uint64_t now = timer_get_microseconds();
+
+		if (now > deadline) return false;
+
+		if (now >= next_kick) {
+			next_kick = now + 500ULL;
+
+			for (uint32_t cpu = 0U; cpu < NXU_MAX_CPUS; cpu++) {
+				if (cpu != self->cpu_id && cpuset_contains_atomic(&space->active_cpus, cpu)) {
+					ipi_send(cpu, IPI_RESCHEDULE);
+				}
+			}
+		}
+
+		cpu_relax();
+	}
+}
+
+/*
+ * Install one leaf descriptor. The caller holds space->lock. Fails if the slot
+ * is already mapped (existing mappings are never replaced implicitly). The new
+ * mapping needs no TLB maintenance (an unmapped page leaves no TLB entry), only
+ * the barrier that makes the descriptor visible to the table walkers of every
+ * CPU before the mapping is used.
+ */
+static bool vm_space_install_locked(
+	vm_address_space_t *space,
+	uint64_t virtual_address,
+	uint64_t descriptor
+)
+{
+	uint64_t *entry;
+
+	if (!vmm_root_get_l3_entry(
+		space->root,
+		virtual_address,
+		true,
+		&space->table_count,
+		&entry
+	)) {
+		return false;
+	}
+
+	if ((*entry & VMM_DESC_VALID) != 0ULL) return false;
+
+	*entry = descriptor;
+	vmm_publish_new_mapping();
+	return true;
+}
+
+bool vm_address_space_map_page_locked(
+	vm_address_space_t *space,
+	uint64_t virtual_address,
+	uint64_t physical_address,
+	vm_user_protection_t protection
+)
+{
+	if (
+		space == 0 ||
+		space->root == 0 ||
+		virtual_address < VM_USER_NULL_GUARD_SIZE ||
+		!vmm_lower_page_valid(virtual_address) ||
+		!vmm_physical_page_valid(physical_address)
+	) {
+		return false;
+	}
+
+	uint64_t descriptor;
+
+	if (!vm_user_descriptor(physical_address, protection, &descriptor)) return false;
+
+	return vm_space_install_locked(space, virtual_address, descriptor);
 }
 
 bool vm_address_space_map_page(
@@ -320,39 +492,11 @@ bool vm_address_space_map_page(
 
 	nxu_spin_lock(&space->lock);
 
-	uint64_t *table_count =
-		space == g_active_address_space
-			? &g_vmm.table_count
-			: &space->table_count;
-
-	uint64_t *entry;
-
-	if (!vmm_root_get_l3_entry(
-		space->root,
-		virtual_address,
-		true,
-		table_count,
-		&entry
-	)) {
-		nxu_spin_unlock(&space->lock);
-		return false;
-	}
-
-	if ((*entry & VMM_DESC_VALID) != 0ULL) {
-		nxu_spin_unlock(&space->lock);
-		return false;
-	}
-
-	*entry = descriptor;
-	vmm_publish_new_mapping();
-
-	if (space == g_active_address_space) {
-		space->table_count = g_vmm.table_count;
-	}
+	bool installed = vm_space_install_locked(space, virtual_address, descriptor);
 
 	nxu_spin_unlock(&space->lock);
 
-	return true;
+	return installed;
 }
 
 bool vm_address_space_unmap_page(
@@ -371,10 +515,7 @@ bool vm_address_space_unmap_page(
 
 	nxu_spin_lock(&space->lock);
 
-	uint64_t table_count =
-		space == g_active_address_space
-			? g_vmm.table_count
-			: space->table_count;
+	uint64_t table_count = space->table_count;
 
 	uint64_t *entry;
 
@@ -401,11 +542,14 @@ bool vm_address_space_unmap_page(
 	 * like vmm_unmap_page does for the kernel TTBR1 side. */
 	*entry = 0ULL;
 
-	if (space == g_active_address_space) {
-		vmm_invalidate_page(virtual_address);
-	} else {
-		__asm__ volatile("dsb ish" ::: "memory");
-	}
+	/*
+	 * Inner-shareable, by address, whether or not the space is loaded anywhere:
+	 * a thread of this process may be running on any CPU, and the physical page
+	 * must not be reused while some CPU can still translate through the old
+	 * entry. The lock is held across the invalidation so a concurrent fault
+	 * cannot install a new mapping before the old one is gone everywhere.
+	 */
+	vmm_invalidate_page(virtual_address);
 
 	nxu_spin_unlock(&space->lock);
 
@@ -505,11 +649,8 @@ bool vm_address_space_translate_write(
 
 bool vm_address_space_is_active(const vm_address_space_t *space)
 {
-	return
-		space != 0 &&
-		space == g_active_address_space &&
-		space->active &&
-		!g_vmm.ttbr0_disabled;
+	/* "Is it the space this CPU walks?" -- the calling CPU's TTBR0, no one else's. */
+	return space != 0 && space == vm_cpu_space();
 }
 
 uint64_t vm_address_space_root_physical(
@@ -523,15 +664,7 @@ uint64_t vm_address_space_table_count(
 	const vm_address_space_t *space
 )
 {
-	if (space == 0) {
-		return 0ULL;
-	}
-
-	if (space == g_active_address_space) {
-		return g_vmm.table_count;
-	}
-
-	return space->table_count;
+	return space == 0 ? 0ULL : space->table_count;
 }
 
 /*
@@ -554,13 +687,15 @@ static bool vm_address_in_shm_window(uint64_t virtual_address)
 		virtual_address < VM_SHM_BASE + VM_SHM_WINDOW_SIZE;
 }
 
-/* Make the CPU forget every cached translation if space is the live one. */
+/*
+ * Make every CPU forget every cached translation, after a bulk change to a
+ * space's live entries (fork write-protecting the parent, teardown). Always
+ * inner-shareable: threads of the space may be on any CPU, and a CPU that is not
+ * running it holds nothing that matters and loses nothing it cannot refill.
+ */
 static void vm_address_space_flush_if_active(const vm_address_space_t *space)
 {
-	if (space != g_active_address_space) {
-		__asm__ volatile("dsb ish" ::: "memory");
-		return;
-	}
+	(void)space;
 
 	__asm__ volatile(
 		"dsb ishst\n"
@@ -571,6 +706,18 @@ static void vm_address_space_flush_if_active(const vm_address_space_t *space)
 	);
 }
 
+/*
+ * vm_address_space_cow_break
+ *
+ * Give the caller a private, writable copy of a page fork left shared. Two
+ * threads of the process (on two CPUs) can break the same page at once, and
+ * another process holding the other reference can drop it at any moment, so
+ * nothing read under the lock is trusted after it is released: the copy is made
+ * outside the lock (it allocates) and installed only if the entry is still the
+ * one that was copied from. If it is not, the copy is discarded and the page is
+ * looked at again. If somebody else has already made it writable, that is success:
+ * the faulting instruction can simply run again.
+ */
 bool vm_address_space_cow_break(
 	vm_address_space_t *space,
 	uint64_t virtual_address
@@ -587,93 +734,91 @@ bool vm_address_space_cow_break(
 
 	uint64_t page_va = virtual_address & ~(VMM_L3_SIZE - 1ULL);
 
-	nxu_spin_lock(&space->lock);
+	for (uint32_t attempt = 0U; attempt < 8U; attempt++) {
+		nxu_spin_lock(&space->lock);
 
-	uint64_t table_count = space->table_count;
-	uint64_t *entry;
+		uint64_t table_count = space->table_count;
+		uint64_t *entry;
 
-	if (!vmm_root_get_l3_entry(space->root, page_va, false, &table_count, &entry)) {
-		nxu_spin_unlock(&space->lock);
-		return false;
-	}
+		if (!vmm_root_get_l3_entry(space->root, page_va, false, &table_count, &entry)) {
+			nxu_spin_unlock(&space->lock);
+			return false;
+		}
 
-	uint64_t descriptor = *entry;
+		uint64_t descriptor = *entry;
 
-	if (
-		(descriptor & VMM_DESC_TYPE_MASK) != VMM_DESC_TABLE_PAGE ||
-		(descriptor & VMM_DESC_SW_COW) == 0ULL
-	) {
-		nxu_spin_unlock(&space->lock);
-		return false;
-	}
+		if ((descriptor & VMM_DESC_TYPE_MASK) != VMM_DESC_TABLE_PAGE) {
+			nxu_spin_unlock(&space->lock);
+			return false;
+		}
 
-	uint64_t old_physical = descriptor & VMM_DESC_ADDRESS_MASK;
-	uint64_t writable_attributes =
-		(descriptor & ~(VMM_DESC_AP_MASK | VMM_DESC_SW_COW)) |
-		VM_USER_AP_READ_WRITE;
+		if ((descriptor & VMM_DESC_SW_COW) == 0ULL) {
+			/* Broken by another thread already (or never shared): writable now? */
+			bool writable = (descriptor & VMM_DESC_AP_MASK) == VM_USER_AP_READ_WRITE;
 
-	/* The other owner is gone: nothing to copy, just take the page back. */
-	if (pmm_page_refcount(old_physical) == 1U) {
-		*entry = writable_attributes;
+			nxu_spin_unlock(&space->lock);
+			return writable;
+		}
 
-		if (space == g_active_address_space) {
+		uint64_t old_physical = descriptor & VMM_DESC_ADDRESS_MASK;
+		uint64_t writable_attributes =
+			(descriptor & ~(VMM_DESC_AP_MASK | VMM_DESC_SW_COW)) |
+			VM_USER_AP_READ_WRITE;
+
+		/* The other owner is gone: nothing to copy, just take the page back. */
+		if (pmm_page_refcount(old_physical) == 1U) {
+			*entry = writable_attributes;
 			vmm_invalidate_page(page_va);
-		} else {
-			__asm__ volatile("dsb ish" ::: "memory");
+
+			nxu_spin_unlock(&space->lock);
+			return true;
 		}
 
 		nxu_spin_unlock(&space->lock);
+
+		uint64_t new_physical;
+
+		if (!pmm_allocate_page(&new_physical)) return false;
+
+		uint64_t old_kernel;
+		uint64_t new_kernel;
+
+		if (
+			!vmm_physical_to_higher_half(old_physical, &old_kernel) ||
+			!vmm_physical_to_higher_half(new_physical, &new_kernel)
+		) {
+			(void)pmm_free_page(new_physical);
+			return false;
+		}
+
+		memcpy((void *)new_kernel, (const void *)old_kernel, VMM_L3_SIZE);
+
+		nxu_spin_lock(&space->lock);
+
+		table_count = space->table_count;
+
+		if (
+			!vmm_root_get_l3_entry(space->root, page_va, false, &table_count, &entry) ||
+			*entry != descriptor
+		) {
+			/* The page changed while it was being copied: throw the copy away and look again. */
+			nxu_spin_unlock(&space->lock);
+			(void)pmm_free_page(new_physical);
+			continue;
+		}
+
+		*entry = (writable_attributes & ~VMM_DESC_ADDRESS_MASK) | (new_physical & VMM_DESC_ADDRESS_MASK);
+		vmm_invalidate_page(page_va);
+
+		nxu_spin_unlock(&space->lock);
+
+		/* This space's mapping no longer refers to the shared page. */
+		(void)pmm_free_page(old_physical);
+
 		return true;
 	}
 
-	nxu_spin_unlock(&space->lock);
-
-	uint64_t new_physical;
-
-	if (!pmm_allocate_page(&new_physical)) return false;
-
-	uint64_t old_kernel;
-	uint64_t new_kernel;
-
-	if (
-		!vmm_physical_to_higher_half(old_physical, &old_kernel) ||
-		!vmm_physical_to_higher_half(new_physical, &new_kernel)
-	) {
-		(void)pmm_free_page(new_physical);
-		return false;
-	}
-
-	memcpy((void *)new_kernel, (const void *)old_kernel, VMM_L3_SIZE);
-
-	nxu_spin_lock(&space->lock);
-
-	table_count = space->table_count;
-
-	/* Nothing else runs on this CPU between the two critical sections, but
-	 * re-checking keeps the copy from landing on a page that changed. */
-	if (
-		!vmm_root_get_l3_entry(space->root, page_va, false, &table_count, &entry) ||
-		*entry != descriptor
-	) {
-		nxu_spin_unlock(&space->lock);
-		(void)pmm_free_page(new_physical);
-		return false;
-	}
-
-	*entry = (writable_attributes & ~VMM_DESC_ADDRESS_MASK) | (new_physical & VMM_DESC_ADDRESS_MASK);
-
-	if (space == g_active_address_space) {
-		vmm_invalidate_page(page_va);
-	} else {
-		__asm__ volatile("dsb ish" ::: "memory");
-	}
-
-	nxu_spin_unlock(&space->lock);
-
-	/* This space's mapping no longer refers to the shared page. */
-	(void)pmm_free_page(old_physical);
-
-	return true;
+	return false;
 }
 
 uint64_t vm_address_space_release_pages(vm_address_space_t *space)
@@ -713,8 +858,16 @@ bool vm_address_space_destroy(vm_address_space_t *space)
 {
 	if (space == 0 || space->root == 0) return false;
 
-	/* Never free the tables the CPU is still walking. */
-	if (space == g_active_address_space && !vm_address_space_deactivate()) return false;
+	/*
+	 * Never free tables a CPU can still walk: this CPU leaves the space, and
+	 * every other CPU that has it loaded is waited for. If one never leaves
+	 * (which would mean a thread of the space is still running), the tables are
+	 * leaked, not freed: a leak is a bug report, a use-after-free is corruption.
+	 */
+	if (!vm_address_space_quiesce(space)) {
+		kprintf("vm_address_space_destroy: a CPU still has the space loaded; its page tables are leaked\n");
+		return false;
+	}
 
 	for (uint32_t l1 = 0U; l1 < VM_TABLE_ENTRIES; l1++) {
 		uint64_t *level2;

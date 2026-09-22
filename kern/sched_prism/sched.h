@@ -75,13 +75,33 @@ __attribute__((noreturn))
 void sched_cpu_idle(void);
 
 /*
+ * sched_bind_boot_cpu / sched_unbind_boot_cpu
+ *
+ * Bracket a call into kernel code that assumes a single CPU (VFS, filesystems,
+ * drivers, process creation): the calling thread moves to the boot CPU and stays
+ * there until the matching unbind. Nests. Hold no spinlock across the bind.
+ * See kern/sched_prism/sched.c and doc/kern/smp.md.
+ */
+void sched_bind_boot_cpu(void);
+void sched_unbind_boot_cpu(void);
+
+/*
  * sched_thread_can_run_on
  *
  * Whether the scheduler would ever place `thread` on `cpu`: its affinity
- * allows it and that kind of thread can run there (user threads are boot-CPU
- * only for now). thread_can_run_on_cpu() in the design notes.
+ * allows it, or it is inside single-CPU kernel code (sched_bind_boot_cpu) and
+ * `cpu` is the boot CPU. thread_can_run_on_cpu() in the design notes.
  */
 bool sched_thread_can_run_on(thread_t thread, uint32_t cpu);
+
+/*
+ * sched_kick_thread / sched_wait_thread_off_cpu
+ *
+ * For tearing a thread down that may be running on another CPU: interrupt that
+ * CPU so the thread notices its new state, and wait until the thread is off it.
+ */
+void sched_kick_thread(thread_t thread);
+bool sched_wait_thread_off_cpu(thread_t thread);
 
 /*
  * thread_setrun
@@ -152,6 +172,17 @@ bool sched_block(bool uninterruptible);
 bool sched_block_commit(void);
 
 /*
+ * sched_sleep_us
+ *
+ * Put the calling thread to sleep for at least `microseconds` (rounded up to the
+ * boot CPU's next timer tick, 10 ms). The thread is off every run queue while it
+ * sleeps, so it does not count as load: a harness that waits with this instead of
+ * a sched_yield() loop leaves its CPU free for the work it is waiting for.
+ * Returns false if it could not sleep (no scheduler, idle thread).
+ */
+bool sched_sleep_us(uint64_t microseconds);
+
+/*
  * sched_exit_current
  *
  * Switch away from a thread which has already entered TH_TERMINATE. This
@@ -211,6 +242,14 @@ bool sched_mlfq_self_test(void);
  * sched_validate
  */
 bool sched_validate(void);
+
+/*
+ * The most CPUs that have been executing threads of user processes at the same
+ * time since the peak was last reset (a user thread counts while it is on a CPU,
+ * in user mode or inside a system call). For the SMP tests.
+ */
+uint32_t sched_user_running_peak(void);
+void sched_user_running_reset_peak(void);
 
 /* The cross-CPU run queue invariants (see sched.c); walks every queue, for tests. */
 bool sched_validate_all(void);

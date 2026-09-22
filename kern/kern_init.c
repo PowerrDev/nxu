@@ -26,6 +26,7 @@
 #include <kern/tests/boot_test.h>
 #include <kern/tests/post.h>
 #include <kern/tests/smp_test.h>
+#include <kern/tests/smp_user_test.h>
 #include <platform/driverkit.h>
 #include <kern/process/proc.h>
 #include <kern/sched_prism/sched.h>
@@ -968,6 +969,13 @@ void kern_start_scheduler(const driverkit_config_t *drivers)
 	arm64_enable_irqs();
 	kputln("kern_init: IRQs enabled");
 
+#if defined(NXU_SMP_USER_TEST)
+	/* Real user processes and threads on every CPU: the boot thread supervises. */
+	if (!smp_user_test_run()) kern_fail("smp_user_test: failed");
+	kputln("smp_user_test: passed; halting (test build)");
+	for (;;) __asm__ volatile("wfe");
+#endif
+
 #if defined(NXU_SMP_TEST)
 	/* The secondary CPUs are up and the boot CPU takes interrupts: the SMP suite runs on the boot thread. */
 	if (!smp_test_run()) kern_fail("smp_test: failed");
@@ -1052,9 +1060,19 @@ void kern_init_higher_half(void)
 
 		boot_test_storage(boot_display);
 
+#if defined(NXU_SMP_USER_TEST)
+		/*
+		 * The SMP userland test measures how many CPUs really run user threads at
+		 * once, so it runs on an otherwise idle machine: no boot chime thread and
+		 * no bootd with its services competing for the CPUs.
+		 */
+		(void)boot_display;
+		(void)&kern_launch_init_process;
+#else
 		/* The file the chime plays is readable now; the thread starts playing once the scheduler runs. */
 		boot_chime_start();
 		kern_launch_init_process(boot_display);
+#endif
 	}
 
 	kern_start_scheduler(&drivers);
@@ -1135,6 +1153,21 @@ void kern_init(const void *dtb_address)
 		cpuset_fill(&everywhere, NXU_MAX_CPUS);
 		processor_set_default_affinity(&everywhere);
 		kputln("sched: new threads may run on any CPU (sched.affinity=all)");
+	}
+
+	/*
+	 * Threads of user processes run on every CPU by default. System calls that
+	 * reach single-CPU kernel code bind themselves to the boot CPU
+	 * (sched_bind_boot_cpu), so this is about user code, not the kernel's own
+	 * threads. `sched.user=boot` keeps user threads on the boot CPU alone.
+	 */
+	if (boot_arg_value("sched.user", affinity_policy, sizeof(affinity_policy)) && strcmp(affinity_policy, "boot") == 0) {
+		nxu_cpuset_t boot_only;
+
+		cpuset_clear(&boot_only);
+		cpuset_add(&boot_only, 0U);
+		processor_set_default_user_affinity(&boot_only);
+		kputln("sched: user threads stay on the boot CPU (sched.user=boot)");
 	}
 
 	kern_dump_boot_dtb(device_tree);

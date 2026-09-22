@@ -595,7 +595,9 @@ static bool exception_handle_user_fault(arm64_exception_frame_t *frame)
 	thread_t faulting_thread = current_thread();
 
 	if (faulting_thread != 0 && (faulting_thread->sig_blocked & (1U << signal)) == 0U) {
-		nxu_sigaction_t action = proc->p_sigact[signal];
+		nxu_sigaction_t action;
+
+		(void)signal_get_action(proc, signal, &action);
 
 		if (action.handler > NXU_SIG_IGN) {
 			uint32_t previous_mask = faulting_thread->sig_blocked;
@@ -682,7 +684,10 @@ static void exception_deliver_pending_signals(arm64_exception_frame_t *frame)
 
 		if (signal == 0U) return;
 
-		nxu_sigaction_t action = proc->p_sigact[signal];
+		nxu_sigaction_t action;
+
+		(void)signal_get_action(proc, signal, &action);
+
 		uint32_t terminate_with = 0U;
 
 		if (signal == NXU_SIGKILL) {
@@ -862,7 +867,20 @@ void exception_handle(arm64_exception_frame_t *frame)
 	exception_dispatch(frame);
 
 	if (thread != 0) {
-		exception_deliver_pending_signals(frame);
+		/*
+		 * A thread that was terminated while it ran (another CPU killed its
+		 * process, or exited the last of its siblings) has no business going back
+		 * to user mode: leave the way an exiting thread does, by returning into
+		 * the kernel context that entered EL0. That is what the CPU tearing the
+		 * process down is waiting for (it kicked this CPU with an interrupt to get
+		 * here). Signal delivery is pointless for a dead thread.
+		 */
+		if (thread_is_terminated(thread)) {
+			exception_unwind_to_kernel(frame);
+		} else {
+			exception_deliver_pending_signals(frame);
+		}
+
 		thread->machine.user_frame = 0;
 	}
 }

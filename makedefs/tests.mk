@@ -60,6 +60,7 @@ TEST_IDS := \
     windowserver-process \
     about-sevos-process \
     smp \
+    smp-user \
     sound
 
 
@@ -198,6 +199,13 @@ TEST_smp_CFLAGS := -DNXU_SMP_TEST
 TEST_smp_SMP := 4
 TEST_smp_TIMEOUT := 120
 
+TEST_smp-user_GROUP := Kernel
+TEST_smp-user_DESC := SMP userland: EL0 processes and threads on four CPUs, concurrently
+TEST_smp-user_PASS := smp_user_test: passed
+TEST_smp-user_CFLAGS := -DNXU_SMP_USER_TEST
+TEST_smp-user_SMP := 4
+TEST_smp-user_TIMEOUT := 300
+
 TEST_sound_GROUP := Sound
 TEST_sound_DESC := Tone, boot chime and playsound through VirtIO Sound (audible)
 TEST_sound_PASS := sound_test: passed
@@ -259,7 +267,7 @@ test-list:
 
 check-list:
 
-	@printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'default' '$(CHECK_TIMEOUT)' '$(CHECK_DEFAULT_PASS)' '-' '-' '-' '-' '1'
+	@printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'default' '$(CHECK_TIMEOUT)' '$(CHECK_DEFAULT_PASS)' '-' '-' '-' '-' '4'
 	@$(foreach id,$(CHECK_IDS),printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' '$(id)' '$(or $(TEST_$(id)_TIMEOUT),$(CHECK_TIMEOUT))' '$(TEST_$(id)_PASS)' '$(or $(TEST_$(id)_CFLAGS),-)' '$(if $(TEST_$(id)_CAPTURE),1,-)' '$(or $(TEST_$(id)_VERIFY),-)' '$(or $(TEST_$(id)_FRAMEWORKS),-)' '$(or $(TEST_$(id)_SMP),1)';)
 
 

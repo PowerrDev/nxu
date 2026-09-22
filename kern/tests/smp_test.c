@@ -28,8 +28,11 @@
 #include <kern/sched_prism/processor.h>
 #include <kern/sched_prism/sched.h>
 #include <kern/sched_prism/waitq.h>
+#include <vm/address_space.h>
 #include <vm/pmm.h>
+#include <vm/vm_fault.h>
 #include <vm/vm_kern.h>
+#include <vm/vm_map.h>
 #include <vm/vmm.h>
 
 #include <stdbool.h>
@@ -395,6 +398,69 @@ static bool test_ping_pong(void)
 
 	if (!check(finished, name, "the threads did not finish (a wakeup was lost)")) return false;
 	return check(g_pp.rounds[0] == PING_PONG_ROUNDS && g_pp.rounds[1] == PING_PONG_ROUNDS, name, "wrong number of rounds");
+}
+
+/* ---- 4b: the sequence-checked sleep, with no lock shared with the waker ---- */
+
+#define SEQ_ROUNDS 3000U
+
+static struct {
+	waitq_t queue[2];
+	volatile uint32_t turn;
+	volatile uint32_t rounds[2];
+	volatile uint32_t done;
+} g_seq;
+
+/*
+ * The same ping-pong as test_ping_pong, but the condition (whose turn it is) is
+ * a plain atomic word, not protected by any lock the waker also takes, so the
+ * only thing standing between "not my turn" and "asleep" is the wait queue's
+ * sequence number.
+ */
+static void seq_worker(void *argument)
+{
+	uint32_t me = (uint32_t)(uintptr_t)argument;
+	uint32_t other = 1U - me;
+
+	for (uint32_t round = 0U; round < SEQ_ROUNDS; round++) {
+		for (;;) {
+			uint32_t seq = waitq_seq(&g_seq.queue[me]);
+
+			if (__atomic_load_n(&g_seq.turn, __ATOMIC_ACQUIRE) == me) break;
+
+			(void)waitq_block_seq(&g_seq.queue[me], seq, false);
+		}
+
+		__atomic_store_n(&g_seq.turn, other, __ATOMIC_RELEASE);
+		waitq_wake_one(&g_seq.queue[other]);
+		g_seq.rounds[me]++;
+	}
+
+	__atomic_add_fetch(&g_seq.done, 1U, __ATOMIC_ACQ_REL);
+}
+
+static bool test_seq_wait(void)
+{
+	const char *name = "seqwait";
+	nxu_cpuset_t first;
+	nxu_cpuset_t second;
+
+	memset((void *)&g_seq, 0, sizeof(g_seq));
+	waitq_init(&g_seq.queue[0]);
+	waitq_init(&g_seq.queue[1]);
+
+	cpus_only(&first, g_ncpu > 2U ? 1U : 0U);
+	cpus_only(&second, g_ncpu > 2U ? 2U : 1U);
+
+	if (!check(spawn(seq_worker, (void *)0, &first, false), name, "could not start the first thread")) return false;
+	if (!check(spawn(seq_worker, (void *)1, &second, false), name, "could not start the second thread")) return false;
+
+	bool finished = wait_for(&g_seq.done, 2U, 30000000ULL);
+
+	release_threads();
+
+	if (!check(finished, name, "the threads did not finish (a wakeup was lost)")) return false;
+	return check(g_seq.rounds[0] == SEQ_ROUNDS && g_seq.rounds[1] == SEQ_ROUNDS, name, "wrong number of rounds");
 }
 
 /* ---- 5: reschedule IPIs ------------------------------------------------ */
@@ -970,6 +1036,334 @@ static bool test_memory(void)
 	return check(pmm_get_free_page_count() + 8ULL >= free_before, name, "pages were leaked");
 }
 
+/* ---- 10: user address spaces shared by several CPUs ---------------------- */
+
+/*
+ * These drive the user-space VM code (vm/address_space.c, vm_fault.c, vm_map.c)
+ * directly from kernel threads on different CPUs, on synthetic address spaces
+ * that no process owns, so that the races can be aimed precisely: a page
+ * unmapped while another CPU holds its translation, a page faulted in while the
+ * region is being unmapped, and the same copy-on-write page broken by two CPUs
+ * at once.
+ */
+
+static bool user_space_new(vm_address_space_t *space)
+{
+	memset(space, 0, sizeof(*space));
+	return vm_address_space_create(space);
+}
+
+static void user_space_free(vm_address_space_t *space)
+{
+	vm_map_destroy_all(space);
+	(void)vm_address_space_release_pages(space);
+	(void)vm_address_space_destroy(space);
+}
+
+static void user_cpus(nxu_cpuset_t *first, nxu_cpuset_t *second)
+{
+	cpus_only(first, g_ncpu > 2U ? 1U : 0U);
+	cpus_only(second, g_ncpu > 2U ? 2U : 1U);
+}
+
+/* -- user TLB shootdown: unmap under a reader's cached translation -- */
+
+#define UTLB_ROUNDS 300U
+#define UTLB_VA 0x10000000ULL
+#define UTLB_TAG 0x5554000000ULL
+
+static struct {
+	vm_address_space_t space;
+	volatile uint32_t published;
+	volatile uint32_t acked;
+	volatile uint32_t done;
+	volatile uint32_t mismatches;
+	volatile uint64_t expected;
+} g_utlb;
+
+static void utlb_writer(void *argument)
+{
+	(void)argument;
+
+	uint64_t held = 0ULL;
+	bool holding = false;
+
+	for (uint32_t round = 1U; round <= UTLB_ROUNDS; round++) {
+		uint64_t physical;
+		uint64_t alias;
+
+		/* A different physical page every round: the previous one is still held. */
+		if (!pmm_allocate_page(&physical) || !vmm_physical_to_higher_half(physical, &alias)) {
+			__atomic_add_fetch(&g_utlb.mismatches, 1U, __ATOMIC_ACQ_REL);
+			break;
+		}
+
+		*(volatile uint64_t *)alias = UTLB_TAG + round;
+
+		if (holding) (void)pmm_free_page(held);
+
+		holding = false;
+
+		if (!vm_address_space_map_page(&g_utlb.space, UTLB_VA, physical, VM_USER_PROTECTION_READ_WRITE)) {
+			__atomic_add_fetch(&g_utlb.mismatches, 1U, __ATOMIC_ACQ_REL);
+			(void)pmm_free_page(physical);
+			break;
+		}
+
+		g_utlb.expected = UTLB_TAG + round;
+		__atomic_store_n(&g_utlb.published, round, __ATOMIC_RELEASE);
+
+		while (__atomic_load_n(&g_utlb.acked, __ATOMIC_ACQUIRE) != round) cpu_relax();
+
+		if (!vm_address_space_unmap_page(&g_utlb.space, UTLB_VA)) __atomic_add_fetch(&g_utlb.mismatches, 1U, __ATOMIC_ACQ_REL);
+
+		/* What a stale translation would still reach now holds something else. */
+		*(volatile uint64_t *)alias = TLB_POISON;
+		held = physical;
+		holding = true;
+	}
+
+	if (holding) (void)pmm_free_page(held);
+
+	__atomic_add_fetch(&g_utlb.done, 1U, __ATOMIC_ACQ_REL);
+}
+
+static void utlb_reader(void *argument)
+{
+	(void)argument;
+
+	for (uint32_t round = 1U; round <= UTLB_ROUNDS; round++) {
+		while (__atomic_load_n(&g_utlb.published, __ATOMIC_ACQUIRE) != round) cpu_relax();
+
+		/* Loaded into this CPU's TTBR0 once and left there: its TLB keeps the translation between rounds. */
+		if (!vm_address_space_activate(&g_utlb.space)) {
+			__atomic_add_fetch(&g_utlb.mismatches, 1U, __ATOMIC_ACQ_REL);
+		} else if (*(volatile uint64_t *)UTLB_VA != g_utlb.expected) {
+			__atomic_add_fetch(&g_utlb.mismatches, 1U, __ATOMIC_ACQ_REL);
+		}
+
+		__atomic_store_n(&g_utlb.acked, round, __ATOMIC_RELEASE);
+	}
+
+	(void)vm_address_space_deactivate();
+	__atomic_add_fetch(&g_utlb.done, 1U, __ATOMIC_ACQ_REL);
+}
+
+static bool test_user_tlb(void)
+{
+	const char *name = "usertlb";
+	nxu_cpuset_t writer_cpu;
+	nxu_cpuset_t reader_cpu;
+
+	memset((void *)&g_utlb, 0, sizeof(g_utlb));
+	user_cpus(&writer_cpu, &reader_cpu);
+
+	if (!check(user_space_new(&g_utlb.space), name, "could not create an address space")) return false;
+
+	if (!check(spawn(utlb_reader, 0, &reader_cpu, false), name, "could not start the reader")) return false;
+	if (!check(spawn(utlb_writer, 0, &writer_cpu, false), name, "could not start the writer")) return false;
+
+	bool finished = wait_for(&g_utlb.done, 2U, 60000000ULL);
+
+	release_threads();
+
+	if (!check(finished, name, "the writer and reader did not finish")) return false;
+
+	user_space_free(&g_utlb.space);
+
+	return check(g_utlb.mismatches == 0U, name, "a CPU translated through a stale entry after a user page was unmapped");
+}
+
+/* -- a fault racing an munmap of its region -- */
+
+#define VRACE_ITERATIONS 400U
+#define VRACE_PAGES 8U
+#define VRACE_BASE 0x20000000ULL
+
+static struct {
+	vm_address_space_t space;
+	volatile uint32_t stop;
+	volatile uint32_t done;
+} g_vrace;
+
+static void vrace_faulter(void *argument)
+{
+	uint32_t state = (uint32_t)(uintptr_t)argument * 2654435761U + 1U;
+
+	while (!__atomic_load_n(&g_vrace.stop, __ATOMIC_ACQUIRE)) {
+		state = state * 1664525U + 1013904223U;
+		(void)vm_fault_user(&g_vrace.space, VRACE_BASE + (uint64_t)((state >> 16U) % VRACE_PAGES) * 4096ULL, VM_FAULT_WRITE);
+	}
+
+	__atomic_add_fetch(&g_vrace.done, 1U, __ATOMIC_ACQ_REL);
+}
+
+static bool test_fault_vs_unmap(void)
+{
+	const char *name = "vmrace";
+	uint64_t free_before = pmm_get_free_page_count();
+	nxu_cpuset_t first;
+	nxu_cpuset_t second;
+
+	memset((void *)&g_vrace, 0, sizeof(g_vrace));
+	user_cpus(&first, &second);
+
+	if (!check(user_space_new(&g_vrace.space), name, "could not create an address space")) return false;
+
+	if (!check(spawn(vrace_faulter, (void *)1, &first, false), name, "could not start a faulter")) return false;
+	if (!check(spawn(vrace_faulter, (void *)2, &second, false), name, "could not start a faulter")) return false;
+
+	uint32_t stragglers = 0U;
+
+	for (uint32_t iteration = 0U; iteration < VRACE_ITERATIONS; iteration++) {
+		if (!check(vm_map_reserve(&g_vrace.space, VRACE_BASE, VRACE_BASE + (uint64_t)VRACE_PAGES * 4096ULL, VM_USER_PROTECTION_READ_WRITE), name, "vm_map_reserve failed")) break;
+
+		/* Let the faulters populate part of it... */
+		uint64_t until = now_us() + 20ULL + (uint64_t)(iteration % 7U) * 15ULL;
+
+		while (now_us() < until) cpu_relax();
+
+		/* ...then unmap it under them. */
+		if (!check(vm_map_free(&g_vrace.space, VRACE_BASE, (uint64_t)VRACE_PAGES * 4096ULL), name, "vm_map_free failed")) break;
+
+		/* From here no fault may put a page back into a region that no longer exists. */
+		until = now_us() + 60ULL;
+
+		while (now_us() < until) cpu_relax();
+
+		for (uint32_t page = 0U; page < VRACE_PAGES; page++) {
+			vm_user_page_mapping_t mapping;
+			uint64_t address = VRACE_BASE + (uint64_t)page * 4096ULL;
+
+			if (vm_address_space_query_page(&g_vrace.space, address, &mapping)) {
+				stragglers++;
+				(void)vm_address_space_unmap_page(&g_vrace.space, address);
+				(void)pmm_free_page(mapping.physical_address);
+			}
+		}
+	}
+
+	__atomic_store_n(&g_vrace.stop, 1U, __ATOMIC_RELEASE);
+	bool finished = wait_for(&g_vrace.done, 2U, 30000000ULL);
+
+	release_threads();
+	user_space_free(&g_vrace.space);
+
+	if (!check(finished, name, "the faulters did not stop")) return false;
+	if (!check(stragglers == 0U, name, "a page was mapped into a region after it had been unmapped")) return false;
+
+	return check(pmm_get_free_page_count() + 8ULL >= free_before, name, "pages were leaked");
+}
+
+/* -- two CPUs breaking the same copy-on-write page -- */
+
+#define COW_ROUNDS 150U
+#define COW_VA 0x30000000ULL
+
+static struct {
+	vm_address_space_t parent;
+	vm_address_space_t child;
+	volatile uint32_t round;
+	volatile uint32_t arrived[COW_ROUNDS + 1U];
+	volatile uint32_t finished[COW_ROUNDS + 1U];
+	volatile uint32_t failures;
+	volatile uint32_t quit;
+} g_cow;
+
+static void cow_worker(void *argument)
+{
+	(void)argument;
+
+	for (uint32_t round = 1U; round <= COW_ROUNDS; round++) {
+		while (__atomic_load_n(&g_cow.round, __ATOMIC_ACQUIRE) < round) {
+			if (__atomic_load_n(&g_cow.quit, __ATOMIC_ACQUIRE)) return;
+			cpu_relax();
+		}
+
+		/* Both workers leave the barrier together and fault on the same shared page. */
+		(void)__atomic_add_fetch(&g_cow.arrived[round], 1U, __ATOMIC_ACQ_REL);
+
+		while (__atomic_load_n(&g_cow.arrived[round], __ATOMIC_ACQUIRE) < 2U) cpu_relax();
+
+		if (!vm_fault_user(&g_cow.parent, COW_VA, VM_FAULT_WRITE)) __atomic_add_fetch(&g_cow.failures, 1U, __ATOMIC_ACQ_REL);
+
+		(void)__atomic_add_fetch(&g_cow.finished[round], 1U, __ATOMIC_ACQ_REL);
+	}
+}
+
+static bool test_cow_race(void)
+{
+	const char *name = "cowrace";
+	uint64_t free_before = pmm_get_free_page_count();
+	nxu_cpuset_t first;
+	nxu_cpuset_t second;
+
+	memset((void *)&g_cow, 0, sizeof(g_cow));
+	user_cpus(&first, &second);
+
+	if (!check(spawn(cow_worker, 0, &first, false), name, "could not start a worker")) return false;
+	if (!check(spawn(cow_worker, 0, &second, false), name, "could not start a worker")) return false;
+
+	bool ok = true;
+
+	for (uint32_t round = 1U; round <= COW_ROUNDS && ok; round++) {
+		uint64_t physical;
+		uint64_t alias;
+
+		ok = user_space_new(&g_cow.parent) && pmm_allocate_page(&physical) && vmm_physical_to_higher_half(physical, &alias);
+
+		if (!ok) {
+			kprintf("smp_test: %s: FAILED: setup\n", name);
+			break;
+		}
+
+		*(volatile uint64_t *)alias = 0xC0DE000000ULL + round;
+
+		ok = vm_map_reserve(&g_cow.parent, COW_VA, COW_VA + 4096ULL, VM_USER_PROTECTION_READ_WRITE) &&
+			vm_address_space_map_page(&g_cow.parent, COW_VA, physical, VM_USER_PROTECTION_READ_WRITE) &&
+			vm_address_space_fork(&g_cow.parent, &g_cow.child);
+
+		if (!ok) {
+			kprintf("smp_test: %s: FAILED: fork of the address space\n", name);
+			break;
+		}
+
+		/* Both spaces now share the page copy-on-write; two CPUs break it in the parent at once. */
+		__atomic_store_n(&g_cow.round, round, __ATOMIC_RELEASE);
+
+		ok = wait_for(&g_cow.finished[round], 2U, 10000000ULL);
+
+		vm_user_page_mapping_t parent_page;
+		vm_user_page_mapping_t child_page;
+
+		if (ok) {
+			ok = vm_address_space_query_page(&g_cow.parent, COW_VA, &parent_page) &&
+				vm_address_space_query_page(&g_cow.child, COW_VA, &child_page) &&
+				parent_page.protection == VM_USER_PROTECTION_READ_WRITE && !parent_page.cow &&
+				parent_page.physical_address != child_page.physical_address;
+
+			uint64_t parent_alias;
+
+			ok = ok && vmm_physical_to_higher_half(parent_page.physical_address, &parent_alias) &&
+				*(volatile uint64_t *)parent_alias == 0xC0DE000000ULL + round;
+		}
+
+		if (!ok) kprintf("smp_test: %s: FAILED: after round %u the copy is wrong or was lost\n", name, round);
+
+		/* Each mapping owns its page: the child's is the original, the parent's is the copy. */
+		user_space_free(&g_cow.child);
+		user_space_free(&g_cow.parent);
+	}
+
+	__atomic_store_n(&g_cow.quit, 1U, __ATOMIC_RELEASE);
+	release_threads();
+
+	if (!ok) return false;
+	if (!check(g_cow.failures == 0U, name, "a COW fault that lost the race to another CPU was reported as a failure")) return false;
+
+	return check(pmm_get_free_page_count() + 8ULL >= free_before, name, "pages were leaked");
+}
+
 /* ---- the suite ---------------------------------------------------------- */
 
 typedef struct {
@@ -984,11 +1378,15 @@ bool smp_test_run(void)
 		{ "pinned", test_pinned_per_cpu },
 		{ "mlfq", test_mlfq_concurrent },
 		{ "wakeups", test_ping_pong },
+		{ "seqwait", test_seq_wait },
 		{ "ipi", test_ipi },
 		{ "affinity", test_affinity },
 		{ "balance", test_balance },
 		{ "stress", test_stress },
-		{ "memory", test_memory }
+		{ "memory", test_memory },
+		{ "usertlb", test_user_tlb },
+		{ "vmrace", test_fault_vs_unmap },
+		{ "cowrace", test_cow_race }
 	};
 
 	g_ncpu = smp_online_count();

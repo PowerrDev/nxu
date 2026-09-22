@@ -493,14 +493,11 @@ syscall_spawn(uint64_t user_path, uint64_t user_name, uint64_t caps)
 	if (!vm_copy_string_from_user(name, user_name, sizeof(name))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 
 	proc_t child;
-	loader_status_t status = loader_spawn(current_proc(), path, name, &child);
+	loader_status_t status = loader_spawn_caps(current_proc(), path, name, (uint32_t)caps, &child);
 	if (status == LOADER_STATUS_NOT_FOUND) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
 	if (status == LOADER_STATUS_NO_MEMORY) return syscall_error(SYSCALL_ERROR_NO_MEMORY);
 	if (status != LOADER_STATUS_OK || child == 0) return syscall_error(SYSCALL_ERROR_IO);
 
-	/* The child has not run yet: nothing is preemptible, so it cannot act
-	 * with the (empty) default set before this. */
-	proc_set_caps(child, (uint32_t)caps);
 	return syscall_return(child->p_ident.pid);
 }
 
@@ -1050,11 +1047,18 @@ syscall_ipc_receive_impl(uint64_t port_name, uint64_t user_buffer, uint64_t capa
 	bool interrupted = false;
 
 	for (;;) {
+		/*
+		 * The sequence number is taken before the queue is examined: a sender on
+		 * another CPU that enqueues between the examination and the sleep moves
+		 * it, and the sleep then returns at once (see ipc_port_wait_prepare).
+		 */
+		uint32_t seq = ipc_port_wait_prepare(port);
+
 		status = ipc_port_dequeue(port, &kmsg);
 		if (status != IPC_QUEUE_EMPTY || !wait) break;
 
 		/* Never sleep through a signal that is already waiting. */
-		if (signal_pending_for(proc, current_thread()) || !ipc_port_wait(port)) {
+		if (signal_pending_for(proc, current_thread()) || !ipc_port_wait_seq(port, seq)) {
 			interrupted = true;
 			break;
 		}
@@ -1136,6 +1140,9 @@ syscall_wait(uint64_t pid, uint64_t user_status)
 		proc_id_t reaped = 0U;
 		uint64_t status = 0ULL;
 
+		/* Before looking for an exited child: a child exiting on another CPU right after the look moves it. */
+		uint32_t seq = waitq_seq(&self->p_waitq);
+
 		switch (proc_wait_child(self, target, &reaped, &status)) {
 		case PROC_WAIT_REAPED:
 			if (user_status != 0ULL && !vm_copy_to_user(user_status, &status, sizeof(status))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
@@ -1149,7 +1156,7 @@ syscall_wait(uint64_t pid, uint64_t user_status)
 		}
 
 		/* Never sleep through a signal that is already waiting. */
-		if (signal_pending_for(self, thread) || !waitq_block(&self->p_waitq, true)) {
+		if (signal_pending_for(self, thread) || !waitq_block_seq(&self->p_waitq, seq, true)) {
 			return syscall_error(SYSCALL_ERROR_INTERRUPTED);
 		}
 	}
@@ -1304,14 +1311,23 @@ syscall_thread_create(uint64_t entry, uint64_t stack, uint64_t arg)
 static syscall_result_t
 syscall_thread_exit(uint64_t status)
 {
-	task_t task = proc_task(current_proc());
+	proc_t proc = current_proc();
+	task_t task = proc_task(proc);
 
-	if (task_active_thread_count(task) <= 1U) {
-		return syscall_exit(status);
-	}
-
+	/*
+	 * Terminate this thread first, then ask whether any is left. Deciding from a
+	 * count read beforehand is a race: with two threads exiting at once on two
+	 * CPUs each would see the other still alive, both would leave, and the
+	 * process would never exit. Terminating first makes the count final for the
+	 * thread that empties the task; if two threads empty it together both may see
+	 * zero, and proc_exit lets only one of them proceed.
+	 */
 	if (!sched_thread_terminate(current_thread())) {
 		return syscall_error(SYSCALL_ERROR_IO);
+	}
+
+	if (task_active_thread_count(task) == 0U) {
+		return syscall_exit(status);
 	}
 
 	sched_exit_current();
@@ -1402,11 +1418,119 @@ syscall_socket_accept(uint64_t listen_descriptor)
 	return syscall_socket_install(socket);
 }
 
+/*
+ * getcpu: the logical id of the CPU the caller is running on (it may move
+ * before it looks at the answer). setaffinity: restrict the calling thread to
+ * the CPUs whose bits are set in mask; it moves at once if it is on one that is
+ * no longer allowed.
+ */
+static syscall_result_t
+syscall_getcpu(void)
+{
+	return syscall_return((uint64_t)current_processor()->cpu_id);
+}
+
+static syscall_result_t
+syscall_setaffinity(uint64_t mask)
+{
+	nxu_cpuset_t requested;
+	nxu_cpuset_t online;
+	nxu_cpuset_t allowed;
+
+	cpuset_clear(&requested);
+
+	for (uint32_t cpu = 0U; cpu < NXU_MAX_CPUS && cpu < 64U; cpu++) {
+		if ((mask & (1ULL << cpu)) != 0ULL) cpuset_add(&requested, cpu);
+	}
+
+	processor_online_set(&online);
+	cpuset_intersect(&allowed, &requested, &online);
+
+	if (cpuset_empty(&allowed)) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	if (!thread_set_affinity(current_thread(), &requested)) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
+	if (!cpuset_contains(&requested, current_processor()->cpu_id)) (void)sched_yield();
+
+	return syscall_return(0ULL);
+}
+
+/*
+ * Which system calls run on any CPU and which have to run on the boot CPU.
+ *
+ * The filesystems (VFS, ext4, btrfs, ramfs, devfs), the drivers and the display
+ * and audio paths, and process creation (spawn, fork, exec: they read the image
+ * through the VFS and copy descriptor tables) were written for one CPU and have
+ * no locking. A system call that can reach them runs bound to the boot CPU
+ * (sched_bind_boot_cpu), where kernel code is still serialised by running to
+ * completion or to an explicit sleep, exactly as before. Everything below is
+ * safe on any CPU: process and thread lifecycle, signals, memory (mmap,
+ * shared memory), IPC and the scheduler, all of which now take their own locks
+ * (see doc/kern/smp.md). proc_exit binds itself, because closing descriptors
+ * reaches the VFS.
+ *
+ * The default is "boot CPU": a system call added later is safe until someone
+ * audits it and lists it here.
+ */
+static bool
+syscall_is_cpu_agnostic(uint64_t number)
+{
+	switch (number) {
+	case SYSCALL_EXIT:
+	case SYSCALL_GETPID:
+	case SYSCALL_GETPPID:
+	case SYSCALL_YIELD:
+	case SYSCALL_UPTIME_US:
+	case SYSCALL_GET_CAPS:
+	case SYSCALL_WAIT:
+	case SYSCALL_WAITPID:
+	case SYSCALL_KILL:
+	case SYSCALL_SIGACTION:
+	case SYSCALL_SIGPROCMASK:
+	case SYSCALL_SIGRETURN:
+	case SYSCALL_MMAP:
+	case SYSCALL_MUNMAP:
+	case SYSCALL_SHM_CREATE:
+	case SYSCALL_SHM_MAP:
+	case SYSCALL_THREAD_CREATE:
+	case SYSCALL_THREAD_EXIT:
+	case SYSCALL_THREAD_SELF:
+	case SYSCALL_IPC_PORT_ALLOCATE:
+	case SYSCALL_IPC_PORT_DEALLOCATE:
+	case SYSCALL_IPC_BOOTSTRAP_PORT:
+	case SYSCALL_IPC_SEND:
+	case SYSCALL_IPC_RECEIVE:
+	case SYSCALL_IPC_RECEIVE_WAIT:
+	case SYSCALL_IPC_REGISTER_BOOTSTRAP:
+	case SYSCALL_GETCPU:
+	case SYSCALL_SETAFFINITY:
+		return true;
+
+	default:
+		return false;
+	}
+}
+
+static syscall_result_t syscall_dispatch_inner(const syscall_request_t *request);
+
 syscall_result_t
 syscall_dispatch(const syscall_request_t *request)
 {
 	if (request == 0) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
+	bool bind = !syscall_is_cpu_agnostic(request->number);
+
+	if (bind) sched_bind_boot_cpu();
+
+	syscall_result_t result = syscall_dispatch_inner(request);
+
+	if (bind) sched_unbind_boot_cpu();
+
+	return result;
+}
+
+static syscall_result_t
+syscall_dispatch_inner(const syscall_request_t *request)
+{
 	switch (request->number) {
 	case SYSCALL_EXIT: return syscall_exit(request->arguments[0]);
 	case SYSCALL_WRITE: return syscall_write(request->arguments[0], request->arguments[1], request->arguments[2]);
@@ -1468,6 +1592,8 @@ syscall_dispatch(const syscall_request_t *request)
 	case SYSCALL_GET_CAPS: return syscall_return(current_proc() != 0 ? current_proc()->p_caps : 0ULL);
 	case SYSCALL_IOCTL: return syscall_ioctl(request->arguments[0], request->arguments[1], request->arguments[2]);
 	case SYSCALL_IPC_RECEIVE_WAIT: return syscall_ipc_receive_wait(request->arguments[0], request->arguments[1], request->arguments[2], request->arguments[3], request->arguments[4]);
+	case SYSCALL_GETCPU: return syscall_getcpu();
+	case SYSCALL_SETAFFINITY: return syscall_setaffinity(request->arguments[0]);
 	default: return syscall_error(SYSCALL_ERROR_UNKNOWN);
 	}
 }

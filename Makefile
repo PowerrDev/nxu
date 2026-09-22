@@ -342,6 +342,7 @@ C_SOURCES := \
     kern/tests/process_control_test.c \
     kern/tests/socket_process_test.c \
     kern/tests/smp_test.c \
+    kern/tests/smp_user_test.c \
     kern/tests/sound_test.c \
     kern/tests/xamethyst_process_test.c \
     kern/tests/windowserver_process_test.c \
@@ -437,6 +438,7 @@ USER_C_SOURCES := \
     frameworks/BootDaemons.framework/ipctest_a.c \
     frameworks/BootDaemons.framework/ipctest_b.c \
     frameworks/BootDaemons.framework/threadtest.c \
+    frameworks/BootDaemons.framework/smptest.c \
     frameworks/BootDaemons.framework/faulttest.c \
     frameworks/BootDaemons.framework/proctest.c \
     frameworks/BootDaemons.framework/execchild.c \
@@ -503,6 +505,7 @@ USER_DAEMONS := \
     $(USER_BUILD)/ipctest_a \
     $(USER_BUILD)/ipctest_b \
     $(USER_BUILD)/threadtest \
+    $(USER_BUILD)/smptest \
     $(USER_BUILD)/faulttest \
     $(USER_BUILD)/proctest \
     $(USER_BUILD)/execchild \
@@ -655,6 +658,13 @@ $(USER_BUILD)/threadtest: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDa
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 
+$(USER_BUILD)/smptest: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/smptest.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+
 $(USER_BUILD)/faulttest: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/faulttest.o
 
 	$(QUIET_PRINT) "LD" "$@"
@@ -774,6 +784,8 @@ $(USER_STAGE_STAMP): $(USER_DAEMONS) $(USER_SERVICE_PLISTS)
 	$(Q)cp $(USER_BUILD)/ipctest_b $(DISK_ROOT)/System/Library/CoreServices/ipctest_b
 
 	$(Q)cp $(USER_BUILD)/threadtest $(DISK_ROOT)/System/Library/CoreServices/threadtest
+
+	$(Q)cp $(USER_BUILD)/smptest $(DISK_ROOT)/System/Library/CoreServices/smptest
 
 	$(Q)cp $(USER_BUILD)/faulttest $(DISK_ROOT)/System/Library/CoreServices/faulttest
 

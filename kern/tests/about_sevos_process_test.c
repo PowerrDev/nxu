@@ -70,16 +70,12 @@ about_sevos_process_test(void)
 		return false;
 	}
 
-	loader_status_t status_windowserver = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/windowserver_service", "windowserver_service", &proc_windowserver);
+	loader_status_t status_windowserver = loader_spawn_caps(proc_kernel(), "/disk/System/Library/CoreServices/windowserver_service", "windowserver_service", NXU_CAP_DISPLAY, &proc_windowserver);
 	if (status_windowserver != LOADER_STATUS_OK) {
 		kputs("about_sevos_process_test: spawning windowserver_service failed: ");
 		kputln(loader_status_name(status_windowserver));
 		return false;
 	}
-
-	/* Started by the kernel, not by bootd's plist, so it has no capabilities
-	 * until we grant the one it needs: it claims the display. */
-	proc_set_caps(proc_windowserver, NXU_CAP_DISPLAY);
 
 	for (uint32_t spin = 0U; spin < ABOUT_SEVOS_PROCESS_TEST_SERVICE_WAIT_ITERATIONS; spin++) {
 		if (!sched_yield()) {

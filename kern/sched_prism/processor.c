@@ -119,6 +119,29 @@ void processor_set_default_affinity(const nxu_cpuset_t *affinity)
 }
 
 /*
+ * The affinity threads of user processes start with: every CPU (only online ones
+ * are ever chosen). Kept apart from the kernel threads' default: user code
+ * reaches the kernel only through system calls, and the ones that touch
+ * single-CPU subsystems bind themselves to the boot CPU (sched_bind_boot_cpu), so
+ * a user thread can safely run anywhere while kernel threads (which call those
+ * subsystems directly) keep the boot CPU. `sched.user=boot` puts user threads back
+ * on the boot CPU alone.
+ */
+_Static_assert(NXU_CPUSET_WORDS == 1U, "the static initialiser below assumes one word");
+
+static nxu_cpuset_t g_default_user_affinity = { { (1ULL << NXU_MAX_CPUS) - 1ULL } };
+
+void processor_default_user_affinity(nxu_cpuset_t *affinity)
+{
+	*affinity = g_default_user_affinity;
+}
+
+void processor_set_default_user_affinity(const nxu_cpuset_t *affinity)
+{
+	if (affinity != 0 && !cpuset_empty(affinity)) g_default_user_affinity = *affinity;
+}
+
+/*
  * processor_is_online
  */
 bool processor_is_online(const struct processor *processor)

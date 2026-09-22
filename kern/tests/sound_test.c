@@ -181,15 +181,12 @@ static void sound_test_thread(void *parameter)
 static bool sound_test_run_playsound(uint32_t caps, uint64_t expected, const char *what)
 {
 	proc_t proc = 0;
-	loader_status_t loaded = loader_spawn(proc_kernel(), SOUND_TEST_PLAYSOUND_PATH, "playsound", &proc);
+	loader_status_t loaded = loader_spawn_caps(proc_kernel(), SOUND_TEST_PLAYSOUND_PATH, "playsound", caps, &proc);
 
 	if (loaded != LOADER_STATUS_OK) {
 		SOUND_TEST_LOG("FAILED: %s: playsound could not be started: %s\n", what, loader_status_name(loaded));
 		return false;
 	}
-
-	/* The first process started would be PID 1 and hold every capability; it gets the ones this run is about. */
-	proc_set_caps(proc, caps);
 
 	uint64_t status = 0ULL;
 	uint64_t deadline = timer_get_microseconds() + 60000000ULL;

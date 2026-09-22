@@ -11,6 +11,8 @@
 
 typedef struct processor *processor_t;
 
+struct vm_address_space;
+
 typedef enum {
 	PROCESSOR_OFFLINE,
 	PROCESSOR_STARTING,
@@ -44,6 +46,13 @@ struct processor {
 	/* The MPIDR affinity this CPU is known to firmware and the GIC by. */
 	uint64_t mpidr;
 
+	/*
+	 * (own) The user address space loaded in this CPU's TTBR0, or 0 when TTBR0
+	 * walks are disabled (idle, kernel threads). Each CPU owns its translation
+	 * state; nothing else writes this. See vm/address_space.c.
+	 */
+	struct vm_address_space *active_space;
+
 	thread_t active_thread;			/* (own) the thread running on this CPU */
 	thread_t idle_thread;			/* never migrates, never on a run queue */
 	thread_t next_thread;
@@ -70,6 +79,7 @@ struct processor {
 	/* (own) ticks since this CPU's run queue was last boosted. */
 	uint32_t boost_ticks;
 
+	uint64_t user_dispatch_count;		/* times this CPU switched to a thread of a user process */
 	uint64_t ipi_reschedule_count;		/* reschedule IPIs taken */
 	uint64_t migrate_in_count;		/* threads placed or moved here by another CPU */
 	uint64_t migrate_out_count;		/* threads this CPU's balancer moved elsewhere */
@@ -134,6 +144,10 @@ void processor_online_set(nxu_cpuset_t *set);
  */
 void processor_default_affinity(nxu_cpuset_t *affinity);
 void processor_set_default_affinity(const nxu_cpuset_t *affinity);
+
+/* The same for threads of user processes (see processor.c). */
+void processor_default_user_affinity(nxu_cpuset_t *affinity);
+void processor_set_default_user_affinity(const nxu_cpuset_t *affinity);
 
 /*
  * processor_is_online

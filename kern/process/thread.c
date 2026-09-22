@@ -85,6 +85,8 @@ static void thread_reset_locked(thread_t thread, uint32_t slot)
 		.wakeup_deferred = false,
 		.affinity = { { 0 } },
 		.last_cpu = 0U,
+		.legacy_depth = 0U,
+		.home_task = 0,
 		.task = 0,
 		.thread_id = THREAD_ID_INVALID,
 		.ref_count = 0U,
@@ -216,6 +218,7 @@ static void thread_global_remove_locked(thread_t thread)
 static void thread_task_insert_locked(task_t task, thread_t thread)
 {
 	thread->task = task;
+	thread->home_task = task;
 	thread->task_prev = 0;
 	thread->task_next = task->threads;
 
@@ -310,7 +313,13 @@ static bool thread_create_common(
 	thread->ref_count = 1U;
 	thread->state = TH_SUSP;
 	thread->flags = kernel_thread ? TH_FLAG_KERNEL : TH_FLAG_NONE;
-	processor_default_affinity(&thread->affinity);
+
+	if (kernel_thread) {
+		processor_default_affinity(&thread->affinity);
+	} else {
+		processor_default_user_affinity(&thread->affinity);
+	}
+
 	thread->active = true;
 	thread->started = false;
 	thread->suspend_count = 1U;
@@ -1474,6 +1483,40 @@ static void thread_print_state(uint32_t state)
 	}
 
 	if (!printed) kputs("new");
+}
+
+/*
+ * thread_dump_sched
+ *
+ * One line per live thread with everything the SMP scheduler decides on: state
+ * bits, the CPU it is on (on_cpu) or the queue it is in, its affinity, whether a
+ * wakeup is deferred. For diagnosing a hang; takes only the thread lock.
+ */
+void thread_dump_sched(void)
+{
+	thread_lock(&g_thread_lock);
+
+	kputln("thread_dump_sched: tid state on_cpu queued last_cpu affinity legacy deferred task");
+
+	for (thread_t thread = g_threads_head; thread != 0; thread = thread->threads_next) {
+		processor_t on_cpu = __atomic_load_n(&thread->on_cpu, __ATOMIC_ACQUIRE);
+
+		kprintf(
+			"thread_dump_sched: %llu 0x%x %s%u %s %u 0x%llx %u %u %llu\n",
+			(unsigned long long)thread->thread_id,
+			thread->state,
+			on_cpu != 0 ? "cpu" : "-",
+			on_cpu != 0 ? on_cpu->cpu_id : 0U,
+			thread->runq != 0 ? "yes" : "no",
+			thread->last_cpu,
+			(unsigned long long)thread->affinity.words[0],
+			thread->legacy_depth,
+			thread->wakeup_deferred ? 1U : 0U,
+			(unsigned long long)(thread->task != 0 ? thread->task->task_uniqueid : 0ULL)
+		);
+	}
+
+	thread_unlock(&g_thread_lock);
 }
 
 /*

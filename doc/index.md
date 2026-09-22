@@ -7,8 +7,9 @@ provides `proc`/`task`/`thread` execution objects, performs real AArch64
 context switching and EL0 timer preemption, includes VirtIO keyboard, mouse and
 block devices, and provides a vnode-based virtual filesystem with ramfs and a
 persistent writable ext4 filesystem protected by CRC32C metadata checksums and
-JBD2 recovery. Secondary CPUs start and run their own scheduler queues (see
-[SMP](kern/smp.md)), but most of the kernel is still single-CPU.
+JBD2 recovery. Secondary CPUs run their own scheduler queues and threads of user
+processes run on all of them (see [SMP](kern/smp.md)); the filesystems and drivers
+are still single-CPU and are reached from the boot CPU.
 
 This documentation describes **the current implementation**. It is not a design
 proposal. Every statement here is derived from the source tree, and behavior
@@ -154,7 +155,7 @@ deviates from that rule in two places; both are recorded in
 | JBD2 | Implemented foundation | Checksum-v3 metadata transactions, immediate checkpointing and deterministic replay test. |
 | Fault containment, signals, `fork`, `exec` | Implemented (arm64) | See [Process control](kern/process-control.md); i386 returns "not supported". |
 | Demand paging, copy-on-write | Implemented (arm64) | Anonymous memory only; see [Demand paging](vm/demand-paging.md). |
-| SMP | Foundation implemented (arm64) | PSCI bring-up, per-CPU MLFQ queues, IPIs, affinity, migration, locked pmm/vm_kern/heap/console; kernel threads only, boot CPU by default. See [SMP](kern/smp.md). |
+| SMP | Implemented (arm64) | PSCI bring-up, per-CPU MLFQ queues, IPIs, affinity, migration, per-CPU address spaces, SMP-safe VM/faults/processes/signals/IPC; user threads run on every CPU, filesystems and drivers stay on the boot CPU. See [SMP](kern/smp.md). |
 
 ## Boot-time validation
 

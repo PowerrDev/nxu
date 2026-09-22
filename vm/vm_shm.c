@@ -9,6 +9,7 @@
 
 #include <vm/vm_shm.h>
 
+#include <kern/lock.h>
 #include <kern/memory/heap.h>
 #include <vm/pmm.h>
 
@@ -145,11 +146,28 @@ bool vm_shm_map_into(
 	if (out_va != 0) *out_va = 0ULL;
 	if (space == 0 || next_va == 0 || region == VM_SHM_REGION_NULL || out_va == 0) return false;
 
+	uint64_t span = region->page_count * PMM_PAGE_SIZE;
+
+	/*
+	 * Reserve the range under the space's lock, before anything is mapped: two
+	 * threads of a process attaching regions on different CPUs must never be
+	 * handed the same base. (A failure below leaves a hole in the window, not an
+	 * overlap: the reservation is not given back, since another attach may
+	 * already have moved past it.)
+	 */
+	nxu_spin_lock(&space->lock);
+
 	uint64_t base_va = *next_va;
 	if (base_va < VM_SHM_BASE) base_va = VM_SHM_BASE;
 
-	uint64_t span = region->page_count * PMM_PAGE_SIZE;
-	if (span == 0ULL || span > VM_SHM_WINDOW_SIZE || base_va - VM_SHM_BASE > VM_SHM_WINDOW_SIZE - span) return false;
+	if (span == 0ULL || span > VM_SHM_WINDOW_SIZE || base_va - VM_SHM_BASE > VM_SHM_WINDOW_SIZE - span) {
+		nxu_spin_unlock(&space->lock);
+		return false;
+	}
+
+	*next_va = base_va + span;
+
+	nxu_spin_unlock(&space->lock);
 
 	uint64_t mapped = 0ULL;
 	for (; mapped < region->page_count; mapped++) {
@@ -172,7 +190,6 @@ bool vm_shm_map_into(
 		return false;
 	}
 
-	*next_va = base_va + span;
 	*out_va = base_va;
 	return true;
 }

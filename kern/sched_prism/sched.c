@@ -25,8 +25,8 @@
  *                          while it is held.
  *
  * Order, outermost first:  runq_lock(cpu a) -> runq_lock(cpu b > a) ->
- * g_thread_lock. sched_lock is a leaf that is never held together with a
- * runq_lock. Code that needs two run queues (migration, balancing) takes them
+ * g_thread_lock. sched_lock is a leaf: it may be taken under a runq_lock
+ * (sched_switch marks its incoming thread), never the other way round. Code that needs two run queues (migration, balancing) takes them
  * in ascending logical CPU id, and no path holds a runq_lock while it waits
  * for anything else. A CPU takes only its own runq_lock in the hot path
  * (sched_switch, sched_tick); another CPU's is taken only to place or migrate
@@ -64,6 +64,7 @@
 #include <kern/machine/cpu.h>
 #include <kern/machine/machine_routines.h>
 #include <kern/machine/smp.h>
+#include <kern/machine/timer.h>
 #include <kern/process/proc.h>
 #include <platform/uart.h>
 #include <vm/address_space.h>
@@ -88,6 +89,59 @@ static sched_state_t g_sched;
 
 /* Every this many ticks an idle or underloaded CPU looks for work to pull from a busier one. */
 #define SCHED_BALANCE_INTERVAL_TICKS 4U
+
+/*
+ * Statistics for the SMP tests: how many CPUs are executing threads of user
+ * processes at this moment, and the largest that number has been since it was
+ * last reset. Updated in sched_switch, under the switching CPU's run queue lock,
+ * with atomics (they are shared by all CPUs).
+ */
+static uint32_t g_sched_user_running;
+static uint32_t g_sched_user_peak;
+
+static bool sched_thread_is_user(thread_t thread)
+{
+	return thread != 0 && (thread->flags & TH_FLAG_KERNEL) == 0U && !thread_is_idle(thread);
+}
+
+uint32_t sched_user_running_peak(void)
+{
+	return __atomic_load_n(&g_sched_user_peak, __ATOMIC_ACQUIRE);
+}
+
+void sched_user_running_reset_peak(void)
+{
+	__atomic_store_n(&g_sched_user_peak, __atomic_load_n(&g_sched_user_running, __ATOMIC_ACQUIRE), __ATOMIC_RELEASE);
+}
+
+/*
+ * Timed sleep. There is no per-thread timer: sleepers wait on one queue, the boot
+ * CPU's tick wakes them all while there are any, and each re-checks its own
+ * deadline and goes back to sleep if it is not due. Coarse (a tick, 10 ms) and
+ * cheap for the few callers it has.
+ */
+static waitq_t g_sched_sleep_queue;
+static uint32_t g_sched_sleepers;
+
+bool sched_sleep_us(uint64_t microseconds)
+{
+	if (!g_sched.initialized || current_thread() == 0 || thread_is_idle(current_thread())) return false;
+
+	uint64_t deadline = timer_get_microseconds() + microseconds;
+
+	(void)__atomic_add_fetch(&g_sched_sleepers, 1U, __ATOMIC_ACQ_REL);
+
+	while (timer_get_microseconds() < deadline) {
+		uint32_t seq = waitq_seq(&g_sched_sleep_queue);
+
+		if (timer_get_microseconds() >= deadline) break;
+
+		if (!waitq_block_seq(&g_sched_sleep_queue, seq, false)) break;
+	}
+
+	(void)__atomic_sub_fetch(&g_sched_sleepers, 1U, __ATOMIC_ACQ_REL);
+	return true;
+}
 
 static bool sched_switch(sched_switch_reason_t reason);
 static processor_t sched_select_cpu(thread_t thread);
@@ -299,25 +353,16 @@ static bool sched_activate_thread(thread_t thread)
 	task_t task = thread->task;
 
 	/*
-	 * Address-space and process identity are boot-CPU state so far (a single
-	 * TTBR0 bookkeeping and one "current process"): secondary CPUs run kernel
-	 * threads only, with TTBR0 disabled from the moment they came up, and have
-	 * nothing to switch. sched_cpu_may_run() keeps user threads off them.
+	 * Each CPU owns its own TTBR0: a user thread brings its task's address
+	 * space up on the CPU that is about to run it, and a kernel thread leaves
+	 * TTBR0 disabled, so a CPU that is idle or running kernel code never keeps
+	 * a dead process's page tables reachable (vm_address_space_destroy waits
+	 * for that). The process identity needs no switching: current_proc() is
+	 * derived from the running thread.
 	 */
-	if (current_processor()->cpu_id != 0U) return task_is_kernel(task);
-	proc_t proc = task_get_proc(task);
-
-	if (proc == 0) return false;
-
-	bool address_space_ready = task_is_kernel(task)
+	return task_is_kernel(task)
 		? vm_address_space_deactivate()
 		: task_activate_address_space(task);
-
-	if (!address_space_ready) return false;
-
-
-	if (current_proc() != proc && !proc_set_current(proc)) return false;
-	return true;
 }
 
 /*
@@ -416,12 +461,17 @@ void sched_thread_continue(void)
 	machine_thread_enter_user(&thread->machine);
 
 	/*
-	 * The current SYS_exit path terminates the task before redirecting ERET
-	 * through arm64_return_from_el0. Any active thread reaching this point is
-	 * therefore an invalid scheduler transition.
+	 * A thread leaves EL0 for good only when it has been terminated: by its own
+	 * exit, or by another CPU that killed its process and is now waiting for it
+	 * to get here (exception_handle unwinds a terminated thread). Anything else
+	 * returning to this point is an invalid scheduler transition.
+	 *
+	 * "Terminated" is the test, not "no longer active": thread_terminate() sets
+	 * the state and then clears `active` under the thread lock, and this thread
+	 * can notice the first and get here before the second is visible to it.
 	 */
-	if (thread_is_active(thread)) {
-		sched_fatal("thread_is_active: active user thread returned to first-run trampoline");
+	if (!thread_is_terminated(thread)) {
+		sched_fatal("thread_is_terminated: user thread left EL0 without being terminated");
 	}
 
 	sched_exit_current();
@@ -459,16 +509,56 @@ void sched_idle_continue(void *parameter)
 /*
  * sched_cpu_may_run
  *
- * Whether `thread` may run on `cpu`: its affinity allows it, and the CPU can
- * run this kind of thread. Threads of user tasks stay on the boot CPU: the
- * address-space bookkeeping (which space is live in TTBR0, the current process)
- * is single-CPU state, so a secondary CPU never runs user code yet.
+ * Whether `thread` may run on `cpu`. A thread inside kernel code that assumes a
+ * single CPU (sched_bind_boot_cpu) runs on the boot CPU whatever its affinity
+ * says; otherwise its affinity decides. Which CPUs a new thread starts with is
+ * decided at creation (processor_default_affinity and the user default).
  */
 static bool sched_cpu_may_run(thread_t thread, uint32_t cpu)
 {
-	if (!cpuset_contains(&thread->affinity, cpu)) return false;
-	if (cpu != 0U && (thread->flags & TH_FLAG_KERNEL) == 0U) return false;
-	return true;
+	if (__atomic_load_n(&thread->legacy_depth, __ATOMIC_ACQUIRE) != 0U) return cpu == 0U;
+
+	return cpuset_contains(&thread->affinity, cpu);
+}
+
+/*
+ * sched_bind_boot_cpu / sched_unbind_boot_cpu
+ *
+ * The compatibility mechanism for kernel code that was written for one CPU (the
+ * VFS and filesystems, the drivers, process creation and exec): a thread that is
+ * about to call it moves to the boot CPU first and stays there until it is done.
+ * On the boot CPU kernel code runs to completion or to an explicit sleep, exactly
+ * as it always did, so every assumption those subsystems make still holds without
+ * a lock: no two threads can be inside them at once except at a sleep, and device
+ * interrupts arrive on that same CPU.
+ *
+ * The move is an ordinary scheduling switch (it may take the thread to another
+ * CPU's run queue and back), so the caller must hold no spinlock and not have
+ * cached this CPU's identity. It nests. Binding costs nothing on the boot CPU.
+ */
+void sched_bind_boot_cpu(void)
+{
+	thread_t thread = current_thread();
+
+	if (thread == 0 || !g_sched.initialized) return;
+
+	(void)__atomic_add_fetch(&thread->legacy_depth, 1U, __ATOMIC_ACQ_REL);
+
+	/* sched_switch sends a thread that may not stay where it is back to its allowed CPU. */
+	while (current_processor()->cpu_id != 0U) {
+		if (!sched_yield()) break;
+	}
+}
+
+void sched_unbind_boot_cpu(void)
+{
+	thread_t thread = current_thread();
+
+	if (thread == 0 || !g_sched.initialized) return;
+
+	if (__atomic_load_n(&thread->legacy_depth, __ATOMIC_ACQUIRE) != 0U) {
+		(void)__atomic_sub_fetch(&thread->legacy_depth, 1U, __ATOMIC_ACQ_REL);
+	}
 }
 
 /*
@@ -564,6 +654,30 @@ static bool sched_enqueue_on(processor_t target, thread_t thread, run_queue_plac
 }
 
 /*
+ * sched_abandon
+ *
+ * A thread this CPU took off its run queue turned out not to be runnable (it was
+ * terminated or held in that instant): release it without running it. Anything
+ * that tried to make it runnable in the meantime was deferred onto it (it was
+ * still "on" this CPU), so that wakeup is carried out now unless the thread is
+ * gone. The caller holds no lock.
+ */
+static void sched_abandon(thread_t thread)
+{
+	nxu_spin_lock(&thread->sched_lock);
+	__atomic_store_n(&thread->on_cpu, (struct processor *)0, __ATOMIC_RELEASE);
+
+	bool woken = thread->wakeup_deferred;
+
+	thread->wakeup_deferred = false;
+	nxu_spin_unlock(&thread->sched_lock);
+
+	if (woken && !thread_is_terminated(thread) && thread_is_runnable(thread) && thread->runq == 0) {
+		(void)sched_enqueue_on(sched_select_cpu(thread), thread, RUN_QUEUE_TAIL);
+	}
+}
+
+/*
  * sched_switch
  *
  * Select and activate an incoming thread, then switch SP_EL1 and the AArch64
@@ -634,40 +748,55 @@ static bool sched_switch(sched_switch_reason_t reason)
 		return true;
 	}
 
-	thread_t next = run_queue_dequeue(&processor->runq);
+	thread_t next;
 
-	if (next == 0) next = processor->idle_thread;
+	for (;;) {
+		next = run_queue_dequeue(&processor->runq);
 
-	if (next == 0 || next == current) {
+		if (next == 0) next = processor->idle_thread;
+
+		if (next == 0 || next == current) {
+			nxu_spin_unlock(&processor->runq_lock);
+			ml_irq_restore(irq_state);
+			return next == current;
+		}
+
+		/*
+		 * `next` is off every queue now, so nobody else can choose it; marking it
+		 * on this CPU before the lock is dropped keeps a concurrent wakeup from
+		 * queueing it elsewhere (see thread_setrun).
+		 */
+		nxu_spin_lock(&next->sched_lock);
+		__atomic_store_n(&next->on_cpu, processor, __ATOMIC_RELEASE);
+		nxu_spin_unlock(&next->sched_lock);
+
+		next->last_cpu = processor->cpu_id;
+		processor->next_thread = next;
+		processor->dispatch_count++;
+
 		nxu_spin_unlock(&processor->runq_lock);
-		ml_irq_restore(irq_state);
-		return next == current;
-	}
 
-	/*
-	 * `next` is off every queue now, so nobody else can choose it; marking it
-	 * on this CPU before the lock is dropped keeps a concurrent wakeup from
-	 * queueing it elsewhere (see thread_setrun).
-	 */
-	nxu_spin_lock(&next->sched_lock);
-	__atomic_store_n(&next->on_cpu, processor, __ATOMIC_RELEASE);
-	nxu_spin_unlock(&next->sched_lock);
+		bool ready = sched_activate_thread(next);
 
-	next->last_cpu = processor->cpu_id;
-	processor->next_thread = next;
-	processor->dispatch_count++;
+		nxu_spin_lock(&processor->runq_lock);
 
-	nxu_spin_unlock(&processor->runq_lock);
+		/*
+		 * Another CPU can terminate or hold a thread between the moment this
+		 * one took it off the queue and the moment it became current here (it
+		 * looks for the thread on its run queue, which it has just left). A
+		 * thread that is no longer runnable is given up, not run; a thread that
+		 * was only held is queued again when it is released.
+		 */
+		if (ready && thread_set_current(next)) break;
 
-	if (!sched_activate_thread(next)) {
-		sched_fatal("sched_activate_thread: incoming thread activation failed");
-	}
-
-	nxu_spin_lock(&processor->runq_lock);
-
-	if (!thread_set_current(next)) {
 		nxu_spin_unlock(&processor->runq_lock);
-		sched_fatal("thread_set_current: current-thread handoff failed");
+
+		if (!ready && !thread_is_terminated(next)) {
+			sched_fatal("sched_activate_thread: incoming thread activation failed");
+		}
+
+		sched_abandon(next);
+		nxu_spin_lock(&processor->runq_lock);
 	}
 
 	processor->previous_thread = current;
@@ -680,11 +809,42 @@ static bool sched_switch(sched_switch_reason_t reason)
 		__ATOMIC_RELEASE
 	);
 
-	__atomic_store_n(&processor->preemption_pending, false, __ATOMIC_RELEASE);
+	/*
+	 * The flag is recomputed from the queue, not cleared. The run queue lock was
+	 * dropped while the address space was switched, and another CPU can have queued
+	 * a thread here in that window: it found the flag already set (by the
+	 * interrupt that got this switch going) and so sent no interrupt of its own,
+	 * because the flag is what says "an interrupt is already on its way". Clearing
+	 * it now would throw the only record of that thread away, and an idle CPU
+	 * would sleep with work queued for good.
+	 */
+	thread_t waiting = run_queue_peek(&processor->runq);
+
+	__atomic_store_n(
+		&processor->preemption_pending,
+		waiting != 0 && (thread_is_idle(next) || waiting->sched_pri > next->sched_pri),
+		__ATOMIC_RELEASE
+	);
+
 	processor->context_switch_count++;
 
 	if (reason == SCHED_SWITCH_PREEMPT) {
 		processor->preemption_count++;
+	}
+
+	/* How many CPUs are running threads of user processes right now, and the most there ever were. */
+	bool leaving_user = sched_thread_is_user(current);
+	bool entering_user = sched_thread_is_user(next);
+
+	if (entering_user) processor->user_dispatch_count++;
+
+	if (entering_user && !leaving_user) {
+		uint32_t running = __atomic_add_fetch(&g_sched_user_running, 1U, __ATOMIC_ACQ_REL);
+		uint32_t peak = __atomic_load_n(&g_sched_user_peak, __ATOMIC_RELAXED);
+
+		while (running > peak && !__atomic_compare_exchange_n(&g_sched_user_peak, &peak, running, false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {}
+	} else if (leaving_user && !entering_user) {
+		(void)__atomic_sub_fetch(&g_sched_user_running, 1U, __ATOMIC_ACQ_REL);
 	}
 
 	sched_quantum_reset(next);
@@ -848,6 +1008,57 @@ thread_t sched_idle_thread(void)
 	processor_t processor = g_sched.initialized ? current_processor() : 0;
 
 	return processor != 0 ? processor->idle_thread : 0;
+}
+
+/*
+ * sched_kick_thread
+ *
+ * Make the CPU that is running `thread` take an interrupt now, so that a state
+ * change made to the thread (it was terminated, a signal is pending for it) is
+ * noticed at the next return to user mode instead of waiting for a timer tick.
+ * Nothing to do if it is not running anywhere, or is running here.
+ */
+void sched_kick_thread(thread_t thread)
+{
+	if (thread == 0) return;
+
+	processor_t target = __atomic_load_n(&thread->on_cpu, __ATOMIC_ACQUIRE);
+
+	if (target != 0 && target != current_processor()) ipi_send(target->cpu_id, IPI_RESCHEDULE);
+}
+
+/*
+ * sched_wait_thread_off_cpu
+ *
+ * Wait until `thread` is no longer live on any CPU (its context saved, its CPU
+ * off its stack). The caller has terminated it, so it is on its way out: a user
+ * thread reaches the exit path at its next exception (kicked with an IPI every
+ * half millisecond) and a kernel thread finishes its current call. Holds no lock
+ * and must not be called for the calling thread. Returns false if it is still
+ * running after about five seconds, which means something is stuck and the
+ * thread's resources must not be freed.
+ */
+bool sched_wait_thread_off_cpu(thread_t thread)
+{
+	if (thread == 0) return true;
+
+	uint64_t deadline = timer_get_microseconds() + 5000000ULL;
+	uint64_t next_kick = 0ULL;
+
+	while (__atomic_load_n(&thread->on_cpu, __ATOMIC_ACQUIRE) != 0) {
+		uint64_t now = timer_get_microseconds();
+
+		if (now > deadline) return false;
+
+		if (now >= next_kick) {
+			next_kick = now + 500ULL;
+			sched_kick_thread(thread);
+		}
+
+		cpu_relax();
+	}
+
+	return true;
 }
 
 bool sched_thread_can_run_on(thread_t thread, uint32_t cpu)
@@ -1021,8 +1232,20 @@ bool sched_thread_terminate(thread_t thread)
 	 * queue: a sleeping thread must leave its wait queue first. */
 	(void)waitq_remove(thread);
 
-	if (thread->runq != 0 && !thread_run_queue_remove(thread)) return false;
-	return thread_terminate(thread);
+	/*
+	 * A queued thread has to be off its queue before it can terminate, and
+	 * another CPU's balancer can put it on a different queue between the two
+	 * steps; so try again until it is either terminated or already gone.
+	 */
+	for (uint32_t attempt = 0U; attempt < 64U; attempt++) {
+		if (thread->runq != 0) (void)thread_run_queue_remove(thread);
+
+		if (thread_terminate(thread)) return true;
+
+		if (thread_is_terminated(thread) || !thread_is_active(thread)) return false;
+	}
+
+	return false;
 }
 
 bool sched_thread_set_priority(thread_t thread, uint16_t priority)
@@ -1245,6 +1468,11 @@ void sched_tick(void)
 	}
 
 	nxu_spin_unlock(&processor->runq_lock);
+
+	/* Timed sleepers (sched_sleep_us) are checked on the boot CPU's tick. */
+	if (processor->cpu_id == 0U && __atomic_load_n(&g_sched_sleepers, __ATOMIC_ACQUIRE) != 0U) {
+		waitq_wake_all(&g_sched_sleep_queue);
+	}
 
 	if (processor->ticks % SCHED_BALANCE_INTERVAL_TICKS == 0U) sched_balance(processor);
 

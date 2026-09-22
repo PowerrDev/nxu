@@ -132,6 +132,21 @@ struct thread {
 	nxu_cpuset_t affinity;
 	uint32_t last_cpu;
 
+	/*
+	 * Nesting count of "this thread is inside kernel code that assumes one CPU"
+	 * (sched_bind_boot_cpu): while non-zero the scheduler keeps it on the boot
+	 * CPU. Written only by the thread itself, read by any CPU placing it.
+	 */
+	uint32_t legacy_depth;
+
+	/*
+	 * The task this thread was created in, kept until the thread is reaped
+	 * (`task` is cleared when it terminates). A thread that has been killed but
+	 * is still finishing a system call on some CPU still needs to know which
+	 * process it belongs to: current_proc() reads this, not `task`.
+	 */
+	task_t home_task;
+
 	task_t task;
 	thread_id_t thread_id;
 
@@ -388,5 +403,6 @@ uint64_t thread_kernel_stack_top(thread_t thread);
 uint32_t thread_count(void);
 bool thread_validate(void);
 void thread_dump(void);
+void thread_dump_sched(void);
 
 #endif

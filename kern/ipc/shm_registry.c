@@ -65,12 +65,19 @@ shm_registry_attach(uint32_t id, vm_shm_region_t *out_region)
 	if (out_region != 0) *out_region = VM_SHM_REGION_NULL;
 	if (id == SHM_REGISTRY_ID_INVALID || id > SHM_REGISTRY_MAX || out_region == 0) return false;
 
+	/*
+	 * The reference is taken while the entry is still held stable by the lock: a
+	 * region looked up here and referenced afterwards could be released and
+	 * destroyed by another CPU in between.
+	 */
 	shm_registry_lock();
+
 	shm_registry_entry_t entry = g_shm_registry[id - 1U];
+	bool referenced = entry.valid && vm_shm_reference(entry.region);
+
 	shm_registry_unlock();
 
-	if (!entry.valid) return false;
-	if (!vm_shm_reference(entry.region)) return false;
+	if (!referenced) return false;
 
 	*out_region = entry.region;
 	return true;

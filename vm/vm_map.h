@@ -89,6 +89,17 @@ bool vm_map_region_at(
 );
 
 /*
+ * vm_map_region_at for a caller that already holds space->lock: the fault handler
+ * checks that a page is still inside a region and installs it in one critical
+ * section, so an munmap on another CPU cannot slip between the two.
+ */
+bool vm_map_region_at_locked(
+	const vm_address_space_t *space,
+	uint64_t va,
+	vm_user_protection_t *out_protection
+);
+
+/*
  * Copies parent's region list and placement cursor into child (an address
  * space with no regions of its own yet) so a forked child sees the same
  * anonymous mappings. Pages are not touched: vm_address_space_fork shares

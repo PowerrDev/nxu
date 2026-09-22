@@ -42,16 +42,12 @@ xamethyst_process_test(void)
 	proc_t proc_xamethyst = 0;
 	proc_t proc_client = 0;
 
-	loader_status_t status_xamethyst = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/xamethyst", "xamethyst", &proc_xamethyst);
+	loader_status_t status_xamethyst = loader_spawn_caps(proc_kernel(), "/disk/System/Library/CoreServices/xamethyst", "xamethyst", NXU_CAP_DISPLAY, &proc_xamethyst);
 	if (status_xamethyst != LOADER_STATUS_OK) {
 		kputs("amethyst_test_process: spawning xamethyst failed: ");
 		kputln(loader_status_name(status_xamethyst));
 		return false;
 	}
-
-	/* Started by the kernel, not by bootd's plist, so it has no capabilities
-	 * until we grant the one it needs: it claims the display. */
-	proc_set_caps(proc_xamethyst, NXU_CAP_DISPLAY);
 
 	/*
 	 * XAmethyst registers its listening socket only after claiming the
