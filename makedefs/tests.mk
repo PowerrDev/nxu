@@ -300,7 +300,7 @@ test: $(DISK) $(DISK_FORMAT_STAMP)
 		-machine virt,gic-version=3 \
 		-cpu cortex-a72 \
 		-smp $(or $(TEST_$(TEST)_SMP),1) \
-		-m 512M \
+		-m 8G \
 		-kernel BUILD/$(TEST)/kernel.bin \
 		-append "$(BOOT_ARGS) ui.scale=$(QEMU_UI_SCALE_PERMILLE)" \
 		-display $(or $(TEST_$(TEST)_DISPLAY),none) \
