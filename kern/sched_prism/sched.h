@@ -89,8 +89,8 @@ void sched_unbind_boot_cpu(void);
  * sched_thread_can_run_on
  *
  * Whether the scheduler would ever place `thread` on `cpu`: its affinity
- * allows it and that kind of thread can run there (user threads are boot-CPU
- * only for now). thread_can_run_on_cpu() in the design notes.
+ * allows it, or it is inside single-CPU kernel code (sched_bind_boot_cpu) and
+ * `cpu` is the boot CPU. thread_can_run_on_cpu() in the design notes.
  */
 bool sched_thread_can_run_on(thread_t thread, uint32_t cpu);
 
@@ -170,6 +170,17 @@ bool sched_block(bool uninterruptible);
  * interrupt in between could switch away from a thread already marked waiting.
  */
 bool sched_block_commit(void);
+
+/*
+ * sched_sleep_us
+ *
+ * Put the calling thread to sleep for at least `microseconds` (rounded up to the
+ * boot CPU's next timer tick, 10 ms). The thread is off every run queue while it
+ * sleeps, so it does not count as load: a harness that waits with this instead of
+ * a sched_yield() loop leaves its CPU free for the work it is waiting for.
+ * Returns false if it could not sleep (no scheduler, idle thread).
+ */
+bool sched_sleep_us(uint64_t microseconds);
 
 /*
  * sched_exit_current

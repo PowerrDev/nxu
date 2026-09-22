@@ -297,6 +297,12 @@ loops use it. `waitq_block_unlock()` is the variant for a caller that holds a
 condition lock. The scheduler side (a wakeup during a switch-out is deferred to the
 CPU switching away) is described above.
 
+`sched_sleep_us()` is a timed sleep built on the same primitive (the boot CPU's tick
+wakes all sleepers, so the resolution is one 10 ms tick). Use it instead of a
+`sched_yield()` loop to wait: a yielding thread stays on a run queue and counts as
+load, which stops the balancer from moving work onto its CPU (the `smp-user` harness
+waiting for `smptest` used to cause the rare ring stall this way).
+
 ### User-thread migration
 
 A runnable user thread moves like any other: only queued threads migrate, under both
@@ -304,10 +310,13 @@ queues' locks. Everything a user thread needs is in the thread and on its own ke
 stack, none of it on a CPU: its EL0 registers are the exception frame on its kernel
 stack, the kernel registers `arm64_enter_el0` parked are on the same stack, its
 address space is looked up from its task and installed on whatever CPU runs it next,
-and signal state is the thread's `sig_blocked` and the process's pending set. The
-kernel does not use FP/SIMD and EL0 traps on it (`CPACR_EL1.FPEN` is not enabled and
-userland is built `-mgeneral-regs-only`), so there is no FP context to move. A thread
-that is on a CPU (`thread->on_cpu`) is never queued anywhere else.
+and signal state is the thread's `sig_blocked` and the process's pending set. FP/SIMD
+is not supported: the kernel and userland are built `-mgeneral-regs-only`, the kernel
+never enables FP access or saves FP registers, so a thread has no FP context to
+migrate (an FP instruction at EL0 is not something NXU handles; if the CPU were to
+allow it, its state would be shared by whatever ran on that CPU, as it is on one
+CPU). There is no thread-local-storage register (`TPIDR_EL0`) support either. A
+thread that is on a CPU (`thread->on_cpu`) is never queued anywhere else.
 
 ### Boot-CPU compatibility for single-CPU kernel code
 

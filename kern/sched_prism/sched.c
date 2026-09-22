@@ -114,6 +114,35 @@ void sched_user_running_reset_peak(void)
 	__atomic_store_n(&g_sched_user_peak, __atomic_load_n(&g_sched_user_running, __ATOMIC_ACQUIRE), __ATOMIC_RELEASE);
 }
 
+/*
+ * Timed sleep. There is no per-thread timer: sleepers wait on one queue, the boot
+ * CPU's tick wakes them all while there are any, and each re-checks its own
+ * deadline and goes back to sleep if it is not due. Coarse (a tick, 10 ms) and
+ * cheap for the few callers it has.
+ */
+static waitq_t g_sched_sleep_queue;
+static uint32_t g_sched_sleepers;
+
+bool sched_sleep_us(uint64_t microseconds)
+{
+	if (!g_sched.initialized || current_thread() == 0 || thread_is_idle(current_thread())) return false;
+
+	uint64_t deadline = timer_get_microseconds() + microseconds;
+
+	(void)__atomic_add_fetch(&g_sched_sleepers, 1U, __ATOMIC_ACQ_REL);
+
+	while (timer_get_microseconds() < deadline) {
+		uint32_t seq = waitq_seq(&g_sched_sleep_queue);
+
+		if (timer_get_microseconds() >= deadline) break;
+
+		if (!waitq_block_seq(&g_sched_sleep_queue, seq, false)) break;
+	}
+
+	(void)__atomic_sub_fetch(&g_sched_sleepers, 1U, __ATOMIC_ACQ_REL);
+	return true;
+}
+
 static bool sched_switch(sched_switch_reason_t reason);
 static processor_t sched_select_cpu(thread_t thread);
 static bool sched_enqueue_on(processor_t target, thread_t thread, run_queue_placement_t placement);
@@ -1439,6 +1468,11 @@ void sched_tick(void)
 	}
 
 	nxu_spin_unlock(&processor->runq_lock);
+
+	/* Timed sleepers (sched_sleep_us) are checked on the boot CPU's tick. */
+	if (processor->cpu_id == 0U && __atomic_load_n(&g_sched_sleepers, __ATOMIC_ACQUIRE) != 0U) {
+		waitq_wake_all(&g_sched_sleep_queue);
+	}
 
 	if (processor->ticks % SCHED_BALANCE_INTERVAL_TICKS == 0U) sched_balance(processor);
 

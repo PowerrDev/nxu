@@ -101,7 +101,8 @@ bool smp_user_test_run(void)
 			smp_user_test_dump(cpus);
 		}
 
-		if (!reaped) (void)sched_yield();
+		/* Asleep, not spinning: a yield loop would count as load on the boot CPU and keep the balancer from using it. */
+		if (!reaped) (void)sched_sleep_us(5000ULL);
 	}
 
 	if (!reaped) {
