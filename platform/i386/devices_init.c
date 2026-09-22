@@ -21,6 +21,10 @@
  *                       (so the host can check the write arrived)
  *   virtio-irq=1        bind the VirtIO drivers to their PCI interrupt line
  *                       through irq_register() instead of polling
+ *   expect-display=<n>  drivers self-test: at least n VirtIO-GPU scanouts
+ *                       (default 0); when at least 1, a deterministic pattern
+ *                       is painted into the framebuffer and presented so the
+ *                       host can verify it with a monitor screendump
  */
 
 #include <kern/i386/boot_info.h>
@@ -32,8 +36,10 @@
 #include <drivers/input/input.h>
 #include <drivers/input/keyboard.h>
 #include <drivers/input/mouse.h>
+#include <drivers/video/display.h>
 #include <drivers/virtio/virtio.h>
 #include <drivers/virtio/virtio_block.h>
+#include <drivers/virtio/virtio_gpu.h>
 #include <drivers/virtio/virtio_input.h>
 #include <drivers/virtio/virtio_pci.h>
 
@@ -258,6 +264,11 @@ bool i386_init_drivers(const i386_boot_info_t *boot)
 		return false;
 	}
 
+	if (!display_init()) {
+		kputln("i386_init_drivers: display core initialization failed");
+		return false;
+	}
+
 	if (devices_arg_or("virtio-irq", 0ULL) != 0ULL) {
 		virtio_pci_set_irq_mode(true);
 		kputln("i386_init_drivers: VirtIO interrupts enabled (PCI INTx via irq_register)");
@@ -268,7 +279,7 @@ bool i386_init_drivers(const i386_boot_info_t *boot)
 	virtio_probe_policy_t policy = {
 		.input = true,
 		.block = true,
-		.gpu = false,
+		.gpu = true,
 		.sound = true,
 		.on_gpu_ready = 0
 	};
@@ -284,11 +295,12 @@ bool i386_init_drivers(const i386_boot_info_t *boot)
 	}
 
 	kprintf(
-		"i386_init_drivers: %u block device(s), %u input device(s), keyboard %s, mouse %s\n",
+		"i386_init_drivers: %u block device(s), %u input device(s), keyboard %s, mouse %s, %u display(s)\n",
 		block_device_count(),
 		virtio_input_count(),
 		keyboard_is_present() ? "present" : "absent",
-		mouse_is_present() ? "present" : "absent"
+		mouse_is_present() ? "present" : "absent",
+		virtio_gpu_device_count()
 	);
 
 	return true;
@@ -496,6 +508,65 @@ static bool devices_selftest_input(void)
 	return false;
 }
 
+/*
+ * devices_selftest_display:
+ *
+ * Paint a deterministic four-quadrant pattern (red, green, blue, white) into
+ * the primary display's framebuffer and present it, so a host-side monitor
+ * screendump can confirm the pixels VirtIO-GPU actually scanned out, not just
+ * that the driver's own command round trips said "ok". Nothing here can
+ * check the scanout from inside the guest; a missing display only fails when
+ * expect-display=<n> asked for at least one.
+ */
+static bool devices_selftest_display(void)
+{
+	uint64_t expected = devices_arg_or("expect-display", 0ULL);
+	uint32_t count = virtio_gpu_device_count();
+
+	kprintf("i386_init_drivers_selftest: %u display(s), expecting at least %llu\n", count, (unsigned long long)expected);
+
+	if (count < expected) {
+		kprintf("i386_init_drivers_selftest: FAIL expected %llu display(s)\n", (unsigned long long)expected);
+		return false;
+	}
+
+	if (expected == 0ULL) return true;
+
+	display_device_t *display = display_primary();
+
+	if (display == 0) {
+		kputln("i386_init_drivers_selftest: FAIL no primary display registered");
+		return false;
+	}
+
+	kprintf(
+		"i386_init_drivers_selftest: painting test pattern, %ux%u, stride %u\n",
+		display->width,
+		display->height,
+		display->stride
+	);
+
+	uint32_t half_width = display->width / 2U;
+	uint32_t half_height = display->height / 2U;
+
+	for (uint32_t y = 0U; y < display->height; y++) {
+		uint32_t color_top = y < half_height ? 0x00FF0000U /* red */ : 0x000000FFU /* blue */;
+		uint32_t color_bottom = y < half_height ? 0x0000FF00U /* green */ : 0x00FFFFFFU /* white */;
+
+		for (uint32_t x = 0U; x < display->width; x++) {
+			display->framebuffer[y * display->stride + x] = x < half_width ? color_top : color_bottom;
+		}
+	}
+
+	if (!display_present_full(display)) {
+		kputln("i386_init_drivers_selftest: FAIL display_present_full failed");
+		return false;
+	}
+
+	kputln("i386_init_drivers_selftest: test pattern presented");
+	return true;
+}
+
 bool i386_init_drivers_selftest(const i386_boot_info_t *boot)
 {
 	(void)boot;
@@ -512,8 +583,9 @@ bool i386_init_drivers_selftest(const i386_boot_info_t *boot)
 	if (expected_blocks != 0ULL) ok &= devices_selftest_block();
 
 	ok &= devices_selftest_input();
+	ok &= devices_selftest_display();
 
-	if (ok) kputln("i386_init_drivers_selftest: block round trip and input ok");
+	if (ok) kputln("i386_init_drivers_selftest: block round trip, input and display ok");
 
 	return ok;
 }
