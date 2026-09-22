@@ -2,12 +2,29 @@
 #define NXU_KERN_TASK_H
 
 #include <vm/address_space.h>
+#include <vm/vm_shm.h>
 
 #include <stdbool.h>
 #include <stdint.h>
 
 struct proc;
 struct thread;
+
+/*
+ * The most shared-memory regions one task may hold a handle reference to at
+ * once (kern/ipc/shm_registry.h's shm_registry_attach): each nxu_shm_map
+ * records its {region, va} pair here so a later nxu_shm_unmap can find the
+ * region to release, and so task_terminate can release whatever the task
+ * never explicitly unmapped. Small and fixed for the same reason
+ * shm_next_va is a bump cursor rather than a real region list -- a handful
+ * of regions per process is what this milestone needs.
+ */
+#define TASK_SHM_ATTACH_MAX 8U
+
+typedef struct {
+	vm_shm_region_t region;
+	uint64_t va;
+} task_shm_attachment_t;
 
 typedef struct task *task_t;
 typedef struct thread *thread_t;
@@ -50,6 +67,13 @@ typedef enum {
  *     VM_SHM_BASE. Not a real VMA/region list -- just enough to hand out a
  *     fresh, non-overlapping VA for each shared-memory region this task
  *     maps in turn.
+ *
+ * shm_attachments
+ *     The handle references this task currently holds from nxu_shm_map,
+ *     indexed by nothing in particular (first free slot on insert, linear
+ *     scan on lookup) -- see TASK_SHM_ATTACH_MAX. Released by nxu_shm_unmap
+ *     (which also clears its slot) or, for whatever is still here, by
+ *     task_terminate.
  */
 struct task {
 	uint64_t task_uniqueid;
@@ -63,6 +87,7 @@ struct task {
 
 	vm_address_space_t map;
 	uint64_t shm_next_va;
+	task_shm_attachment_t shm_attachments[TASK_SHM_ATTACH_MAX];
 
 	thread_t threads;
 	uint32_t thread_count;

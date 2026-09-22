@@ -252,6 +252,33 @@ bool task_activate_address_space(task_t task)
 }
 
 /*
+ * task_release_shm_attachments
+ *
+ * Releases the handle reference (kern/ipc/shm_registry.h) behind every
+ * shared-memory mapping the task never explicitly gave up with
+ * nxu_shm_unmap, and clears the table. The mapping's own PMM reference is
+ * unaffected here -- it is dropped generically for every mapped page,
+ * shared-memory or not, by vm_address_space_release_pages; this only drops
+ * the separate handle reference syscall_shm_map's shm_registry_attach took
+ * out (see vm/vm_shm.h's usage protocol: the two are independent).
+ *
+ * Callers must have already established that no thread of this task can
+ * still be executing (task_terminate's all_off_cpu): a thread mid-syscall in
+ * syscall_shm_map/_unmap touches this same table.
+ */
+static void
+task_release_shm_attachments(task_t task)
+{
+	for (uint32_t index = 0U; index < TASK_SHM_ATTACH_MAX; index++) {
+		if (task->shm_attachments[index].region == VM_SHM_REGION_NULL) continue;
+
+		vm_shm_release(task->shm_attachments[index].region);
+		task->shm_attachments[index].region = VM_SHM_REGION_NULL;
+		task->shm_attachments[index].va = 0ULL;
+	}
+}
+
+/*
  * task_terminate
  *
  * Terminate every thread owned by the task before marking the task itself
@@ -317,9 +344,17 @@ bool task_terminate(task_t task)
 
 	/*
 	 * Every thread of this task has been terminated and is off its CPU, so
-	 * nothing will touch its memory again... except that a CPU may still have the
-	 * address space loaded in TTBR0 until it has switched away for the last time.
-	 * Wait for that too (the calling CPU leaves it here), then reclaim.
+	 * nothing will touch its memory -- or task->shm_attachments -- again.
+	 * Give back whatever shared-memory handle references this task itself
+	 * still held (its mappings' own PMM references come back below,
+	 * regardless of this).
+	 */
+	if (all_off_cpu && !task_is_kernel(task)) task_release_shm_attachments(task);
+
+	/*
+	 * ... except that a CPU may still have the address space loaded in TTBR0
+	 * until it has switched away for the last time. Wait for that too (the
+	 * calling CPU leaves it here), then reclaim.
 	 */
 	bool memory_free = all_off_cpu && (task_is_kernel(task) || vm_address_space_quiesce(&task->map));
 
