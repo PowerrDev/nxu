@@ -36,11 +36,13 @@ void boot_test_storage(display_device_t *boot_display);
 /*
  * boot_test_unified
  *
- * The unified boot (-DNXU_UNIFIED_BOOT_TEST, see kern/tests/unified_boot.h).
- * Called once the periodic timer runs and userspace is about to be
- * dispatched; it starts the test thread and then runs the UI session on the
- * calling thread. Returns immediately unless that is selected (and after it
- * has said so if the session ended).
+ * The unified boot (-DNXU_UNIFIED_BOOT_TEST) or the plain desktop boot's UI
+ * session (-DNXU_DESKTOP_BOOT, the same session without the test thread) --
+ * see kern/tests/unified_boot.h. Called once the periodic timer runs and
+ * userspace is about to be dispatched; it starts the test thread (unified
+ * only) and then runs the UI session on the calling thread. Returns
+ * immediately unless one of those is selected (and after it has said so if
+ * the session ended).
  */
 void boot_test_unified(void);
 
