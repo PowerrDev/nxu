@@ -5,8 +5,10 @@
 #   make i386-desktop        build BUILD-i386-desktop/i386/kernel.elf with the
 #                             compositor linked in (also builds both
 #                             frameworks for i686-nxu-none first)
-#   make run-i386-desktop    boot it under qemu-system-i386 with virtio-gpu,
-#                             keyboard and mouse over PCI
+#   make run-i386-desktop    boot it with virtio-gpu, keyboard and mouse over
+#                             PCI -- under qemu-system-x86_64 -accel hvf when
+#                             that is actually available (see below), plain
+#                             qemu-system-i386/tcg otherwise
 #
 # platform/i386/services/ui_service.c and kern/aqua/window_server.c are the
 # i386 side of the same kernel-embedded compositor bring-up arm64's "desktop"
@@ -47,6 +49,28 @@ endif
 I386_DESKTOP_BUILD_ROOT ?= BUILD-i386-desktop
 I386_DESKTOP_KERNEL := $(I386_DESKTOP_BUILD_ROOT)/i386/kernel.elf
 
+# HVF only accelerates a guest whose architecture matches the host's, so it
+# can never accelerate this port's aarch64 sibling on Apple Silicon -- but on
+# any Mac (Intel or Apple Silicon) it CAN accelerate this i386 guest, since
+# i386 and the host are both the x86 family. The catch: at least on this
+# Homebrew QEMU build, the qemu-system-i386 *binary* was not compiled with
+# HVF support at all (`qemu-system-i386 -accel help` lists only tcg) even
+# though qemu-system-x86_64 has it. A 32-bit Multiboot kernel like this one
+# boots identically under qemu-system-x86_64 -M pc -cpu qemu32 -- it is the
+# same PC platform emulation, just a different top-level binary -- so that is
+# what actually gets HVF: confirmed booting this kernel and rendering the
+# desktop correctly under it, several seconds faster than under TCG. Detected
+# once at parse time and only used if genuinely available, so a host without
+# it (Linux, or a QEMU build that lacks HVF everywhere) falls back to the
+# plain qemu-system-i386/tcg path with no user action needed.
+I386_DESKTOP_HVF := $(shell qemu-system-x86_64 -accel help 2>/dev/null | grep -qx hvf && echo 1)
+
+ifeq ($(I386_DESKTOP_HVF),1)
+I386_DESKTOP_QEMU := qemu-system-x86_64 -accel hvf -cpu qemu32
+else
+I386_DESKTOP_QEMU := qemu-system-i386
+endif
+
 .PHONY: i386-desktop run-i386-desktop
 
 i386-desktop:
@@ -73,7 +97,7 @@ run-i386-desktop: i386-desktop
 
 	$(MAKE) i386-disk BUILD_ROOT=$(I386_DESKTOP_BUILD_ROOT)
 
-	qemu-system-i386 -M pc \
+	$(I386_DESKTOP_QEMU) -M pc \
 		-kernel $(I386_DESKTOP_KERNEL) \
 		-m 512M \
 		-vga none \
