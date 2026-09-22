@@ -263,6 +263,13 @@ region check and the page install are one critical section under `space->lock`
   already made writable counts as done;
 - `vm_shm_map_into()` reserves its address range under the space lock and
   `shm_registry_attach()` takes its reference under the registry lock;
+- a shm region has two independent reference counts (vm/vm_shm.h): the registry's own
+  (taken by `shm_registry_publish`, given back by `shm_registry_withdraw`) and one per
+  attached process (taken by `shm_registry_attach`, given back by `nxu_shm_unmap` or,
+  for whatever a process never explicitly unmapped, by `task_terminate`). Withdrawing
+  an id a process is still attached to only drops the registry's own reference -- that
+  process's mapping and reference are untouched, matching the usage protocol's "the
+  handle and the mapping are counted separately" rule;
 - `vm_address_space_unmap_page()` invalidates by address, inner-shareable, whether or
   not the space is loaded anywhere, with the space lock held across the invalidate;
 - fork write-protects the parent's pages under its lock and flushes all CPUs.
@@ -430,6 +437,8 @@ no boot chime) spawns `smptest`, a user process that runs, at EL0:
 | 7 termination | processes killed (SIGKILL) and processes that `exit` while their other threads spin on other CPUs; each is reaped with the right status and leaves nothing behind |
 | 8 migration | a computation forced across CPUs (400 moves) gives the same result as unmoved |
 | 9 VM stress | map/touch/unmap in 4 threads with a fork in flight, no errors |
+| 10 shm churn | 96 publish/attach/detach/withdraw cycles (`nxu_shm_create/_map/_unmap/_withdraw`) all succeed -- more than the registry's 64 fixed slots, so a withdraw that failed to free its slot would run it out of room before the loop ends |
+| 11 shm withdraw ordering | withdrawing an id a process is still attached to leaves that attachment's mapping and data alone, stops a new attach from finding it, and frees the slot for reuse |
 
 The kernel then checks that user threads ran on every CPU, that up to four CPUs ran
 them **at the same time** (`sched_user_running_peak()`), that the run-queue invariants
