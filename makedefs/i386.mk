@@ -3,7 +3,8 @@
 # =============================================================================
 #
 #   make i386        build BUILD/i386/kernel.elf (a Multiboot ELF)
-#   make run-i386    boot it under qemu-system-i386 with the console on stdio
+#   make run-i386    boot it under qemu-system-i386 with the console on stdio,
+#                    tepOS alongside (TEP=0: NXU alone)
 #   make test-i386   boot it once per trap test and check the reports
 #
 # Kept separate from the arm64 build until the shared sources are all
@@ -107,9 +108,13 @@ $(I386_KERNEL): $(I386_OBJECTS) $(I386_EXTRA_LIBS) makedefs/linker-i386.ld
 i386: $(I386_KERNEL)
 
 
+# run-i386 boots tepOS alongside, joined over COM2 by the mailbox
+# (tools/with_tepos.sh, doc/drivers/tep-mailbox.md); TEP=0 boots NXU alone.
+I386_TEP_WRAPPER = $(if $(filter 0,$(TEP)),,tools/with_tepos.sh)
+
 run-i386: $(I386_KERNEL)
 
-	qemu-system-i386 \
+	$(I386_TEP_WRAPPER) qemu-system-i386 \
 		-kernel $(I386_KERNEL) \
 		-m 128M \
 		$(I386_QEMU_AUDIO) \

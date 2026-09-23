@@ -10,7 +10,8 @@ as framed requests and responses (`drivers/tep/tep_mailbox.c`).
 
 ```
 NXU QEMU                                        tepOS QEMU
-  serial1 (PL011 @ 0x9040000)                     serial1 (PL011 @ 0x9040000)
+  serial1 (arm64: PL011 @ 0x9040000,              serial1 (PL011 @ 0x9040000)
+           i386: 16550 COM2 @ 0x2F8)
      |                                                 |
   Unix socket (listening)  <-- mailbox_link.py -->  Unix socket (listening)
 ```
@@ -34,12 +35,19 @@ later and will be added as further commands.
 
 ## Driver
 
-The Device Tree's first `arm,pl011` is the console; a second one becomes
-`platform->mailbox_uart`, mapped as device memory in the higher-half direct
-map. Without it the link is `absent` and every request is refused.
+The port is behind `drivers/tep/tep_uart.h`, one backend per architecture:
 
-`tep_mailbox_start()` (called from `kern_init` after the core POST) checks the
-PrimeCell IDs and starts a monitor thread:
+- arm64 (`tep_uart_pl011.c`): the Device Tree's first `arm,pl011` is the
+  console; a second one becomes `platform->mailbox_uart`, mapped as device
+  memory in the higher-half direct map, and must pass the PrimeCell ID check.
+- i386 (`tep_uart_16550.c`): COM1 is the console; the mailbox is the 16550 on
+  COM2 (I/O ports 0x2F8-0x2FF), which QEMU's pc machine has with a second
+  `-serial`. Its presence is probed through the scratch register.
+
+Without the port the link is `absent` and every request is refused.
+
+`tep_mailbox_start()` (arm64: from `kern_init` after the core POST; i386: at
+the end of the drivers phase) starts a monitor thread:
 
 - until tepOS answers `HELLO` with protocol version 1, the link is
   `unavailable`;
@@ -55,18 +63,34 @@ in NXU stands in for a tepOS answer. Requests are serialized; each flushes
 stale input, sends, and waits for the response with its request id.
 
 The UART is polled. Waits sleep once the periodic timer runs and yield before
-that, so boot-time tests work with the cooperative scheduler.
+that, so boot-time tests work with the cooperative scheduler. On i386 without
+bootd (`make run-i386` has no disk) `i386_init_run` keeps scheduling instead of
+halting while a mailbox port exists, so the monitor keeps running.
 
 ## Running it
 
-`make run` boots tepOS alongside NXU (`tools/with_tepos.sh`): it builds tepOS
-from the TrustedEnclaveProcessor checkout next to this repository (`TEP_DIR`
-overrides it), boots it headless with its console in
-`BUILD/tepos-run/console.log`, starts the relay and gives NXU's QEMU the
-mailbox serial port. Quitting NXU stops tepOS and the relay. `make run TEP=0`
-boots NXU alone; `TEP=1` adds tepOS to any `make test TEST=<id>` or to
-`make run-console`. Without the tepOS checkout, or if it does not build, NXU
-boots alone and requests to tepOS fail closed.
+`make run` and `make run-i386` boot tepOS alongside NXU
+(`tools/with_tepos.sh`): it builds tepOS from the TrustedEnclaveProcessor
+checkout next to this repository (`TEP_DIR` overrides it), boots it headless,
+starts the relay and gives NXU's QEMU the mailbox serial port. Quitting NXU
+stops tepOS and the relay. `TEP=0` boots NXU alone; `TEP=1` adds tepOS to any
+`make test TEST=<id>` or to `make run-console`. Without the tepOS checkout, or
+if it does not build, NXU boots alone and requests to tepOS fail closed.
+
+From a terminal the consoles share it (`tools/console_switch.py`):
+
+| Key | |
+|-----|---|
+| `s` | show NXU's console (the default) |
+| `t` | show tepOS's console |
+| Ctrl-C | quit: stops both machines |
+
+Switching clears the screen and replays the recent part of that console; other
+keys go to the machine being shown. Both consoles are also logged in full to
+`BUILD/tepos-run/nxu-console.log` and `BUILD/tepos-run/console.log`. Both QEMUs
+wait for the switcher before booting, so nothing printed early is lost. Run
+non-interactively (a script, a pipe) or with `TEP_CONSOLE=stdio`, NXU keeps
+stdio as before and tepOS's console only goes to the log.
 
 By hand: in the TrustedEnclaveProcessor repository `make run` boots tepOS with
 its serial1 on `/tmp/tepos-mailbox.sock`; `make test TEST=tep-mailbox` gives
