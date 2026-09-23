@@ -22,6 +22,7 @@
 #include <kern/tests/process_control_test.h>
 #include <kern/tests/socket_process_test.h>
 #include <kern/tests/sound_test.h>
+#include <kern/tests/tep_mailbox_test.h>
 #include <kern/tests/thread_process_test.h>
 #include <kern/tests/unified_boot.h>
 #include <kern/tests/windowserver_process_test.h>
@@ -223,6 +224,12 @@ void boot_test_storage(display_device_t *boot_display)
 #if defined(NXU_SOUND_TEST)
 	if (!sound_test_run()) boot_test_fail("sound_test: failed");
 	kputln("sound_test: passed; halting (test build, no bootd)");
+	for (;;) __asm__ volatile("wfe");
+#endif
+
+#if defined(NXU_TEP_MAILBOX_TEST)
+	if (!tep_mailbox_test_run()) boot_test_fail("tep_mailbox_test: failed");
+	kputln("tep_mailbox_test: passed; halting (test build, no bootd)");
 	for (;;) __asm__ volatile("wfe");
 #endif
 

@@ -88,6 +88,16 @@ The graphical tests (`ui-*`, `windowserver-*`, `about-sevos-process`) and
 line yet, so none of them are in `make check`. `everything` is the exception: the
 UI session draws into the virtio-gpu framebuffer, so it runs headless too.
 
+### The Trusted Enclave mailbox
+
+`tep-mailbox` needs a second machine running tepOS, so it is not a `make check`
+row either. `make test-tep-mailbox` (`tools/test_tep_mailbox.sh`) builds tepOS
+from the TrustedEnclaveProcessor checkout next to this repository (`TEP_DIR`
+overrides it), boots it and the test kernel with the mailbox relay, and passes
+only if the protocol checks pass, the driver fails closed after the harness
+stops tepOS, and it reconnects after the harness restarts it. Like `make check`
+it uses a scratch disk. See [Trusted Enclave Mailbox](drivers/tep-mailbox.md).
+
 ## The normal boot: `make run`
 
 `make run` is `make test TEST=desktop`: one kernel, one QEMU instance, `-smp 4`,

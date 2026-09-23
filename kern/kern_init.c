@@ -17,6 +17,7 @@
 #include <drivers/virtio/virtio_input.h>
 #include <drivers/video/display.h>
 #include <drivers/block/block_device.h>
+#include <drivers/tep/tep_mailbox.h>
 #include <kern/console/bootlog.h>
 #include <kern/console/ioregistry.h>
 #include <kern/memory/heap.h>
@@ -1041,6 +1042,9 @@ void kern_init_higher_half(void)
 	if (!kernel_do_post(KERNEL_POST_CORE)) {
 		kern_fail("kernel_do_post: core self-tests failed");
 	}
+
+	/* The Trusted Enclave link; its monitor thread runs once the scheduler does. Absent, tepOS requests fail closed. */
+	(void)tep_mailbox_start();
 
 	boot_test_graphical(boot_display);
 
