@@ -65,7 +65,7 @@ start_tepos() {
 	rm -f "$TEP_SOCK"
 	qemu-system-aarch64 -machine virt,secure=off,virtualization=off,gic-version=2 -cpu cortex-a53 -m 1024 \
 		-nographic -serial file:"$TEP_LOG.$1.log" -serial unix:"$TEP_SOCK",server=on,wait=off \
-		-monitor none -kernel "$TEP_DIR/build/boot/sel4-image.elf" >"$TEP_LOG.$1.stderr" 2>&1 </dev/null &
+		-monitor none $TEP_DEVICES -kernel "$TEP_DIR/build/boot/sel4-image.elf" >"$TEP_LOG.$1.stderr" 2>&1 </dev/null &
 	tep_pid=$!
 	wait_socket "$TEP_SOCK"
 }
@@ -91,6 +91,8 @@ wait_for() {
 
 echo "test_tep_mailbox: building tepOS in $TEP_DIR"
 "$MAKE_CMD" -C "$TEP_DIR" image >"$SCRATCH/tepos-build.log" 2>&1 </dev/null || { tail -20 "$SCRATCH/tepos-build.log"; exit 1; }
+# tepOS's own devices (virtio-rng, ...), as its Makefile defines them.
+TEP_DEVICES=$("$MAKE_CMD" -s -C "$TEP_DIR" qemu-devices 2>/dev/null)
 
 echo "test_tep_mailbox: building the $ID kernel and a scratch disk"
 cp -R tools/DiskRoot "$SCRATCH/DiskRoot" || exit 1

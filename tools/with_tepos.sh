@@ -47,6 +47,9 @@ if ! "$MAKE_CMD" -C "$TEP_DIR" image >"$LOGS/build.log" 2>&1 </dev/null; then
 	exec "$@"
 fi
 
+# tepOS's own devices (virtio-rng, ...), as its Makefile defines them.
+TEP_DEVICES=$("$MAKE_CMD" -s -C "$TEP_DIR" qemu-devices 2>/dev/null)
+
 # Short socket paths: Unix socket paths are limited to about 100 bytes.
 SOCKS=$(mktemp -d /tmp/nxu-tep.XXXXXX) || exit 1
 tep_pid=
@@ -89,7 +92,7 @@ fi
 
 qemu-system-aarch64 -machine virt,secure=off,virtualization=off,gic-version=2 -cpu cortex-a53 -m 1024 \
 	-nographic -serial "$TEP_CONSOLE_ARG" -serial unix:"$SOCKS/tepos.sock",server=on,wait=off \
-	-monitor none -kernel "$TEP_DIR/build/boot/sel4-image.elf" >"$LOGS/qemu.log" 2>&1 </dev/null &
+	-monitor none $TEP_DEVICES -kernel "$TEP_DIR/build/boot/sel4-image.elf" >"$LOGS/qemu.log" 2>&1 </dev/null &
 tep_pid=$!
 
 python3 "$TEP_DIR/tools/mailbox_link.py" --nxu "$SOCKS/nxu.sock" --tepos "$SOCKS/tepos.sock" 2>"$LOGS/link.log" &
