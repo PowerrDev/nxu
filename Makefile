@@ -301,6 +301,7 @@ C_SOURCES := \
     drivers/input/mouse.c \
     drivers/block/block_device.c \
     drivers/block/partition.c \
+    drivers/tep/tep_mailbox.c \
     drivers/video/display.c \
     drivers/video/ramfb_console.c \
     platform/arm64/services/ui_service.c \
