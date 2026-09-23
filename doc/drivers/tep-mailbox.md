@@ -59,11 +59,20 @@ that, so boot-time tests work with the cooperative scheduler.
 
 ## Running it
 
-In the TrustedEnclaveProcessor repository, `make run` boots tepOS with its
-serial1 on `/tmp/tepos-mailbox.sock`. `make run-console TEP=1` boots NXU with
-its serial1 on `/tmp/nxu-mailbox.sock` (`TEP_NXU_SOCK`). Then join them with
-that repository's `tools/mailbox_link.py`; either side may start first or
-restart, and the relay relinks.
+`make run` boots tepOS alongside NXU (`tools/with_tepos.sh`): it builds tepOS
+from the TrustedEnclaveProcessor checkout next to this repository (`TEP_DIR`
+overrides it), boots it headless with its console in
+`BUILD/tepos-run/console.log`, starts the relay and gives NXU's QEMU the
+mailbox serial port. Quitting NXU stops tepOS and the relay. `make run TEP=0`
+boots NXU alone; `TEP=1` adds tepOS to any `make test TEST=<id>` or to
+`make run-console`. Without the tepOS checkout, or if it does not build, NXU
+boots alone and requests to tepOS fail closed.
+
+By hand: in the TrustedEnclaveProcessor repository `make run` boots tepOS with
+its serial1 on `/tmp/tepos-mailbox.sock`; `make test TEST=tep-mailbox` gives
+NXU's serial1 `/tmp/nxu-mailbox.sock` (`TEP_NXU_SOCK`); join them with that
+repository's `tools/mailbox_link.py`. Either side may start first or restart,
+and the relay relinks.
 
 Neither QEMU connects out on purpose: QEMU 11.1's socket chardev in client
 mode with `reconnect-ms` aborts the whole emulator whenever a connection

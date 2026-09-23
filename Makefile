@@ -986,7 +986,7 @@ run:
 
 run-console: $(KERNEL_IMAGE) $(DISK) $(DISK_FORMAT_STAMP)
 
-	qemu-system-aarch64 \
+	$(TEP_WRAPPER) qemu-system-aarch64 \
 		-machine virt,gic-version=3 \
 		-cpu cortex-a72 \
 		-smp 1 \
@@ -1004,7 +1004,6 @@ run-console: $(KERNEL_IMAGE) $(DISK) $(DISK_FORMAT_STAMP)
 		$(QEMU_AUDIODEV) \
 		$(QEMU_SOUND_DEVICE) \
 		-serial stdio \
-		$(if $(TEP),$(TEP_SERIAL1)) \
 		-monitor none
 
 
