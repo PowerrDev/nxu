@@ -4,10 +4,15 @@
 /*
  * File:        kern/tests/tep_mailbox_test.c
  *
- * See kern/tests/tep_mailbox_test.h.
+ * See kern/tests/tep_mailbox_test.h. Built only into the tep-mailbox test
+ * kernel (NXU_TEP_MAILBOX_TEST): linking this unused code into the other
+ * kernels made the `everything` row lose its UIService event loop, a
+ * layout-sensitive failure not yet understood (see doc/drivers/tep-mailbox.md).
  */
 
 #include <kern/tests/tep_mailbox_test.h>
+
+#if defined(NXU_TEP_MAILBOX_TEST)
 
 #include <drivers/tep/tep_mailbox.h>
 #include <kern/console/console.h>
@@ -148,3 +153,5 @@ bool tep_mailbox_test_run(void)
 	kputln("tep_mailbox_test: reconnect passed");
 	return true;
 }
+
+#endif

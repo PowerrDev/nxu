@@ -70,6 +70,20 @@ mode with `reconnect-ms` aborts the whole emulator whenever a connection
 attempt fails (`qemu_chr_socket_connected` -> `yank_unregister_function`).
 Both QEMUs listen, and only the relay connects.
 
+## Known issue: layout-sensitive `everything` failure
+
+While this driver was added, linking `kern/tests/tep_mailbox_test.o` into
+every kernel -- its code never runs outside the `tep-mailbox` test build --
+made the `everything` row fail every time with `unified_boot_summary:
+UIService Voyager.app FAILED: its event loop is not running`: all five tests
+and the boot chime passed, but Voyager's poll counter stopped advancing. The
+failure followed that object exactly (bisected across the commits; `main` and
+the driver alone passed repeatedly), while 8 KiB of dead `.text` added to
+`main` did not reproduce it, so it is not simply the image size. The root cause
+was not found; the test file is now compiled only under
+`NXU_TEP_MAILBOX_TEST`. Something in the UI session appears sensitive to the
+kernel's layout and is worth investigating on its own.
+
 ## Testing
 
 `make test-tep-mailbox` (`tools/test_tep_mailbox.sh`) builds tepOS and the
