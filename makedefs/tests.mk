@@ -39,6 +39,7 @@
 #   TEST_<id>_VERIFY      command that checks the recording; @CAPTURE@ stands for
 #                         its path. It must exit 0 (make check only; no shell
 #                         quotes, tabs or # in it)
+#   TEST_<id>_SERIAL1     QEMU arguments for a second serial port (default: none)
 
 TEST_GUI_STACK := UISERVICE=1 WINDOWSERVER=1
 
@@ -62,7 +63,8 @@ TEST_IDS := \
     about-sevos-process \
     smp \
     smp-user \
-    sound
+    sound \
+    tep-mailbox
 
 
 # -- Everything at once --------------------------------------------------------
@@ -241,6 +243,33 @@ TEST_sound_CAPTURE := 1
 TEST_sound_VERIFY := python3 tools/audio/verify_capture.py @CAPTURE@ tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.wav --tone --chimes 2
 
 
+# -- Trusted Enclave -----------------------------------------------------------
+
+# The mailbox to tepOS (drivers/tep) is a serial link to a second QEMU. NXU's
+# serial1 listens on a Unix socket, tepOS's serial1 (make run in the
+# TrustedEnclaveProcessor repository) listens on another, and that
+# repository's tools/mailbox_link.py joins them like a cable, relinking when
+# either machine restarts. No QEMU connects out: QEMU 11.1 aborts a
+# reconnecting socket client whenever a connection attempt fails.
+# `make run-console TEP=1` boots with the link; tools/test_tep_mailbox.sh runs
+# the tep-mailbox test with both machines and the relay, stopping and
+# restarting tepOS. It is not a `make check` row because it needs the tepOS
+# repository.
+TEP_NXU_SOCK ?= /tmp/nxu-mailbox.sock
+TEP_SERIAL1 := -chardev socket,id=tep,path=$(TEP_NXU_SOCK),server=on,wait=off -serial chardev:tep
+
+TEST_tep-mailbox_GROUP := Trusted Enclave
+TEST_tep-mailbox_DESC := Mailbox to tepOS over serial1: protocol, fail closed, reconnect (tepOS must be running)
+TEST_tep-mailbox_CFLAGS := -DNXU_TEP_MAILBOX_TEST
+TEST_tep-mailbox_SERIAL1 := $(TEP_SERIAL1)
+
+.PHONY: test-tep-mailbox
+
+test-tep-mailbox:
+
+	+@MAKE="$(MAKE)" tools/test_tep_mailbox.sh
+
+
 # -- make check ----------------------------------------------------------------
 
 # Seconds `make check` waits for a test's pass line before calling it a failure.
@@ -340,4 +369,5 @@ test: $(DISK) $(DISK_FORMAT_STAMP)
 		$(or $(TEST_$(TEST)_AUDIODEV),$(QEMU_AUDIODEV)) \
 		$(QEMU_SOUND_DEVICE) \
 		-serial stdio \
+		$(TEST_$(TEST)_SERIAL1) \
 		-monitor $(or $(TEST_$(TEST)_MONITOR),none)

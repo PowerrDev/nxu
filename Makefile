@@ -358,6 +358,7 @@ C_SOURCES := \
     kern/tests/smp_test.c \
     kern/tests/smp_user_test.c \
     kern/tests/sound_test.c \
+    kern/tests/tep_mailbox_test.c \
     kern/tests/xamethyst_process_test.c \
     kern/tests/windowserver_process_test.c \
     kern/tests/about_sevos_process_test.c \
@@ -1003,6 +1004,7 @@ run-console: $(KERNEL_IMAGE) $(DISK) $(DISK_FORMAT_STAMP)
 		$(QEMU_AUDIODEV) \
 		$(QEMU_SOUND_DEVICE) \
 		-serial stdio \
+		$(if $(TEP),$(TEP_SERIAL1)) \
 		-monitor none
 
 
