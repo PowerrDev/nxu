@@ -6,9 +6,9 @@
 #                             compositor linked in (also builds both
 #                             frameworks for i686-nxu-none first)
 #   make run-i386-desktop    boot it with virtio-gpu, keyboard and mouse over
-#                             PCI -- under qemu-system-x86_64 -accel hvf when
-#                             that is actually available (see below), plain
-#                             qemu-system-i386/tcg otherwise
+#                             PCI and -smp 4 -- under qemu-system-x86_64
+#                             -accel hvf when that is actually available (see
+#                             below), plain qemu-system-i386/tcg otherwise
 #
 # platform/i386/services/ui_service.c and kern/aqua/window_server.c are the
 # i386 side of the same kernel-embedded compositor bring-up arm64's "desktop"
@@ -48,6 +48,13 @@ endif
 
 I386_DESKTOP_BUILD_ROOT ?= BUILD-i386-desktop
 I386_DESKTOP_KERNEL := $(I386_DESKTOP_BUILD_ROOT)/i386/kernel.elf
+
+# Real SMP (see doc/i386/smp.md): CPUs beyond the boot one come up through
+# ACPI MADT discovery and INIT-SIPI-SIPI, not a fixed assumption baked into
+# the kernel, so this is just how many qemu-system-i386/x86_64 hands the
+# guest -- override with e.g. `make run-i386-desktop I386_DESKTOP_SMP=1` to
+# go back to a single CPU.
+I386_DESKTOP_SMP ?= 4
 
 # HVF only accelerates a guest whose architecture matches the host's, so it
 # can never accelerate this port's aarch64 sibling on Apple Silicon -- but on
@@ -97,7 +104,7 @@ run-i386-desktop: i386-desktop
 
 	$(MAKE) i386-disk BUILD_ROOT=$(I386_DESKTOP_BUILD_ROOT)
 
-	$(I386_DESKTOP_QEMU) -M pc \
+	$(I386_DESKTOP_QEMU) -M pc -smp $(I386_DESKTOP_SMP) \
 		-kernel $(I386_DESKTOP_KERNEL) \
 		-m 512M \
 		-vga none \
