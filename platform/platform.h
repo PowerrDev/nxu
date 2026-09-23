@@ -29,6 +29,14 @@ typedef struct {
 	uint32_t memory_region_count;
 
 	platform_region_t uart;
+
+	/*
+	 * A second "arm,pl011" in the Device Tree (QEMU virt with two -serial
+	 * options): the serial link to the Trusted Enclave Processor, owned by
+	 * drivers/tep/tep_mailbox.c. Empty when the machine has only the console.
+	 */
+	platform_region_t mailbox_uart;
+
 	platform_region_t fw_cfg;
 
 	platform_region_t gic_distributor;

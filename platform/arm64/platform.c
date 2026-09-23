@@ -615,10 +615,11 @@ static void platform_end_node(
 	}
 
 	if (node->is_uart) {
+		/* The first PL011 is the console; a second one is the tepOS mailbox link. */
 		(void)platform_read_reg(
 			node,
 			0U,
-			&platform->uart
+			platform->uart.size == 0U ? &platform->uart : &platform->mailbox_uart
 		);
 
 		return;
@@ -790,6 +791,7 @@ void platform_dump(const platform_t *platform)
 	}
 
 	platform_dump_region("UART", &platform->uart);
+	if (platform->mailbox_uart.size != 0ULL) platform_dump_region("TEP mailbox UART", &platform->mailbox_uart);
 
 	if (platform->fw_cfg.size != 0ULL) {
 		platform_dump_region("fw_cfg", &platform->fw_cfg);
