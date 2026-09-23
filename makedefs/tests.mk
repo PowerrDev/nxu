@@ -40,6 +40,8 @@
 #                         its path. It must exit 0 (make check only; no shell
 #                         quotes, tabs or # in it)
 #   TEST_<id>_SERIAL1     QEMU arguments for a second serial port (default: none)
+#   TEST_<id>_TEP         set to 1 to boot tepOS alongside, joined by the mailbox
+#                         (tools/with_tepos.sh; TEP=0 turns it off, TEP=1 on)
 
 TEST_GUI_STACK := UISERVICE=1 WINDOWSERVER=1
 
@@ -128,6 +130,7 @@ TEST_desktop_DISPLAY := $(TEST_GUI_DISPLAY)
 TEST_desktop_GPU := ,xres=$(QEMU_GPU_XRES),yres=$(QEMU_GPU_YRES)
 TEST_desktop_RAMFB := $(QEMU_RAMFB_DEVICE)
 TEST_desktop_SMP := 4
+TEST_desktop_TEP := 1
 
 
 # -- Graphical boot ------------------------------------------------------------
@@ -246,15 +249,26 @@ TEST_sound_VERIFY := python3 tools/audio/verify_capture.py @CAPTURE@ tools/DiskR
 # -- Trusted Enclave -----------------------------------------------------------
 
 # The mailbox to tepOS (drivers/tep) is a serial link to a second QEMU. NXU's
-# serial1 listens on a Unix socket, tepOS's serial1 (make run in the
-# TrustedEnclaveProcessor repository) listens on another, and that
-# repository's tools/mailbox_link.py joins them like a cable, relinking when
-# either machine restarts. No QEMU connects out: QEMU 11.1 aborts a
-# reconnecting socket client whenever a connection attempt fails.
-# `make run-console TEP=1` boots with the link; tools/test_tep_mailbox.sh runs
-# the tep-mailbox test with both machines and the relay, stopping and
-# restarting tepOS. It is not a `make check` row because it needs the tepOS
-# repository.
+# serial1 listens on a Unix socket, tepOS's serial1 listens on another, and
+# the TrustedEnclaveProcessor repository's tools/mailbox_link.py joins them
+# like a cable, relinking when either machine restarts. No QEMU connects out:
+# QEMU 11.1 aborts a reconnecting socket client whenever a connection attempt
+# fails.
+#
+# tools/with_tepos.sh does all of that around NXU's QEMU: it builds and boots
+# tepOS headless (console in BUILD/tepos-run/console.log), starts the relay,
+# adds the mailbox serial port and stops tepOS when NXU exits. `make run`
+# uses it (TEST_desktop_TEP); TEP=0 boots NXU alone, TEP=1 adds tepOS to any
+# `make test` or to `make run-console`. Without the tepOS checkout (TEP_DIR,
+# default next to this repository) NXU boots alone and tepOS requests fail
+# closed.
+#
+# tools/test_tep_mailbox.sh (make test-tep-mailbox) runs the tep-mailbox test
+# with both machines and the relay, stopping and restarting tepOS. It is not
+# a `make check` row because it needs the tepOS repository.
+TEP_WRAPPER = $(if $(filter 1,$(or $(TEP),$(TEST_$(TEST)_TEP))),tools/with_tepos.sh)
+
+# `make test TEST=tep-mailbox` alone: start tepOS and the relay yourself.
 TEP_NXU_SOCK ?= /tmp/nxu-mailbox.sock
 TEP_SERIAL1 := -chardev socket,id=tep,path=$(TEP_NXU_SOCK),server=on,wait=off -serial chardev:tep
 
@@ -351,7 +365,7 @@ test: $(DISK) $(DISK_FORMAT_STAMP)
 		EXTRA_CFLAGS="$(EXTRA_CFLAGS) $(TEST_$(TEST)_CFLAGS)" \
 		all
 
-	qemu-system-aarch64 \
+	$(TEP_WRAPPER) qemu-system-aarch64 \
 		-machine virt,gic-version=3 \
 		-cpu cortex-a72 \
 		-smp $(or $(TEST_$(TEST)_SMP),1) \
