@@ -4,12 +4,14 @@
 /*
  * File:        drivers/tep/tep_mailbox.c
  *
- * See drivers/tep/tep_mailbox.h. The UART is polled: one request is in
- * flight at a time and the monitor paces the traffic, so there is nothing an
- * interrupt would buy yet.
+ * See drivers/tep/tep_mailbox.h. The serial port behind it is
+ * drivers/tep/tep_uart.h (PL011 on arm64, 16550 COM2 on i386), polled: one
+ * request is in flight at a time and the monitor paces the traffic, so there
+ * is nothing an interrupt would buy yet.
  */
 
 #include <drivers/tep/tep_mailbox.h>
+#include <drivers/tep/tep_uart.h>
 
 #include <kern/console/console.h>
 #include <kern/machine/cpu.h>
@@ -17,8 +19,6 @@
 #include <kern/process/proc.h>
 #include <kern/process/thread.h>
 #include <kern/sched_prism/sched.h>
-#include <platform/platform.h>
-#include <vm/vmm.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -30,29 +30,12 @@
 #define TEP_MONITOR_PERIOD_US 1000000ULL
 #define TEP_MONITOR_FAILURES_MAX 3U
 
-/* PL011 (ARM DDI 0183). */
-#define UART_DR 0x000U
-#define UART_FR 0x018U
-#define UART_LCR_H 0x02cU
-#define UART_CR 0x030U
-#define UART_IMSC 0x038U
-#define UART_ICR 0x044U
-#define UART_PERIPHID0 0xfe0U
-#define UART_CELLID0 0xff0U
-#define UART_FR_RXFE (1U << 4U)
-#define UART_FR_TXFF (1U << 5U)
-#define UART_LCR_H_FEN (1U << 4U)
-#define UART_LCR_H_WLEN8 (3U << 5U)
-#define UART_CR_UARTEN (1U << 0U)
-#define UART_CR_TXE (1U << 8U)
-#define UART_CR_RXE (1U << 9U)
-
-static volatile uint32_t *g_uart;
 static volatile tep_link_state_t g_link_state = TEP_LINK_ABSENT;
 static volatile uint8_t g_health = TEP_MB_HEALTH_STARTING;
 static volatile uint32_t g_exchange_busy;
 static uint32_t g_next_request_id = 1U;
 static bool g_started;
+static bool g_uart_ready;
 
 /* ---- waiting ------------------------------------------------------------ */
 
@@ -71,51 +54,6 @@ static void tep_wait_us(uint64_t microseconds)
 		if (timer_get_interrupt_count() != 0ULL && sched_sleep_us(deadline - timer_get_microseconds())) continue;
 		if (!sched_yield()) cpu_relax();
 	}
-}
-
-/* ---- UART --------------------------------------------------------------- */
-
-static uint32_t uart_read(uint32_t offset)
-{
-	return g_uart[offset / 4U];
-}
-
-static void uart_write(uint32_t offset, uint32_t value)
-{
-	g_uart[offset / 4U] = value;
-}
-
-static bool uart_init(uint64_t physical_base)
-{
-	static const uint8_t cell_id[4] = { 0x0dU, 0xf0U, 0x05U, 0xb1U };
-	uint64_t virtual_address;
-
-	if (!vmm_physical_to_higher_half(physical_base, &virtual_address)) return false;
-	g_uart = (volatile uint32_t *)virtual_address;
-
-	for (uint32_t index = 0U; index < 4U; index++) {
-		if ((uart_read(UART_CELLID0 + 4U * index) & 0xffU) != cell_id[index]) return false;
-	}
-	if ((uart_read(UART_PERIPHID0) & 0xffU) != 0x11U) return false;
-
-	uart_write(UART_CR, 0U);
-	uart_write(UART_LCR_H, UART_LCR_H_WLEN8 | UART_LCR_H_FEN);
-	uart_write(UART_IMSC, 0U);
-	uart_write(UART_ICR, 0x7ffU);
-	uart_write(UART_CR, UART_CR_UARTEN | UART_CR_TXE | UART_CR_RXE);
-	return true;
-}
-
-static int uart_getc(void)
-{
-	if ((uart_read(UART_FR) & UART_FR_RXFE) != 0U) return -1;
-	return (int)(uart_read(UART_DR) & 0xffU);
-}
-
-static void uart_putc(uint8_t byte)
-{
-	while ((uart_read(UART_FR) & UART_FR_TXFF) != 0U) cpu_relax();
-	uart_write(UART_DR, byte);
 }
 
 /* ---- frames ------------------------------------------------------------- */
@@ -245,9 +183,9 @@ static void frame_send(uint16_t command, uint32_t request_id, const uint8_t *pay
 	crc = tep_crc32(crc, payload, payload_len) ^ 0xffffffffU;
 	put32(trailer, crc);
 
-	for (uint32_t index = 0U; index < sizeof(header); index++) uart_putc(header[index]);
-	for (uint32_t index = 0U; index < payload_len; index++) uart_putc(payload[index]);
-	for (uint32_t index = 0U; index < sizeof(trailer); index++) uart_putc(trailer[index]);
+	for (uint32_t index = 0U; index < sizeof(header); index++) tep_uart_putc(header[index]);
+	for (uint32_t index = 0U; index < payload_len; index++) tep_uart_putc(payload[index]);
+	for (uint32_t index = 0U; index < sizeof(trailer); index++) tep_uart_putc(trailer[index]);
 }
 
 /* ---- exchanges ---------------------------------------------------------- */
@@ -273,11 +211,11 @@ static tep_request_result_t tep_exchange(uint16_t command, const void *payload, 
 	static tep_frame_reader_t reader;
 	tep_request_result_t result = TEP_REQ_TIMEOUT;
 
-	if (g_uart == 0 || response == 0 || payload_len > TEP_MB_MAX_PAYLOAD || (payload_len != 0U && payload == 0)) return TEP_REQ_INVALID;
+	if (!g_uart_ready || response == 0 || payload_len > TEP_MB_MAX_PAYLOAD || (payload_len != 0U && payload == 0)) return TEP_REQ_INVALID;
 
 	exchange_lock();
 
-	while (uart_getc() >= 0) {
+	while (tep_uart_getc() >= 0) {
 	}
 	reader.have = 0U;
 
@@ -288,7 +226,7 @@ static tep_request_result_t tep_exchange(uint16_t command, const void *payload, 
 	uint64_t deadline = timer_get_microseconds() + TEP_RESPONSE_TIMEOUT_US;
 
 	while (timer_get_microseconds() < deadline) {
-		int byte = uart_getc();
+		int byte = tep_uart_getc();
 		tep_frame_t frame;
 
 		if (byte < 0) {
@@ -437,19 +375,16 @@ static void tep_mailbox_monitor(void *parameter)
 
 bool tep_mailbox_start(void)
 {
+	const char *where;
+	uint64_t address;
+
 	if (g_started) return true;
 
-	const platform_t *platform = platform_get();
-
-	if (platform == 0 || platform->mailbox_uart.size == 0ULL) {
+	if (!tep_uart_init(&where, &address)) {
 		TEP_MAILBOX_LOG("no mailbox UART: tepOS unavailable, requests will fail closed\n");
 		return false;
 	}
-	if (!uart_init(platform->mailbox_uart.base)) {
-		TEP_MAILBOX_LOG("mailbox UART at 0x%llx is not a PL011: tepOS unavailable\n", (unsigned long long)platform->mailbox_uart.base);
-		return false;
-	}
-
+	g_uart_ready = true;
 	g_link_state = TEP_LINK_UNAVAILABLE;
 
 	thread_t thread;
@@ -461,7 +396,7 @@ bool tep_mailbox_start(void)
 	}
 
 	g_started = true;
-	TEP_MAILBOX_LOG("Trusted Enclave mailbox on PL011 at 0x%llx\n", (unsigned long long)platform->mailbox_uart.base);
+	TEP_MAILBOX_LOG("Trusted Enclave mailbox on %s at 0x%llx\n", where, (unsigned long long)address);
 	return true;
 }
 

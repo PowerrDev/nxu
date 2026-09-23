@@ -302,6 +302,7 @@ C_SOURCES := \
     drivers/block/block_device.c \
     drivers/block/partition.c \
     drivers/tep/tep_mailbox.c \
+    drivers/tep/tep_uart_pl011.c \
     drivers/video/display.c \
     drivers/video/ramfb_console.c \
     platform/arm64/services/ui_service.c \
