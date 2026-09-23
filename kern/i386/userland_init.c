@@ -21,6 +21,7 @@
 #include <kern/i386/timer.h>
 
 #include <drivers/block/block_device.h>
+#include <drivers/tep/tep_mailbox.h>
 #include <drivers/video/ui_service_host.h>
 #include <kern/aqua/window_server.h>
 #include <kern/boot/boot_mode.h>
@@ -237,7 +238,12 @@ bool i386_init_run(const i386_boot_info_t *boot)
 {
 	(void)boot;
 
-	if (g_boot_process == 0) return true;
+	/*
+	 * Without bootd (no disk, as in make run-i386) there is normally nothing
+	 * left to run. The tepOS mailbox monitor is a kernel thread, though, so
+	 * keep scheduling while the machine has a mailbox link.
+	 */
+	if (g_boot_process == 0 && tep_mailbox_link_state() == TEP_LINK_ABSENT) return true;
 
 	char value[16];
 	uint64_t limit_us = 0ULL;
@@ -252,7 +258,9 @@ bool i386_init_run(const i386_boot_info_t *boot)
 
 	uint64_t start_us = timer_get_microseconds();
 
-	kputln("i386_init_run: root userspace services active, dispatching");
+	kputln(g_boot_process != 0
+		? "i386_init_run: root userspace services active, dispatching"
+		: "i386_init_run: no userspace; running kernel threads (tepOS mailbox monitor)");
 
 	for (;;) {
 		if (!sched_yield()) {
