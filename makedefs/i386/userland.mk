@@ -227,6 +227,8 @@ $(I386_USER_STAMP): $(I386_USER_BINARIES) $(I386_USER_PLISTS) $(I386_DISK_STATIC
 
 	$(Q)cp $(I386_USER_BUILD)/bootd $(I386_DISKROOT)/System/Library/CoreServices/bootd
 
+	$(Q)tools/sign_boot_image.sh $(I386_DISKROOT)/System/Library/CoreServices/bootd bootd $(I386_DISKROOT)/System/Library/CoreServices/bootd.manifest
+
 	$(Q)cp $(I386_USER_BUILD)/bootd $(I386_DISKROOT)/System/Library/CoreServices/bootd.recovery
 
 	$(Q)cp $(I386_USER_BUILD)/logd $(I386_DISKROOT)/System/Library/CoreServices/logd

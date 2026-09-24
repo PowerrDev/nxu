@@ -14,3 +14,6 @@
 /doc/agents/CLAUDE-SESSION.MD
 .img
 btrfs_disk.img
+
+# Signed with the local tepOS boot-signing key (tools/sign_boot_image.sh): only valid on this machine.
+tools/DiskRoot/System/Library/CoreServices/bootd.manifest

@@ -786,6 +786,8 @@ $(USER_STAGE_STAMP): $(USER_DAEMONS) $(USER_SERVICE_PLISTS)
 
 	$(Q)cp $(USER_BUILD)/bootd $(DISK_ROOT)/System/Library/CoreServices/bootd
 
+	$(Q)tools/sign_boot_image.sh $(DISK_ROOT)/System/Library/CoreServices/bootd bootd $(DISK_ROOT)/System/Library/CoreServices/bootd.manifest
+
 	$(Q)cp $(USER_BUILD)/bootd $(DISK_ROOT)/System/Library/CoreServices/bootd.recovery
 
 	$(Q)cp $(USER_BUILD)/logd $(DISK_ROOT)/System/Library/CoreServices/logd
@@ -1146,6 +1148,8 @@ clean:
 	rm -rf $(BUILD_ROOT)
 
 	rm -f $(DISK_ROOT)/System/Library/CoreServices/bootd
+
+	rm -f $(DISK_ROOT)/System/Library/CoreServices/bootd.manifest
 
 	rm -f $(DISK_ROOT)/System/Library/CoreServices/bootd.recovery
 
