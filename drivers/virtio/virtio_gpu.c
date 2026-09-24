@@ -182,20 +182,28 @@ static bool virtio_gpu_allocate_page(uint64_t *physical, uint8_t **virtual_addre
 	return true;
 }
 
-static bool virtio_gpu_wait(virtio_gpu_device_t *device, uint16_t expected_head)
+/* The next control-queue completion; spins until there is one. */
+static void virtio_gpu_wait(virtio_gpu_device_t *device, uint32_t *id, uint32_t *length)
 {
-	for (;;) {
-		uint32_t id;
-		uint32_t length;
+	while (!virtqueue_pop_used(&device->controlq, id, length)) ml_cpu_relax();
+}
 
-		if (!virtqueue_pop_used(&device->controlq, &id, &length)) {
-			ml_cpu_relax();
-			continue;
-		}
+/*
+ * Control commands that fail are logged with the reason, after the device
+ * lock is dropped; after this many the log stays quiet so a persistent
+ * fault cannot flood it.
+ */
+#define VIRTIO_GPU_FAILURES_LOGGED 8U
 
-		if (length < sizeof(virtio_gpu_ctrl_hdr_t)) return false;
-		return id == expected_head;
-	}
+static uint32_t g_virtio_gpu_failures;
+
+static void virtio_gpu_log_failure(uint32_t command, const char *why, const char *what, uint32_t value)
+{
+	if (++g_virtio_gpu_failures > VIRTIO_GPU_FAILURES_LOGGED) return;
+
+	kprintf("VirtIOGPUFamily: command 0x%x failed: %s\n", command, why);
+	if (what != 0) kprintf("VirtIOGPUFamily: %s: 0x%x\n", what, value);
+	if (g_virtio_gpu_failures == VIRTIO_GPU_FAILURES_LOGGED) kputln("VirtIOGPUFamily: further command failures are not logged");
 }
 
 static bool virtio_gpu_command(
@@ -220,6 +228,10 @@ static bool virtio_gpu_command(
 	virtio_gpu_lock(device);
 
 	virtio_gpu_ctrl_hdr_t *request_header = request;
+	uint32_t command = request_header->type;
+	const char *why = 0;
+	const char *what = 0;
+	uint32_t value = 0U;
 	uint64_t fence_id = ++device->next_fence_id;
 	request_header->flags |= VIRTIO_GPU_FLAG_FENCE;
 	request_header->fence_id = fence_id;
@@ -232,12 +244,14 @@ static bool virtio_gpu_command(
 
 	if (!virtqueue_alloc_descriptor(&device->controlq, &request_desc)) {
 		virtio_gpu_unlock(device);
+		virtio_gpu_log_failure(command, "no free request descriptor", 0, 0U);
 		return false;
 	}
 
 	if (!virtqueue_alloc_descriptor(&device->controlq, &response_desc)) {
 		(void)virtqueue_free_descriptor(&device->controlq, request_desc);
 		virtio_gpu_unlock(device);
+		virtio_gpu_log_failure(command, "no free response descriptor", 0, 0U);
 		return false;
 	}
 
@@ -254,22 +268,42 @@ static bool virtio_gpu_command(
 	in->next = 0U;
 
 	bool ok = virtqueue_submit(&device->controlq, request_desc);
-	if (ok) {
+	uint32_t used_id = 0U;
+	uint32_t used_length = 0U;
+
+	if (!ok) {
+		why = "submit failed";
+	} else {
 		virtio_device_notify(&device->transport, VIRTIO_GPU_CONTROLQ);
-		ok = virtio_gpu_wait(device, request_desc);
+		virtio_gpu_wait(device, &used_id, &used_length);
 	}
 
 	virtio_gpu_ctrl_hdr_t *response = (virtio_gpu_ctrl_hdr_t *)(device->control + VIRTIO_GPU_CONTROL_RESPONSE_OFFSET);
 
-	if (ok) {
-		ok = response->type == expected_response &&
-			(response->flags & VIRTIO_GPU_FLAG_FENCE) != 0U &&
-			response->fence_id == fence_id;
+	if (ok && used_id != request_desc) {
+		why = "completion for another request";
+		what = "completion descriptor";
+		value = used_id;
+	} else if (ok && used_length < sizeof(virtio_gpu_ctrl_hdr_t)) {
+		why = "short completion";
+		what = "bytes written";
+		value = used_length;
+	} else if (ok && response->type != expected_response) {
+		why = "device answered with an error or unexpected type";
+		what = "response type";
+		value = response->type;
+	} else if (ok && ((response->flags & VIRTIO_GPU_FLAG_FENCE) == 0U || response->fence_id != fence_id)) {
+		why = "fence missing or mismatched";
+		what = "response fence";
+		value = (uint32_t)response->fence_id;
 	}
+	ok = ok && why == 0;
 
 	(void)virtqueue_free_descriptor(&device->controlq, response_desc);
 	(void)virtqueue_free_descriptor(&device->controlq, request_desc);
 	virtio_gpu_unlock(device);
+
+	if (!ok) virtio_gpu_log_failure(command, why, what, value);
 	return ok;
 }
 
@@ -429,11 +463,19 @@ static bool virtio_gpu_display_present(
 	if (display == 0 || display->driver == 0) return false;
 	virtio_gpu_device_t *device = display->driver;
 
-	if (!virtio_gpu_transfer(device, x, y, width, height)) return false;
-
-	if (!virtio_gpu_flush(device, x, y, width, height)) return false;
-	device->present_count++;
-	return true;
+	/*
+	 * Transfer and flush can be repeated safely, so a command that fails
+	 * (logged by virtio_gpu_command) gets one more try before the frame is
+	 * reported lost: one bad completion should not end a UI session.
+	 */
+	for (uint32_t attempt = 0U; attempt < 2U; attempt++) {
+		if (virtio_gpu_transfer(device, x, y, width, height) && virtio_gpu_flush(device, x, y, width, height)) {
+			if (attempt != 0U) kputln("VirtIOGPUFamily: present succeeded on retry");
+			device->present_count++;
+			return true;
+		}
+	}
+	return false;
 }
 
 static bool virtio_gpu_allocate_framebuffer(virtio_gpu_device_t *device)
