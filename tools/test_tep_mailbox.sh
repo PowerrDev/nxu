@@ -8,7 +8,8 @@
 #
 #   1. waits for "tep_mailbox_test: protocol checks passed";
 #   2. stops tepOS and waits for "tep_mailbox_test: fail-closed check passed";
-#   3. restarts tepOS and waits for "tep_mailbox_test: passed".
+#   3. restarts tepOS and waits for "tep_mailbox_test: passed" (up to a
+#      minute of it is tepOS's passcode delay running out).
 #
 # Like tools/check.sh it builds against a scratch disk, so the tracked
 # disk.img and tools/DiskRoot are left alone.
@@ -106,7 +107,16 @@ DISK_OVERRIDES=(
 	"USER_STAGE_STAMP=$SCRATCH/staged.stamp"
 	"${FRAMEWORK_DIRS[@]}"
 )
-"$MAKE_CMD" --no-print-directory "${DISK_OVERRIDES[@]}" "$SCRATCH/disk.img" >"$SCRATCH/nxu-build.log" 2>&1 </dev/null || { tail -20 "$SCRATCH/nxu-build.log"; exit 1; }
+"$MAKE_CMD" --no-print-directory "${DISK_OVERRIDES[@]}" "$SCRATCH/staged.stamp" >"$SCRATCH/nxu-build.log" 2>&1 </dev/null || { tail -20 "$SCRATCH/nxu-build.log"; exit 1; }
+# Staging signed bootd (tools/sign_boot_image.sh). Add what the boot policy
+# checks need: bootd with one byte changed, and a manifest for the real
+# bootd signed as version 1, which tepOS must call a rollback.
+CORE="$SCRATCH/DiskRoot/System/Library/CoreServices"
+[ -f "$CORE/bootd.manifest" ] || { grep sign_boot_image "$SCRATCH/nxu-build.log"; echo "test_tep_mailbox: bootd was not signed"; exit 1; }
+python3 -c 'import sys; b = bytearray(open(sys.argv[1], "rb").read()); b[len(b) // 2] ^= 1; open(sys.argv[2], "wb").write(b)' "$CORE/bootd" "$CORE/bootd.tampered"
+NXU_BOOT_VERSION=1 tools/sign_boot_image.sh "$CORE/bootd" bootd "$CORE/bootd.v1.manifest" >>"$SCRATCH/nxu-build.log" 2>&1
+[ -f "$CORE/bootd.v1.manifest" ] || { echo "test_tep_mailbox: could not sign the version 1 manifest"; exit 1; }
+"$MAKE_CMD" --no-print-directory "${DISK_OVERRIDES[@]}" "$SCRATCH/disk.img" >>"$SCRATCH/nxu-build.log" 2>&1 </dev/null || { tail -20 "$SCRATCH/nxu-build.log"; exit 1; }
 "$MAKE_CMD" --no-print-directory "${DISK_OVERRIDES[@]}" BUILD_ROOT=BUILD CONFIG="$ID" \
 	EXTRA_CFLAGS="-DNXU_TEP_MAILBOX_TEST" all >>"$SCRATCH/nxu-build.log" 2>&1 </dev/null || { grep error "$SCRATCH/nxu-build.log" | head; exit 1; }
 
@@ -139,7 +149,7 @@ wait_for "tep_mailbox_test: fail-closed check passed" 60 || exit 1
 echo "test_tep_mailbox: fail-closed check passed; restarting tepOS"
 start_tepos 2 || exit 1
 
-wait_for "tep_mailbox_test: passed" 90 || exit 1
+wait_for "tep_mailbox_test: passed" 180 || exit 1
 
 # A QEMU that aborted would still have let earlier phases pass: check both are clean.
 if grep -v "terminating on signal" "$SCRATCH/nxu.stderr" "$TEP_LOG".*.stderr | grep -q .; then
