@@ -33,6 +33,7 @@
 #include <platform/rtc.h>
 
 #include <drivers/block/block_device.h>
+#include <drivers/tep/tep_boot.h>
 #include <drivers/tep/tep_mailbox.h>
 #include <drivers/input/input.h>
 #include <drivers/input/keyboard.h>
@@ -304,8 +305,11 @@ bool i386_init_drivers(const i386_boot_info_t *boot)
 		virtio_gpu_device_count()
 	);
 
-	/* The Trusted Enclave link (COM2 when QEMU has a second -serial). Absent, tepOS requests fail closed. */
-	(void)tep_mailbox_start();
+	/*
+	 * The Trusted Enclave link (COM2 when QEMU has a second -serial). Absent, tepOS requests fail closed.
+	 * With it, tepOS checks bootd against its signed manifest: reported, never waited for or enforced.
+	 */
+	if (tep_mailbox_start()) (void)tep_boot_check_start();
 
 	return true;
 }
