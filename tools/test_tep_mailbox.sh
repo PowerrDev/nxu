@@ -63,9 +63,9 @@ wait_socket() {
 
 start_tepos() {
 	rm -f "$TEP_SOCK"
-	qemu-system-aarch64 -machine virt,secure=off,virtualization=off,gic-version=2 -cpu cortex-a53 -m 1024 \
+	(cd "$TEP_DIR" && exec qemu-system-aarch64 -machine virt,secure=off,virtualization=off,gic-version=2 -cpu cortex-a53 -m 1024 \
 		-nographic -serial file:"$TEP_LOG.$1.log" -serial unix:"$TEP_SOCK",server=on,wait=off \
-		-monitor none $TEP_DEVICES -kernel "$TEP_DIR/build/boot/sel4-image.elf" >"$TEP_LOG.$1.stderr" 2>&1 </dev/null &
+		-monitor none $TEP_DEVICES -kernel build/boot/sel4-image.elf) >"$TEP_LOG.$1.stderr" 2>&1 </dev/null &
 	tep_pid=$!
 	wait_socket "$TEP_SOCK"
 }
@@ -91,8 +91,11 @@ wait_for() {
 
 echo "test_tep_mailbox: building tepOS in $TEP_DIR"
 "$MAKE_CMD" -C "$TEP_DIR" image >"$SCRATCH/tepos-build.log" 2>&1 </dev/null || { tail -20 "$SCRATCH/tepos-build.log"; exit 1; }
-# tepOS's own devices (virtio-rng, ...), as its Makefile defines them.
-TEP_DEVICES=$("$MAKE_CMD" -s -C "$TEP_DIR" qemu-devices 2>/dev/null)
+# tepOS's own devices, as its Makefile defines them, but with a scratch key
+# store disk and sealing key so the test never touches tepOS's real keys.
+dd if=/dev/zero of="$SCRATCH/keystore.img" bs=1024 count=1024 2>/dev/null
+head -c 32 /dev/urandom >"$SCRATCH/kek.bin"
+TEP_DEVICES=$("$MAKE_CMD" -s -C "$TEP_DIR" qemu-devices TEP_KEYSTORE_IMG="$SCRATCH/keystore.img" TEP_KEK="$SCRATCH/kek.bin" 2>/dev/null)
 
 echo "test_tep_mailbox: building the $ID kernel and a scratch disk"
 cp -R tools/DiskRoot "$SCRATCH/DiskRoot" || exit 1

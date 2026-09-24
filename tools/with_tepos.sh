@@ -37,7 +37,8 @@ if [ ! -f "$TEP_DIR/tools/mailbox_link.py" ]; then
 	exec "$@"
 fi
 
-LOGS=BUILD/tepos-run
+# Absolute: tepOS's QEMU runs in $TEP_DIR, where its device paths are relative.
+LOGS="$PWD/BUILD/tepos-run"
 mkdir -p "$LOGS"
 
 echo "with_tepos: building tepOS in $TEP_DIR"
@@ -47,7 +48,9 @@ if ! "$MAKE_CMD" -C "$TEP_DIR" image >"$LOGS/build.log" 2>&1 </dev/null; then
 	exec "$@"
 fi
 
-# tepOS's own devices (virtio-rng, ...), as its Makefile defines them.
+# tepOS's own devices (virtio-rng, its key store disk and sealing key, ...), as
+# its Makefile defines them, with paths relative to $TEP_DIR. The key store is
+# tepOS's real, persistent one (build/tepos-keystore.img there).
 TEP_DEVICES=$("$MAKE_CMD" -s -C "$TEP_DIR" qemu-devices 2>/dev/null)
 
 # Short socket paths: Unix socket paths are limited to about 100 bytes.
@@ -90,9 +93,9 @@ else
 	TEP_CONSOLE_ARG="file:$LOGS/console.log"
 fi
 
-qemu-system-aarch64 -machine virt,secure=off,virtualization=off,gic-version=2 -cpu cortex-a53 -m 1024 \
+(cd "$TEP_DIR" && exec qemu-system-aarch64 -machine virt,secure=off,virtualization=off,gic-version=2 -cpu cortex-a53 -m 1024 \
 	-nographic -serial "$TEP_CONSOLE_ARG" -serial unix:"$SOCKS/tepos.sock",server=on,wait=off \
-	-monitor none $TEP_DEVICES -kernel "$TEP_DIR/build/boot/sel4-image.elf" >"$LOGS/qemu.log" 2>&1 </dev/null &
+	-monitor none $TEP_DEVICES -kernel build/boot/sel4-image.elf) >"$LOGS/qemu.log" 2>&1 </dev/null &
 tep_pid=$!
 
 python3 "$TEP_DIR/tools/mailbox_link.py" --nxu "$SOCKS/nxu.sock" --tepos "$SOCKS/tepos.sock" 2>"$LOGS/link.log" &
