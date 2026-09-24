@@ -32,6 +32,7 @@
 
 static volatile tep_link_state_t g_link_state = TEP_LINK_ABSENT;
 static volatile uint8_t g_health = TEP_MB_HEALTH_STARTING;
+static volatile uint16_t g_features;
 static volatile uint32_t g_exchange_busy;
 static uint32_t g_next_request_id = 1U;
 static bool g_started;
@@ -298,10 +299,12 @@ static const char *tep_monitor_hello(uint32_t *boot_id)
 	uint32_t version = get32(&response.payload[4]);
 
 	*boot_id = get32(&response.payload[8]);
+	g_features = get16(&response.payload[2]);
 	TEP_MAILBOX_LOG("tepOS available\n");
 	TEP_MAILBOX_LOG("tepOS protocol: %u\n", (unsigned)TEP_MB_VERSION);
 	TEP_MAILBOX_LOG("tepOS version: %u.%u.%u\n", (unsigned)(version >> 16U), (unsigned)((version >> 8U) & 0xffU), (unsigned)(version & 0xffU));
 	TEP_MAILBOX_LOG("tepOS boot id: %u\n", (unsigned)*boot_id);
+	TEP_MAILBOX_LOG("tepOS crypto services: %s\n", (g_features & TEP_MB_FEATURE_CRYPTO) != 0U ? "yes" : "no");
 	return 0;
 }
 
@@ -409,6 +412,11 @@ tep_request_result_t tep_mailbox_request(uint16_t command, const void *payload, 
 {
 	if (tep_mailbox_link_state() != TEP_LINK_AVAILABLE) return TEP_REQ_UNAVAILABLE;
 	return tep_exchange(command, payload, payload_len, response);
+}
+
+uint16_t tep_mailbox_features(void)
+{
+	return tep_mailbox_link_state() == TEP_LINK_AVAILABLE ? g_features : 0U;
 }
 
 bool tep_mailbox_health(tep_mb_health_t *health)

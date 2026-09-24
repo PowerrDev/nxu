@@ -301,6 +301,7 @@ C_SOURCES := \
     drivers/input/mouse.c \
     drivers/block/block_device.c \
     drivers/block/partition.c \
+    drivers/tep/tep_crypto.c \
     drivers/tep/tep_mailbox.c \
     drivers/tep/tep_uart_pl011.c \
     drivers/video/display.c \

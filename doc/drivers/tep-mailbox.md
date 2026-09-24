@@ -30,8 +30,24 @@ is not authentication.
 | `HELLO` | empty | protocol version, tepOS version, boot id |
 | `GET_HEALTH` | empty | tepOS health, then state and restart count per service |
 
-No command reads or writes memory on either side. Cryptographic services come
-later and will be added as further commands.
+With `TEP_MB_FEATURE_CRYPTO` in HELLO's flags, tepOS also serves:
+
+| Command | Request | Response |
+|---------|---------|----------|
+| `SHA256` | 1..240 bytes | 32-byte digest |
+| `RANDOM` | u16 n (1..64) | n bytes from tepOS's HMAC-DRBG (seeded from virtio-rng) |
+| `KEY_GENERATE` | u8 algorithm (1 = Ed25519) | u32 handle |
+| `KEY_PUBLIC` | u32 handle | 32-byte public key |
+| `KEY_SIGN` | u32 handle, 1..224 bytes | 64-byte Ed25519 signature |
+| `KEY_DELETE` | u32 handle | empty |
+
+Keys are generated inside tepOS's KeyStore and never leave it; NXU only ever
+sees handles, public keys and signatures (`drivers/tep/tep_crypto.h`:
+`tep_sha256`, `tep_random`, `tep_key_*`, all failing closed). tepOS seals its
+key table to disk so keys survive its reboots, but under a sealing key that is
+a host file: that store is not a protection boundary against the host yet.
+
+No command reads or writes memory on either side.
 
 ## Driver
 
@@ -119,9 +135,13 @@ kernel's layout and is worth investigating on its own.
 
 ## Testing
 
-`make test-tep-mailbox` (`tools/test_tep_mailbox.sh`) builds tepOS and the
+`make test-tep-mailbox` (`tools/test_tep_mailbox.sh`) runs tepOS on a scratch
+key store disk and sealing key, so it never touches tepOS's real keys. It builds tepOS and the
 `tep-mailbox` test kernel, boots both with the relay and runs
-`kern/tests/tep_mailbox_test.c`: the protocol checks against the live tepOS,
+`kern/tests/tep_mailbox_test.c`: the protocol and crypto checks (SHA-256
+against the FIPS vector, random bytes, key generate/public/sign, unknown
+handles) against the live tepOS,
 then the harness stops tepOS and the test requires the driver to declare it
-unavailable and refuse requests, then the harness restarts tepOS and the test
-requires the driver to reconnect. See [Testing](../testing.md).
+unavailable and refuse requests (crypto calls included), then the harness
+restarts tepOS and the test requires the driver to reconnect and the key it
+made earlier to still be there. See [Testing](../testing.md).

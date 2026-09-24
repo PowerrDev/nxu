@@ -19,6 +19,7 @@ I386_C_SOURCES += \
     drivers/input/input.c \
     drivers/input/keyboard.c \
     drivers/input/mouse.c \
+    drivers/tep/tep_crypto.c \
     drivers/tep/tep_mailbox.c \
     drivers/tep/tep_uart_16550.c \
     drivers/video/display.c \

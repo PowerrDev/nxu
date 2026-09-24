@@ -42,8 +42,21 @@
 
 typedef enum {
 	TEP_MB_CMD_HELLO = 0x0001,
-	TEP_MB_CMD_GET_HEALTH = 0x0002
+	TEP_MB_CMD_GET_HEALTH = 0x0002,
+
+	/* TEP_MB_FEATURE_CRYPTO */
+	TEP_MB_CMD_SHA256 = 0x0010,       /* 1..240 bytes -> 32-byte digest */
+	TEP_MB_CMD_RANDOM = 0x0011,       /* u16 n (1..64) -> n bytes */
+	TEP_MB_CMD_KEY_GENERATE = 0x0020, /* u8 algorithm -> u32 handle */
+	TEP_MB_CMD_KEY_PUBLIC = 0x0021,   /* u32 handle -> 32-byte public key */
+	TEP_MB_CMD_KEY_SIGN = 0x0022,     /* u32 handle, 1..224 bytes -> 64-byte signature */
+	TEP_MB_CMD_KEY_DELETE = 0x0023    /* u32 handle -> empty */
 } tep_mb_command_t;
+
+#define TEP_MB_ALG_ED25519 1U
+#define TEP_MB_SHA256_MAX 240U
+#define TEP_MB_RANDOM_MAX 64U
+#define TEP_MB_SIGN_MAX 224U
 
 typedef enum {
 	TEP_MB_OK = 0,
@@ -51,11 +64,14 @@ typedef enum {
 	TEP_MB_BAD_COMMAND = 2,
 	TEP_MB_BAD_LENGTH = 3,
 	TEP_MB_UNAVAILABLE = 4,
-	TEP_MB_INTERNAL = 5
+	TEP_MB_INTERNAL = 5,
+	TEP_MB_NOT_FOUND = 6,
+	TEP_MB_FULL = 7
 } tep_mb_status_t;
 
 /* HELLO response: u16 protocol, u16 flags, u32 tepOS version (major << 16 | minor << 8 | patch), u32 boot id. */
 #define TEP_MB_HELLO_LEN 12U
+#define TEP_MB_FEATURE_CRYPTO (1U << 0U) /* SHA256, RANDOM and the KEY_* commands */
 
 /* GET_HEALTH response: u8 health, u8 n, u16 reserved, then n x (u8 id, u8 state, u8 restarts, u8 reserved). */
 #define TEP_MB_MAX_SERVICES 8U

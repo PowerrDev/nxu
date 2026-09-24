@@ -14,6 +14,7 @@
 
 #if defined(NXU_TEP_MAILBOX_TEST)
 
+#include <drivers/tep/tep_crypto.h>
 #include <drivers/tep/tep_mailbox.h>
 #include <kern/console/console.h>
 #include <kern/machine/cpu.h>
@@ -22,8 +23,13 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 #define TEP_TEST_LOG(format, ...) kprintf("%s: " format, __func__, ##__VA_ARGS__)
+
+/* A key made before the harness restarts tepOS, checked again after it. */
+static uint32_t g_key_handle;
+static uint8_t g_key_public[TEP_PUBLIC_KEY_SIZE];
 
 /* Runs on the boot thread before the periodic timer: wait by yielding to the monitor thread. */
 static bool tep_mailbox_test_wait_for(tep_link_state_t wanted, bool equal, uint64_t seconds)
@@ -100,6 +106,49 @@ static bool tep_mailbox_test_protocol(void)
 	return true;
 }
 
+/*
+ * The crypto services through drivers/tep/tep_crypto.c. Signatures are
+ * checked for size here; tepOS's own tests verify them with an independent
+ * Ed25519 implementation.
+ */
+static bool tep_mailbox_test_crypto(void)
+{
+	static const uint8_t abc_digest[TEP_SHA256_SIZE] = {
+		0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23,
+		0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad
+	};
+	uint8_t digest[TEP_SHA256_SIZE], random_a[32], random_b[32], signature[TEP_SIGNATURE_SIZE];
+	tep_result_t result;
+
+	if ((result = tep_sha256("abc", 3U, digest)) != TEP_OK || memcmp(digest, abc_digest, sizeof(digest)) != 0) {
+		TEP_TEST_LOG("SHA-256 of abc wrong (%s)\n", tep_result_name(result));
+		return false;
+	}
+	TEP_TEST_LOG("SHA-256 matches the FIPS 180-4 vector\n");
+
+	if (tep_random(random_a, sizeof(random_a)) != TEP_OK || tep_random(random_b, sizeof(random_b)) != TEP_OK ||
+		memcmp(random_a, random_b, sizeof(random_a)) == 0) {
+		TEP_TEST_LOG("random bytes missing or repeated\n");
+		return false;
+	}
+	TEP_TEST_LOG("random bytes ok\n");
+
+	if ((result = tep_key_generate(&g_key_handle)) != TEP_OK ||
+		(result = tep_key_public(g_key_handle, g_key_public)) != TEP_OK ||
+		(result = tep_key_sign(g_key_handle, "NXU", 3U, signature)) != TEP_OK) {
+		TEP_TEST_LOG("key generate/public/sign failed (%s)\n", tep_result_name(result));
+		return false;
+	}
+	TEP_TEST_LOG("key 0x%x generated, public key and signature returned\n", (unsigned)g_key_handle);
+
+	if ((result = tep_key_public(g_key_handle ^ 0xffffffffU, g_key_public)) != TEP_ERR_NOT_FOUND) {
+		TEP_TEST_LOG("unknown handle gave %s\n", tep_result_name(result));
+		return false;
+	}
+	/* The call above must not have written: fetch the key again. */
+	return tep_key_public(g_key_handle, g_key_public) == TEP_OK;
+}
+
 static bool tep_mailbox_test_fail_closed(void)
 {
 	tep_mailbox_response_t response;
@@ -115,6 +164,12 @@ static bool tep_mailbox_test_fail_closed(void)
 
 	if (result != TEP_REQ_UNAVAILABLE) {
 		TEP_TEST_LOG("request while unavailable returned %s\n", tep_request_result_name(result));
+		return false;
+	}
+	uint8_t digest[TEP_SHA256_SIZE];
+	tep_result_t crypto = tep_sha256("x", 1U, digest);
+	if (crypto != TEP_ERR_UNAVAILABLE) {
+		TEP_TEST_LOG("SHA-256 while unavailable returned %s\n", tep_result_name(crypto));
 		return false;
 	}
 	if (tep_mailbox_health(&health)) {
@@ -133,7 +188,17 @@ static bool tep_mailbox_test_recovery(void)
 		TEP_TEST_LOG("tepOS did not come back\n");
 		return false;
 	}
-	return tep_mailbox_test_expect(TEP_MB_CMD_GET_HEALTH, 0U, TEP_MB_OK, &response);
+	if (!tep_mailbox_test_expect(TEP_MB_CMD_GET_HEALTH, 0U, TEP_MB_OK, &response)) return false;
+
+	/* The harness restarts tepOS on the same (scratch) key store: the key must be there. */
+	uint8_t public_key[TEP_PUBLIC_KEY_SIZE];
+	tep_result_t result = tep_key_public(g_key_handle, public_key);
+	if (result != TEP_OK || memcmp(public_key, g_key_public, sizeof(public_key)) != 0) {
+		TEP_TEST_LOG("key 0x%x after tepOS restart: %s\n", (unsigned)g_key_handle, tep_result_name(result));
+		return false;
+	}
+	TEP_TEST_LOG("key survived the tepOS restart\n");
+	return tep_key_delete(g_key_handle) == TEP_OK;
 }
 
 bool tep_mailbox_test_run(void)
@@ -144,6 +209,7 @@ bool tep_mailbox_test_run(void)
 	}
 
 	if (!tep_mailbox_test_protocol()) return false;
+	if (!tep_mailbox_test_crypto()) return false;
 	kputln("tep_mailbox_test: protocol checks passed");
 
 	if (!tep_mailbox_test_fail_closed()) return false;

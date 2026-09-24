@@ -70,6 +70,14 @@ tep_request_result_t tep_mailbox_request(uint16_t command, const void *payload, 
  */
 bool tep_mailbox_health(tep_mb_health_t *health);
 
+/*
+ * tep_mailbox_features:
+ *
+ * The TEP_MB_FEATURE_* flags tepOS advertised in its last HELLO, or 0 when
+ * the link is not available.
+ */
+uint16_t tep_mailbox_features(void);
+
 const char *tep_link_state_name(tep_link_state_t state);
 const char *tep_request_result_name(tep_request_result_t result);
 const char *tep_mb_health_name(uint8_t health);
