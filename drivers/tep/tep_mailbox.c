@@ -41,13 +41,13 @@ static bool g_uart_ready;
 /* ---- waiting ------------------------------------------------------------ */
 
 /*
- * tep_wait_us:
+ * tep_mailbox_wait_us:
  *
  * Let other threads run for about `microseconds`. Sleeps once the periodic
  * timer runs; before that (boot-time tests) the scheduler is cooperative and
  * a sleep would never be woken, so it yields instead.
  */
-static void tep_wait_us(uint64_t microseconds)
+void tep_mailbox_wait_us(uint64_t microseconds)
 {
 	uint64_t deadline = timer_get_microseconds() + microseconds;
 
@@ -193,7 +193,7 @@ static void frame_send(uint16_t command, uint32_t request_id, const uint8_t *pay
 
 static void exchange_lock(void)
 {
-	while (__atomic_exchange_n(&g_exchange_busy, 1U, __ATOMIC_ACQUIRE) != 0U) tep_wait_us(1000ULL);
+	while (__atomic_exchange_n(&g_exchange_busy, 1U, __ATOMIC_ACQUIRE) != 0U) tep_mailbox_wait_us(1000ULL);
 }
 
 static void exchange_unlock(void)
@@ -231,7 +231,7 @@ static tep_request_result_t tep_exchange(uint16_t command, const void *payload, 
 		tep_frame_t frame;
 
 		if (byte < 0) {
-			tep_wait_us(1000ULL);
+			tep_mailbox_wait_us(1000ULL);
 			continue;
 		}
 		if (!frame_feed(&reader, (uint8_t)byte, &frame)) continue;
@@ -305,6 +305,8 @@ static const char *tep_monitor_hello(uint32_t *boot_id)
 	TEP_MAILBOX_LOG("tepOS version: %u.%u.%u\n", (unsigned)(version >> 16U), (unsigned)((version >> 8U) & 0xffU), (unsigned)(version & 0xffU));
 	TEP_MAILBOX_LOG("tepOS boot id: %u\n", (unsigned)*boot_id);
 	TEP_MAILBOX_LOG("tepOS crypto services: %s\n", (g_features & TEP_MB_FEATURE_CRYPTO) != 0U ? "yes" : "no");
+	TEP_MAILBOX_LOG("tepOS passcode service: %s\n", (g_features & TEP_MB_FEATURE_AUTH) != 0U ? "yes" : "no");
+	TEP_MAILBOX_LOG("tepOS boot policy service: %s\n", (g_features & TEP_MB_FEATURE_BOOT) != 0U ? "yes" : "no");
 	return 0;
 }
 
@@ -370,7 +372,7 @@ static void tep_mailbox_monitor(void *parameter)
 			}
 		}
 
-		tep_wait_us(TEP_MONITOR_PERIOD_US);
+		tep_mailbox_wait_us(TEP_MONITOR_PERIOD_US);
 	}
 }
 

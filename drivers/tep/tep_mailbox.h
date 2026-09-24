@@ -78,6 +78,14 @@ bool tep_mailbox_health(tep_mb_health_t *health);
  */
 uint16_t tep_mailbox_features(void);
 
+/*
+ * tep_mailbox_wait_us:
+ *
+ * Let other threads run for about `microseconds`: a sleep once the periodic
+ * timer runs, yields before that.
+ */
+void tep_mailbox_wait_us(uint64_t microseconds);
+
 const char *tep_link_state_name(tep_link_state_t state);
 const char *tep_request_result_name(tep_request_result_t result);
 const char *tep_mb_health_name(uint8_t health);
