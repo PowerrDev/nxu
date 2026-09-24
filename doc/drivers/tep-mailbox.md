@@ -47,7 +47,72 @@ sees handles, public keys and signatures (`drivers/tep/tep_crypto.h`:
 key table to disk so keys survive its reboots, but under a sealing key that is
 a host file: that store is not a protection boundary against the host yet.
 
+With `TEP_MB_FEATURE_AUTH`, the passcode, and with `TEP_MB_FEATURE_BOOT`,
+signed boot manifests:
+
+| Command | Request | Response |
+|---------|---------|----------|
+| `AUTH_SET` | u8 old length (0 if none set), old passcode, new passcode (4..64 bytes each) | empty |
+| `AUTH_VERIFY` | passcode (4..64 bytes) | empty |
+| `AUTH_STATUS` | empty | u8 set, u8 failures, u8 locked, u8 reserved, u32 seconds to wait |
+| `BOOT_VERIFY` | 136-byte manifest, 32-byte measured SHA-256 | u32 image version |
+
+Their refusals are statuses: `DENIED` (wrong passcode, with a u8 failure
+count; or a refused manifest, with a u8 reason: 1 not a manifest, 2 bad
+signature, 3 signed for another image), `RETRY_LATER` (u32 seconds),
+`LOCKED`, `ROLLBACK` (u32 minimum version) and `NOT_FOUND` (no passcode set).
+`drivers/tep/tep_crypto.h` has `tep_auth_set`, `tep_auth_verify`,
+`tep_auth_status` and `tep_boot_verify`, each failing closed and checking
+the exact payload length of every answer.
+
 No command reads or writes memory on either side.
+
+## Passcode
+
+tepOS's AuthenticationService keeps only a salted Argon2id hash of the
+passcode, sealed in its key store, and does all the checking: the failure
+count is written to disk before a passcode is compared, from the fifth
+failure in a row each attempt waits (1 min, 5 min, 15 min, 1 h, 1 h), and the
+tenth locks the passcode until a recovery reset that only whoever runs tepOS's
+machine can make. A right passcode clears the count. NXU keeps no copy of the
+passcode or its hash and wipes its request buffer after sending.
+
+Limits worth knowing: the passcode crosses the serial link in the clear (the
+link is checked for corruption, not encrypted), the delays use tepOS's RTC,
+which is the host's clock, and the key store is sealed with a host file. So
+this protects against guessing through NXU, not against the host.
+
+## Measured bootd (reported, not enforced)
+
+The disk build signs bootd for tepOS: `tools/sign_boot_image.sh` runs tepOS's
+`build/boot_sign` with the host boot-signing key in the TrustedEnclaveProcessor
+checkout (`build/boot-signing.key`, made on first use with the public key
+tepOS is built with) and writes `System/Library/CoreServices/bootd.manifest`
+next to bootd. The manifest's version is the commit count, so it only moves
+forward along the history. The key never enters this repository or the disk.
+The manifest is ignored by git: it is only valid with this machine's key.
+Without the tepOS checkout bootd stays unsigned.
+
+When the mailbox port exists, `tep_boot_check_start()` (`drivers/tep/tep_boot.c`)
+starts a thread that waits for bootd on disk, checks libk's SHA-256
+(`libk/sha256.c`, FIPS 180-4) against its known answer, hashes bootd in 8 KiB
+chunks and, once tepOS offers `TEP_MB_FEATURE_BOOT`, sends the manifest and
+digest. It logs one of:
+
+```
+tep_boot_check_thread: bootd verified by tepOS (not enforced): version 342
+tep_boot_check_thread: bootd NOT verified by tepOS (not enforced): signed for another image
+tep_boot_check_thread: bootd NOT verified by tepOS (not enforced): rollback, minimum version 342
+tep_boot_check_thread: bootd not checked: the disk has no signed manifest for it
+```
+
+tepOS keeps the highest version it accepted, so after running a newer build
+an older checkout's bootd is reported as a rollback.
+
+Nothing acts on the verdict. bootd starts whatever it is, and the check does
+not delay it. The measurement is taken by the same kernel that loads bootd,
+from the same disk, so a modified kernel could lie about it. Enforcement needs
+a trusted boot chain that measures NXU itself, which does not exist yet.
 
 ## Driver
 
@@ -140,8 +205,15 @@ key store disk and sealing key, so it never touches tepOS's real keys. It builds
 `tep-mailbox` test kernel, boots both with the relay and runs
 `kern/tests/tep_mailbox_test.c`: the protocol and crypto checks (SHA-256
 against the FIPS vector, random bytes, key generate/public/sign, unknown
-handles) against the live tepOS,
-then the harness stops tepOS and the test requires the driver to declare it
-unavailable and refuse requests (crypto calls included), then the harness
-restarts tepOS and the test requires the driver to reconnect and the key it
-made earlier to still be there. See [Testing](../testing.md).
+handles) against the live tepOS; the passcode (set, change, refusals, five
+failures starting the first delay, a right passcode refused during it); and
+boot policy: the kernel's own bootd check must say verified, then a bootd with
+one byte changed, a manifest changed after signing, a bad magic and a
+manifest signed as version 1 must be refused for the right reason (the
+harness stages `bootd.tampered` and `bootd.v1.manifest` on the scratch disk).
+Then the harness stops tepOS and the test requires the driver to declare it
+unavailable and refuse requests (crypto, passcode and boot calls included),
+then the harness restarts tepOS and the test requires the driver to reconnect,
+the key it made earlier to still be there, and the passcode failures and delay
+to have survived the restart; it waits the delay out and requires the right
+passcode to clear them. See [Testing](../testing.md).
