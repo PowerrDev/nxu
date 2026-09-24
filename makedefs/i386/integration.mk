@@ -29,6 +29,7 @@ I386_C_SOURCES += \
     kern/tests/sound_test.c \
     kern/tests/thread_process_test.c \
     libk/crc32c.c \
+    libk/sha256.c \
     libk/mp3.c \
     libk/wav.c \
     vfs/devfs.c \

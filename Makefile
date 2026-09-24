@@ -413,6 +413,7 @@ C_SOURCES := \
     platform/arm64/rtc.c \
     platform/arm64/uart.c \
     libk/crc32c.c \
+    libk/sha256.c \
     libk/mp3.c \
     libk/string.c \
     libk/wav.c
