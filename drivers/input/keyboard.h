@@ -51,6 +51,22 @@ uint32_t keyboard_device_id(void);
 uint32_t keyboard_modifiers(void);
 uint64_t keyboard_event_count(void);
 char keyboard_last_character(void);
+
+/*
+ * Key presses (and auto-repeats) for the UI, in order: a small queue filled
+ * from the input path and drained by one consumer. `character` is what the
+ * key types under the bring-up US layout, 0 for none. When the queue is full
+ * new presses are dropped.
+ */
+typedef struct {
+	uint16_t code;
+	uint8_t character;
+	uint8_t modifiers;
+} keyboard_key_t;
+
+bool keyboard_take_key(keyboard_key_t *key);
+/* Forget queued presses (e.g. typed before a login screen appeared). */
+void keyboard_flush_keys(void);
 void keyboard_dump_state(void);
 
 #endif

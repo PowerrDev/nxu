@@ -33,6 +33,12 @@ typedef struct {
 
 static keyboard_state_t g_keyboard;
 
+/* Single producer (keyboard_handle_event) and single consumer (the UI). */
+#define KEYBOARD_QUEUE_SIZE 64U
+static keyboard_key_t g_key_queue[KEYBOARD_QUEUE_SIZE];
+static uint32_t g_key_head;	/* next to read; written by the consumer */
+static uint32_t g_key_tail;	/* next to write; written by the producer */
+
 static bool keyboard_key_in_bitmap(uint16_t code)
 {
 	return code < KEYBOARD_KEY_BITMAP_WORDS * 64U;
@@ -202,6 +208,39 @@ void keyboard_handle_event(const input_event_t *event)
 	if (press) {
 		char character = keyboard_translate(event->code);
 		if (character != '\0') g_keyboard.last_character = character;
+
+		uint32_t tail = __atomic_load_n(&g_key_tail, __ATOMIC_RELAXED);
+		uint32_t head = __atomic_load_n(&g_key_head, __ATOMIC_ACQUIRE);
+
+		if (tail - head < KEYBOARD_QUEUE_SIZE) {
+			g_key_queue[tail % KEYBOARD_QUEUE_SIZE] = (keyboard_key_t) {
+				.code = event->code,
+				.character = (uint8_t)character,
+				.modifiers = (uint8_t)g_keyboard.modifiers
+			};
+			__atomic_store_n(&g_key_tail, tail + 1U, __ATOMIC_RELEASE);
+		}
+	}
+}
+
+bool keyboard_take_key(keyboard_key_t *key)
+{
+	uint32_t head = __atomic_load_n(&g_key_head, __ATOMIC_RELAXED);
+	uint32_t tail = __atomic_load_n(&g_key_tail, __ATOMIC_ACQUIRE);
+
+	if (key == 0 || head == tail) return false;
+
+	*key = g_key_queue[head % KEYBOARD_QUEUE_SIZE];
+	g_key_queue[head % KEYBOARD_QUEUE_SIZE] = (keyboard_key_t) { 0 };
+	__atomic_store_n(&g_key_head, head + 1U, __ATOMIC_RELEASE);
+	return true;
+}
+
+void keyboard_flush_keys(void)
+{
+	keyboard_key_t key;
+
+	while (keyboard_take_key(&key)) {
 	}
 }
 
