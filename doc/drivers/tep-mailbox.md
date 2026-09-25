@@ -82,6 +82,33 @@ link is checked for corruption, not encrypted), the delays use tepOS's RTC,
 which is the host's clock, and the key store is sealed with a host file. So
 this protects against guessing through NXU, not against the host.
 
+## Login screen
+
+When the mailbox port exists, the desktop is locked behind the passcode
+(`drivers/video/ui_service_login.c`). Before the desktop app starts, the UIService
+host runs `UIServiceRunLogin` (UIService.framework's `ui-login`), a fullscreen
+screen over the blurred wallpaper:
+
+- **First boot** (tepOS has no passcode): "welcome to sevOS" in Borel, the
+  script face armOS's setup greets with, then "Create a passcode" (typed
+  twice). It is set with `tep_auth_set` and the desktop starts.
+- **Every later boot:** "Enter your passcode", checked with `tep_auth_verify`.
+  A wrong one shakes the card; tepOS's delays show as a countdown that blocks
+  typing, and a locked passcode says it needs a recovery reset on tepOS's
+  machine.
+- **tepOS unreachable:** "Waiting for the Trusted Enclave", asking again every
+  second. It never unlocks without tepOS.
+
+Only tepOS's OK unlocks. Any other end of the login screen keeps the desktop
+locked, and without the mailbox port (`TEP=0`, the `make check` rows) there is
+no login screen. Keys reach UIService as key events from
+`drivers/input/keyboard.c`'s press queue, and the kernel log records only what
+tepOS answered.
+
+Like the passcode itself, this stops someone at the keyboard, not someone with
+the disk image or the host: the disk is not encrypted, and a modified kernel
+can skip the screen.
+
 ## Measured bootd (reported, not enforced)
 
 The disk build signs bootd for tepOS: `tools/sign_boot_image.sh` runs tepOS's
