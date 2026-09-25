@@ -99,6 +99,12 @@ screen over the blurred wallpaper:
 - **tepOS unreachable:** "Waiting for the Trusted Enclave", asking again every
   second. It never unlocks without tepOS.
 
+Forgot the passcode, or locked out? `TEP_AUTH_RESET=1 make run` boots tepOS
+with its recovery reset (fw_cfg `opt/org.tepos/auth-reset`): the passcode and
+failure count are cleared, keys are kept, and the login screen asks for a new
+passcode. That switch belongs to whoever runs tepOS's machine; NXU cannot ask
+for it.
+
 Only tepOS's OK unlocks. Any other end of the login screen keeps the desktop
 locked, and without the mailbox port (`TEP=0`, the `make check` rows) there is
 no login screen. Keys reach UIService as key events from

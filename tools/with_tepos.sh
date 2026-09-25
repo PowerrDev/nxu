@@ -19,6 +19,10 @@
 #
 #   TEP_DIR=<path>   the TrustedEnclaveProcessor checkout (default: next to
 #                    this repository's main checkout)
+#   TEP_AUTH_RESET=1 recovery reset: tepOS clears the passcode and its
+#                    failure count at start (fw_cfg opt/org.tepos/auth-reset),
+#                    so NXU's login screen asks for a new one. For a
+#                    forgotten or locked passcode; keys are kept.
 #
 # Used by `make run` (TEST_desktop_TEP), `make run-i386`, and by
 # `make test`/`make run-console` with TEP=1; see doc/drivers/tep-mailbox.md.
@@ -87,6 +91,13 @@ else
 fi
 
 # With the switcher both consoles wait for it to connect, so nothing printed at boot is lost.
+TEP_RESET_ARGS=
+if [ "${TEP_AUTH_RESET:-0}" = 1 ]; then
+	echo reset >"$SOCKS/auth-reset"
+	TEP_RESET_ARGS="-fw_cfg name=opt/org.tepos/auth-reset,file=$SOCKS/auth-reset"
+	echo "with_tepos: TEP_AUTH_RESET=1: tepOS clears the passcode at start"
+fi
+
 if [ "$SWITCH" = 1 ]; then
 	TEP_CONSOLE_ARG="unix:$SOCKS/tepos-console.sock,server=on,wait=on"
 else
@@ -95,7 +106,7 @@ fi
 
 (cd "$TEP_DIR" && exec qemu-system-aarch64 -machine virt,secure=off,virtualization=off,gic-version=2 -cpu cortex-a53 -m 1024 \
 	-nographic -serial "$TEP_CONSOLE_ARG" -serial unix:"$SOCKS/tepos.sock",server=on,wait=off \
-	-monitor none $TEP_DEVICES -kernel build/boot/sel4-image.elf) >"$LOGS/qemu.log" 2>&1 </dev/null &
+	-monitor none $TEP_DEVICES $TEP_RESET_ARGS -kernel build/boot/sel4-image.elf) >"$LOGS/qemu.log" 2>&1 </dev/null &
 tep_pid=$!
 
 python3 "$TEP_DIR/tools/mailbox_link.py" --nxu "$SOCKS/nxu.sock" --tepos "$SOCKS/tepos.sock" 2>"$LOGS/link.log" &
