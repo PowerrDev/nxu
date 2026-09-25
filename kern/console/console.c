@@ -150,10 +150,16 @@ static void kconsole_emit_fraction_raw(uint64_t fraction)
 static void kconsole_emit_timestamp(void)
 {
 	if (!g_kconsole_clock_started) {
-		g_kconsole_counter_frequency = timer_get_frequency();
 		g_kconsole_boot_ticks = timer_get_ticks();
 		g_kconsole_clock_started = true;
 	}
+
+	/*
+	 * The frequency may not be known yet on the first line: i386 measures
+	 * the TSC against the PIT (timer_calibrate) after the console is up.
+	 * Until then lines read 0; after, time since the first line.
+	 */
+	if (g_kconsole_counter_frequency == 0ULL) g_kconsole_counter_frequency = timer_get_frequency();
 
 	uint64_t seconds = 0ULL;
 	uint64_t fraction = 0ULL;
