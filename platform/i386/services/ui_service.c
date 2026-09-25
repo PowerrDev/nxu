@@ -19,6 +19,7 @@
 
 #if defined(NXU_UI_SERVICE)
 #include <UIService.h>
+#include <drivers/video/ui_service_login.h>
 #if defined(NXU_WINDOWSERVER)
 #include <WindowServer/WSPrivate.h>
 #endif
@@ -387,6 +388,11 @@ static uint32_t UIServicePollEvent(void *opaque, UIServiceHostEvent *event)
 		return UI_SERVICE_STATUS_OK;
 	}
 
+	if (ui_service_poll_key(event)) {
+		UIServiceYieldAfterPoll(true);
+		return UI_SERVICE_STATUS_OK;
+	}
+
 	UIServiceYieldAfterPoll(false);
 	return UI_SERVICE_STATUS_OK;
 }
@@ -597,7 +603,7 @@ bool ui_service_bootstrap(void)
 			.struct_size = sizeof(UIServiceHostV5),
 			.abi_version = UI_SERVICE_ABI_VERSION_V5
 		},
-		.capabilities = UI_SERVICE_HOST_CAPABILITIES_V3 | UI_SERVICE_HOST_CAP_FS,
+		.capabilities = UI_SERVICE_HOST_CAPABILITIES_V3 | UI_SERVICE_HOST_CAP_FS | ui_service_keyboard_capability(),
 		.context = &context,
 		.get_surface = UIServiceGetSurface,
 		.present = UIServicePresent,
@@ -615,6 +621,14 @@ bool ui_service_bootstrap(void)
 
 	kprintf("[com.butterscotch.UIService.framework]: ABI v%u, %ux%u XRGB8888, VirtIO GPU\n", UIServiceABIVersion(), width, height);
 	kputln(UIServiceHasInter() != 0U ? "[com.butterscotch.UIService.framework]: font renderer active" : "[com.butterscotch.UIService.framework]: bootstrap text renderer active");
+
+	/* With a Trusted Enclave link the desktop waits for tepOS to accept the passcode; a refusal keeps it locked. */
+	g_ui_service_running = true;
+	if (!ui_service_login(&host)) {
+		g_ui_service_running = false;
+		(void)kfree(backbuffer);
+		return false;
+	}
 
 #if defined(NXU_UI_SERVICE_APP_VOYAGER)
 	const char *app_name = "Voyager.app";

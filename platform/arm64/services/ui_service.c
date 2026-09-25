@@ -20,6 +20,7 @@
 
 #if defined(NXU_UI_SERVICE)
 #include <UIService.h>
+#include <drivers/video/ui_service_login.h>
 #if defined(NXU_WINDOWSERVER)
 #include <WindowServer/WSPrivate.h>
 #endif
@@ -375,6 +376,11 @@ static uint32_t UIServicePollEvent(void *opaque, UIServiceHostEvent *event)
 		return UI_SERVICE_STATUS_OK;
 	}
 
+	if (ui_service_poll_key(event)) {
+		UIServiceYieldAfterPoll(true);
+		return UI_SERVICE_STATUS_OK;
+	}
+
 	UIServiceYieldAfterPoll(false);
 	return UI_SERVICE_STATUS_OK;
 }
@@ -596,7 +602,7 @@ bool ui_service_bootstrap(void)
 			.struct_size = sizeof(UIServiceHostV5),
 			.abi_version = UI_SERVICE_ABI_VERSION_V5
 		},
-		.capabilities = UI_SERVICE_HOST_CAPABILITIES_V3 | UI_SERVICE_HOST_CAP_FS,
+		.capabilities = UI_SERVICE_HOST_CAPABILITIES_V3 | UI_SERVICE_HOST_CAP_FS | ui_service_keyboard_capability(),
 		.context = &context,
 		.get_surface = UIServiceGetSurface,
 		.present = UIServicePresent,
@@ -626,6 +632,15 @@ bool ui_service_bootstrap(void)
 			(void)kfree(backbuffer);
 			return false;
 		}
+	}
+
+	/* With a Trusted Enclave link the desktop waits for tepOS to accept the passcode; a refusal keeps it locked. */
+	g_ui_service_running = true;
+	if (!ui_service_login(&host)) {
+		g_ui_service_running = false;
+		if (using_ramfb) (void)ramfb_console_set_mirroring(true);
+		(void)kfree(backbuffer);
+		return false;
 	}
 
 #if defined(NXU_UI_SERVICE_APP_VOYAGER)

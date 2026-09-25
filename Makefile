@@ -308,6 +308,7 @@ C_SOURCES := \
     drivers/video/display.c \
     drivers/video/ramfb_console.c \
     platform/arm64/services/ui_service.c \
+    drivers/video/ui_service_login.c \
     kern/aqua/window_server.c \
     drivers/virtio/virtio.c \
     drivers/virtio/virtio_block.c \
@@ -847,6 +848,7 @@ ifeq ($(UISERVICE),1)
 
 # Only the host bridge includes the generated UIService ABI header.
 $(BUILD)/platform/arm64/services/ui_service.o: | uiservice-build
+$(BUILD)/drivers/video/ui_service_login.o: | uiservice-build
 
 endif
 

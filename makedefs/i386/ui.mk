@@ -30,6 +30,7 @@
 
 I386_C_SOURCES += \
     kern/aqua/window_server.c \
+    drivers/video/ui_service_login.c \
     platform/i386/services/ui_service.c
 
 UISERVICE_I386_INCLUDE := $(UISERVICE_DIR)/build-i386
