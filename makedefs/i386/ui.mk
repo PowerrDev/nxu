@@ -101,11 +101,15 @@ i386-desktop:
 # UIService's chrome/fonts scaled correctly for it, rather than picking an
 # arbitrary size that happens to render but isn't actually correct for this
 # host.
+#
+# Like run-i386 it boots tepOS alongside (tools/with_tepos.sh, TEP=0 to skip),
+# so the desktop is locked behind the tepOS passcode, and it has the host's
+# speakers as a VirtIO sound device for the boot chime.
 run-i386-desktop: i386-desktop
 
 	$(MAKE) i386-disk BUILD_ROOT=$(I386_DESKTOP_BUILD_ROOT)
 
-	$(I386_DESKTOP_QEMU) -M pc -smp $(I386_DESKTOP_SMP) \
+	$(I386_TEP_WRAPPER) $(I386_DESKTOP_QEMU) -M pc -smp $(I386_DESKTOP_SMP) \
 		-kernel $(I386_DESKTOP_KERNEL) \
 		-m 512M \
 		-vga none \
@@ -114,5 +118,6 @@ run-i386-desktop: i386-desktop
 		-device virtio-keyboard-pci,disable-modern=on \
 		-device virtio-mouse-pci,disable-modern=on \
 		-device virtio-gpu-pci,xres=$(QEMU_GPU_XRES),yres=$(QEMU_GPU_YRES) \
+		$(I386_QEMU_AUDIO) \
 		-serial stdio -no-reboot \
 		-append "test=desktop ui.scale=$(QEMU_UI_SCALE_PERMILLE)"

@@ -105,6 +105,9 @@ failure count are cleared, keys are kept, and the login screen asks for a new
 passcode. That switch belongs to whoever runs tepOS's machine; NXU cannot ask
 for it.
 
+The login screen runs on arm64 (`make run`) and on the i386 desktop
+(`make run-i386-desktop`); plain `make run-i386` has no desktop to lock.
+
 Only tepOS's OK unlocks. Any other end of the login screen keeps the desktop
 locked, and without the mailbox port (`TEP=0`, the `make check` rows) there is
 no login screen. Keys reach UIService as key events from
@@ -183,7 +186,7 @@ halting while a mailbox port exists, so the monitor keeps running.
 
 ## Running it
 
-`make run` and `make run-i386` boot tepOS alongside NXU
+`make run`, `make run-i386` and `make run-i386-desktop` boot tepOS alongside NXU
 (`tools/with_tepos.sh`): it builds tepOS from the TrustedEnclaveProcessor
 checkout next to this repository (`TEP_DIR` overrides it), boots it headless,
 starts the relay and gives NXU's QEMU the mailbox serial port. Quitting NXU

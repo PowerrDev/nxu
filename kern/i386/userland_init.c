@@ -24,6 +24,7 @@
 #include <drivers/tep/tep_mailbox.h>
 #include <drivers/video/ui_service_host.h>
 #include <kern/aqua/window_server.h>
+#include <kern/boot/boot_chime.h>
 #include <kern/boot/boot_mode.h>
 #include <kern/console/console.h>
 #include <kern/loader/elf.h>
@@ -200,6 +201,14 @@ bool i386_init_userland(const i386_boot_info_t *boot)
 	 * afterward), so its result is this phase's result outright.
 	 */
 	if (selected_present && strcmp(selected, "desktop") == 0) {
+		/*
+		 * The boot chime, as on arm64: the display is about to show the
+		 * desktop and /disk (with Boot_Audio.wav) is mounted, so the chime
+		 * thread can start; it plays while the UI loop yields.
+		 */
+		boot_chime_arm();
+		boot_chime_start();
+
 		if (!windowserver_bootstrap()) {
 			kputln("i386_init_userland: WindowServer bootstrap failed");
 			return false;
