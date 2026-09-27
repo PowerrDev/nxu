@@ -261,6 +261,26 @@ uint32_t proc_child_count(proc_t proc);
 uint32_t proc_count(void);
 uint32_t proc_zombie_count(void);
 
+/*
+ * proc_snapshot
+ *
+ * Copy what Activity Monitor shows of every live process (zombies are left
+ * out) into `out`, at most `capacity` of them, and return how many were
+ * copied. Only the process table lock is taken; CPU time comes from
+ * thread_snapshot(), joined on uniqueid.
+ */
+typedef struct {
+	proc_uniqueid_t uniqueid;
+	proc_id_t pid;
+	proc_id_t ppid;
+	proc_state_t state;
+	uint32_t flags;
+	uint32_t thread_count;
+	char name[PROC_NAME_MAX];
+} proc_snapshot_t;
+
+uint32_t proc_snapshot(proc_snapshot_t *out, uint32_t capacity);
+
 bool proc_validate(void);
 void proc_dump(void);
 

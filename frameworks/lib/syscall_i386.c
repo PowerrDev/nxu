@@ -429,6 +429,13 @@ nxu_ipc_receive(uint32_t port_name, void *buffer, uint64_t capacity, uint32_t *o
 }
 
 int64_t
+nxu_ipc_receive_wait(uint32_t port_name, void *buffer, uint64_t capacity, uint32_t *out_xfer_name, uint32_t *out_xfer_type)
+{
+	NXU_REQUIRE_LENGTH(capacity);
+	return nxu_syscall5(NXU_SYS_IPC_RECEIVE_WAIT, port_name, NXU_PTR(buffer), (uint32_t)capacity, NXU_PTR(out_xfer_name), NXU_PTR(out_xfer_type));
+}
+
+int64_t
 nxu_ipc_register_bootstrap(uint32_t port_name)
 {
 	return nxu_syscall1(NXU_SYS_IPC_REGISTER_BOOTSTRAP, port_name);
@@ -505,4 +512,36 @@ nxu_socket_accept(uint64_t listen_descriptor)
 {
 	NXU_REQUIRE_U32(listen_descriptor);
 	return nxu_syscall1(NXU_SYS_SOCKET_ACCEPT, (uint32_t)listen_descriptor);
+}
+
+int64_t
+nxu_sleep_us(uint64_t microseconds)
+{
+	if (microseconds > 0xFFFFFFFFULL) microseconds = 0xFFFFFFFFULL;
+	return nxu_syscall1(NXU_SYS_SLEEP_US, (uint32_t)microseconds);
+}
+
+int64_t
+nxu_ui_connect(const nxu_ui_connect_t *info)
+{
+	return nxu_syscall1(NXU_SYS_UI_CONNECT, NXU_PTR(info));
+}
+
+int64_t
+nxu_ui_receive(uint32_t connection, nxu_ui_message_t *message, uint32_t wait)
+{
+	return nxu_syscall3(NXU_SYS_UI_RECEIVE, connection, NXU_PTR(message), wait);
+}
+
+int64_t
+nxu_ui_submit(uint32_t connection, const nxu_ui_submit_t *submit)
+{
+	return nxu_syscall2(NXU_SYS_UI_SUBMIT, connection, NXU_PTR(submit));
+}
+
+int64_t
+nxu_ui_control(uint32_t operation, uint64_t argument)
+{
+	NXU_REQUIRE_U32(argument);
+	return nxu_syscall2(NXU_SYS_UI_CONTROL, operation, (uint32_t)argument);
 }

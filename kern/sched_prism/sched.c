@@ -119,15 +119,36 @@ void sched_user_running_reset_peak(void)
  * CPU's tick wakes them all while there are any, and each re-checks its own
  * deadline and goes back to sleep if it is not due. Coarse (a tick, 10 ms) and
  * cheap for the few callers it has.
+ *
+ * Until the first tick nothing would wake them: the kernel's process tests
+ * (boot_test_storage) run user processes before kern_start_scheduler starts
+ * the timer. Sleepers yield until their deadline instead, as they would
+ * have spun before there was a sleep at all.
  */
 static waitq_t g_sched_sleep_queue;
 static uint32_t g_sched_sleepers;
+static bool g_sched_ticking;
+
+static bool sched_sleep_yield_until(uint64_t deadline)
+{
+	while (timer_get_microseconds() < deadline) {
+		if (!sched_yield()) return false;
+	}
+	return true;
+}
+
+/* Kickable sleepers (sched_sleep_until_kicked) wait here; a kick bumps g_sched_kicks. */
+static waitq_t g_sched_kick_queue;
+static uint32_t g_sched_kick_sleepers;
+static uint32_t g_sched_kicks;
 
 bool sched_sleep_us(uint64_t microseconds)
 {
 	if (!g_sched.initialized || current_thread() == 0 || thread_is_idle(current_thread())) return false;
 
 	uint64_t deadline = timer_get_microseconds() + microseconds;
+
+	if (!__atomic_load_n(&g_sched_ticking, __ATOMIC_ACQUIRE)) return sched_sleep_yield_until(deadline);
 
 	(void)__atomic_add_fetch(&g_sched_sleepers, 1U, __ATOMIC_ACQ_REL);
 
@@ -141,6 +162,34 @@ bool sched_sleep_us(uint64_t microseconds)
 
 	(void)__atomic_sub_fetch(&g_sched_sleepers, 1U, __ATOMIC_ACQ_REL);
 	return true;
+}
+
+bool sched_sleep_until_kicked(uint64_t microseconds)
+{
+	if (!g_sched.initialized || current_thread() == 0 || thread_is_idle(current_thread())) return false;
+
+	uint64_t deadline = timer_get_microseconds() + microseconds;
+	uint32_t kicks = __atomic_load_n(&g_sched_kicks, __ATOMIC_ACQUIRE);
+
+	if (!__atomic_load_n(&g_sched_ticking, __ATOMIC_ACQUIRE)) return sched_sleep_yield_until(deadline);
+
+	(void)__atomic_add_fetch(&g_sched_kick_sleepers, 1U, __ATOMIC_ACQ_REL);
+
+	while (timer_get_microseconds() < deadline) {
+		uint32_t seq = waitq_seq(&g_sched_kick_queue);
+
+		if (__atomic_load_n(&g_sched_kicks, __ATOMIC_ACQUIRE) != kicks || timer_get_microseconds() >= deadline) break;
+		if (!waitq_block_seq(&g_sched_kick_queue, seq, false)) break;
+	}
+
+	(void)__atomic_sub_fetch(&g_sched_kick_sleepers, 1U, __ATOMIC_ACQ_REL);
+	return true;
+}
+
+void sched_kick_sleepers(void)
+{
+	(void)__atomic_add_fetch(&g_sched_kicks, 1U, __ATOMIC_ACQ_REL);
+	if (__atomic_load_n(&g_sched_kick_sleepers, __ATOMIC_ACQUIRE) != 0U) waitq_wake_all(&g_sched_kick_queue);
 }
 
 static bool sched_switch(sched_switch_reason_t reason);
@@ -849,6 +898,20 @@ static bool sched_switch(sched_switch_reason_t reason)
 
 	sched_quantum_reset(next);
 
+	/* Measured CPU time (thread->run_us, processor->busy_us). */
+	uint64_t now_us = timer_get_microseconds();
+
+	if (!thread_is_idle(current) && current->dispatched_us != 0ULL && now_us > current->dispatched_us) {
+		current->run_us += now_us - current->dispatched_us;
+	}
+
+	if (processor->busy_since_us != 0ULL && now_us > processor->busy_since_us) {
+		processor->busy_us += now_us - processor->busy_since_us;
+	}
+
+	next->dispatched_us = now_us;
+	processor->busy_since_us = thread_is_idle(next) ? 0ULL : now_us;
+
 	nxu_spin_unlock(&processor->runq_lock);
 
 	machine_thread_switch_context(
@@ -1434,12 +1497,18 @@ void sched_tick(void)
 
 	thread_t thread = processor->active_thread;
 
+	processor->sched_ticks++;
+
 	if (
 		thread != 0 &&
 		thread_is_active(thread) &&
 		!thread_is_idle(thread)
 	) {
 		bool quantum_expired;
+
+		/* CPU time: what Activity Monitor shows (see thread_snapshot). */
+		thread->run_ticks++;
+		processor->busy_ticks++;
 
 		/*
 		 * Rule 4, the demotion: the thread ran through its whole quantum,
@@ -1470,8 +1539,14 @@ void sched_tick(void)
 	nxu_spin_unlock(&processor->runq_lock);
 
 	/* Timed sleepers (sched_sleep_us) are checked on the boot CPU's tick. */
+	if (processor->cpu_id == 0U) __atomic_store_n(&g_sched_ticking, true, __ATOMIC_RELEASE);
+
 	if (processor->cpu_id == 0U && __atomic_load_n(&g_sched_sleepers, __ATOMIC_ACQUIRE) != 0U) {
 		waitq_wake_all(&g_sched_sleep_queue);
+	}
+
+	if (processor->cpu_id == 0U && __atomic_load_n(&g_sched_kick_sleepers, __ATOMIC_ACQUIRE) != 0U) {
+		waitq_wake_all(&g_sched_kick_queue);
 	}
 
 	if (processor->ticks % SCHED_BALANCE_INTERVAL_TICKS == 0U) sched_balance(processor);

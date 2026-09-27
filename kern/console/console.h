@@ -37,6 +37,13 @@ void kputhex64(uint64_t value);
 void kputu64(uint64_t value);
 void kputi64(int64_t value);
 
+/*
+ * Microseconds since the first log line: the clock the log's [ s.fraction ]
+ * stamps read, and the closest thing to time since boot on every
+ * architecture (i386's TSC under HVF counts from the host's power-on).
+ */
+uint64_t kconsole_uptime_us(void);
+
 int kprintf(const char *format, ...);
 int kvprintf(const char *format, va_list arguments);
 

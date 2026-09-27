@@ -14,6 +14,7 @@
 
 #include <kern/arm64/system.h>
 
+#include <stdbool.h>
 #include <stdint.h>
 
 static inline uint64_t ml_irq_save(void)
@@ -34,6 +35,15 @@ static inline void ml_irq_enable(void)
 static inline void ml_irq_disable(void)
 {
 	arm64_irq_disable();
+}
+
+/* Whether IRQs are unmasked on this CPU right now (DAIF.I clear). */
+static inline bool ml_irq_enabled(void)
+{
+	uint64_t daif;
+
+	__asm__ volatile("mrs %0, daif" : "=r"(daif));
+	return (daif & (1ULL << 7U)) == 0ULL;
 }
 
 #endif

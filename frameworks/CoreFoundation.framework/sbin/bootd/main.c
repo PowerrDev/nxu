@@ -13,6 +13,8 @@
 #include <nxu/string.h>
 #include <nxu/syscall.h>
 
+#define BOOTD_POLL_INTERVAL_US 10000ULL
+
 static bootd_manager_t g_bootd_manager;
 
 static void
@@ -39,6 +41,7 @@ main(void)
 
 	for (;;) {
 		bootd_manager_poll(&g_bootd_manager);
-		(void)nxu_yield();
+		/* Jobs and registry lookups are checked ~100 times a second; spinning here kept a CPU busy for nothing. */
+		(void)nxu_sleep_us(BOOTD_POLL_INTERVAL_US);
 	}
 }

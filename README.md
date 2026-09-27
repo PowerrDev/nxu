@@ -1,5 +1,5 @@
 # NXU
-Power's ARM64 operational system.
+Power's ARM64 & x86_64 operational system.
 
 # Source layout
 The tree is split into subsystems, so that architecture-specific code, core
@@ -62,8 +62,10 @@ Recovery UI is deliberately isolated from the main sevOS UI stack: Shift+R selec
 sevOS continues to use the external UIService.framework. See `doc/recovery-ui.md`.
 
 `make run` boots everything that can share one boot in a single QEMU instance:
-bootd with logd and patchd, the boot chime, the UIService session (WindowServer
-and the Voyager app, graphical, audio on the host's speakers) and the userland
+bootd with logd, patchd and the Dock, the boot chime, the UIService desktop
+(WindowServer, the menu bar and the windows of the apps in `/Applications`, each
+a process the Dock starts; see `doc/apps-and-dock.md`), audio on the host's
+speakers, and the userland
 tests (IPC, threads, process control, sockets, sound) running against that live
 system, ending in one `unified_boot_summary` block on the serial console. It needs
 the sibling `WindowServer.framework` and `UIService.framework`; `make run-console`

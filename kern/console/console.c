@@ -142,6 +142,19 @@ static void kconsole_emit_fraction_raw(uint64_t fraction)
 	}
 }
 
+uint64_t kconsole_uptime_us(void)
+{
+	if (!g_kconsole_clock_started) return 0ULL;
+	if (g_kconsole_counter_frequency == 0ULL) g_kconsole_counter_frequency = timer_get_frequency();
+	if (g_kconsole_counter_frequency == 0ULL) return 0ULL;
+
+	uint64_t elapsed = timer_get_ticks() - g_kconsole_boot_ticks;
+	uint64_t seconds = elapsed / g_kconsole_counter_frequency;
+	uint64_t remainder = elapsed % g_kconsole_counter_frequency;
+
+	return seconds * 1000000ULL + remainder * 1000000ULL / g_kconsole_counter_frequency;
+}
+
 /*
  * Prefix each logical kernel log line with monotonic time since the first
  * console message. Eight fractional digits match NXU's XNU-inspired boot log

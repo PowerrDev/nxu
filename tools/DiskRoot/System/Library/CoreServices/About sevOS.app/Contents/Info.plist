@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//NXU//DTD PLIST 1.0//EN" "http://www.nxu.local/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>About sevOS</string>
+
+	<key>CFBundleIdentifier</key>
+	<string>com.butterscotch.about</string>
+
+	<key>CFBundleExecutable</key>
+	<string>About sevOS</string>
+
+	<key>CFBundleVersion</key>
+	<string>0.1.0</string>
+
+	<!-- A system panel, not an app of its own: never a tile in the Dock. -->
+	<key>LSUIElement</key>
+	<true/>
+</dict>
+</plist>

@@ -322,10 +322,10 @@ static bool vm_test_direct_map(const platform_t *platform)
 	VM_CHECK(!vmm_is_higher_half_address(0ULL));
 
 	VM_CHECK(vmm_physical_to_higher_half(0ULL, &alias) && alias == 0xC0000000ULL);
-	VM_CHECK(vmm_physical_to_higher_half(VM_DIRECT_MAP_SIZE - 1ULL, &alias) && alias == 0xEFFFFFFFULL);
+	VM_CHECK(vmm_physical_to_higher_half(VM_DIRECT_MAP_SIZE - 1ULL, &alias) && alias == 0xE7FFFFFFULL);
 	VM_CHECK(!vmm_physical_to_higher_half(VM_DIRECT_MAP_SIZE, &alias));
 	VM_CHECK(!vmm_higher_half_to_physical(0xBFFFFFFFULL, &back));
-	VM_CHECK(!vmm_higher_half_to_physical(0xF0000000ULL, &back));
+	VM_CHECK(!vmm_higher_half_to_physical(0xE8000000ULL, &back));
 	VM_CHECK(vmm_higher_half_to_physical(0xC0100000ULL, &back) && back == 0x100000ULL);
 
 	/* The image's own symbols resolve to where the loader put it. */
@@ -409,11 +409,11 @@ static bool vm_test_direct_map(const platform_t *platform)
 	VM_CHECK((g_last_fault_error & VM_FAULT_PRESENT) == 0U);
 	VM_CHECK(!vmm_translate((uintptr_t)i386_boot_stack_guard, &translated));
 
-	/* Nothing lives in the user half or the reserved range of the master directory. */
+	/* Nothing lives in the user half of the master directory; the arena's page tables all exist. */
 	const uint32_t *directory = pmap_kernel_directory();
 
 	for (uint32_t index = 0U; index < PMAP_KERNEL_FIRST_PDE; index++) VM_CHECK(directory[index] == 0U);
-	for (uint32_t index = 976U; index < 992U; index++) VM_CHECK(directory[index] == 0U);
+	for (uint32_t index = (uint32_t)(VM_KERN_BASE >> 22U); index < (uint32_t)((VM_KERN_BASE + VM_KERN_SIZE) >> 22U); index++) VM_CHECK(directory[index] != 0U);
 	VM_CHECK(!vm_probe_read(VM_KERN_BASE + (uint32_t)VM_KERN_SIZE + PMAP_PAGE_SIZE, 0));
 
 	kprintf("vm_test_direct_map: passed (text read-only, data writable, aliases coherent)\n");
@@ -556,7 +556,6 @@ static bool vm_test_kernel_mappings(void)
 	VM_CHECK(!vmm_map_page(0xC0800000ULL, page, VMM_MEMORY_NORMAL, VMM_PROTECTION_READ_WRITE));
 	VM_CHECK(!vmm_map_page(0xC0101000ULL, page, VMM_MEMORY_NORMAL, VMM_PROTECTION_READ_WRITE));
 	VM_CHECK(!vmm_map_page(VM_ARENA_SPARE, 0x100000000ULL, VMM_MEMORY_NORMAL, VMM_PROTECTION_READ_WRITE));
-	VM_CHECK(!vmm_map_page(0xF4000000ULL, page, VMM_MEMORY_NORMAL, VMM_PROTECTION_READ_WRITE));
 	VM_CHECK(!vmm_unmap_page(0xC0101000ULL, &unmapped));
 
 	/* Map read-write: contents visible, query agrees, double map refused. */

@@ -38,6 +38,7 @@
 #define BOOTSTRAP_CLIENT_LOOKUP_DEADLINE_US 120000000ULL
 #define BOOTSTRAP_CLIENT_LOOKUP_REPLY_DEADLINE_US 3000000ULL
 #define BOOTSTRAP_CLIENT_REGISTER_DEADLINE_US 30000000ULL
+#define BOOTSTRAP_CLIENT_RETRY_US 10000ULL
 
 /* Wall-clock-agnostic fallback for the rare case nxu_uptime_us() itself is
  * unavailable (returns < 0) -- bound by iterations instead of giving up
@@ -155,7 +156,8 @@ bootstrap_client_lookup(const char *label, uint32_t *out_port_name)
 		 * not that it never will.
 		 */
 		xfer_name = 0U;
-		(void)nxu_yield();
+		/* Give the target a moment to register before asking again (bootd answers every 10 ms or so). */
+		(void)nxu_sleep_us(BOOTSTRAP_CLIENT_RETRY_US);
 	}
 
 	(void)nxu_ipc_port_deallocate((uint32_t)reply_name);

@@ -13,6 +13,7 @@
 #ifndef NXU_KERN_I386_MACHINE_ROUTINES_H
 #define NXU_KERN_I386_MACHINE_ROUTINES_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #define I386_EFLAGS_IF (1ULL << 9U)
@@ -55,6 +56,12 @@ static inline void ml_irq_enable(void)
 static inline void ml_irq_disable(void)
 {
 	__asm__ volatile("cli" : : : "memory");
+}
+
+/* Whether IRQs are enabled on this CPU right now (EFLAGS.IF). */
+static inline bool ml_irq_enabled(void)
+{
+	return (i386_read_flags() & I386_EFLAGS_IF) != 0ULL;
 }
 
 #endif

@@ -4,6 +4,9 @@
 #include <kern/console/console.h>
 #include <kern/console/ioregistry.h>
 #include <kern/machine/barrier.h>
+#include <skylight/skylight.h>
+#include <kern/machine/machine_routines.h>
+#include <kern/sched_prism/sched.h>
 #include <vm/pmm.h>
 #include <vm/vmm.h>
 
@@ -129,6 +132,14 @@ typedef struct {
 	uint64_t present_count;
 	volatile uint32_t lock;
 
+	/*
+	 * Command completions by interrupt: once one has really arrived
+	 * (irq_count), a thread that may sleep waits for the next instead of
+	 * spinning on the used ring (see virtio_gpu_wait).
+	 */
+	bool irq_attached;
+	volatile uint64_t irq_count;
+
 	display_device_t display;
 	bool attached;
 } virtio_gpu_device_t;
@@ -182,10 +193,51 @@ static bool virtio_gpu_allocate_page(uint64_t *physical, uint8_t **virtual_addre
 	return true;
 }
 
-/* The next control-queue completion; spins until there is one. */
+/*
+ * Whether the caller may sleep until the device interrupts: the scheduler is
+ * up, this is a thread (not the idle loop) with interrupts on, so not an
+ * interrupt handler or early boot. Otherwise completions are spun for.
+ */
+/* A sleeping wait's bound when no interrupt ends it sooner. */
+#define VIRTIO_GPU_WAIT_US 2000ULL
+
+static bool virtio_gpu_can_sleep(const virtio_gpu_device_t *device)
+{
+	return device->irq_attached && device->irq_count != 0ULL && sched_is_initialized() && ml_irq_enabled() && current_thread() != 0 && current_thread() != sched_idle_thread();
+}
+
+/*
+ * The next control-queue completion. Every present is two commands
+ * (transfer, flush); spinning for each kept the CPU busy for as long as the
+ * host took to copy the damaged rect -- on the boot CPU, where the desktop
+ * and every file system call run. Sleeping lets them run meanwhile.
+ */
 static void virtio_gpu_wait(virtio_gpu_device_t *device, uint32_t *id, uint32_t *length)
 {
-	while (!virtqueue_pop_used(&device->controlq, id, length)) ml_cpu_relax();
+	if (!virtio_gpu_can_sleep(device)) {
+		while (!virtqueue_pop_used(&device->controlq, id, length)) ml_cpu_relax();
+		return;
+	}
+
+	/*
+	 * The interrupt kicks the sleep short; without one (lost, or a port that
+	 * polls its devices) the sleep still ends at the next tick, so a
+	 * completion is never waited for for good.
+	 */
+	while (!virtqueue_pop_used(&device->controlq, id, length)) (void)sched_sleep_until_kicked(VIRTIO_GPU_WAIT_US);
+}
+
+static void virtio_gpu_irq(uint32_t intid, void *context)
+{
+	virtio_gpu_device_t *device = context;
+	if (device == 0 || device->transport.intid != intid) return;
+
+	uint32_t status = virtio_device_interrupt_status(&device->transport);
+	if (status == 0U) return;
+
+	virtio_device_interrupt_ack(&device->transport, status);
+	device->irq_count++;
+	sched_kick_sleepers();
 }
 
 /*
@@ -478,6 +530,22 @@ static bool virtio_gpu_display_present(
 	return false;
 }
 
+/*
+ * Skylight's backend interface: a display's scanout surface is this device's
+ * framebuffer, so presenting a rectangle of it is the same transfer and flush.
+ */
+static bool virtio_gpu_sl_present(void *context, uint32_t index, sl_rect_t rect)
+{
+	virtio_gpu_device_t *device = context;
+
+	if (device == 0 || index != device->scanout_id || rect.x < 0 || rect.y < 0) return false;
+	return virtio_gpu_display_present(&device->display, (uint32_t)rect.x, (uint32_t)rect.y, rect.width, rect.height);
+}
+
+static const sl_backend_ops_t g_virtio_gpu_sl_ops = {
+	.present = virtio_gpu_sl_present
+};
+
 static bool virtio_gpu_allocate_framebuffer(virtio_gpu_device_t *device)
 {
 	uint64_t pixels = (uint64_t)device->width * device->height;
@@ -538,6 +606,14 @@ bool virtio_gpu_attach(const virtio_device_t *transport)
 	failure_stage = "DRIVER_OK transition";
 	if (!virtio_device_finish(&device->transport)) goto fail;
 
+	/* Completions by interrupt when it can be had; spinning stays the fallback. */
+	if (virtio_device_irq_attach(&device->transport, virtio_gpu_irq, device)) {
+		device->irq_attached = true;
+		*device->controlq.available_flags = 0U;
+	} else {
+		kputln("VirtIOGPUFamily: no interrupt; command completions are polled");
+	}
+
 	failure_stage = "GET_DISPLAY_INFO";
 	if (!virtio_gpu_get_display_info(device)) goto fail;
 	failure_stage = "framebuffer allocation";
@@ -572,6 +648,14 @@ bool virtio_gpu_attach(const virtio_device_t *transport)
 
 	failure_stage = "display registry insertion";
 	if (!display_register(&device->display)) goto fail;
+
+	/* The same scanout, for Skylight's clients (WindowServer, UIService). */
+	sl_device_t *sl_device;
+	sl_display_t *sl_display;
+	if (!sl_device_register("VirtIOGPUFamily", &g_virtio_gpu_sl_ops, device, &sl_device) ||
+		!sl_display_register(sl_device, device->scanout_id, device->framebuffer, device->width, device->height, device->width, &sl_display)) {
+		kputln("VirtIOGPUFamily: Skylight registration failed; only the early display path has this scanout");
+	}
 
 	device->attached = true;
 	g_virtio_gpu_device_count++;

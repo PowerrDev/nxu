@@ -1,4 +1,5 @@
 #include <kern/console/console.h>
+#include <kern/machine/timer.h>
 #include <kern/process/thread.h>
 #include <kern/process/task.h>
 
@@ -1061,6 +1062,40 @@ thread_t thread_next_task_thread_ref(thread_t thread)
 
 	thread_unlock(&g_thread_lock);
 	return next;
+}
+
+/*
+ * thread_snapshot
+ */
+uint32_t thread_snapshot(thread_snapshot_t *out, uint32_t capacity)
+{
+	if (out == 0) return 0U;
+
+	thread_lock(&g_thread_lock);
+
+	uint32_t count = 0U;
+	uint64_t now = timer_get_microseconds();
+
+	for (thread_t thread = g_threads_head; thread != 0 && count < capacity; thread = thread->threads_next) {
+		if (!thread->active) continue;
+
+		task_t task = thread->home_task != 0 ? thread->home_task : thread->task;
+
+		out[count++] = (thread_snapshot_t) {
+			.task_uniqueid = task != 0 ? task->task_uniqueid : 0ULL,
+			.run_ticks = thread->run_ticks,
+			.run_us = thread->run_us + (thread->on_cpu != 0 && thread->dispatched_us != 0ULL && now > thread->dispatched_us ? now - thread->dispatched_us : 0ULL),
+			.thread_id = thread->thread_id,
+			.last_cpu = thread->last_cpu,
+			.mlfq_level = thread->mlfq_level,
+			.idle = (thread->state & TH_IDLE) != 0U,
+			.on_cpu = thread->on_cpu != 0,
+			.waiting = (thread->state & TH_WAIT) != 0U
+		};
+	}
+
+	thread_unlock(&g_thread_lock);
+	return count;
 }
 
 /*

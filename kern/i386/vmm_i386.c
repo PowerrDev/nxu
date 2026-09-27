@@ -106,7 +106,7 @@ static bool vmm_page_aligned(uint64_t value)
 	return (value & (uint64_t)PMAP_PAGE_MASK) == 0ULL;
 }
 
-/* Addresses vmm_map_page/vmm_unmap_page may touch: arena, fixmap, MMIO window. */
+/* Addresses vmm_map_page/vmm_unmap_page may touch: arena and MMIO window. */
 static bool vmm_live_range(uint64_t virtual_address)
 {
 	return virtual_address >= VM_KERN_BASE && virtual_address < VMM_ADDRESS_LIMIT;

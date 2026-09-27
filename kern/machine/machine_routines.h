@@ -19,6 +19,7 @@
  *   ml_irq_restore(s)  put the previous state back exactly
  *   ml_irq_enable()    unmask IRQs unconditionally
  *   ml_irq_disable()   mask IRQs unconditionally
+ *   ml_irq_enabled()   whether IRQs are unmasked on this CPU now
  */
 
 #ifndef NXU_KERN_MACHINE_MACHINE_ROUTINES_H

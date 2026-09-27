@@ -137,6 +137,12 @@ int64_t nxu_socket_listen(const char *name, uint32_t backlog) { return nxu_sysca
 int64_t nxu_socket_connect(const char *name) { return nxu_syscall1(NXU_SYS_SOCKET_CONNECT, (uint64_t)name); }
 int64_t nxu_socket_accept(uint64_t listen_descriptor) { return nxu_syscall1(NXU_SYS_SOCKET_ACCEPT, listen_descriptor); }
 
+int64_t nxu_sleep_us(uint64_t microseconds) { return nxu_syscall1(NXU_SYS_SLEEP_US, microseconds); }
+int64_t nxu_ui_connect(const nxu_ui_connect_t *info) { return nxu_syscall1(NXU_SYS_UI_CONNECT, (uint64_t)info); }
+int64_t nxu_ui_receive(uint32_t connection, nxu_ui_message_t *message, uint32_t wait) { return nxu_syscall3(NXU_SYS_UI_RECEIVE, connection, (uint64_t)message, wait); }
+int64_t nxu_ui_submit(uint32_t connection, const nxu_ui_submit_t *submit) { return nxu_syscall2(NXU_SYS_UI_SUBMIT, connection, (uint64_t)submit); }
+int64_t nxu_ui_control(uint32_t operation, uint64_t argument) { return nxu_syscall2(NXU_SYS_UI_CONTROL, operation, argument); }
+
 int64_t nxu_fork(void) { return nxu_syscall0(NXU_SYS_FORK); }
 int64_t nxu_exec(const char *path, const char *const *argv) { return nxu_syscall2(NXU_SYS_EXEC, (uint64_t)path, (uint64_t)argv); }
 int64_t nxu_getppid(void) { return nxu_syscall0(NXU_SYS_GETPPID); }

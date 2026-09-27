@@ -67,7 +67,7 @@ I386_OBJECTS := \
 # so a fragment that never sets it changes nothing about the default build.
 I386_EXTRA_LIBS ?=
 
-I386_QEMU_FLAGS ?= -display none -serial stdio -monitor none -no-reboot -device isa-debug-exit,iobase=0xf4,iosize=0x04
+I386_QEMU_FLAGS ?= -display none -serial stdio -monitor none -device isa-debug-exit,iobase=0xf4,iosize=0x04
 
 # run-i386 has a sound device on the host's speakers (the VirtIO Sound driver's
 # /dev/audio0, see doc/drivers/virtio-sound.md); the tests use the wav backend.
@@ -110,6 +110,9 @@ i386: $(I386_KERNEL)
 
 # run-i386 boots tepOS alongside, joined over COM2 by the mailbox
 # (tools/with_tepos.sh, doc/drivers/tep-mailbox.md); TEP=0 boots NXU alone.
+# Neither run target passes -no-reboot (the tests do): a reset, from the guest
+# or QEMU's Machine > Reset, reboots NXU instead of exiting QEMU, which
+# with_tepos.sh would take as the end of the run and stop tepOS too.
 I386_TEP_WRAPPER = $(if $(filter 0,$(TEP)),,tools/with_tepos.sh)
 
 run-i386: $(I386_KERNEL)

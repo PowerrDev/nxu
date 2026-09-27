@@ -20,6 +20,7 @@ I386_C_SOURCES += \
     kern/boot/boot_chime.c \
     kern/boot/boot_mode.c \
     drivers/video/display.c \
+    skylight/skylight.c \
     kern/boot/nvram.c \
     kern/console/display_owner.c \
     kern/loader/elf.c \

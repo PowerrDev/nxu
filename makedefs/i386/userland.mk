@@ -243,6 +243,8 @@ $(I386_USER_STAMP): $(I386_USER_BINARIES) $(I386_USER_PLISTS) $(I386_DISK_STATIC
 
 	$(Q)cp $(I386_USER_PLISTS) $(I386_DISKROOT)/System/Library/BootDaemons/
 
+	$(I386_USER_EXTRA_STAGE)
+
 	@touch $@
 
 # Same mkfs.ext4 options as the arm64 `disk.img` rule in the top-level Makefile.

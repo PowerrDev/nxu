@@ -23,8 +23,9 @@
 
 #define NXU_CPUSET_WORDS ((NXU_MAX_CPUS + 63U) / 64U)
 
+/* 8-byte aligned so the *_atomic helpers below are single atomics on i386 too. */
 typedef struct {
-	uint64_t words[NXU_CPUSET_WORDS];
+	uint64_t words[NXU_CPUSET_WORDS] __attribute__((aligned(8)));
 } nxu_cpuset_t;
 
 static inline void cpuset_clear(nxu_cpuset_t *set)

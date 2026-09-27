@@ -59,6 +59,8 @@ deviates from that rule in two places; both are recorded in
 - [Root services](root-services.md) — PID 1, logd, patchd and recovery behavior.
 - [Testing](testing.md) — `make check`, the test registry, and how to add a test.
 - [Service property lists](service-plists.md) — declarative bootd job schema and plist parser limits.
+- [Skylight](skylight.md) — the graphics API: devices, displays, surfaces, damage, present; VirtIO-GPU as its first backend.
+- [App bundles and the Dock](apps-and-dock.md) — apps as processes in `/Applications`, the Dock, the UI session calls.
 
 ## ARM64 (`kern/arm64`)
 

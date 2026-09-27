@@ -34,6 +34,9 @@ typedef struct {
 typedef struct {
 	uint32_t device_id;
 	uint32_t buttons;
+	/* Buttons that went down / came up since mouse_take_button_edges last looked. */
+	uint32_t pressed_edges;
+	uint32_t released_edges;
 	int64_t x;
 	int64_t y;
 	int64_t wheel;
@@ -96,8 +99,10 @@ static void mouse_button(uint16_t code, bool down)
 
 	if (down) {
 		g_mouse.buttons |= mask;
+		__atomic_fetch_or(&g_mouse.pressed_edges, mask, __ATOMIC_RELEASE);
 	} else {
 		g_mouse.buttons &= ~mask;
+		__atomic_fetch_or(&g_mouse.released_edges, mask, __ATOMIC_RELEASE);
 	}
 }
 
@@ -193,6 +198,12 @@ uint32_t mouse_device_id(void)
 uint32_t mouse_buttons(void)
 {
 	return g_mouse.buttons;
+}
+
+void mouse_take_button_edges(uint32_t *pressed, uint32_t *released)
+{
+	*pressed = __atomic_exchange_n(&g_mouse.pressed_edges, 0U, __ATOMIC_ACQUIRE);
+	*released = __atomic_exchange_n(&g_mouse.released_edges, 0U, __ATOMIC_ACQUIRE);
 }
 
 int64_t mouse_x(void)

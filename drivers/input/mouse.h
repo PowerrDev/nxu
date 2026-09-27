@@ -43,6 +43,15 @@ void mouse_handle_event(const input_event_t *event);
 bool mouse_is_present(void);
 uint32_t mouse_device_id(void);
 uint32_t mouse_buttons(void);
+
+/*
+ * mouse_take_button_edges:
+ *
+ * The buttons that went down, and those that came up, since the last call:
+ * a click that is over before its reader looks at mouse_buttons() again
+ * still shows up here.
+ */
+void mouse_take_button_edges(uint32_t *pressed, uint32_t *released);
 int64_t mouse_x(void);
 int64_t mouse_y(void);
 int64_t mouse_wheel(void);

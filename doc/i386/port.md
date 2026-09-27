@@ -62,9 +62,9 @@ Classic 32-bit two-level paging, 4 KiB pages, **no PAE, no NX**. See
   (`VMM_HIGHER_HALF_BASE = 0xC0000000`). Boot code runs at physical addresses
   with paging off, builds a temporary mapping, enables paging, and jumps to the
   higher half.
-* Direct map: physical `[0, VM_DIRECT_MAP_SIZE)` (768 MiB) appears at
-  `0xC0000000 + phys`. RAM above 768 MiB is ignored (no highmem).
-* `vm_kern` arena `0xF0000000..0xF3FFFFFF`; MMIO window `0xF8000000..`.
+* Direct map: physical `[0, VM_DIRECT_MAP_SIZE)` (640 MiB) appears at
+  `0xC0000000 + phys`. RAM above 640 MiB is ignored (no highmem).
+* `vm_kern` arena `0xE8000000..0xF7FFFFFF` (256 MiB); MMIO window `0xF8000000..`.
 * User space `0x1000..0xBFFFFFFF`; the kernel half (PDEs 768..1023) is
   identical in every address space. Segments stay flat (base 0, limit 4 GiB),
   so a pointer is the same number in ring 0 and ring 3.

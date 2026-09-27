@@ -101,12 +101,12 @@ it uses a scratch disk. See [Trusted Enclave Mailbox](drivers/tep-mailbox.md).
 ## The normal boot: `make run`
 
 `make run` is `make test TEST=desktop`: one kernel, one QEMU instance, `-smp 4`,
-a normal boot -- bootd as PID 1 with logd and patchd, the boot chime, and the
-UIService session (WindowServer and the Voyager app) on the boot thread, owning
-the display and taking input, cooperatively yielding to the scheduler (Voyager
-lists the real volume through the host's directory hook, `UIServiceListDirectory`
-in `platform/arm64/services/ui_service.c`, which reads the VFS the way a system
-call would). "Is the kernel in a good state to boot" is not a separate suite
+a normal boot -- bootd as PID 1 with logd, patchd and the Dock, the boot chime,
+and the UIService desktop (WindowServer and the menu bar) on the boot thread,
+owning the display and taking input, cooperatively yielding to the scheduler.
+No app is part of it: the Dock starts the apps in `/Applications` as processes,
+which reach the desktop through the UI session calls (see
+[App bundles and the Dock](apps-and-dock.md)). "Is the kernel in a good state to boot" is not a separate suite
 bundled into this boot: it is `kernel_do_post()`'s startup self-test suite
 (`kern/tests/post*.c`), which every boot runs unconditionally, `desktop` included,
 and which halts (`kern_fail`) before bootd even starts if anything is wrong.
@@ -134,7 +134,8 @@ row that boots it once (`-display none`) and needs all of them:
 ipc_process_test: passed      thread_process_test: passed
 process_control_test: passed  socket_process_test: passed
 sound_test: passed            boot_chime_play: playback started
-unified_boot_summary: UIService Voyager.app running
+unified_boot_summary: UIService desktop running
+dock: showing 2 app(s)
 unified_boot_summary: all 5 test(s) passed
 ```
 
@@ -147,9 +148,9 @@ unified_boot_summary: all 5 test(s) passed
 | `process-control` | yes | fork/exec/signals/COW; the page-reclaim check is skipped in the shared boot |
 | `socket-process` | yes | two processes, returns |
 | `sound` | yes | tone and playsound; waits for the boot chime, which holds the exclusive audio device |
-| `ui-voyager` | yes | the UI session itself, on the boot thread |
+| `ui-voyager` | yes | the UI desktop itself, on the boot thread (the apps are processes the Dock starts on request) |
 | boot chime, bootd, logd, patchd | yes | the normal boot |
-| `ui-about`, `windowserver-about` | no | the same one-application UI session as `ui-voyager` with About.app; there is one session and one app, Voyager is the richer |
+| `ui-about`, `windowserver-about` | no | the same desktop as `ui-voyager`; there is one desktop per boot |
 | `windowserver-process` | no | a second display server: the userland WindowServer claims the display (`nxu_display_claim`, one owner) that the UI session already draws to |
 | `about-sevos-process` | no | needs that userland WindowServer to draw into |
 | `xamethyst-process` | no | XAmethyst claims the display too (it replaces WindowServer) |

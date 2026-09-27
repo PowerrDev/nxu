@@ -14,9 +14,8 @@
  *   0x60000000 - 0x6FFFFFFF   VM_SHM window   (shared memory)
  *   0x70000000 - 0xBFFFFFFF   free for user growth
  *   0xBFFFF000                VM_USER_STACK_TOP (stack grows down)
- *   0xC0000000 - 0xEFFFFFFF   kernel direct map of physical 0 - 768 MiB
- *   0xF0000000 - 0xF3FFFFFF   VM_KERN arena (vm_kern_allocate)
- *   0xF4000000 - 0xF7FFFFFF   reserved (fixmap / temporary mappings)
+ *   0xC0000000 - 0xE7FFFFFF   kernel direct map of physical 0 - 640 MiB
+ *   0xE8000000 - 0xF7FFFFFF   VM_KERN arena (vm_kern_allocate)
  *   0xF8000000 - 0xFFFFFFFF   device (MMIO) window
  *
  * Only physical memory below VM_DIRECT_MAP_SIZE is directly mapped and
@@ -28,10 +27,17 @@
 
 #define VMM_HIGHER_HALF_BASE 0xC0000000UL
 
-#define VM_DIRECT_MAP_SIZE 0x30000000UL
+/*
+ * 640 MiB, not the 768 it was: the desktop's buffers (each app window's at
+ * its largest size, a few times over, at 2x) filled a 128 MiB arena with two
+ * apps open and a resize, while the VMs this boots in have 512 MiB of RAM.
+ * The 128 MiB taken from the direct map's unused top doubles the arena.
+ */
+#define VM_DIRECT_MAP_SIZE 0x28000000UL
 
-#define VM_KERN_BASE 0xF0000000UL
-#define VM_KERN_SIZE 0x04000000ULL
+#define VM_KERN_BASE 0xE8000000UL
+/* 256 MiB, up to the MMIO window. */
+#define VM_KERN_SIZE 0x10000000ULL
 
 #define VM_MMIO_BASE 0xF8000000UL
 #define VM_MMIO_SIZE 0x08000000UL

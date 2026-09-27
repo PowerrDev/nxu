@@ -4,8 +4,13 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define PATCHD_BUFFER_SIZE 1024U
-#define PATCHD_INTERVAL_US 5000000ULL
+#define PATCHD_BUFFER_SIZE 16384U
+/*
+ * How often the system images are compared with their recovery copies. Each
+ * check reads every image twice through the boot CPU (where file system calls
+ * run, next to the desktop): every 5 s it was a stutter the user could feel.
+ */
+#define PATCHD_INTERVAL_US 30000000ULL
 /* How often the loop looks for a repair request: an open() per pass of a yield loop is real work. */
 #define PATCHD_REQUEST_POLL_US 500000ULL
 #define PATCHD_REQUEST_PATH "/disk/var/db/patchd/repair-all"
@@ -38,8 +43,9 @@ patchd_images_equal(const patchd_target_t *target)
 		return false;
 	}
 
-	char primary_buffer[PATCHD_BUFFER_SIZE];
-	char recovery_buffer[PATCHD_BUFFER_SIZE];
+	/* Static: 16 KiB chunks mean few system calls, and i386 stacks are 16 KiB. */
+	static char primary_buffer[PATCHD_BUFFER_SIZE];
+	static char recovery_buffer[PATCHD_BUFFER_SIZE];
 	bool equal = true;
 
 	for (;;) {
@@ -86,7 +92,7 @@ patchd_restore(const patchd_target_t *target)
 		return false;
 	}
 
-	char buffer[PATCHD_BUFFER_SIZE];
+	static char buffer[PATCHD_BUFFER_SIZE];
 	bool success = true;
 
 	for (;;) {
@@ -161,6 +167,7 @@ main(void)
 			}
 		}
 
-		(void)nxu_yield();
+		/* The request file is polled twice a second: sleep between looks. */
+		(void)nxu_sleep_us(100000ULL);
 	}
 }

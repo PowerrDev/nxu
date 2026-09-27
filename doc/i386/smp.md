@@ -141,3 +141,21 @@ two agree in practice; the register read would need `apic.c` linked, and
 `machine_cpu_mpidr()` is called unconditionally by `processor_register()`,
 even in isolated `test-i386-threads`-only builds that never link SMP at
 all).
+
+## User address spaces across CPUs
+
+Which address space a CPU has in CR3 is the CPU's own
+(`processor->active_space`), and each space keeps the set of CPUs that have it
+loaded (`active_cpus`), as on arm64 (`kern/i386/address_space_i386.c`, after
+`vm/address_space.c`). Until the desktop ran processes next to each other on
+four CPUs, this port kept one "active space" for the whole machine: a CPU
+switching to a process another CPU had activated last skipped loading CR3 and
+ran that process's system calls on some other process's page tables -- the
+copies in and out of user memory failed or read the wrong bytes (garbled
+console lines, services exiting at start). `vm_address_space_quiesce` waits for
+the set to empty before a space's tables are freed.
+
+TLB maintenance is still local: an unmap or permission change invalidates only
+on the CPU that makes it. That is enough while every process that can run on
+several CPUs has one thread (all of them today); a multi-threaded process would
+need a shootdown IPI.

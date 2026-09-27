@@ -67,6 +67,11 @@
 #define NXU_SYS_SETAFFINITY 63ULL
 #define NXU_SYS_SHM_UNMAP 64ULL
 #define NXU_SYS_SHM_WITHDRAW 65ULL
+#define NXU_SYS_UI_CONNECT 66ULL
+#define NXU_SYS_UI_RECEIVE 67ULL
+#define NXU_SYS_UI_SUBMIT 68ULL
+#define NXU_SYS_UI_CONTROL 69ULL
+#define NXU_SYS_SLEEP_US 70ULL
 
 /* wait(): pass as the pid to wait for any child. */
 #define NXU_WAIT_ANY UINT64_MAX
@@ -330,5 +335,7 @@ typedef struct {
 	uint32_t type;
 	uint32_t reserved;
 } nxu_stat_t;
+
+#include <kern/syscall/ui_session_defs.h>
 
 #endif

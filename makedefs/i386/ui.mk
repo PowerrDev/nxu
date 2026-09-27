@@ -31,6 +31,8 @@
 I386_C_SOURCES += \
     kern/aqua/window_server.c \
     drivers/video/ui_service_login.c \
+    drivers/video/ui_service_activity.c \
+    drivers/video/ui_service_bridge.c \
     platform/i386/services/ui_service.c
 
 UISERVICE_I386_INCLUDE := $(UISERVICE_DIR)/build-i386
@@ -90,8 +92,7 @@ i386-desktop:
 	$(MAKE) i386 \
 		BUILD_ROOT=$(I386_DESKTOP_BUILD_ROOT) \
 		UISERVICE=1 \
-		WINDOWSERVER=1 \
-		EXTRA_CFLAGS="-DNXU_UI_SERVICE_APP_VOYAGER"
+		WINDOWSERVER=1
 
 
 # QEMU_GPU_XRES/YRES and QEMU_UI_SCALE_PERMILLE (root Makefile) are the same
@@ -105,9 +106,15 @@ i386-desktop:
 # Like run-i386 it boots tepOS alongside (tools/with_tepos.sh, TEP=0 to skip),
 # so the desktop is locked behind the tepOS passcode, and it has the host's
 # speakers as a VirtIO sound device for the boot chime.
+#
+# virtio-irq=1: the VirtIO devices interrupt (PCI INTx) instead of being
+# polled. Polled, the mouse was only read when the desktop's 10 ms timer tick
+# woke it, about 50 frames a second however fast the pointer reported; an
+# input interrupt wakes it at once (80-110 frames a second measured). The
+# kernel's own default stays polling (doc/i386/devices.md).
 run-i386-desktop: i386-desktop
 
-	$(MAKE) i386-disk BUILD_ROOT=$(I386_DESKTOP_BUILD_ROOT)
+	$(MAKE) i386-disk BUILD_ROOT=$(I386_DESKTOP_BUILD_ROOT) I386_DESKTOP_APPS=1 I386_DISK_SIZE=32M
 
 	$(I386_TEP_WRAPPER) $(I386_DESKTOP_QEMU) -M pc -smp $(I386_DESKTOP_SMP) \
 		-kernel $(I386_DESKTOP_KERNEL) \
@@ -119,5 +126,5 @@ run-i386-desktop: i386-desktop
 		-device virtio-mouse-pci,disable-modern=on \
 		-device virtio-gpu-pci,xres=$(QEMU_GPU_XRES),yres=$(QEMU_GPU_YRES) \
 		$(I386_QEMU_AUDIO) \
-		-serial stdio -no-reboot \
-		-append "test=desktop ui.scale=$(QEMU_UI_SCALE_PERMILLE)"
+		-serial stdio \
+		-append "test=desktop virtio-irq=1 ui.scale=$(QEMU_UI_SCALE_PERMILLE)"

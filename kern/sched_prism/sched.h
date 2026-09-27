@@ -183,6 +183,17 @@ bool sched_block_commit(void);
 bool sched_sleep_us(uint64_t microseconds);
 
 /*
+ * sched_sleep_until_kicked / sched_kick_sleepers
+ *
+ * sched_sleep_us that also ends at the next sched_kick_sleepers(): for a loop
+ * that must notice work the moment it arrives (the desktop: input from an
+ * interrupt, a frame from an app) but otherwise sleeps. Returns false if it
+ * could not sleep. Kicking is safe from interrupt handlers.
+ */
+bool sched_sleep_until_kicked(uint64_t microseconds);
+void sched_kick_sleepers(void);
+
+/*
  * sched_exit_current
  *
  * Switch away from a thread which has already entered TH_TERMINATE. This

@@ -15,7 +15,7 @@
  *
  *   1. Zero .bss (through its physical alias; the boot page directory and the
  *      boot stack live there).
- *   2. Fill i386_boot_pd with 4 MiB (PSE) pages: physical [0, 768 MiB) at
+ *   2. Fill i386_boot_pd with 4 MiB (PSE) pages: physical [0, 640 MiB) at
  *      0xC0000000 (the kernel direct map, which the VM layer keeps for good),
  *      and physical [0, 4 MiB) again at virtual 0 so the instruction after the
  *      paging switch still resolves.
@@ -44,8 +44,8 @@
 #define CR0_WP 0x00010000
 #define CR0_PG 0x80000000
 
-/* Direct map size (VM_DIRECT_MAP_SIZE, 768 MiB) in 4 MiB directory entries. */
-#define DIRECT_MAP_PDES 192
+/* Direct map size (VM_DIRECT_MAP_SIZE, 640 MiB) in 4 MiB directory entries. */
+#define DIRECT_MAP_PDES 160
 #define KERNEL_FIRST_PDE 768
 
 .section .multiboot, "a"

@@ -1,53 +1,27 @@
 #include <string.h>
 
+#include <memops.h>
+
 #include <stddef.h>
 #include <stdint.h>
 
 /*
- * memcpy:
- *
- * Copy size bytes from source to destination.
- *
- * The source and destination regions must not overlap. The destination
- * pointer is returned to the caller.
+ * memcpy / memmove / memset: a word at a time (libk/memops.h). The regions of
+ * a memcpy must not overlap; memmove's may.
  */
-void *memcpy(
-	void *destination,
-	const void *source,
-	size_t size
-)
+void *memcpy(void *destination, const void *source, size_t size)
 {
-	uint8_t *destination_bytes = destination;
-	const uint8_t *source_bytes = source;
-
-	for (size_t index = 0; index < size; index++) {
-		destination_bytes[index] = source_bytes[index];
-	}
-
-	return destination;
+	return nxu_memops_copy_forward(destination, source, size);
 }
 
-/*
- * memset:
- *
- * Fill size bytes of destination with the low eight bits of value.
- *
- * The destination pointer is returned to the caller.
- */
-void *memset(
-	void *destination,
-	int value,
-	size_t size
-)
+void *memmove(void *destination, const void *source, size_t size)
 {
-	uint8_t *bytes = destination;
-	uint8_t byte = (uint8_t)value;
+	return nxu_memops_move(destination, source, size);
+}
 
-	for (size_t index = 0; index < size; index++) {
-		bytes[index] = byte;
-	}
-
-	return destination;
+void *memset(void *destination, int value, size_t size)
+{
+	return nxu_memops_set(destination, value, size);
 }
 
 int memcmp(const void *left, const void *right, size_t size)

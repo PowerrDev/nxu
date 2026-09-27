@@ -19,6 +19,11 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+/* At most this many registry messages are answered per poll. */
+#define BOOTD_REGISTRY_BATCH 64U
+
+static bool bootd_registry_poll_one(bootd_registry_t *registry);
+
 static void
 bootd_registry_fill_label(char destination[NXU_BOOTSTRAP_LABEL_MAX], const char *label)
 {
@@ -101,12 +106,28 @@ bootd_registry_poll(bootd_registry_t *registry)
 {
 	if (registry == 0 || registry->port_name == 0U) return;
 
+	/*
+	 * Everything queued, not one message: bootd sleeps between polls now, and
+	 * one answer per poll let lookups of a service that had not registered yet
+	 * (each answered NOT_FOUND and asked again) pile up ahead of the very
+	 * registration they were waiting for. Bounded, so a flood cannot keep bootd
+	 * from its jobs.
+	 */
+	for (uint32_t handled = 0U; handled < BOOTD_REGISTRY_BATCH; handled++) {
+		if (!bootd_registry_poll_one(registry)) return;
+	}
+}
+
+static bool
+bootd_registry_poll_one(bootd_registry_t *registry)
+{
 	nxu_bootstrap_request_t request;
 	uint32_t xfer_name = 0U;
 	uint32_t xfer_type = 0U;
 
 	int64_t received = nxu_ipc_receive(registry->port_name, &request, sizeof(request), &xfer_name, &xfer_type);
-	if (received < 0 || (uint64_t)received != sizeof(request)) return;
+	if (received < 0) return false;
+	if ((uint64_t)received != sizeof(request)) return true;
 
 	request.label[NXU_BOOTSTRAP_LABEL_MAX - 1U] = '\0';
 
@@ -120,4 +141,6 @@ bootd_registry_poll(bootd_registry_t *registry)
 	default:
 		break;
 	}
+
+	return true;
 }

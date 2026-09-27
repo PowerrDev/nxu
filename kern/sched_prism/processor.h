@@ -76,6 +76,19 @@ struct processor {
 	/* Timer interrupts this CPU has taken. */
 	uint64_t ticks;
 
+	/*
+	 * (own) Scheduler ticks this CPU has taken, and how many of them found a
+	 * thread other than its idle thread running: busy_ticks / sched_ticks is
+	 * how loaded it is. Counted by sched_tick() on every architecture (i386
+	 * never advances `ticks`).
+	 */
+	uint64_t sched_ticks;
+	uint64_t busy_ticks;
+
+	/* Measured: microseconds this CPU ran something other than its idle thread, and since when it has been (0: idle now). */
+	uint64_t busy_us;
+	uint64_t busy_since_us;
+
 	/* (own) ticks since this CPU's run queue was last boosted. */
 	uint32_t boost_ticks;
 

@@ -8,7 +8,7 @@
  * virtual-address arena. See doc/i386/vm.md for the whole sequence.
  *
  * What is already true on entry: start.S enabled paging and the higher-half
- * kernel, so the kernel runs at 0xC01xxxxx and all of RAM below 768 MiB is
+ * kernel, so the kernel runs at 0xC01xxxxx and all of RAM below 640 MiB is
  * reachable through the direct map; i386_boot_relocate() moved the Multiboot
  * structure into that map and removed the temporary identity mapping.
  *

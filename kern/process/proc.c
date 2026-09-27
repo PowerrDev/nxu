@@ -1343,6 +1343,31 @@ uint32_t proc_count(void)
 	return count;
 }
 
+uint32_t proc_snapshot(proc_snapshot_t *out, uint32_t capacity)
+{
+	if (out == 0) return 0U;
+
+	proc_lock(&g_proc_lock);
+
+	uint32_t count = 0U;
+
+	for (proc_t proc = g_allproc_head; proc != 0 && count < capacity; proc = proc->p_list_next) {
+		proc_snapshot_t *entry = &out[count++];
+
+		entry->uniqueid = proc->p_ident.uniqueid;
+		entry->pid = proc->p_ident.pid;
+		entry->ppid = proc->p_pptr != 0 ? proc->p_pptr->p_ident.pid : proc->p_ident.pid;
+		entry->state = proc->p_stat;
+		entry->flags = proc->p_flag;
+		entry->thread_count = proc->p_task.active_thread_count;
+		for (uint32_t index = 0U; index < PROC_NAME_MAX; index++) entry->name[index] = proc->p_comm[index];
+		entry->name[PROC_NAME_MAX - 1U] = '\0';
+	}
+
+	proc_unlock(&g_proc_lock);
+	return count;
+}
+
 uint32_t proc_zombie_count(void)
 {
 	proc_lock(&g_proc_lock);

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//NXU//DTD PLIST 1.0//EN" "http://www.nxu.local/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Voyager</string>
+
+	<key>CFBundleIdentifier</key>
+	<string>com.butterscotch.voyager</string>
+
+	<key>CFBundleExecutable</key>
+	<string>Voyager</string>
+
+	<key>CFBundleVersion</key>
+	<string>0.1.0</string>
+
+	<key>CFBundleIconFile</key>
+	<string>Voyager.icns</string>
+</dict>
+</plist>

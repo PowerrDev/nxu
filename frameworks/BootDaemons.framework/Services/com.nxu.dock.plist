@@ -3,10 +3,10 @@
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>com.nxu.windowserver</string>
+	<string>com.nxu.dock</string>
 
 	<key>Program</key>
-	<string>/disk/System/Library/CoreServices/windowserver_service</string>
+	<string>/disk/System/Library/CoreServices/Dock.app/Contents/SevOS/Dock</string>
 
 	<key>RunAtLoad</key>
 	<true/>
@@ -14,13 +14,7 @@
 	<key>KeepAlive</key>
 	<true/>
 
-	<key>AllowDisplay</key>
-	<true/>
-
-	<key>DisabledInSafeMode</key>
-	<true/>
-
 	<key>DisabledBootArgument</key>
-	<string>-no-windowserver</string>
+	<string>-no-dock</string>
 </dict>
 </plist>

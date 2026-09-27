@@ -28,7 +28,7 @@ lifecycle and restart policy remain private to `bootd`.
 
 A job's process holds only the capabilities its plist asks for; bootd passes them
 to `nxu_spawn_caps`. `logd` and `patchd` set `AllowFilesystemWrite`, and
-`windowserver` sets `AllowDisplay`. See [process control](kern/process-control.md#capabilities).
+`windowserver` sets `AllowDisplay`; the Dock (`com.nxu.dock`) needs neither. See [process control](kern/process-control.md#capabilities).
 
 `StartOnLogin` does **not** launch anything yet. NXU has no login-session event
 or bootd IPC control path today, so claiming that behavior would be false. A

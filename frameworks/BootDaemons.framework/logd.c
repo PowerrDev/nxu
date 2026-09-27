@@ -28,7 +28,8 @@ main(void)
 		if (length < 0) return 2;
 
 		if (length == 0) {
-			(void)nxu_yield();
+			/* Nothing new: look again in a moment rather than spin. */
+			(void)nxu_sleep_us(50000ULL);
 			continue;
 		}
 

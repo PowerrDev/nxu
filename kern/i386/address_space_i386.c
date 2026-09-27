@@ -33,7 +33,11 @@
 
 #include <kern/i386/pmap.h>
 
+#include <kern/cpuset.h>
+#include <kern/ipi.h>
 #include <kern/lock.h>
+#include <kern/machine/timer.h>
+#include <kern/sched_prism/processor.h>
 #include <vm/pmm.h>
 
 #include <stdbool.h>
@@ -42,7 +46,36 @@
 
 #define VM_USER_NULL_GUARD_SIZE PMAP_PAGE_SIZE
 
-static vm_address_space_t *g_active_space;
+/*
+ * Which space each CPU has in CR3 is the CPU's own (processor->active_space),
+ * as on arm64 (vm/address_space.c): a single "active space" for the whole
+ * machine was right while this port had one CPU, but with several it made a
+ * CPU skip loading CR3 for a process another CPU had loaded last, and run
+ * that process's system calls on some other process's page tables (the
+ * garbled console output, the failed copies in and out of user memory, the
+ * services that could not start). A space also keeps the set of CPUs that
+ * have it loaded (active_cpus), which is what vm_address_space_quiesce waits
+ * on before its tables are freed.
+ *
+ * TLB maintenance is still this CPU's only: a mapping changed while another
+ * CPU runs another thread of the same process is not shot down there. Every
+ * process that runs on several CPUs today has one thread.
+ */
+/* Before the scheduler registers the boot CPU (the VM self-test runs then) there is no processor to record in. */
+static vm_address_space_t *g_boot_active_space;
+
+static vm_address_space_t *vm_space_local(void)
+{
+	processor_t cpu = current_processor();
+
+	return cpu != 0 ? cpu->active_space : g_boot_active_space;
+}
+
+static void vm_space_leave(vm_address_space_t *space, uint32_t cpu)
+{
+	cpuset_remove_atomic(&space->active_cpus, cpu);
+	__atomic_store_n(&space->active, !cpuset_empty(&space->active_cpus), __ATOMIC_RELEASE);
+}
 
 static bool vm_user_entry_flags(vm_user_protection_t protection, uint32_t *flags)
 {
@@ -125,7 +158,7 @@ static bool vm_address_space_translate(
 
 const vm_address_space_t *vm_address_space_current(void)
 {
-	return g_active_space;
+	return vm_space_local();
 }
 
 bool vm_address_space_create(vm_address_space_t *space)
@@ -171,15 +204,38 @@ bool vm_address_space_activate(vm_address_space_t *space)
 		return false;
 	}
 
-	if (g_active_space == space) return true;
+	uint64_t irq_state = ml_irq_save();
+	processor_t cpu = current_processor();
+	vm_address_space_t *previous = cpu != 0 ? cpu->active_space : 0;
 
-	if (g_active_space != 0) g_active_space->active = false;
+	if (cpu == 0) {
+		if (g_boot_active_space != space) {
+			if (g_boot_active_space != 0) g_boot_active_space->active = false;
+			pmap_load_directory((uint32_t)space->root_physical);
+			space->active = true;
+			g_boot_active_space = space;
+		}
+		ml_irq_restore(irq_state);
+		return true;
+	}
+
+	if (previous == space) {
+		ml_irq_restore(irq_state);
+		return true;
+	}
+
+	/* Join before loading CR3, so vm_address_space_quiesce sees this CPU once it can walk the tables. */
+	cpuset_add_atomic(&space->active_cpus, cpu->cpu_id);
+	__atomic_store_n(&space->active, true, __ATOMIC_RELEASE);
+	__atomic_thread_fence(__ATOMIC_SEQ_CST);
 
 	pmap_load_directory((uint32_t)space->root_physical);
 
-	space->active = true;
-	g_active_space = space;
+	cpu->active_space = space;
 
+	if (previous != 0) vm_space_leave(previous, cpu->cpu_id);
+
+	ml_irq_restore(irq_state);
 	return true;
 }
 
@@ -187,25 +243,59 @@ bool vm_address_space_deactivate(void)
 {
 	if (!pmap_initialized()) return false;
 
-	if (g_active_space != 0) g_active_space->active = false;
+	uint64_t irq_state = ml_irq_save();
+	processor_t cpu = current_processor();
+	vm_address_space_t *previous = cpu != 0 ? cpu->active_space : 0;
 
 	pmap_load_directory(pmap_kernel_directory_physical());
 
-	g_active_space = 0;
+	if (cpu != 0) {
+		cpu->active_space = 0;
+		if (previous != 0) vm_space_leave(previous, cpu->cpu_id);
+	} else if (g_boot_active_space != 0) {
+		g_boot_active_space->active = false;
+		g_boot_active_space = 0;
+	}
+
+	ml_irq_restore(irq_state);
 	return true;
 }
 
 /*
- * The i386 port has one CPU: once the caller's own use of the space is over, no CPU
- * can be walking its tables. (See vm/address_space.h.)
+ * Wait until no CPU has the space in CR3, so its tables can be freed: the
+ * CPUs still in it are finishing their switch away, pushed along with a
+ * reschedule interrupt. False (the caller leaks rather than frees) after two
+ * seconds. See vm/address_space.c, which this follows.
  */
 bool vm_address_space_quiesce(vm_address_space_t *space)
 {
 	if (space == 0 || space->root == 0) return false;
 
-	if (g_active_space == space) (void)vm_address_space_deactivate();
+	if (vm_space_local() == space) (void)vm_address_space_deactivate();
 
-	return true;
+	processor_t self = current_processor();
+	uint64_t deadline = timer_get_microseconds() + 2000000ULL;
+	uint64_t next_kick = 0ULL;
+
+	for (;;) {
+		__atomic_thread_fence(__ATOMIC_SEQ_CST);
+
+		if (cpuset_empty(&space->active_cpus)) return true;
+
+		uint64_t now = timer_get_microseconds();
+
+		if (now > deadline) return false;
+
+		if (now >= next_kick && self != 0) {
+			next_kick = now + 500ULL;
+
+			for (uint32_t cpu = 0U; cpu < NXU_MAX_CPUS; cpu++) {
+				if (cpu != self->cpu_id && cpuset_contains_atomic(&space->active_cpus, cpu)) ipi_send(cpu, IPI_RESCHEDULE);
+			}
+		}
+
+		cpu_relax();
+	}
 }
 
 bool vm_address_space_map_page(
@@ -244,7 +334,7 @@ bool vm_address_space_map_page(
 	*entry = (uint32_t)physical_address | flags;
 
 	/* A not-present entry is never cached, but stay strictly correct for the active space. */
-	if (space == g_active_space) pmap_invalidate_page((uint32_t)virtual_address);
+	if (space == vm_space_local()) pmap_invalidate_page((uint32_t)virtual_address);
 
 	nxu_spin_unlock(&space->lock);
 
@@ -266,7 +356,7 @@ bool vm_address_space_unmap_page(vm_address_space_t *space, uint64_t virtual_add
 
 	*entry = 0U;
 
-	if (space == g_active_space) pmap_invalidate_page((uint32_t)virtual_address);
+	if (space == vm_space_local()) pmap_invalidate_page((uint32_t)virtual_address);
 
 	nxu_spin_unlock(&space->lock);
 
@@ -324,7 +414,8 @@ bool vm_address_space_translate_write(const vm_address_space_t *space, uint64_t 
 
 bool vm_address_space_is_active(const vm_address_space_t *space)
 {
-	return space != 0 && space == g_active_space && space->active;
+	/* Loaded on this CPU (what the callers walking user memory need). */
+	return space != 0 && space == vm_space_local();
 }
 
 uint64_t vm_address_space_root_physical(const vm_address_space_t *space)
@@ -361,7 +452,7 @@ uint64_t vm_address_space_release_pages(vm_address_space_t *space)
 	}
 
 	/* Every translation this space had is gone; make the CPU forget them too. */
-	if (space == g_active_space) pmap_flush_tlb();
+	if (space == vm_space_local()) pmap_flush_tlb();
 
 	nxu_spin_unlock(&space->lock);
 
@@ -372,8 +463,9 @@ bool vm_address_space_destroy(vm_address_space_t *space)
 {
 	if (space == 0 || space->root == 0 || !pmap_initialized()) return false;
 
-	/* Never free the directory the CPU is still walking. */
-	if (space == g_active_space && !vm_address_space_deactivate()) return false;
+	/* Never free a directory a CPU is still walking. */
+	if (space == vm_space_local() && !vm_address_space_deactivate()) return false;
+	if (!cpuset_empty(&space->active_cpus) && !vm_address_space_quiesce(space)) return false;
 
 	uint32_t *directory = (uint32_t *)space->root;
 

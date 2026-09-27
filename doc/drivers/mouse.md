@@ -45,7 +45,12 @@ The kernel does not perform:
 - cursor hit testing;
 - focus routing.
 
-Those policies belong to the future graphical userspace consumer.
+Those policies belong to the graphical consumer. The desktop host
+(`platform/<arch>/services/ui_service.c`, through
+`drivers/video/ui_service_pointer.h`) takes the motion as the host's points
+(QEMU forwards the host's own, already accelerated, deltas) and multiplies it
+by the screen's content scale, so on a 2x screen the pointer goes as far as the
+host's cursor would. It adds no acceleration of its own.
 
 ## Buttons
 

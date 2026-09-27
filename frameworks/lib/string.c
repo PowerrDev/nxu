@@ -1,3 +1,4 @@
+#include <libk/memops.h>
 #include <nxu/string.h>
 
 #include <stddef.h>
@@ -52,13 +53,11 @@ nxu_arg_present(const char *arguments, const char *argument)
 	return false;
 }
 
+/* A word at a time: see libk/memops.h. */
 void *
 memcpy(void *destination, const void *source, size_t size)
 {
-	unsigned char *destination_bytes = destination;
-	const unsigned char *source_bytes = source;
-	for (size_t index = 0U; index < size; index++) destination_bytes[index] = source_bytes[index];
-	return destination;
+	return nxu_memops_copy_forward(destination, source, size);
 }
 
 /*
@@ -69,24 +68,11 @@ memcpy(void *destination, const void *source, size_t size)
 void *
 memmove(void *destination, const void *source, size_t size)
 {
-	unsigned char *destination_bytes = destination;
-	const unsigned char *source_bytes = source;
-
-	if (destination_bytes == source_bytes) return destination;
-
-	if (destination_bytes < source_bytes) {
-		for (size_t index = 0U; index < size; index++) destination_bytes[index] = source_bytes[index];
-	} else {
-		for (size_t index = size; index > 0U; index--) destination_bytes[index - 1U] = source_bytes[index - 1U];
-	}
-
-	return destination;
+	return nxu_memops_move(destination, source, size);
 }
 
 void *
 memset(void *destination, int value, size_t size)
 {
-	unsigned char *bytes = destination;
-	for (size_t index = 0U; index < size; index++) bytes[index] = (unsigned char)value;
-	return destination;
+	return nxu_memops_set(destination, value, size);
 }

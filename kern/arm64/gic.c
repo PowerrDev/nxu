@@ -30,7 +30,8 @@
 #define GICD_ICPENDR      0x0280UL
 #define GICD_IPRIORITYR   0x0400UL
 #define GICD_ICFGR        0x0C00UL
-#define GICD_IROUTER      0x6100UL
+/* GICD_IROUTER<n> is at 0x6000 + 8n; the first SPI's (n = 32) is at 0x6100. */
+#define GICD_IROUTER      0x6000UL
 
 /* Redistributor control-frame registers. */
 #define GICR_TYPER 0x0008UL

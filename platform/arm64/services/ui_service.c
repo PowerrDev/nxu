@@ -1,8 +1,10 @@
 #include <drivers/video/ui_service_host.h>
+#include <drivers/video/ui_service_pointer.h>
 
 #include <kern/arm64/timer.h>
 #include <drivers/input/mouse.h>
 #include <drivers/video/display.h>
+#include <skylight/skylight.h>
 #include <drivers/video/ramfb_console.h>
 #include <drivers/virtio/virtio_input.h>
 #include <kern/boot/boot_args.h>
@@ -20,6 +22,8 @@
 
 #if defined(NXU_UI_SERVICE)
 #include <UIService.h>
+#include <drivers/video/ui_service_activity.h>
+#include <drivers/video/ui_service_bridge.h>
 #include <drivers/video/ui_service_login.h>
 #if defined(NXU_WINDOWSERVER)
 #include <WindowServer/WSPrivate.h>
@@ -27,6 +31,14 @@
 #endif
 
 #define UI_SERVICE_FRAME_INTERVAL_US 16667ULL
+
+/*
+ * Presents closer together than this wait. Not a whole frame interval: a
+ * sleep ends on a 10 ms timer tick, so waiting out 16.7 ms took 20 ms (50 Hz,
+ * and a frame late). With the GPU's own completion now slept for, this only
+ * keeps a burst of partial updates from flooding the host.
+ */
+#define UI_SERVICE_MIN_PRESENT_US 8000ULL
 
 static bool g_ui_service_cooperative;
 static volatile bool g_ui_service_running;
@@ -54,10 +66,14 @@ typedef struct {
 	uint32_t stride;
 	uint32_t *output_pixels;
 	uint32_t *backbuffer;
-	display_device_t *display;
+	/* The Skylight display presented to, or 0 for the RAMFB fallback (written directly). */
+	sl_display_t *display;
 	uint64_t last_present_us;
 	int32_t pointer_x;
 	int32_t pointer_y;
+	/* Mouse motion is in host points; the pointer moves in pixels (see ui_service_pointer.h). */
+	uint32_t scale_permille;
+	ui_pointer_motion_t motion;
 	uint32_t buttons;
 	uint32_t pending_down;
 	uint32_t pending_up;
@@ -114,7 +130,7 @@ static void UIServicePaceFrame(UIServiceContext *context)
 
 	if (context->last_present_us != 0ULL) {
 		uint64_t elapsed = now - context->last_present_us;
-		while (elapsed < UI_SERVICE_FRAME_INTERVAL_US) {
+		while (elapsed < UI_SERVICE_MIN_PRESENT_US) {
 			if (g_ui_service_cooperative) (void)sched_sleep_us(1000ULL);
 			else __asm__ volatile("yield");
 			now = timer_get_microseconds();
@@ -169,17 +185,19 @@ static uint32_t UIServicePresent(void *opaque, const UIServiceDamageRect *damage
 	const UIServiceDamageRect *present_damage = damage == 0 ? &full : damage;
 
 	UIServicePaceFrame(context);
-	if (!UIServiceCopyDamage(context, present_damage)) return UI_SERVICE_STATUS_INVALID_ARGUMENT;
 
-	if (context->display == 0) return UI_SERVICE_STATUS_OK;
+	if (context->display == 0) {
+		/* RAMFB: the copy is the present (QEMU shows the memory as it is). */
+		return UIServiceCopyDamage(context, present_damage) ? UI_SERVICE_STATUS_OK : UI_SERVICE_STATUS_INVALID_ARGUMENT;
+	}
 
-	return display_present(
-		context->display,
-		(uint32_t)present_damage->x,
-		(uint32_t)present_damage->y,
-		present_damage->width,
-		present_damage->height
-	) ? UI_SERVICE_STATUS_OK : UI_SERVICE_STATUS_PRESENT_FAILED;
+	if (present_damage->x < 0 || present_damage->y < 0 || present_damage->width == 0U || present_damage->height == 0U) return UI_SERVICE_STATUS_INVALID_ARGUMENT;
+
+	/* Through Skylight: the damage into the scanout surface, then presented. */
+	sl_surface_t *surface = sl_display_surface(context->display);
+	const uint32_t *source = context->backbuffer + (uint64_t)present_damage->y * context->stride + (uint32_t)present_damage->x;
+	sl_upload(surface, present_damage->x, present_damage->y, source, present_damage->width, present_damage->height, context->stride);
+	return sl_present(context->display, (sl_rect_t) { 0 }) ? UI_SERVICE_STATUS_OK : UI_SERVICE_STATUS_PRESENT_FAILED;
 }
 
 /*
@@ -211,6 +229,8 @@ static void UIServiceRefreshPointer(UIServiceContext *context)
 	int32_t dy = 0;
 
 	if (mouse_take_delta(&dx, &dy)) {
+		ui_pointer_scale(&context->motion, context->scale_permille, &dx, &dy);
+
 		int64_t next_x = (int64_t)context->pointer_x + dx;
 		int64_t next_y = (int64_t)context->pointer_y + dy;
 		int32_t pointer_x = UIServiceClampPointer(next_x, context->width);
@@ -224,10 +244,21 @@ static void UIServiceRefreshPointer(UIServiceContext *context)
 		context->pointer_y = pointer_y;
 	}
 
+	/*
+	 * The buttons by their edges, not just their level: a click that starts
+	 * and ends between two polls (the desktop was busy for a moment) is
+	 * still a down and an up. A release and a new press of a button that is
+	 * held again now cancel out.
+	 */
+	uint32_t pressed = 0U;
+	uint32_t released = 0U;
+	mouse_take_button_edges(&pressed, &released);
 	uint32_t buttons = mouse_buttons();
-	uint32_t changed = buttons ^ context->buttons;
-	context->pending_down |= changed & buttons;
-	context->pending_up |= changed & context->buttons;
+	uint32_t both = pressed & released;
+	uint32_t clicked = both & ~buttons & ~context->buttons;
+	uint32_t changed = (buttons ^ context->buttons) | clicked;
+	context->pending_down |= (changed & buttons) | clicked;
+	context->pending_up |= (changed & context->buttons) | clicked;
 	context->buttons = buttons;
 
 	/* The wheel: the driver keeps a running total (positive = wheel up); what the app needs is what turned since it last looked. */
@@ -248,6 +279,9 @@ static void UIServiceRefreshPointer(UIServiceContext *context)
 	}
 	if (changed != 0U) {
 		uint32_t mask = changed;
+		if ((clicked & MOUSE_BUTTON_LEFT) != 0U) {
+			(void)WS_Pointer_Button(context->pointer_x, context->pointer_y, 0U, true);
+		}
 		if ((mask & MOUSE_BUTTON_LEFT) != 0U) {
 			(void)WS_Pointer_Button(context->pointer_x, context->pointer_y, 0U, (buttons & MOUSE_BUTTON_LEFT) != 0U);
 		}
@@ -302,24 +336,30 @@ static uint32_t UIServiceSelectButtonMask(uint32_t mask)
 static void UIServiceYieldAfterPoll(bool delivered_event)
 {
 	static uint32_t delivered_since_yield;
+	/* The poll before this one found nothing either. */
+	static bool idle_once;
 
 	if (!g_ui_service_cooperative) return;
+
+	bool sleep = !delivered_event && idle_once;
+	idle_once = !delivered_event;
 
 	if (delivered_event && ++delivered_since_yield < UI_SERVICE_EVENTS_PER_YIELD) return;
 
 	delivered_since_yield = 0U;
 
 	/*
-	 * A real event (or a burst's last one): give everyone else a single
-	 * turn, same as before, then come straight back -- the next poll may
-	 * already have more queued. An empty poll means nothing is happening;
-	 * sleep briefly instead of immediately asking to be rescheduled, same
-	 * reasoning as UIServicePaceFrame's cooperative wait. A person cannot
-	 * perceive this as latency (well under a frame), and it is where a
-	 * mostly-idle desktop session spends nearly all its polls.
+	 * A real event (or a burst's last one): give everyone else a single turn
+	 * and come straight back. The first empty poll after events also returns
+	 * at once, so the desktop presents what those events changed (the cursor,
+	 * a window) before anything else; sleeping there made every change wait
+	 * out a sleep before it reached the screen. A second empty poll in a row
+	 * sleeps until something happens: an input interrupt, an app's frame or
+	 * connection (they kick), or the next tick (the clock, animations, the
+	 * process checks).
 	 */
-	if (delivered_event) (void)sched_yield();
-	else (void)sched_sleep_us(1000ULL);
+	if (sleep) (void)sched_sleep_until_kicked(UI_SERVICE_FRAME_INTERVAL_US);
+	else (void)sched_yield();
 }
 
 static uint32_t UIServicePollEvent(void *opaque, UIServiceHostEvent *event)
@@ -525,18 +565,20 @@ bool ui_service_bootstrap(void)
 	uint32_t width = 0U;
 	uint32_t height = 0U;
 	uint32_t stride = 0U;
-	display_device_t *display = display_primary();
+	sl_display_t *display = sl_display_primary();
 	bool using_ramfb = false;
 
 	/*
-	 * Prefer an attached display device. RAMFB remains the emergency scanout
-	 * when VirtIO GPU is unavailable during early UI bring-up.
+	 * Prefer a Skylight display (a graphics device's scanout). RAMFB remains
+	 * the emergency scanout when VirtIO GPU is unavailable during early UI
+	 * bring-up.
 	 */
 	if (display != 0) {
-		framebuffer = display->framebuffer;
-		width = display->width;
-		height = display->height;
-		stride = display->stride;
+		sl_surface_t *surface = sl_display_surface(display);
+		framebuffer = sl_surface_map(surface, &stride);
+		sl_surface_unmap(surface);
+		width = sl_surface_width(surface);
+		height = sl_surface_height(surface);
 	} else if (ramfb_console_available()) {
 		using_ramfb = true;
 		framebuffer = ramfb_console_framebuffer();
@@ -597,19 +639,22 @@ bool ui_service_bootstrap(void)
 	 */
 	uint32_t content_scale_permille = boot_arg_uint32("ui.scale", 2000U);
 
+	context.scale_permille = content_scale_permille;
+
 	UIServiceHostV5 host = {
 		.header = {
 			.struct_size = sizeof(UIServiceHostV5),
 			.abi_version = UI_SERVICE_ABI_VERSION_V5
 		},
-		.capabilities = UI_SERVICE_HOST_CAPABILITIES_V3 | UI_SERVICE_HOST_CAP_FS | ui_service_keyboard_capability(),
+		.capabilities = UI_SERVICE_HOST_CAPABILITIES_V3 | UI_SERVICE_HOST_CAP_FS | UI_SERVICE_HOST_CAP_ACTIVITY | ui_service_keyboard_capability(),
 		.context = &context,
 		.get_surface = UIServiceGetSurface,
 		.present = UIServicePresent,
 		.poll_event = UIServicePollEvent,
 		.get_time = UIServiceGetTime,
 		.content_scale_permille = content_scale_permille,
-		.list_directory = UIServiceListDirectory
+		.list_directory = UIServiceListDirectory,
+		.get_activity = ui_service_get_activity
 	};
 
 	if (UIServiceValidateHostV5(&host) != UI_SERVICE_STATUS_OK) {
@@ -643,19 +688,17 @@ bool ui_service_bootstrap(void)
 		return false;
 	}
 
-#if defined(NXU_UI_SERVICE_APP_VOYAGER)
-	const char *app_name = "Voyager.app";
+	/*
+	 * The desktop: no app is linked into the kernel. Apps are processes in
+	 * /Applications that bootd's Dock starts; they reach the desktop through
+	 * the UI session bridge (drivers/video/ui_service_bridge.c).
+	 */
 	g_ui_service_running = true;
-	uint32_t status = UIServiceRunVoyager(&host);
-#else
-	const char *app_name = "About.app";
-	g_ui_service_running = true;
-	uint32_t status = UIServiceRunAbout(&host);
-#endif
+	uint32_t status = UIServiceRunDesktop(&host);
 	g_ui_service_running = false;
 	if (using_ramfb) (void)ramfb_console_set_mirroring(true);
 
-	kprintf("[com.butterscotch.UIService.framework]: %s exited unexpectedly with status %u\n", app_name, status);
+	kprintf("[com.butterscotch.UIService.framework]: the desktop exited unexpectedly with status %u\n", status);
 	(void)kfree(backbuffer);
 	return false;
 #endif

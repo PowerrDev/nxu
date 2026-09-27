@@ -37,6 +37,8 @@ int64_t nxu_ioctl(uint64_t descriptor, uint64_t command, void *argument);
 int64_t nxu_waitpid(uint64_t pid, uint64_t *status);
 int64_t nxu_getpid(void);
 int64_t nxu_yield(void);
+/* Sleep for at least microseconds (at most 10 s a call): an idle loop's wait, instead of spinning on nxu_yield. */
+int64_t nxu_sleep_us(uint64_t microseconds);
 int64_t nxu_get_boot_args(char *buffer, uint64_t capacity);
 int64_t nxu_klog_read(uint64_t *cursor, char *buffer, uint64_t capacity);
 int64_t nxu_unlink(const char *path);
@@ -185,5 +187,22 @@ int64_t nxu_sigaction(uint32_t signal, const nxu_sigaction_t *action, nxu_sigact
 int64_t nxu_sigprocmask(uint32_t how, uint32_t set);
 int64_t nxu_signal(uint32_t signal, void (*handler)(int));
 void nxu_sigreturn_trampoline(void);
+
+
+/*
+ * UI sessions: an app's window on the desktop (kern/syscall/ui_session_defs.h).
+ *
+ * nxu_ui_control(NXU_UI_CONTROL_SESSION, &session) waits until the desktop is
+ * up and says its scale and screen size. nxu_ui_connect returns the
+ * connection number the other calls take. nxu_ui_receive returns 1 with the
+ * next message, 0 when none came within wait (milliseconds; 0 does not wait,
+ * NXU_UI_WAIT_FOREVER waits for one), and -NXU_SYS_E_NOT_FOUND
+ * once the desktop has let go of the app (it should exit). nxu_ui_submit
+ * hands over a frame and/or the app's state.
+ */
+int64_t nxu_ui_connect(const nxu_ui_connect_t *info);
+int64_t nxu_ui_receive(uint32_t connection, nxu_ui_message_t *message, uint32_t wait);
+int64_t nxu_ui_submit(uint32_t connection, const nxu_ui_submit_t *submit);
+int64_t nxu_ui_control(uint32_t operation, uint64_t argument);
 
 #endif

@@ -89,23 +89,23 @@ run_case plain 128M "qemu-exit=1" $STATUS_CLEAN \
 	"i386_init: boot phases complete"
 
 # The memory map is parsed and clipped for other machine sizes: a small one,
-# and one bigger than the 768 MiB direct map (the rest is ignored).
+# and one bigger than the 640 MiB direct map (the rest is ignored).
 run_case ram-32M 32M "test=vm qemu-exit=1" $STATUS_CLEAN \
 	"i386_memory_map_dump: 1 region(s), 31616 KiB usable" \
 	"i386_init: vm self-test passed"
 
 run_case ram-1G 1024M "test=vm qemu-exit=1" $STATUS_CLEAN \
-	"i386_memory_map_dump: region 0: 0x100000-0x30000000" \
+	"i386_memory_map_dump: region 0: 0x100000-0x28000000" \
 	"i386_init: vm self-test passed"
 
 # Deliberate faults: the report names the access, the region and the cause.
 run_case fault-write-ro 512M "test=vm vm-fault=write-ro qemu-exit=1" $STATUS_PANIC \
 	"i386_init_vm_selftest: all checks passed" \
-	"i386_trap_page_fault: unresolved fault at 0xf" \
+	"i386_trap_page_fault: unresolved fault at 0xe" \
 	"in vm_kern arena" \
 	"(read-only, supervisor)" \
 	"panic: unhandled exception 14 (#PF Page Fault)" \
-	"cause: write of 0xf0000000 by kernel code: protection violation" \
+	"cause: write of 0xe8000000 by kernel code: protection violation" \
 	"panic: halting"
 
 run_case fault-write-text 512M "test=vm vm-fault=write-text qemu-exit=1" $STATUS_PANIC \
@@ -121,7 +121,7 @@ run_case fault-null 512M "test=vm vm-fault=null qemu-exit=1" $STATUS_PANIC \
 
 run_case fault-unmapped 512M "test=vm vm-fault=unmapped qemu-exit=1" $STATUS_PANIC \
 	"in vm_kern arena" \
-	"cause: read of 0xf3ffc000 by kernel code: page not present"
+	"cause: read of 0xf7ffc000 by kernel code: page not present"
 
 run_case fault-user-null 512M "test=vm vm-fault=user-null qemu-exit=1" $STATUS_PANIC \
 	"in null guard page" \

@@ -7,6 +7,7 @@
 #include <drivers/input/keyboard.h>
 #include <drivers/input/mouse.h>
 #include <kern/irq/irq.h>
+#include <kern/sched_prism/sched.h>
 #include <platform/uart.h>
 #include <vm/pmm.h>
 #include <vm/vmm.h>
@@ -307,6 +308,8 @@ static void virtio_input_irq(uint32_t intid, void *context)
 
 	if ((status & VIRTIO_INTERRUPT_USED_BUFFER) != 0U) {
 		virtio_input_process_eventq(device);
+		/* Whoever waits for input (the desktop) looks now, not at the next tick. */
+		sched_kick_sleepers();
 	}
 
 	/* Configuration-change interrupts require no action for fixed QEMU HID. */

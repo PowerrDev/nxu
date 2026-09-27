@@ -11,6 +11,7 @@
 #include <drivers/input/mouse.h>
 #include <drivers/virtio/virtio_input.h>
 #include <drivers/video/display.h>
+#include <drivers/video/ui_service_bridge.h>
 #include <kern/console/console.h>
 #include <kern/console/display_owner.h>
 #include <kern/loader/elf.h>
@@ -1536,6 +1537,32 @@ syscall_setaffinity(uint64_t mask)
 }
 
 /*
+ * The UI session calls (see drivers/video/ui_service_bridge.h) answer with a
+ * value >= 0 or -NXU_SYS_E_*.
+ */
+/*
+ * sleep_us: give the CPU up for at least that long (to the next timer tick at
+ * the least; at most SYSCALL_SLEEP_MAX_US a call). What a daemon's idle loop
+ * should do instead of spinning on yield, which keeps a CPU busy for nothing.
+ */
+#define SYSCALL_SLEEP_MAX_US 10000000ULL
+
+static syscall_result_t
+syscall_sleep_us(uint64_t microseconds)
+{
+	if (microseconds > SYSCALL_SLEEP_MAX_US) microseconds = SYSCALL_SLEEP_MAX_US;
+	if (!sched_sleep_us(microseconds)) return syscall_error(SYSCALL_ERROR_INTERRUPTED);
+	return syscall_return(0ULL);
+}
+
+static syscall_result_t
+syscall_from_bridge(int64_t value)
+{
+	if (value < 0) return syscall_error((syscall_error_t)-value);
+	return syscall_return((uint64_t)value);
+}
+
+/*
  * Which system calls run on any CPU and which have to run on the boot CPU.
  *
  * The filesystems (VFS, ext4, btrfs, ramfs, devfs), the drivers and the display
@@ -1586,6 +1613,15 @@ syscall_is_cpu_agnostic(uint64_t number)
 	case SYSCALL_IPC_REGISTER_BOOTSTRAP:
 	case SYSCALL_GETCPU:
 	case SYSCALL_SETAFFINITY:
+	/*
+	 * An app's frames and messages: the UI session bridge locks each
+	 * connection itself and only copies memory, so a frame is copied on the
+	 * app's own CPU instead of queueing for the boot CPU. Connecting and the
+	 * control calls allocate and read the process table: they stay bound.
+	 */
+	case SYSCALL_UI_RECEIVE:
+	case SYSCALL_UI_SUBMIT:
+	case SYSCALL_SLEEP_US:
 		return true;
 
 	default:
@@ -1679,6 +1715,11 @@ syscall_dispatch_inner(const syscall_request_t *request)
 	case SYSCALL_IPC_RECEIVE_WAIT: return syscall_ipc_receive_wait(request->arguments[0], request->arguments[1], request->arguments[2], request->arguments[3], request->arguments[4]);
 	case SYSCALL_GETCPU: return syscall_getcpu();
 	case SYSCALL_SETAFFINITY: return syscall_setaffinity(request->arguments[0]);
+	case SYSCALL_UI_CONNECT: return syscall_from_bridge(ui_bridge_syscall_connect(request->arguments[0]));
+	case SYSCALL_UI_RECEIVE: return syscall_from_bridge(ui_bridge_syscall_receive(request->arguments[0], request->arguments[1], request->arguments[2]));
+	case SYSCALL_UI_SUBMIT: return syscall_from_bridge(ui_bridge_syscall_submit(request->arguments[0], request->arguments[1]));
+	case SYSCALL_UI_CONTROL: return syscall_from_bridge(ui_bridge_syscall_control(request->arguments[0], request->arguments[1]));
+	case SYSCALL_SLEEP_US: return syscall_sleep_us(request->arguments[0]);
 	default: return syscall_error(SYSCALL_ERROR_UNKNOWN);
 	}
 }

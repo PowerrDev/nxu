@@ -178,6 +178,24 @@ struct thread {
 	 */
 	uint32_t mlfq_ticks;
 
+	/*
+	 * Timer ticks this thread has been the one running when its CPU took the
+	 * tick, over its whole life: its CPU time, in ticks. Only sched_tick()
+	 * writes it, with the CPU's runq_lock held; readers take it unlocked (see
+	 * thread_snapshot), a torn read on i386 costing one sample.
+	 */
+	uint64_t run_ticks;
+
+	/*
+	 * Its CPU time measured, not sampled: microseconds it has run, added up
+	 * each time it leaves a CPU (sched_switch), and when it last got one.
+	 * A tick only sees who happens to run at that instant, and a thread woken
+	 * by the tick itself (every timed sleeper is) is always caught running,
+	 * so run_ticks makes a thread that sleeps 99% of the time look busy.
+	 */
+	uint64_t run_us;
+	uint64_t dispatched_us;
+
 	uint32_t suspend_count;
 	uint32_t quantum_remaining;
 
@@ -346,6 +364,30 @@ thread_t current_thread(void);
  */
 thread_t task_first_thread_ref(task_t task);
 thread_t thread_next_task_thread_ref(thread_t thread);
+
+/*
+ * thread_snapshot
+ *
+ * Copy what Activity Monitor shows of every live thread into `out` (at most
+ * `capacity` of them) and return how many were copied. task_uniqueid names
+ * the owning task (the process's uniqueid; 0 for the kernel task), which is
+ * how a caller joins these to proc_snapshot()'s processes: this takes only
+ * the thread lock, never the process one.
+ */
+typedef struct {
+	uint64_t task_uniqueid;
+	uint64_t run_ticks;
+	/* run_us, plus the time since it got the CPU if it is on one now. */
+	uint64_t run_us;
+	thread_id_t thread_id;
+	uint32_t last_cpu;
+	uint8_t mlfq_level;
+	bool idle;
+	bool on_cpu;
+	bool waiting;
+} thread_snapshot_t;
+
+uint32_t thread_snapshot(thread_snapshot_t *out, uint32_t capacity);
 
 /*
  * Thread identity and ownership.

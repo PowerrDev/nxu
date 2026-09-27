@@ -176,6 +176,15 @@ VirtIO device interrupt routine
 The device routine acknowledges VirtIO interrupt status. Exception entry owns
 GIC acknowledge and EOI.
 
+QEMU's device tree calls the VirtIO-MMIO interrupts edge-triggered, and the GIC
+is set up that way, but the device holds its line up until InterruptStatus is
+acknowledged. A status raised before the handler was bound (the queues are live
+first) rises while the SPI is still off, so its edge is lost and, unacknowledged,
+the line never falls to rise again: the device never interrupts, and everything
+waiting on it falls back to polling. `irq_attach` therefore acknowledges any
+status already pending once the SPI is on. This is what kept the mouse polled at
+the desktop's 10 ms tick (about 50 frames a second) until 2026-09-27.
+
 ## Locking
 
 Virtqueue operations currently rely on the owning driver to serialize queue

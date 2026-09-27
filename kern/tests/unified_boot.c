@@ -137,9 +137,9 @@ static bool unified_boot_summary(void)
 	bool ui_alive = unified_ui_alive();
 
 	if (ui_alive) {
-		kprintf("unified_boot_summary: UIService Voyager.app running (%llu event polls so far)\n", (unsigned long long)ui_service_poll_count());
+		kprintf("unified_boot_summary: UIService desktop running (%llu event polls so far)\n", (unsigned long long)ui_service_poll_count());
 	} else {
-		kprintf("unified_boot_summary: UIService Voyager.app FAILED: %s\n", g_unified_ui_failed ? "the session did not start" : "its event loop is not running");
+		kprintf("unified_boot_summary: UIService desktop FAILED: %s\n", g_unified_ui_failed ? "the session did not start" : "its event loop is not running");
 	}
 
 	/* Everything still alive in the process table is one of the boot's own daemons or a test's leftover. */

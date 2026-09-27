@@ -15,7 +15,12 @@
 #define VMM_HIGHER_HALF_BASE 0xFFFFFF8000000000ULL
 
 #define VM_KERN_BASE 0xFFFFFFE000000000UL
-#define VM_KERN_SIZE 0x0000000004000000ULL
+/*
+ * 512 MiB of kernel virtual space for vm_kern (backed on demand): a 2x
+ * desktop keeps several full-screen buffers (~17 MiB each at 2732x1536) and
+ * a window's backing store per app, which 64 MiB could not hold.
+ */
+#define VM_KERN_SIZE 0x0000000020000000ULL
 
 #define VM_MAP_BASE 0x0000005000000000ULL
 #define VM_MAP_WINDOW_SIZE 0x0000000100000000ULL

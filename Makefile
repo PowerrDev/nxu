@@ -104,7 +104,7 @@ KERNEL_IMAGE := $(BUILD)/kernel.bin
 
 DISK ?= disk.img
 
-DISK_SIZE ?= 16M
+DISK_SIZE ?= 32M
 
 DISK_ROOT ?= tools/DiskRoot
 
@@ -307,8 +307,11 @@ C_SOURCES := \
     drivers/tep/tep_uart_pl011.c \
     drivers/video/display.c \
     drivers/video/ramfb_console.c \
+    skylight/skylight.c \
     platform/arm64/services/ui_service.c \
     drivers/video/ui_service_login.c \
+    drivers/video/ui_service_activity.c \
+    drivers/video/ui_service_bridge.c \
     kern/aqua/window_server.c \
     drivers/virtio/virtio.c \
     drivers/virtio/virtio_block.c \
@@ -473,6 +476,7 @@ USER_C_SOURCES := \
     frameworks/BootDaemons.framework/windowserver_service.c \
     frameworks/BootDaemons.framework/wstest_client.c \
     frameworks/BootDaemons.framework/about_sevos_service.c \
+    frameworks/AppKit.framework/app_main.c \
     frameworks/Recovery.framework/lib/RecoveryServices.c \
     frameworks/Recovery.framework/StartupOptionsUI/drawing.c \
     $(RECOVERY_SANS_SOURCE) \
@@ -545,7 +549,49 @@ USER_SERVICE_PLISTS := \
     frameworks/BootDaemons.framework/Services/com.nxu.logd.plist \
     frameworks/BootDaemons.framework/Services/com.nxu.patchd.plist \
     frameworks/BootDaemons.framework/Services/com.nxu.windowserver.plist \
-    frameworks/BootDaemons.framework/Services/com.nxu.about-sevos.plist
+    frameworks/BootDaemons.framework/Services/com.nxu.about-sevos.plist \
+    frameworks/BootDaemons.framework/Services/com.nxu.dock.plist
+
+# App bundles: each app is a process of its own, not part of the kernel.
+# UIService.framework builds one static archive per app (make nxu-apps:
+# bundles/<app> there, the app plus its runtime, ui-app-nxu); it is linked
+# here with the userland C library and AppKit.framework's main (which gives
+# the app a 512 KiB stack of its own) into the bundle's executable, and
+# staged next to the Info.plist the bundle already has in tools/DiskRoot,
+# with a copy of its icon from /System/Library/Resources/Images. Bundle
+# directories have spaces in their names ("Activity Monitor.app"), so the
+# executables are built under simple names and only the staging recipe,
+# which quotes them, uses the real paths.
+UISERVICE_APPS_DIR := $(UISERVICE_DIR)/build/apps
+
+USER_APP_BUNDLES := voyager activity-monitor about-sevos dock
+
+USER_APPS := $(addprefix $(USER_BUILD)/apps/,$(USER_APP_BUNDLES))
+
+USER_APPKIT_OBJECTS := \
+    $(USER_BUILD)/frameworks/AppKit.framework/app_main.o \
+    $(USER_BUILD)/frameworks/AppKit.framework/app_entry.o
+
+.SECONDARY: $(USER_APPKIT_OBJECTS)
+
+# Each app's bundle (relative to the disk root), executable name and icon.
+USER_APP_voyager_BUNDLE := Applications/Voyager.app
+USER_APP_voyager_EXEC := Voyager
+USER_APP_voyager_ICON := Voyager.icns
+USER_APP_activity-monitor_BUNDLE := Applications/Activity Monitor.app
+USER_APP_activity-monitor_EXEC := Activity Monitor
+USER_APP_activity-monitor_ICON := ActivityMonitor.icns
+USER_APP_about-sevos_BUNDLE := System/Library/CoreServices/About sevOS.app
+USER_APP_about-sevos_EXEC := About sevOS
+USER_APP_about-sevos_ICON :=
+USER_APP_dock_BUNDLE := System/Library/CoreServices/Dock.app
+USER_APP_dock_EXEC := Dock
+USER_APP_dock_ICON :=
+
+# Apps read their text face from here when they start (it is not embedded).
+USER_SYSTEM_FONTS := \
+    $(UISERVICE_DIR)/assets/fonts/Inter-Regular.ttf \
+    $(UISERVICE_DIR)/assets/fonts/Inter-SemiBold.ttf
 
 
 USER_STAGE_STAMP := $(USER_BUILD)/.staged
@@ -556,6 +602,7 @@ USER_STAGE_STAMP := $(USER_BUILD)/.staged
         run \
         run-console \
         uiservice-build \
+        uiservice-apps-build \
         windowserver-build \
         apply-assets \
         recovery-assets \
@@ -776,12 +823,25 @@ $(USER_BUILD)/about_sevos_service: $(USER_COMMON_OBJECTS) $(USER_BUILD)/framewor
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 
-userland: $(USER_DAEMONS)
+# The archive is a real prerequisite (a Rust change relinks the app); UIService
+# copies it with its time kept, so it only looks new when cargo rebuilt it.
+$(UISERVICE_APPS_DIR)/lib%.a: | uiservice-apps-build ;
+
+$(USER_BUILD)/apps/%: $(USER_COMMON_OBJECTS) $(USER_APPKIT_OBJECTS) $(UISERVICE_APPS_DIR)/lib%.a | uiservice-apps-build
+
+	@mkdir -p $(dir $@)
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) --gc-sections --strip-debug $(USER_COMMON_OBJECTS) $(USER_APPKIT_OBJECTS) $(UISERVICE_APPS_DIR)/lib$*.a -o $@
 
 
-$(USER_STAGE_STAMP): $(USER_DAEMONS) $(USER_SERVICE_PLISTS)
+userland: $(USER_DAEMONS) $(USER_APPS)
 
-	@mkdir -p $(DISK_ROOT)/System/Library/CoreServices $(DISK_ROOT)/System/Library/BootDaemons $(DISK_ROOT)/System/Recovery $(DISK_ROOT)/var/log $(DISK_ROOT)/var/db/patchd
+
+$(USER_STAGE_STAMP): $(USER_DAEMONS) $(USER_APPS) $(USER_SERVICE_PLISTS) $(USER_SYSTEM_FONTS)
+
+	@mkdir -p $(DISK_ROOT)/System/Library/CoreServices $(DISK_ROOT)/System/Library/BootDaemons $(DISK_ROOT)/System/Library/Fonts $(DISK_ROOT)/System/Recovery $(DISK_ROOT)/var/log $(DISK_ROOT)/var/db/patchd
 
 	$(QUIET_PRINT) "STAGE" "$(DISK_ROOT)"
 
@@ -837,7 +897,21 @@ $(USER_STAGE_STAMP): $(USER_DAEMONS) $(USER_SERVICE_PLISTS)
 
 	$(Q)cp $(USER_SERVICE_PLISTS) $(DISK_ROOT)/System/Library/BootDaemons/
 
+	$(Q)cp $(USER_SYSTEM_FONTS) $(DISK_ROOT)/System/Library/Fonts/
+
+	$(foreach app,$(USER_APP_BUNDLES),$(call stage_app,$(app),$(USER_BUILD)/apps/$(app),$(DISK_ROOT)))
+
 	@touch $@
+
+
+# stage_app(app, executable, disk root): the executable into its bundle, and
+# the icon its Info.plist names into Contents/Resources.
+define stage_app
+	$(Q)mkdir -p "$(3)/$(USER_APP_$(1)_BUNDLE)/Contents/SevOS"
+	$(Q)cp "$(2)" "$(3)/$(USER_APP_$(1)_BUNDLE)/Contents/SevOS/$(USER_APP_$(1)_EXEC)"
+	$(if $(USER_APP_$(1)_ICON),$(Q)mkdir -p "$(3)/$(USER_APP_$(1)_BUNDLE)/Contents/Resources" && cp "$(3)/System/Library/Resources/Images/$(USER_APP_$(1)_ICON)" "$(3)/$(USER_APP_$(1)_BUNDLE)/Contents/Resources/")
+
+endef
 
 
 # =============================================================================
@@ -849,6 +923,8 @@ ifeq ($(UISERVICE),1)
 # Only the host bridge includes the generated UIService ABI header.
 $(BUILD)/platform/arm64/services/ui_service.o: | uiservice-build
 $(BUILD)/drivers/video/ui_service_login.o: | uiservice-build
+$(BUILD)/drivers/video/ui_service_activity.o: | uiservice-build
+$(BUILD)/drivers/video/ui_service_bridge.o: | uiservice-build
 
 endif
 
@@ -916,6 +992,10 @@ recovery-assets:
 uiservice-build:
 
 	$(MAKE) -C $(UISERVICE_DIR) BUILD_JOBS=$(BUILD_JOBS) nxu
+
+uiservice-apps-build:
+
+	$(MAKE) -C $(UISERVICE_DIR) BUILD_JOBS=$(BUILD_JOBS) nxu-apps
 
 
 windowserver-build:

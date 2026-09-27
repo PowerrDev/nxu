@@ -16,11 +16,10 @@
  * That directory stays the master kernel page directory. pmap_init() refines
  * it in place, once, before any user address space exists:
  *
- *   PDE 768..959   direct map, 4 MiB pages, except the ones covering the
+ *   PDE 768..927   direct map, 4 MiB pages, except the ones covering the
  *                  kernel image, which get 4 KiB page tables so text and
  *                  rodata can be read-only;
- *   PDE 960..975   page tables for the vm_kern arena, pre-allocated;
- *   PDE 976..991   reserved (fixmap), empty;
+ *   PDE 928..991   page tables for the vm_kern arena, pre-allocated;
  *   PDE 992..1023  page tables for the MMIO window, pre-allocated.
  *
  * Every kernel PDE is final after pmap_init(): later kernel mappings only

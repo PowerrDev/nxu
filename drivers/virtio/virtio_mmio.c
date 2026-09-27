@@ -785,6 +785,20 @@ static bool virtio_mmio_irq_attach(
 	}
 
 	device->irq_bound = true;
+
+	/*
+	 * QEMU's device tree calls these interrupts edge-triggered, but the
+	 * device holds its line up until the status is acknowledged. A status
+	 * raised before now (the queues are live before the handler is bound)
+	 * rose while the SPI was off and its edge is gone: the line would stay
+	 * up with no edge ever again, and the device would never interrupt.
+	 * Acknowledging it drops the line, so the next completion raises a new
+	 * edge; the class driver's queues are drained by its own handler or
+	 * poll either way.
+	 */
+	uint32_t stale = virtio_mmio_interrupt_status(device);
+	if (stale != 0U) virtio_mmio_interrupt_ack(device, stale);
+
 	return true;
 }
 

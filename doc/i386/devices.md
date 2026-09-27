@@ -61,6 +61,9 @@ its handler onto the device's PCI interrupt line (PIC IRQ, config offset
 ISR byte. A refused registration falls back to polling. The default in
 `i386_init_drivers()` is polling; the integrator flips it by passing
 `virtio-irq=1` or calling `virtio_pci_set_irq_mode(true)` before `virtio_init()`.
+`make run-i386-desktop` passes `virtio-irq=1`: polled, the mouse was only read
+when the desktop's 10 ms tick woke it (about 50 frames a second); by interrupt
+it is 80-110 at 2x with four CPUs.
 
 ## Standalone stand-ins
 

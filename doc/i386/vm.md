@@ -17,14 +17,13 @@ in `kern/i386/vm_param.h`; the page-table code is `kern/i386/pmap.c`, the
 | `0x40000000-0x5FFFFFFF` | `vm_map` window (anonymous mmap) |
 | `0x60000000-0x6FFFFFFF` | `vm_shm` window |
 | `0x70000000-0xBFFFEFFF` | free user space; `0xBFFFF000` is the top user page (`VM_USER_STACK_TOP`) |
-| `0xC0000000-0xEFFFFFFF` | direct map of physical `[0, 768 MiB)` at `0xC0000000 + phys` (4 MiB pages) |
+| `0xC0000000-0xE7FFFFFF` | direct map of physical `[0, 640 MiB)` at `0xC0000000 + phys` (4 MiB pages) |
 | `0xC0100000-__kernel_end` | kernel image, same direct map: `.boot`, `.text`, `.rodata` read-only, `.data`/`.bss` writable; a guard page under the boot stack is unmapped |
-| `0xF0000000-0xF3FFFFFF` | `vm_kern` arena (`vm_kern_allocate`), page tables pre-allocated |
-| `0xF4000000-0xF7FFFFFF` | reserved (fixmap), no page tables |
+| `0xE8000000-0xF7FFFFFF` | `vm_kern` arena (`vm_kern_allocate`, 256 MiB: a 2x desktop's buffers, several app windows at their largest; taken from the direct map's top, which the 512 MiB VMs never used), page tables pre-allocated |
 | `0xF8000000-0xFFFFFFFF` | MMIO window (`pmap_map_mmio`), uncached, page tables pre-allocated |
 
 Physical: `[0, 1 MiB)` is left to firmware and the Multiboot structures (not
-in the page allocator); the image is at `0x100000`; RAM above 768 MiB is
+in the page allocator); the image is at `0x100000`; RAM above 640 MiB is
 ignored. Physical addresses above the direct map (PCI BARs, APICs) are reached
 with `pmap_map_mmio(phys, size, &va)`.
 
@@ -57,7 +56,7 @@ PDE is final after `pmap_init()`, so a new address space copies PDEs
 * User spaces: `vm_address_space_create/activate/deactivate/map_page/...`.
   Activation loads CR3; `deactivate` loads the master directory. Mapping
   changes to the active space use `invlpg`. Only page-aligned addresses in
-  `[0x1000, 0xC0000000)` and pmm pages below 768 MiB can be mapped.
+  `[0x1000, 0xC0000000)` and pmm pages below 640 MiB can be mapped.
   `vm_address_space_release_pages()` drops one pmm reference per mapping and
   `vm_address_space_destroy()` frees the tables and directory (both i386
   additions declared in `vm/address_space.h`).
@@ -72,7 +71,7 @@ PDE is final after `pmap_init()`, so a new address space copies PDEs
 ## Tests
 
 `make test-i386-vm BUILD_ROOT=<scratch>` runs `tools/test_i386_vm.sh`: the
-full self-test (`test=vm`), other RAM sizes (32 MiB, 1 GiB clipped to 768 MiB)
+full self-test (`test=vm`), other RAM sizes (32 MiB, 1 GiB clipped to 640 MiB)
 and the deliberate faults `vm-fault=write-ro|write-text|null|unmapped|
 user-null|user-ro`, which must end in the `#PF` report with status 3. By hand:
 

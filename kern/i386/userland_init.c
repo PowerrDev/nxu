@@ -75,6 +75,33 @@ static bool userland_run_process_test(const char *name)
 	return ok;
 }
 
+/* Same policy as arm64: prefer bootd, fall back to its recovery image. */
+static bool userland_spawn_bootd(void)
+{
+	kprintf("i386_init_userland: loading %s as PID 1\n", USERLAND_BOOTD_PATH);
+
+	loader_status_t status = loader_spawn(proc_kernel(), USERLAND_BOOTD_PATH, "bootd", &g_boot_process);
+
+	if (status != LOADER_STATUS_OK) {
+		kprintf("i386_init_userland: primary bootd unavailable: %s\n", loader_status_name(status));
+		status = loader_spawn(proc_kernel(), USERLAND_BOOTD_RECOVERY_PATH, "bootd", &g_boot_process);
+	}
+
+	if (status != LOADER_STATUS_OK || g_boot_process == 0) {
+		kprintf("i386_init_userland: PID 1 launch failed: %s\n", loader_status_name(status));
+		g_boot_process = 0;
+		return false;
+	}
+
+	if (g_boot_process->p_ident.pid != 1U) {
+		kprintf("i386_init_userland: bootd received PID %u, expected 1\n", (unsigned)g_boot_process->p_ident.pid);
+		return false;
+	}
+
+	kprintf("i386_init_userland: bootd PID %u ready for scheduler dispatch\n", (unsigned)g_boot_process->p_ident.pid);
+	return true;
+}
+
 bool i386_init_userland(const i386_boot_info_t *boot)
 {
 	(void)boot;
@@ -192,15 +219,17 @@ bool i386_init_userland(const i386_boot_info_t *boot)
 	 * "test=desktop": the compositor's kernel-embedded bring-up (see
 	 * platform/i386/services/ui_service.c and kern/aqua/window_server.c),
 	 * the same mechanism arm64's "desktop" test id uses -- WindowServer and
-	 * UIService run directly on this boot context, not spawned through
-	 * bootd/PID 1, so this replaces the normal userland launch the way
-	 * process-test/sound-test/fs-test/btrfs-test above do. Voyager still
-	 * browses "/disk" (already mounted above) through UIServiceListDirectory.
-	 * ui_service_bootstrap() blocks until the app exits and only returns
-	 * false (nothing about this boot mode is meant to hand off to bootd
-	 * afterward), so its result is this phase's result outright.
+	 * UIService's desktop run directly on this boot context. bootd comes up
+	 * first, as on arm64, because the desktop has no apps of its own: bootd
+	 * starts the Dock, and the Dock starts the apps in /Applications, each a
+	 * process that reaches the desktop through the UI session bridge.
+	 * ui_service_bootstrap() blocks for as long as the desktop runs (its loop
+	 * yields, which is when bootd and the apps get the CPU) and only returns
+	 * false, so its result is this phase's result outright.
 	 */
 	if (selected_present && strcmp(selected, "desktop") == 0) {
+		if (!userland_spawn_bootd()) kputln("i386_init_userland: the desktop starts without bootd, so without the Dock");
+
 		/*
 		 * The boot chime, as on arm64: the display is about to show the
 		 * desktop and /disk (with Boot_Audio.wav) is mounted, so the chime
@@ -218,29 +247,7 @@ bool i386_init_userland(const i386_boot_info_t *boot)
 		return ui_service_bootstrap();
 	}
 
-	/* Same policy as arm64: prefer bootd, fall back to its recovery image. */
-	kprintf("i386_init_userland: loading %s as PID 1\n", USERLAND_BOOTD_PATH);
-
-	loader_status_t status = loader_spawn(proc_kernel(), USERLAND_BOOTD_PATH, "bootd", &g_boot_process);
-
-	if (status != LOADER_STATUS_OK) {
-		kprintf("i386_init_userland: primary bootd unavailable: %s\n", loader_status_name(status));
-		status = loader_spawn(proc_kernel(), USERLAND_BOOTD_RECOVERY_PATH, "bootd", &g_boot_process);
-	}
-
-	if (status != LOADER_STATUS_OK || g_boot_process == 0) {
-		kprintf("i386_init_userland: PID 1 launch failed: %s\n", loader_status_name(status));
-		g_boot_process = 0;
-		return false;
-	}
-
-	if (g_boot_process->p_ident.pid != 1U) {
-		kprintf("i386_init_userland: bootd received PID %u, expected 1\n", (unsigned)g_boot_process->p_ident.pid);
-		return false;
-	}
-
-	kprintf("i386_init_userland: bootd PID %u ready for scheduler dispatch\n", (unsigned)g_boot_process->p_ident.pid);
-	return true;
+	return userland_spawn_bootd();
 }
 
 bool i386_init_run(const i386_boot_info_t *boot)

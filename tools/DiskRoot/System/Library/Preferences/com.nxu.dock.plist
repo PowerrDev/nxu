@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//NXU//DTD PLIST 1.0//EN" "http://www.nxu.local/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  The Dock (/System/Library/CoreServices/Dock.app) reads this when it
+	  starts. persistent-apps are the apps it keeps, left to right, by bundle
+	  path; each bundle's Contents/Info.plist names its executable and icon.
+	-->
+	<key>persistent-apps</key>
+	<array>
+		<dict>
+			<key>path</key>
+			<string>/Applications/Voyager.app</string>
+		</dict>
+		<dict>
+			<key>path</key>
+			<string>/Applications/Activity Monitor.app</string>
+		</dict>
+	</array>
+
+	<!-- Icon size, in points. -->
+	<key>tilesize</key>
+	<integer>48</integer>
+
+	<!-- Show running apps that are not kept, and the last few, after a divider. -->
+	<key>show-recents</key>
+	<true/>
+
+	<key>show-trash</key>
+	<true/>
+</dict>
+</plist>
