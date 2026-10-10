@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+	<dict>
+		<key>Label</key>
+		<string>com.nxu.dyrld</string>
+		<key>Program</key>
+		<string>/disk/System/Library/CoreServices/dyrld</string>
+		<key>RunAtLoad</key>
+		<true />
+		<key>KeepAlive</key>
+		<true />
+	</dict>
+</plist>
