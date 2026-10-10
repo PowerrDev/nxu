@@ -1,0 +1,22 @@
+{
+  global:
+    WS_Initialize;
+    WS_Create_Window;
+    WS_Create_Background_Window;
+    WS_Destroy_Window;
+    WS_Move_Window;
+    WS_Set_Size_Limits;
+    WS_Resize_Window;
+    WS_Set_Window_Shadow;
+    WS_Set_Window_Opaque_Interior;
+    WS_Set_Window_Key;
+    WS_Set_Shadow_Scale;
+    WS_Focus_Window;
+    WS_Render_Window;
+    WS_Set_Cursor;
+    WS_Set_Cursor_Kind;
+    WS_Pointer_Move;
+    WS_Pointer_Button;
+    WS_Present;
+  local: *;
+};
