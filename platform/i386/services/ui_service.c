@@ -1,5 +1,6 @@
 #include <drivers/video/ui_service_host.h>
 #include <drivers/video/ui_service_pointer.h>
+#include <drivers/video/ui_service_bridge.h>
 
 #include <kern/machine/timer.h>
 #include <drivers/input/mouse.h>
@@ -70,12 +71,14 @@ static uint32_t ui_service_arg_uint32(const char *name, uint32_t default_value)
 {
 	char text[16];
 
-	if (!i386_boot_arg(name, text, sizeof(text)) || text[0] == '\0') return default_value;
+	if (!i386_boot_arg(name, text, sizeof(text)) || text[0] == '\0')
+		return default_value;
 
 	uint32_t result = 0U;
 
 	for (uint32_t index = 0U; text[index] != '\0'; index++) {
-		if (text[index] < '0' || text[index] > '9') return default_value;
+		if (text[index] < '0' || text[index] > '9')
+			return default_value;
 
 		result = result * 10U + (uint32_t)(text[index] - '0');
 	}
@@ -115,18 +118,18 @@ typedef struct {
  */
 static uint32_t UIServiceGetSurface(void *opaque, UIServiceSurfaceDescriptor *surface)
 {
-	if (opaque == 0 || surface == 0) return UI_SERVICE_STATUS_INVALID_ARGUMENT;
+	if (opaque == 0 || surface == 0)
+		return UI_SERVICE_STATUS_INVALID_ARGUMENT;
 
 	UIServiceContext *context = (UIServiceContext *)opaque;
-	if (context->backbuffer == 0) return UI_SERVICE_STATUS_NO_SURFACE;
+	if (context->backbuffer == 0)
+		return UI_SERVICE_STATUS_NO_SURFACE;
 
-	*surface = (UIServiceSurfaceDescriptor) {
-		.pixels = context->backbuffer,
-		.width = context->width,
-		.height = context->height,
-		.stride_pixels = context->stride,
-		.pixel_format = UI_SERVICE_PIXEL_FORMAT_XRGB8888
-	};
+	*surface = (UIServiceSurfaceDescriptor){.pixels = context->backbuffer,
+											.width = context->width,
+											.height = context->height,
+											.stride_pixels = context->stride,
+											.pixel_format = UI_SERVICE_PIXEL_FORMAT_XRGB8888};
 	return UI_SERVICE_STATUS_OK;
 }
 
@@ -149,13 +152,16 @@ static uint32_t UIServiceGetSurface(void *opaque, UIServiceSurfaceDescriptor *su
 static void UIServicePaceFrame(UIServiceContext *context)
 {
 	uint64_t now = timer_get_microseconds();
-	if (now == 0ULL) return;
+	if (now == 0ULL)
+		return;
 
 	if (context->last_present_us != 0ULL) {
 		uint64_t elapsed = now - context->last_present_us;
 		while (elapsed < UI_SERVICE_MIN_PRESENT_US) {
-			if (g_ui_service_cooperative) (void)sched_sleep_us(1000ULL);
-			else __asm__ volatile("pause");
+			if (g_ui_service_cooperative)
+				(void)sched_sleep_us(1000ULL);
+			else
+				__asm__ volatile("pause");
 			now = timer_get_microseconds();
 			elapsed = now - context->last_present_us;
 		}
@@ -170,15 +176,19 @@ static void UIServicePaceFrame(UIServiceContext *context)
  */
 static bool UIServiceCopyDamage(UIServiceContext *context, const UIServiceDamageRect *damage)
 {
-	if (context == 0 || damage == 0 || context->output_pixels == 0 || context->backbuffer == 0) return false;
+	if (context == 0 || damage == 0 || context->output_pixels == 0 || context->backbuffer == 0)
+		return false;
 
-	if (damage->x < 0 || damage->y < 0 || damage->width == 0U || damage->height == 0U) return false;
+	if (damage->x < 0 || damage->y < 0 || damage->width == 0U || damage->height == 0U)
+		return false;
 
 	uint32_t x = (uint32_t)damage->x;
 	uint32_t y = (uint32_t)damage->y;
-	if (x >= context->width || y >= context->height) return false;
+	if (x >= context->width || y >= context->height)
+		return false;
 
-	if (damage->width > context->width - x || damage->height > context->height - y) return false;
+	if (damage->width > context->width - x || damage->height > context->height - y)
+		return false;
 
 	for (uint32_t row = 0U; row < damage->height; row++) {
 		uint32_t *destination = context->output_pixels + (uint64_t)(y + row) * context->stride + x;
@@ -195,15 +205,11 @@ static bool UIServiceCopyDamage(UIServiceContext *context, const UIServiceDamage
  */
 static uint32_t UIServicePresent(void *opaque, const UIServiceDamageRect *damage)
 {
-	if (opaque == 0) return UI_SERVICE_STATUS_INVALID_ARGUMENT;
+	if (opaque == 0)
+		return UI_SERVICE_STATUS_INVALID_ARGUMENT;
 
 	UIServiceContext *context = (UIServiceContext *)opaque;
-	UIServiceDamageRect full = {
-		.x = 0,
-		.y = 0,
-		.width = context->width,
-		.height = context->height
-	};
+	UIServiceDamageRect full = {.x = 0, .y = 0, .width = context->width, .height = context->height};
 	const UIServiceDamageRect *present_damage = damage == 0 ? &full : damage;
 
 	UIServicePaceFrame(context);
@@ -213,13 +219,16 @@ static uint32_t UIServicePresent(void *opaque, const UIServiceDamageRect *damage
 		return UIServiceCopyDamage(context, present_damage) ? UI_SERVICE_STATUS_OK : UI_SERVICE_STATUS_INVALID_ARGUMENT;
 	}
 
-	if (present_damage->x < 0 || present_damage->y < 0 || present_damage->width == 0U || present_damage->height == 0U) return UI_SERVICE_STATUS_INVALID_ARGUMENT;
+	if (present_damage->x < 0 || present_damage->y < 0 || present_damage->width == 0U || present_damage->height == 0U)
+		return UI_SERVICE_STATUS_INVALID_ARGUMENT;
 
 	/* Through Skylight: the damage into the scanout surface, then presented. */
 	sl_surface_t *surface = sl_display_surface(context->display);
-	const uint32_t *source = context->backbuffer + (uint64_t)present_damage->y * context->stride + (uint32_t)present_damage->x;
-	sl_upload(surface, present_damage->x, present_damage->y, source, present_damage->width, present_damage->height, context->stride);
-	return sl_present(context->display, (sl_rect_t) { 0 }) ? UI_SERVICE_STATUS_OK : UI_SERVICE_STATUS_PRESENT_FAILED;
+	const uint32_t *source =
+		context->backbuffer + (uint64_t)present_damage->y * context->stride + (uint32_t)present_damage->x;
+	sl_upload(surface, present_damage->x, present_damage->y, source, present_damage->width, present_damage->height,
+			  context->stride);
+	return sl_present(context->display, (sl_rect_t){0}) ? UI_SERVICE_STATUS_OK : UI_SERVICE_STATUS_PRESENT_FAILED;
 }
 
 /*
@@ -227,9 +236,11 @@ static uint32_t UIServicePresent(void *opaque, const UIServiceDamageRect *damage
  */
 static int32_t UIServiceClampPointer(int64_t value, uint32_t extent)
 {
-	if (extent == 0U || value < 0) return 0;
+	if (extent == 0U || value < 0)
+		return 0;
 
-	if ((uint64_t)value >= (uint64_t)extent) return (int32_t)(extent - 1U);
+	if ((uint64_t)value >= (uint64_t)extent)
+		return (int32_t)(extent - 1U);
 	return (int32_t)value;
 }
 
@@ -283,7 +294,8 @@ static void UIServiceRefreshPointer(UIServiceContext *context)
 	context->pending_up |= (changed & context->buttons) | clicked;
 	context->buttons = buttons;
 
-	/* The wheel: the driver keeps a running total (positive = wheel up); what the app needs is what turned since it last looked. */
+	/* The wheel: the driver keeps a running total (positive = wheel up); what the app needs is what turned since it
+	 * last looked. */
 	int64_t wheel = mouse_wheel();
 	int64_t turned = wheel - context->last_wheel;
 
@@ -322,19 +334,25 @@ static void UIServiceRefreshPointer(UIServiceContext *context)
  */
 static uint32_t UIServiceButtonFromMask(uint32_t mask)
 {
-	if ((mask & MOUSE_BUTTON_LEFT) != 0U) return UI_SERVICE_POINTER_BUTTON_PRIMARY;
+	if ((mask & MOUSE_BUTTON_LEFT) != 0U)
+		return UI_SERVICE_POINTER_BUTTON_PRIMARY;
 
-	if ((mask & MOUSE_BUTTON_RIGHT) != 0U) return UI_SERVICE_POINTER_BUTTON_SECONDARY;
-	if ((mask & MOUSE_BUTTON_MIDDLE) != 0U) return UI_SERVICE_POINTER_BUTTON_MIDDLE;
+	if ((mask & MOUSE_BUTTON_RIGHT) != 0U)
+		return UI_SERVICE_POINTER_BUTTON_SECONDARY;
+	if ((mask & MOUSE_BUTTON_MIDDLE) != 0U)
+		return UI_SERVICE_POINTER_BUTTON_MIDDLE;
 	return UI_SERVICE_POINTER_BUTTON_NONE;
 }
 
 static uint32_t UIServiceSelectButtonMask(uint32_t mask)
 {
-	if ((mask & MOUSE_BUTTON_LEFT) != 0U) return MOUSE_BUTTON_LEFT;
+	if ((mask & MOUSE_BUTTON_LEFT) != 0U)
+		return MOUSE_BUTTON_LEFT;
 
-	if ((mask & MOUSE_BUTTON_RIGHT) != 0U) return MOUSE_BUTTON_RIGHT;
-	if ((mask & MOUSE_BUTTON_MIDDLE) != 0U) return MOUSE_BUTTON_MIDDLE;
+	if ((mask & MOUSE_BUTTON_RIGHT) != 0U)
+		return MOUSE_BUTTON_RIGHT;
+	if ((mask & MOUSE_BUTTON_MIDDLE) != 0U)
+		return MOUSE_BUTTON_MIDDLE;
 	return 0U;
 }
 
@@ -367,12 +385,14 @@ static void UIServiceYieldAfterPoll(bool delivered_event)
 	/* The poll before this one found nothing either. */
 	static bool idle_once;
 
-	if (!g_ui_service_cooperative) return;
+	if (!g_ui_service_cooperative)
+		return;
 
 	bool sleep = !delivered_event && idle_once;
 	idle_once = !delivered_event;
 
-	if (delivered_event && ++delivered_since_yield < UI_SERVICE_EVENTS_PER_YIELD) return;
+	if (delivered_event && ++delivered_since_yield < UI_SERVICE_EVENTS_PER_YIELD)
+		return;
 
 	delivered_since_yield = 0U;
 
@@ -386,13 +406,16 @@ static void UIServiceYieldAfterPoll(bool delivered_event)
 	 * connection (they kick), or the next tick (the clock, animations, the
 	 * process checks).
 	 */
-	if (sleep) (void)sched_sleep_until_kicked(UI_SERVICE_FRAME_INTERVAL_US);
-	else (void)sched_yield();
+	if (sleep)
+		(void)sched_sleep_until_kicked(UI_SERVICE_FRAME_INTERVAL_US);
+	else
+		(void)sched_yield();
 }
 
 static uint32_t UIServicePollEvent(void *opaque, UIServiceHostEvent *event)
 {
-	if (opaque == 0 || event == 0) return UI_SERVICE_STATUS_INVALID_ARGUMENT;
+	if (opaque == 0 || event == 0)
+		return UI_SERVICE_STATUS_INVALID_ARGUMENT;
 
 	UIServiceContext *context = (UIServiceContext *)opaque;
 
@@ -401,14 +424,12 @@ static uint32_t UIServicePollEvent(void *opaque, UIServiceHostEvent *event)
 	virtio_input_service();
 	UIServiceRefreshPointer(context);
 
-	*event = (UIServiceHostEvent) {
-		.event_type = UI_SERVICE_EVENT_NONE,
-		.struct_size = sizeof(UIServiceHostEvent),
-		.x = context->pointer_x,
-		.y = context->pointer_y,
-		.button = UI_SERVICE_POINTER_BUTTON_NONE,
-		.reserved = 0U
-	};
+	*event = (UIServiceHostEvent){.event_type = UI_SERVICE_EVENT_NONE,
+								  .struct_size = sizeof(UIServiceHostEvent),
+								  .x = context->pointer_x,
+								  .y = context->pointer_y,
+								  .button = UI_SERVICE_POINTER_BUTTON_NONE,
+								  .reserved = 0U};
 
 	if (context->pending_move) {
 		context->pending_move = false;
@@ -460,7 +481,8 @@ static uint32_t UIServicePollEvent(void *opaque, UIServiceHostEvent *event)
 static uint32_t UIServiceGetTime(void *opaque, uint64_t *unix_seconds)
 {
 	(void)opaque;
-	if (unix_seconds == 0) return UI_SERVICE_STATUS_INVALID_ARGUMENT;
+	if (unix_seconds == 0)
+		return UI_SERVICE_STATUS_INVALID_ARGUMENT;
 
 	*unix_seconds = rtc_unix_time();
 	return UI_SERVICE_STATUS_OK;
@@ -473,18 +495,21 @@ static uint64_t UIServiceFileSize(const char *directory, const char *name)
 	size_t directory_length = strlen(directory);
 	size_t name_length = strlen(name);
 
-	if (directory_length + 1U + name_length >= sizeof(path)) return 0ULL;
+	if (directory_length + 1U + name_length >= sizeof(path))
+		return 0ULL;
 
 	memcpy(path, directory, directory_length);
 	size_t length = directory_length;
 
-	if (length == 0U || path[length - 1U] != '/') path[length++] = '/';
+	if (length == 0U || path[length - 1U] != '/')
+		path[length++] = '/';
 
 	memcpy(path + length, name, name_length + 1U);
 
 	vnode_t vnode;
 
-	if (vfs_lookup(path, &vnode) != VFS_STATUS_OK) return 0ULL;
+	if (vfs_lookup(path, &vnode) != VFS_STATUS_OK)
+		return 0ULL;
 
 	uint64_t size = vnode->v_type == VNODE_TYPE_REGULAR ? vnode->v_size : 0ULL;
 
@@ -498,24 +523,19 @@ static uint64_t UIServiceFileSize(const char *directory, const char *name)
  * would read it, into the app's own buffer. The kernel stack this runs on is
  * small, so nothing here is larger than a path or one directory entry.
  */
-static uint32_t UIServiceListDirectory(
-	void *opaque,
-	const char *path,
-	uint32_t path_len,
-	UIServiceDirEntry *entries,
-	uint32_t capacity,
-	uint32_t *count_out,
-	bool *truncated_out
-)
+static uint32_t UIServiceListDirectory(void *opaque, const char *path, uint32_t path_len, UIServiceDirEntry *entries,
+									   uint32_t capacity, uint32_t *count_out, bool *truncated_out)
 {
 	(void)opaque;
 
-	if (path == 0 || entries == 0 || count_out == 0 || truncated_out == 0) return UI_SERVICE_FS_STATUS_ERROR;
+	if (path == 0 || entries == 0 || count_out == 0 || truncated_out == 0)
+		return UI_SERVICE_FS_STATUS_ERROR;
 
 	*count_out = 0U;
 	*truncated_out = false;
 
-	if (path_len == 0U || path_len >= VFS_PATH_MAX) return UI_SERVICE_FS_STATUS_ERROR;
+	if (path_len == 0U || path_len >= VFS_PATH_MAX)
+		return UI_SERVICE_FS_STATUS_ERROR;
 
 	char directory[VFS_PATH_MAX];
 
@@ -525,18 +545,21 @@ static uint32_t UIServiceListDirectory(
 	vnode_t vnode;
 	vfs_status_t status = vfs_lookup(directory, &vnode);
 
-	if (status != VFS_STATUS_OK) return status == VFS_STATUS_NOT_FOUND ? UI_SERVICE_FS_STATUS_NOT_FOUND : UI_SERVICE_FS_STATUS_ERROR;
+	if (status != VFS_STATUS_OK)
+		return status == VFS_STATUS_NOT_FOUND ? UI_SERVICE_FS_STATUS_NOT_FOUND : UI_SERVICE_FS_STATUS_ERROR;
 
 	bool is_directory = vnode->v_type == VNODE_TYPE_DIRECTORY;
 
 	vnode_rele(vnode);
 
-	if (!is_directory) return UI_SERVICE_FS_STATUS_NOT_A_DIRECTORY;
+	if (!is_directory)
+		return UI_SERVICE_FS_STATUS_NOT_A_DIRECTORY;
 
 	filedesc_t filedesc = &proc_kernel()->p_fd;
 	uint32_t descriptor;
 
-	if (vfs_open(filedesc, directory, VFS_OPEN_READ, &descriptor) != VFS_STATUS_OK) return UI_SERVICE_FS_STATUS_ERROR;
+	if (vfs_open(filedesc, directory, VFS_OPEN_READ, &descriptor) != VFS_STATUS_OK)
+		return UI_SERVICE_FS_STATUS_ERROR;
 
 	uint32_t result = UI_SERVICE_FS_STATUS_OK;
 	uint32_t count = 0U;
@@ -545,7 +568,8 @@ static uint32_t UIServiceListDirectory(
 	for (;;) {
 		status = vfs_readdir(filedesc, descriptor, &dirent);
 
-		if (status == VFS_STATUS_END_OF_DIRECTORY) break;
+		if (status == VFS_STATUS_END_OF_DIRECTORY)
+			break;
 
 		if (status != VFS_STATUS_OK) {
 			result = UI_SERVICE_FS_STATUS_ERROR;
@@ -553,7 +577,8 @@ static uint32_t UIServiceListDirectory(
 		}
 
 		/* A browser shows what is inside a folder, not the folder's own links. */
-		if (strcmp(dirent.name, ".") == 0 || strcmp(dirent.name, "..") == 0) continue;
+		if (strcmp(dirent.name, ".") == 0 || strcmp(dirent.name, "..") == 0)
+			continue;
 
 		if (count >= capacity) {
 			*truncated_out = true;
@@ -614,7 +639,8 @@ bool ui_service_bootstrap(void)
 	}
 
 	if (UIServiceAPIVersion() != UI_SERVICE_API_VERSION) {
-		kprintf("[com.butterscotch.UIService.framework]: API mismatch, kernel expects %u but framework reported %u\n", UI_SERVICE_API_VERSION, UIServiceAPIVersion());
+		kprintf("[com.butterscotch.UIService.framework]: API mismatch, kernel expects %u but framework reported %u\n",
+				UI_SERVICE_API_VERSION, UIServiceAPIVersion());
 		return false;
 	}
 
@@ -631,23 +657,21 @@ bool ui_service_bootstrap(void)
 	}
 	memcpy(backbuffer, framebuffer, pixel_count * sizeof(uint32_t));
 
-	UIServiceContext context = {
-		.width = width,
-		.height = height,
-		.stride = stride,
-		.output_pixels = framebuffer,
-		.backbuffer = backbuffer,
-		.display = display,
-		.last_present_us = 0ULL,
-		.pointer_x = (int32_t)(width / 2U),
-		.pointer_y = (int32_t)(height / 2U),
-		.buttons = mouse_buttons(),
-		.pending_down = 0U,
-		.pending_up = 0U,
-		.pending_move = false,
-		.last_wheel = mouse_wheel(),
-		.pending_scroll = 0
-	};
+	UIServiceContext context = {.width = width,
+								.height = height,
+								.stride = stride,
+								.output_pixels = framebuffer,
+								.backbuffer = backbuffer,
+								.display = display,
+								.last_present_us = 0ULL,
+								.pointer_x = (int32_t)(width / 2U),
+								.pointer_y = (int32_t)(height / 2U),
+								.buttons = mouse_buttons(),
+								.pending_down = 0U,
+								.pending_up = 0U,
+								.pending_move = false,
+								.last_wheel = mouse_wheel(),
+								.pending_scroll = 0};
 
 	/*
 	 * Physical pixels per design point, as thousandths. Falls back to the
@@ -659,11 +683,9 @@ bool ui_service_bootstrap(void)
 	context.scale_permille = content_scale_permille;
 
 	UIServiceHostV5 host = {
-		.header = {
-			.struct_size = sizeof(UIServiceHostV5),
-			.abi_version = UI_SERVICE_ABI_VERSION_V5
-		},
-		.capabilities = UI_SERVICE_HOST_CAPABILITIES_V3 | UI_SERVICE_HOST_CAP_FS | UI_SERVICE_HOST_CAP_ACTIVITY | ui_service_keyboard_capability(),
+		.header = {.struct_size = sizeof(UIServiceHostV5), .abi_version = UI_SERVICE_ABI_VERSION_V5},
+		.capabilities = UI_SERVICE_HOST_CAPABILITIES_V3 | UI_SERVICE_HOST_CAP_FS | UI_SERVICE_HOST_CAP_ACTIVITY |
+						ui_service_keyboard_capability(),
 		.context = &context,
 		.get_surface = UIServiceGetSurface,
 		.present = UIServicePresent,
@@ -671,8 +693,7 @@ bool ui_service_bootstrap(void)
 		.get_time = UIServiceGetTime,
 		.content_scale_permille = content_scale_permille,
 		.list_directory = UIServiceListDirectory,
-		.get_activity = ui_service_get_activity
-	};
+		.get_activity = ui_service_get_activity};
 
 	if (UIServiceValidateHostV5(&host) != UI_SERVICE_STATUS_OK) {
 		kputln("[com.butterscotch.UIService.framework]: NXU host ABI v5 rejected");
@@ -680,8 +701,10 @@ bool ui_service_bootstrap(void)
 		return false;
 	}
 
-	kprintf("[com.butterscotch.UIService.framework]: ABI v%u, %ux%u XRGB8888, VirtIO GPU\n", UIServiceABIVersion(), width, height);
-	kputln(UIServiceHasInter() != 0U ? "[com.butterscotch.UIService.framework]: font renderer active" : "[com.butterscotch.UIService.framework]: bootstrap text renderer active");
+	kprintf("[com.butterscotch.UIService.framework]: ABI v%u, %ux%u XRGB8888, VirtIO GPU\n", UIServiceABIVersion(),
+			width, height);
+	kputln(UIServiceHasInter() != 0U ? "[com.butterscotch.UIService.framework]: font renderer active"
+									 : "[com.butterscotch.UIService.framework]: bootstrap text renderer active");
 
 	/* With a Trusted Enclave link the desktop waits for tepOS to accept the passcode; a refusal keeps it locked. */
 	g_ui_service_running = true;
@@ -704,4 +727,89 @@ bool ui_service_bootstrap(void)
 	(void)kfree(backbuffer);
 	return false;
 #endif
+}
+
+static bool g_secure_pause;
+static uint32_t g_secure_callbacks;
+
+bool ui_service_untrusted_enter(void)
+{
+	__atomic_add_fetch(&g_secure_callbacks, 1, __ATOMIC_ACQ_REL);
+	if (__atomic_load_n(&g_secure_pause, __ATOMIC_ACQUIRE)) {
+		__atomic_sub_fetch(&g_secure_callbacks, 1, __ATOMIC_ACQ_REL);
+		return false;
+	}
+	return true;
+}
+
+void ui_service_untrusted_leave(void)
+{
+	__atomic_sub_fetch(&g_secure_callbacks, 1, __ATOMIC_ACQ_REL);
+}
+
+bool ui_service_secure_lock(void)
+{
+	bool expected = false;
+
+	if (!__atomic_compare_exchange_n(&g_secure_pause, &expected, true, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+		return false;
+
+	while (__atomic_load_n(&g_secure_callbacks, __ATOMIC_ACQUIRE) != 0)
+		(void)sched_sleep_us(1000);
+
+	return true;
+}
+
+bool ui_service_secure_begin(void)
+{
+	return ui_bridge_session_ready() && ui_service_secure_lock();
+}
+
+void ui_service_secure_end(void)
+{
+	__atomic_store_n(&g_secure_pause, false, __ATOMIC_RELEASE);
+}
+
+bool ui_service_secure_active(void)
+{
+	return __atomic_load_n(&g_secure_pause, __ATOMIC_ACQUIRE);
+}
+
+bool ui_service_secure_pointer(int32_t *x, int32_t *y, uint32_t *pressed)
+{
+	if (!ui_service_secure_active() || !x || !y || !pressed)
+		return false;
+
+	static int32_t raw_x, raw_y, pointer_x, pointer_y;
+	static uint32_t buttons;
+	static bool baseline;
+	display_device_t *display = display_primary();
+
+	if (!display)
+		return false;
+
+	int32_t next_x = (int32_t)mouse_x();
+	int32_t next_y = (int32_t)mouse_y();
+	uint32_t next_buttons = mouse_buttons();
+
+	if (!baseline) {
+		pointer_x = display->width / 2;
+		pointer_y = display->height / 2;
+		raw_x = next_x;
+		raw_y = next_y;
+		buttons = next_buttons;
+		baseline = true;
+	}
+
+	int64_t moved_x = (int64_t)pointer_x + next_x - raw_x;
+	int64_t moved_y = (int64_t)pointer_y + next_y - raw_y;
+	pointer_x = moved_x < 0 ? 0 : moved_x >= display->width ? (int32_t)display->width - 1 : (int32_t)moved_x;
+	pointer_y = moved_y < 0 ? 0 : moved_y >= display->height ? (int32_t)display->height - 1 : (int32_t)moved_y;
+	*x = pointer_x;
+	*y = pointer_y;
+	*pressed = next_buttons & ~buttons;
+	raw_x = next_x;
+	raw_y = next_y;
+	buttons = next_buttons;
+	return true;
 }

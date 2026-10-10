@@ -4,18 +4,20 @@
 /*
  * The UI session bridge: app processes on one side (the NXU_SYS_UI_*
  * system calls, see kern/syscall/ui_session_defs.h), the desktop on the
- * other (UIService's window manager, running in the kernel, calls the
- * ui_bridge_* functions below from its one thread).
+ * other (the legacy kernel desktop calls the helpers below; DesktopService
+ * uses copied records through NXU_SYS_GUI_HOST).
  *
  * A connection holds what the app said when it connected, a queue of
  * messages for it, and its latest frame. The app's frame is copied out of
  * its address space by the submit call into a buffer the desktop then copies
  * from under the connection's lock, so the desktop never touches user memory
  * and an app can never stall it. Shared by the arm64 and i386 kernels;
- * without NXU_UI_SERVICE every system call answers "not supported".
+ * the session transport is independent of the kernel-linked GUI renderer.
  */
 
 #include <kern/syscall/syscall_defs.h>
+#include <frameworks/include/nxu/gui_host_protocol.h>
+#include <kern/process/proc.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -34,7 +36,9 @@ int64_t ui_bridge_syscall_control(uint64_t operation, uint64_t argument);
  */
 
 /* The desktop is up: app connects stop waiting. */
-void ui_bridge_session_begin(uint32_t scale_permille, uint32_t screen_width, uint32_t screen_height, uint32_t menubar_height);
+bool ui_bridge_session_ready(void);
+void ui_bridge_session_begin(uint32_t scale_permille, uint32_t screen_width, uint32_t screen_height,
+							 uint32_t menubar_height);
 
 /* A connection the desktop has not taken yet, or -1. Taking it is once. */
 int32_t ui_bridge_accept(void);
@@ -61,15 +65,8 @@ bool ui_bridge_state(uint32_t connection, nxu_ui_submit_t *state, uint64_t *sequ
  * (destination_stride pixels apart, at most max_width x max_height) and store
  * its size. Returns whether it did.
  */
-bool ui_bridge_take_frame(
-	uint32_t connection,
-	uint32_t *destination,
-	uint32_t destination_stride,
-	uint32_t max_width,
-	uint32_t max_height,
-	uint32_t *width_out,
-	uint32_t *height_out
-);
+bool ui_bridge_take_frame(uint32_t connection, uint32_t *destination, uint32_t destination_stride, uint32_t max_width,
+						  uint32_t max_height, uint32_t *width_out, uint32_t *height_out);
 
 /* The next bundle an app asked to open (NXU_UI_CONTROL_LAUNCH), into path; false if none. */
 bool ui_bridge_take_launch(char path[NXU_UI_PATH_MAX]);
@@ -82,5 +79,10 @@ void ui_bridge_terminate(uint32_t connection);
 
 /* The desktop is done with the connection: its slot is free again. */
 void ui_bridge_release(uint32_t connection);
+
+int64_t ui_bridge_host(proc_t proc, nxu_gui_host_desktop_t *record);
+void ui_bridge_host_release(proc_t proc);
+bool ui_bridge_host_input(proc_t proc);
+bool ui_bridge_host_active(void);
 
 #endif
