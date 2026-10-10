@@ -95,6 +95,7 @@ I386_USER_PROGRAMS := \
     ipctest_a \
     ipctest_b \
     threadtest \
+    top \
     sockettest_server \
     sockettest_client \
     playsound
@@ -180,7 +181,7 @@ $(I386_USER_BUILD)/bootd: $(I386_USER_COMMON_OBJECTS) $(I386_USER_COREFOUNDATION
 
 	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
 
-$(I386_USER_BUILD)/logd $(I386_USER_BUILD)/patchd $(I386_USER_BUILD)/threadtest $(I386_USER_BUILD)/sockettest_server $(I386_USER_BUILD)/sockettest_client: $(I386_USER_BUILD)/%: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/$(I386_USER_DAEMON_DIR)/%.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
+$(I386_USER_BUILD)/logd $(I386_USER_BUILD)/patchd $(I386_USER_BUILD)/threadtest $(I386_USER_BUILD)/top $(I386_USER_BUILD)/sockettest_server $(I386_USER_BUILD)/sockettest_client: $(I386_USER_BUILD)/%: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/$(I386_USER_DAEMON_DIR)/%.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
 
 	@mkdir -p $(dir $@)
 
@@ -239,11 +240,15 @@ $(I386_USER_STAMP): $(I386_USER_BINARIES) $(I386_USER_PLISTS) $(I386_DISK_STATIC
 
 	$(Q)cp $(I386_USER_BUILD)/patchd $(I386_DISKROOT)/System/Library/CoreServices/patchd.recovery
 
-	$(Q)cp $(I386_USER_BUILD)/ipctest_a $(I386_USER_BUILD)/ipctest_b $(I386_USER_BUILD)/threadtest $(I386_USER_BUILD)/sockettest_server $(I386_USER_BUILD)/sockettest_client $(I386_USER_BUILD)/playsound $(I386_DISKROOT)/System/Library/CoreServices/
+	$(Q)cp $(I386_USER_BUILD)/ipctest_a $(I386_USER_BUILD)/ipctest_b $(I386_USER_BUILD)/threadtest $(I386_USER_BUILD)/top $(I386_USER_BUILD)/sockettest_server $(I386_USER_BUILD)/sockettest_client $(I386_USER_BUILD)/playsound $(I386_DISKROOT)/System/Library/CoreServices/
 
 	$(Q)cp $(I386_USER_PLISTS) $(I386_DISKROOT)/System/Library/BootDaemons/
 
 	$(I386_USER_EXTRA_STAGE)
+
+	$(if $(filter 1,$(I386_GUI_FRAMEWORKS)),$(Q)$(foreach name,Runtime CoreFoundation WindowServer CoreGraphics DesktopService,mkdir -p $(I386_DISKROOT)/System/Library/Frameworks/$(name).framework && cp $(I386_USER_BUILD)/$(name).so $(I386_DISKROOT)/System/Library/Frameworks/$(name).framework/$(name).so;))
+	$(if $(filter 1,$(I386_GUI_FRAMEWORKS)),$(Q)cp $(I386_GUI_SERVICES) $(I386_DISKROOT)/System/Library/CoreServices/)
+	$(if $(filter 1,$(I386_GUI_FRAMEWORKS)),$(Q)cp $(addprefix frameworks/BootDaemons.framework/Services/com.nxu.,dyrld.plist windowserver.plist desktop.plist) $(I386_DISKROOT)/System/Library/BootDaemons/)
 
 	@touch $@
 

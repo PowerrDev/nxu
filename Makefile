@@ -70,7 +70,7 @@ QEMU_GPU_DEVICE := -device virtio-gpu-device,xres=$(QEMU_GPU_XRES),yres=$(QEMU_G
 # `ui_service_bootstrap` and `ui_core::scale` on the UIService side) so it
 # can rescale instead of assuming 2x unconditionally. Falls back to 2000
 # (2.0x) under the same conditions QEMU_GPU_XRES/YRES fall back to 2732x1536.
-DETECTED_SCALE_PERMILLE := $(shell osascript -l JavaScript -e 'ObjC.import("AppKit"); Math.round($$.NSScreen.mainScreen.backingScaleFactor * 1000);' 2>/dev/null)
+DETECTED_SCALE_PERMILLE := $(shell osascript -l JavaScript -e 'ObjC.import("AppKit"); var n = Math.round($$.NSScreen.mainScreen.backingScaleFactor * 1000); isFinite(n) && n >= 500 && n <= 4000 ? n : "";' 2>/dev/null)
 QEMU_UI_SCALE_PERMILLE ?= $(if $(DETECTED_SCALE_PERMILLE),$(DETECTED_SCALE_PERMILLE),2000)
 
 # Host display backend; run-console and the graphical tests both use it.
@@ -102,13 +102,14 @@ KERNEL := $(BUILD)/kernel.elf
 
 KERNEL_IMAGE := $(BUILD)/kernel.bin
 
-DISK ?= disk.img
+DISK ?= tools/disk.img
 
-DISK_SIZE ?= 32M
+# Crash symbol maps and diagnostic reports need space beyond the base image.
+DISK_SIZE ?= 128M
 
 DISK_ROOT ?= tools/DiskRoot
 
-DISK_FORMAT_STAMP ?= .nxu-ext4-jbd2-format
+DISK_FORMAT_STAMP ?= tools/.nxu-ext4-jbd2-format
 
 MKFS_EXT4 ?= mkfs.ext4
 
@@ -148,6 +149,9 @@ USER_CFLAGS := \
     --target=aarch64-none-elf \
     -ffreestanding \
     -fno-stack-protector \
+    -fno-omit-frame-pointer \
+    -mno-omit-leaf-frame-pointer \
+    -g \
     -fno-pic \
     -mgeneral-regs-only \
     -Wall \
@@ -203,11 +207,10 @@ WINDOWSERVER_DIR ?= ../WindowServer.framework
 
 WINDOWSERVER_INCLUDE := $(WINDOWSERVER_DIR)/include
 
-# Userland archive: windowserver-nxu's compositor built as a standalone
-# staticlib (WindowServer.framework's nxu/ wrapper crate) for linking into
-# a real NXU process instead of the kernel -- see
-# frameworks/BootDaemons.framework/windowserver_service.c.
-WINDOWSERVER_SERVICE_LIB := $(WINDOWSERVER_DIR)/BUILD/libWindowServerService.a
+# The standalone service imports the shared userland framework. Kernel GUI
+# builds keep their existing sibling archive rules until the desktop migrates.
+WINDOWSERVER_PIC_DIR := $(USER_BUILD)/gui-pic
+WINDOWSERVER_PIC_SOURCES := $(shell rg --files $(WINDOWSERVER_DIR)/crates $(WINDOWSERVER_DIR)/nxu -g '*.rs' -g '*.toml' -g 'Cargo.lock')
 
 USER_CFLAGS += -I$(WINDOWSERVER_INCLUDE)
 
@@ -310,6 +313,7 @@ C_SOURCES := \
     skylight/skylight.c \
     platform/arm64/services/ui_service.c \
     drivers/video/ui_service_login.c \
+    drivers/video/trusted_login.c \
     drivers/video/ui_service_activity.c \
     drivers/video/ui_service_bridge.c \
     kern/aqua/window_server.c \
@@ -356,6 +360,7 @@ C_SOURCES := \
     kern/tests/post_storage.c \
     kern/tests/boot_test.c \
     kern/tests/vm_shm_test.c \
+    kern/tests/statistics_test.c \
     kern/tests/vm_map_test.c \
     kern/tests/ipc_process_test.c \
     kern/tests/thread_process_test.c \
@@ -372,6 +377,10 @@ C_SOURCES := \
     kern/tests/unified_boot.c \
     kern/syscall/syscall.c \
     kern/process/thread.c \
+    kern/process/statistics.c \
+    kern/process/crash.c \
+    kern/security/sap.c \
+    kern/logging/diagnostics.c \
     vfs/btrfs/btrfs_chunk.c \
     vfs/btrfs/btrfs_csum.c \
     vfs/btrfs/btrfs_dir.c \
@@ -457,11 +466,17 @@ USER_C_SOURCES := \
     frameworks/CoreFoundation.framework/sbin/bootd/registry.c \
     frameworks/CoreFoundation.framework/sbin/bootd/main.c \
     frameworks/BootDaemons.framework/logd.c \
+    frameworks/BootDaemons.framework/crashd.c \
+    frameworks/BootDaemons.framework/dyrld.c \
+    frameworks/Dyrld.framework/runtime.c \
+    frameworks/BootDaemons.framework/problemreporter.c \
+    frameworks/BootDaemons.framework/crashtest.c \
     frameworks/BootDaemons.framework/patchd.c \
     frameworks/BootDaemons.framework/ipctest_a.c \
     frameworks/BootDaemons.framework/ipctest_b.c \
     frameworks/BootDaemons.framework/threadtest.c \
     frameworks/BootDaemons.framework/smptest.c \
+    frameworks/BootDaemons.framework/top.c \
     frameworks/BootDaemons.framework/faulttest.c \
     frameworks/BootDaemons.framework/proctest.c \
     frameworks/BootDaemons.framework/execchild.c \
@@ -524,12 +539,20 @@ USER_RECOVERY_OBJECTS := \
 USER_DAEMONS := \
     $(USER_BUILD)/bootd \
     $(USER_BUILD)/logd \
+    $(USER_BUILD)/crashd \
+    $(USER_BUILD)/dyrld \
+    $(USER_BUILD)/dyrld-runtime \
+    $(USER_BUILD)/CoreFoundation.so \
+    $(USER_BUILD)/WindowServer.so \
+    $(USER_BUILD)/problemreporter \
+    $(USER_BUILD)/crashtest \
     $(USER_BUILD)/patchd \
     $(USER_BUILD)/triageOS \
     $(USER_BUILD)/ipctest_a \
     $(USER_BUILD)/ipctest_b \
     $(USER_BUILD)/threadtest \
     $(USER_BUILD)/smptest \
+    $(USER_BUILD)/top \
     $(USER_BUILD)/faulttest \
     $(USER_BUILD)/proctest \
     $(USER_BUILD)/execchild \
@@ -541,14 +564,22 @@ USER_DAEMONS := \
     $(USER_BUILD)/x11test_handshake \
     $(USER_BUILD)/x11test_input \
     $(USER_BUILD)/windowserver_service \
+    $(USER_BUILD)/desktop_service \
+    $(USER_BUILD)/CoreGraphics.so \
+    $(USER_BUILD)/DesktopService.so \
     $(USER_BUILD)/wstest_client \
     $(USER_BUILD)/about_sevos_service
 
 
 USER_SERVICE_PLISTS := \
     frameworks/BootDaemons.framework/Services/com.nxu.logd.plist \
+    frameworks/BootDaemons.framework/Services/com.nxu.crashd.plist \
+    frameworks/BootDaemons.framework/Services/com.nxu.dyrld.plist \
+    frameworks/BootDaemons.framework/Services/com.nxu.problemreporter.plist \
+    frameworks/BootDaemons.framework/Services/com.nxu.crashtest.plist \
     frameworks/BootDaemons.framework/Services/com.nxu.patchd.plist \
     frameworks/BootDaemons.framework/Services/com.nxu.windowserver.plist \
+    frameworks/BootDaemons.framework/Services/com.nxu.desktop.plist \
     frameworks/BootDaemons.framework/Services/com.nxu.about-sevos.plist \
     frameworks/BootDaemons.framework/Services/com.nxu.dock.plist
 
@@ -636,6 +667,21 @@ symbolize: $(KERNEL)
 # Compilation rules
 # =============================================================================
 
+# Track flag changes when a configuration switches between kernel and dynamic
+# frameworks. Source timestamps alone can leave objects with the old defines.
+kernel_shell_quote = '$(subst ','"'"',$(1))'
+
+.PHONY: kernel-flags-force
+kernel-flags-force:
+
+$(BUILD)/.kernel-flags: kernel-flags-force
+
+	@mkdir -p "$(BUILD)"
+	@printf '%s\n' $(call kernel_shell_quote,$(CC)) $(call kernel_shell_quote,$(CFLAGS)) $(call kernel_shell_quote,$(ASFLAGS)) > "$@.tmp"
+	@if ! cmp -s "$@.tmp" "$@"; then mv "$@.tmp" "$@"; else rm "$@.tmp"; fi
+
+$(OBJECTS): $(BUILD)/.kernel-flags
+
 $(BUILD)/%.o: %.c
 
 	@mkdir -p $(dir $@)
@@ -654,7 +700,7 @@ $(BUILD)/%.o: %.S
 	$(Q)$(CC) $(ASFLAGS) -c $< -o $@
 
 
-$(USER_BUILD)/%.o: %.c
+$(USER_BUILD)/%.o: %.c Makefile
 
 	@mkdir -p $(dir $@)
 
@@ -682,6 +728,98 @@ $(USER_BUILD)/bootd: $(USER_COMMON_OBJECTS) $(USER_COREFOUNDATION_OBJECTS) $(USE
 
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
+
+$(USER_BUILD)/crashd $(USER_BUILD)/crashtest: $(USER_BUILD)/%: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/%.o
+	$(QUIET_PRINT) "LD" "$@"
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+# Runtime-loadable ELF frameworks; static consumers remain supported.
+DYRLD_PIC := $(USER_BUILD)/dyrld-pic
+DYRLD_FRAMEWORK_FLAGS := $(filter-out -fno-pic,$(USER_CFLAGS)) -fPIC
+DYRLD_RUNTIME_OBJECTS := $(addprefix $(DYRLD_PIC)/,frameworks/lib/syscall.o frameworks/lib/string.o \
+	frameworks/lib/thread.o frameworks/lib/allocator.o frameworks/lib/abort.o frameworks/lib/clock.o)
+DYRLD_FOUNDATION_OBJECTS := $(addprefix $(DYRLD_PIC)/,frameworks/CoreFoundation.framework/lib/plist/plist.o \
+	frameworks/CoreFoundation.framework/lib/service/service_config.o \
+	frameworks/CoreFoundation.framework/lib/service/bootstrap_client.o)
+DYRLD_SHARED_FLAGS := -shared --hash-style=sysv -z max-page-size=4096 -z relro -z now
+$(DYRLD_PIC)/%.o: %.c Makefile
+	@mkdir -p $(dir $@)
+	$(Q)$(USER_CC) $(DYRLD_FRAMEWORK_FLAGS) -c $< -o $@
+
+$(DYRLD_PIC)/%.o: %.S Makefile
+	@mkdir -p $(dir $@)
+	$(Q)$(USER_CC) $(DYRLD_FRAMEWORK_FLAGS) -c $< -o $@
+
+$(USER_BUILD)/WindowServer.so: $(WINDOWSERVER_PIC_SOURCES) frameworks/Runtime.framework/rust/allocator.rs \
+	frameworks/Runtime.framework/rust/panic.rs frameworks/WindowServer.framework/exports.map \
+	tools/build_gui_pic.py tools/audit_gui_frameworks.py tools/gui_elf.py $(USER_BUILD)/Runtime.so
+	$(Q)python3 tools/build_gui_pic.py --offline --freestanding-sysroot --framework WindowServer --output "$(abspath $(WINDOWSERVER_PIC_DIR))"
+	$(Q)cp "$(WINDOWSERVER_PIC_DIR)/audit/WindowServer.so" $@
+
+COREGRAPHICS_PIC_DIR := $(USER_BUILD)/coregraphics-pic
+COREGRAPHICS_PIC_SOURCES := $(shell rg --files $(UISERVICE_DIR)/crates -g '*.rs' -g '*.toml')
+COREGRAPHICS_PIC_ASSETS := $(shell rg --files $(UISERVICE_DIR)/assets)
+
+$(USER_BUILD)/CoreGraphics.so: $(COREGRAPHICS_PIC_SOURCES) $(COREGRAPHICS_PIC_ASSETS) $(UISERVICE_DIR)/Cargo.lock \
+	frameworks/DesktopService.framework/lib/session.c frameworks/DesktopService.framework/lib/host.c \
+	frameworks/CoreGraphics.framework/lib/windowserver.c \
+	frameworks/CoreGraphics.framework/exports.map frameworks/DesktopService.framework/exports.map \
+	frameworks/include/nxu/gui_host_protocol.h \
+	frameworks/include/nxu/windowserver_protocol.h frameworks/Runtime.framework/rust/allocator.rs \
+	frameworks/Runtime.framework/rust/panic.rs tools/build_gui_pic.py tools/audit_gui_frameworks.py \
+	tools/gui_elf.py $(USER_BUILD)/Runtime.so $(USER_BUILD)/CoreFoundation.so
+	$(Q)python3 tools/build_gui_pic.py --offline --freestanding-sysroot --framework CoreGraphics \
+		--output "$(abspath $(COREGRAPHICS_PIC_DIR))"
+	$(Q)cp "$(COREGRAPHICS_PIC_DIR)/audit/CoreGraphics.so" $@
+
+$(USER_BUILD)/DesktopService.so: $(USER_BUILD)/CoreGraphics.so
+	$(Q)cp "$(COREGRAPHICS_PIC_DIR)/audit/DesktopService.so" $@
+
+$(DYRLD_PIC)/frameworks/BootDaemons.framework/desktop_service.o: $(USER_BUILD)/DesktopService.so
+	@mkdir -p $(dir $@)
+	$(Q)$(USER_CC) $(DYRLD_FRAMEWORK_FLAGS) -I"$(COREGRAPHICS_PIC_DIR)/include" \
+		-c frameworks/BootDaemons.framework/desktop_service.c -o $@
+
+$(USER_BUILD)/desktop_service: $(DYRLD_PIC)/frameworks/crt0.o \
+	$(DYRLD_PIC)/frameworks/BootDaemons.framework/desktop_service.o \
+	$(USER_BUILD)/DesktopService.so $(USER_BUILD)/CoreGraphics.so $(USER_BUILD)/Runtime.so
+	$(Q)$(USER_LD) -pie --no-undefined --hash-style=sysv -z max-page-size=4096 -z relro -z now \
+		--dynamic-linker /System/Library/CoreServices/dyrld-runtime $^ -o $@
+
+$(USER_BUILD)/Runtime.so: $(DYRLD_RUNTIME_OBJECTS)
+	$(Q)$(USER_LD) $(DYRLD_SHARED_FLAGS) --soname Runtime.framework/Runtime.so $^ -o $@
+
+$(USER_BUILD)/CoreFoundation.so: $(DYRLD_FOUNDATION_OBJECTS) $(USER_BUILD)/Runtime.so
+	$(Q)$(USER_LD) $(DYRLD_SHARED_FLAGS) --soname CoreFoundation.framework/CoreFoundation.so $(DYRLD_FOUNDATION_OBJECTS) $(USER_BUILD)/Runtime.so -o $@
+
+$(USER_BUILD)/libk/sha256.o: USER_CFLAGS += -Ilibk
+
+$(USER_BUILD)/dyrld: $(USER_COMMON_OBJECTS) \
+	$(USER_BUILD)/frameworks/CoreFoundation.framework/lib/service/bootstrap_client.o \
+	$(USER_BUILD)/frameworks/BootDaemons.framework/dyrld.o $(USER_BUILD)/libk/sha256.o
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+$(USER_BUILD)/dyrld-runtime: $(USER_COMMON_OBJECTS) \
+	$(USER_BUILD)/frameworks/CoreFoundation.framework/lib/service/bootstrap_client.o \
+	$(USER_BUILD)/frameworks/Dyrld.framework/runtime.o
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+$(USER_BUILD)/reporter_fonts.h: tools/generate_reporter_fonts.py tools/generate_recovery_fonts.py \
+	tools/DiskRoot/System/Library/Fonts/Inter-Regular.ttf tools/DiskRoot/System/Library/Fonts/Inter-SemiBold.ttf
+	$(Q)python3 tools/generate_reporter_fonts.py --output $@
+
+$(BUILD)/drivers/video/trusted_login.o: $(USER_BUILD)/reporter_fonts.h
+$(BUILD)/drivers/video/trusted_login.o: CFLAGS += -I$(USER_BUILD)
+
+$(BUILD)/kern/security/sap.o: $(USER_BUILD)/reporter_fonts.h
+$(BUILD)/kern/security/sap.o: CFLAGS += -I$(USER_BUILD)
+
+$(USER_BUILD)/frameworks/BootDaemons.framework/problemreporter.o: $(USER_BUILD)/reporter_fonts.h
+$(USER_BUILD)/frameworks/BootDaemons.framework/problemreporter.o: USER_CFLAGS += -I$(USER_BUILD)
+
+$(USER_BUILD)/problemreporter: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/problemreporter.o
+	$(QUIET_PRINT) "LD" "$@"
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 $(USER_BUILD)/logd: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/logd.o
 
@@ -726,6 +864,13 @@ $(USER_BUILD)/threadtest: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDa
 
 
 $(USER_BUILD)/smptest: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/smptest.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+
+$(USER_BUILD)/top: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/top.o
 
 	$(QUIET_PRINT) "LD" "$@"
 
@@ -802,11 +947,14 @@ $(USER_BUILD)/x11test_input: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/Boo
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 
-$(USER_BUILD)/windowserver_service: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/CoreFoundation.framework/lib/service/bootstrap_client.o $(USER_BUILD)/frameworks/BootDaemons.framework/windowserver_service.o $(WINDOWSERVER_SERVICE_LIB) | windowserver-build
+$(USER_BUILD)/windowserver_service: $(DYRLD_PIC)/frameworks/crt0.o \
+	$(DYRLD_PIC)/frameworks/BootDaemons.framework/windowserver_service.o $(USER_BUILD)/WindowServer.so \
+	$(USER_BUILD)/CoreFoundation.so $(USER_BUILD)/Runtime.so
 
 	$(QUIET_PRINT) "LD" "$@"
 
-	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+	$(Q)$(USER_LD) -pie --no-undefined --hash-style=sysv -z max-page-size=4096 -z relro -z now --dynamic-linker \
+		/System/Library/CoreServices/dyrld-runtime $^ -o $@
 
 
 $(USER_BUILD)/wstest_client: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/CoreFoundation.framework/lib/service/bootstrap_client.o $(USER_BUILD)/frameworks/BootDaemons.framework/wstest_client.o
@@ -833,15 +981,18 @@ $(USER_BUILD)/apps/%: $(USER_COMMON_OBJECTS) $(USER_APPKIT_OBJECTS) $(UISERVICE_
 
 	$(QUIET_PRINT) "LD" "$@"
 
-	$(Q)$(USER_LD) $(USER_LDFLAGS) --gc-sections --strip-debug $(USER_COMMON_OBJECTS) $(USER_APPKIT_OBJECTS) $(UISERVICE_APPS_DIR)/lib$*.a -o $@
+	$(Q)$(USER_LD) $(USER_LDFLAGS) --gc-sections $(USER_COMMON_OBJECTS) $(USER_APPKIT_OBJECTS) $(UISERVICE_APPS_DIR)/lib$*.a -o $@
 
 
 userland: $(USER_DAEMONS) $(USER_APPS)
 
 
-$(USER_STAGE_STAMP): $(USER_DAEMONS) $(USER_APPS) $(USER_SERVICE_PLISTS) $(USER_SYSTEM_FONTS)
+$(USER_STAGE_STAMP): $(USER_DAEMONS) $(USER_APPS) $(USER_SERVICE_PLISTS) $(USER_SYSTEM_FONTS) tools/crash_symbols.py
 
-	@mkdir -p $(DISK_ROOT)/System/Library/CoreServices $(DISK_ROOT)/System/Library/BootDaemons $(DISK_ROOT)/System/Library/Fonts $(DISK_ROOT)/System/Recovery $(DISK_ROOT)/var/log $(DISK_ROOT)/var/db/patchd
+	@mkdir -p $(DISK_ROOT)/System/Library/CoreServices $(DISK_ROOT)/System/Library/BootDaemons \
+		$(DISK_ROOT)/System/Library/Fonts $(DISK_ROOT)/System/Recovery $(DISK_ROOT)/var/log \
+		$(DISK_ROOT)/var/db/patchd $(DISK_ROOT)/System/Library/Frameworks \
+		$(DISK_ROOT)/Library/Logs/DiagnosticReports $(DISK_ROOT)/Users/Shared/Library/Logs/DiagnosticReports
 
 	$(QUIET_PRINT) "STAGE" "$(DISK_ROOT)"
 
@@ -851,6 +1002,14 @@ $(USER_STAGE_STAMP): $(USER_DAEMONS) $(USER_APPS) $(USER_SERVICE_PLISTS) $(USER_
 
 	$(Q)cp $(USER_BUILD)/bootd $(DISK_ROOT)/System/Library/CoreServices/bootd.recovery
 
+	$(Q)cp $(USER_BUILD)/crashd $(USER_BUILD)/problemreporter $(USER_BUILD)/crashtest $(USER_BUILD)/dyrld \
+		$(USER_BUILD)/dyrld-runtime $(DISK_ROOT)/System/Library/CoreServices/
+	$(Q)mkdir -p $(DISK_ROOT)/System/Library/Frameworks/Runtime.framework $(DISK_ROOT)/System/Library/Frameworks/CoreFoundation.framework
+	$(Q)cp $(USER_BUILD)/Runtime.so $(DISK_ROOT)/System/Library/Frameworks/Runtime.framework/
+	$(Q)cp $(USER_BUILD)/CoreFoundation.so $(DISK_ROOT)/System/Library/Frameworks/CoreFoundation.framework/
+	$(Q)mkdir -p $(DISK_ROOT)/System/Library/Frameworks/WindowServer.framework
+	$(Q)cp $(USER_BUILD)/WindowServer.so $(DISK_ROOT)/System/Library/Frameworks/WindowServer.framework/
+	$(Q)cp $(USER_BUILD)/crashd $(DISK_ROOT)/System/Library/CoreServices/crashd.recovery
 	$(Q)cp $(USER_BUILD)/logd $(DISK_ROOT)/System/Library/CoreServices/logd
 
 	$(Q)cp $(USER_BUILD)/logd $(DISK_ROOT)/System/Library/CoreServices/logd.recovery
@@ -868,6 +1027,7 @@ $(USER_STAGE_STAMP): $(USER_DAEMONS) $(USER_APPS) $(USER_SERVICE_PLISTS) $(USER_
 	$(Q)cp $(USER_BUILD)/threadtest $(DISK_ROOT)/System/Library/CoreServices/threadtest
 
 	$(Q)cp $(USER_BUILD)/smptest $(DISK_ROOT)/System/Library/CoreServices/smptest
+	$(Q)cp $(USER_BUILD)/top $(DISK_ROOT)/System/Library/CoreServices/top
 
 	$(Q)cp $(USER_BUILD)/faulttest $(DISK_ROOT)/System/Library/CoreServices/faulttest
 
@@ -890,6 +1050,16 @@ $(USER_STAGE_STAMP): $(USER_DAEMONS) $(USER_APPS) $(USER_SERVICE_PLISTS) $(USER_
 	$(Q)cp $(USER_BUILD)/x11test_input $(DISK_ROOT)/System/Library/CoreServices/x11test_input
 
 	$(Q)cp $(USER_BUILD)/windowserver_service $(DISK_ROOT)/System/Library/CoreServices/windowserver_service
+	$(Q)cp $(USER_BUILD)/desktop_service $(DISK_ROOT)/System/Library/CoreServices/desktop_service
+	$(Q)mkdir -p $(DISK_ROOT)/System/Library/Frameworks/DesktopService.framework/Headers
+	$(Q)cp "$(COREGRAPHICS_PIC_DIR)/include/DesktopService.h" \
+		$(DISK_ROOT)/System/Library/Frameworks/DesktopService.framework/Headers/DesktopService.h
+	$(Q)cp $(USER_BUILD)/DesktopService.so $(DISK_ROOT)/System/Library/Frameworks/DesktopService.framework/DesktopService.so
+	$(Q)mkdir -p $(DISK_ROOT)/System/Library/Frameworks/CoreGraphics.framework
+	$(Q)cp $(USER_BUILD)/CoreGraphics.so $(DISK_ROOT)/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics.so
+	$(Q)mkdir -p $(DISK_ROOT)/System/Library/Frameworks/CoreGraphics.framework/Headers
+	$(Q)cp "$(COREGRAPHICS_PIC_DIR)/include/CoreGraphics.h" \
+		$(DISK_ROOT)/System/Library/Frameworks/CoreGraphics.framework/Headers/CoreGraphics.h
 
 	$(Q)cp $(USER_BUILD)/wstest_client $(DISK_ROOT)/System/Library/CoreServices/wstest_client
 
@@ -901,6 +1071,7 @@ $(USER_STAGE_STAMP): $(USER_DAEMONS) $(USER_APPS) $(USER_SERVICE_PLISTS) $(USER_
 
 	$(foreach app,$(USER_APP_BUNDLES),$(call stage_app,$(app),$(USER_BUILD)/apps/$(app),$(DISK_ROOT)))
 
+	$(Q)python3 tools/crash_symbols.py "$(DISK_ROOT)"
 	@touch $@
 
 
@@ -1057,8 +1228,8 @@ $(DISK_FORMAT_STAMP):
 # Normal boot
 # =============================================================================
 
-# `run` boots the normal desktop -- the graphical stack (WindowServer + UIService,
-# Voyager app), bootd with its daemons, the boot chime -- on 4 CPUs (real SMP, not
+# `run` boots the dynamic desktop -- WindowServer, CoreGraphics and DesktopService,
+# the Dock and apps, bootd with its daemons, the boot chime -- on 4 CPUs (real SMP, not
 # a single boot CPU with idle secondaries): equivalent to `make test TEST=desktop`
 # (see makedefs/tests.mk). "Is the kernel in a good state to boot" is not a
 # separate suite bundled in here: it is kernel_do_post()'s startup self-test
@@ -1140,7 +1311,7 @@ disk-check:
 #                           extra virtio-blk-device disks (tools/btrfs/test_arm64.sh)
 #   make test-i386-btrfs    the same on i386 (makedefs/i386/btrfs.mk)
 #
-# Nothing here touches disk.img or tools/DiskRoot; images are private copies.
+# Nothing here touches tools/disk.img or tools/DiskRoot; images are private copies.
 
 BTRFS_HOST_TOOL := $(BUILD_ROOT)/btrfs-host/btrfs_host
 
@@ -1235,6 +1406,17 @@ clean:
 
 	rm -f $(DISK_ROOT)/System/Library/CoreServices/bootd.recovery
 
+	rm -f $(DISK_ROOT)/System/Library/CoreServices/crashd \
+		$(DISK_ROOT)/System/Library/CoreServices/crashd.recovery \
+		$(DISK_ROOT)/System/Library/CoreServices/problemreporter $(DISK_ROOT)/System/Library/CoreServices/crashtest
+	rm -f $(DISK_ROOT)/System/Library/CoreServices/dyrld $(DISK_ROOT)/System/Library/CoreServices/dyrld-runtime
+	rm -f $(DISK_ROOT)/System/Library/Frameworks/Runtime.framework/Runtime.so \
+		$(DISK_ROOT)/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation.so
+	rm -f $(DISK_ROOT)/System/Library/Frameworks/WindowServer.framework/WindowServer.so
+	rm -f $(DISK_ROOT)/System/Library/CoreServices/desktop_service
+	rm -rf $(DISK_ROOT)/System/Library/Frameworks/CoreGraphics.framework \
+		$(DISK_ROOT)/System/Library/Frameworks/DesktopService.framework
+
 	rm -f $(DISK_ROOT)/System/Library/CoreServices/logd
 
 	rm -f $(DISK_ROOT)/System/Library/CoreServices/logd.recovery
@@ -1247,3 +1429,13 @@ clean:
 
 	rm -rf $(DISK_ROOT)/System/Library/BootDaemons
 
+
+.PHONY: test-crashd
+test-crashd:
+	python3 tools/check_crashd.py
+
+.PHONY: test-dyrld test-sap
+test-dyrld:
+	python3 tools/check_dyrld.py
+test-sap:
+	python3 tools/check_sap.py

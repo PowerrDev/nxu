@@ -56,7 +56,8 @@ I386_ASM_SOURCES := \
 # under makedefs/i386/, so two areas never edit the same lines of this file.
 # A fragment appends to I386_C_SOURCES / I386_ASM_SOURCES / I386_CFLAGS; any
 # source listed twice is built once.
-include $(sort $(wildcard makedefs/i386/*.mk))
+include $(filter-out makedefs/i386/frameworks.mk,$(sort $(wildcard makedefs/i386/*.mk)))
+include makedefs/i386/frameworks.mk
 
 I386_OBJECTS := \
     $(sort $(I386_C_SOURCES:%.c=$(I386_BUILD)/%.o)) \
@@ -78,7 +79,16 @@ I386_QEMU_AUDIO ?= -audiodev coreaudio,id=snd0 -device virtio-sound-pci,audiodev
 -include $(I386_OBJECTS:%.o=%.d)
 
 
-$(I386_BUILD)/%.o: %.c
+.PHONY: i386-flags-force
+i386-flags-force:
+
+$(I386_BUILD)/compiler-flags: i386-flags-force
+	@mkdir -p $(dir $@)
+	@printf '%s\n' '$(I386_CC) $(I386_CFLAGS)' > $@.tmp
+	@cmp -s $@.tmp $@ || cp $@.tmp $@
+	@rm -f $@.tmp
+
+$(I386_BUILD)/%.o: %.c $(I386_BUILD)/compiler-flags
 
 	@mkdir -p $(dir $@)
 

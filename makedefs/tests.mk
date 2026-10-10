@@ -125,7 +125,10 @@ TEST_everything_SMP := 4
 TEST_desktop_GROUP := Everything at once
 TEST_desktop_DESC := The normal desktop boot (what make run boots)
 TEST_desktop_CFLAGS := -DNXU_DESKTOP_BOOT
-TEST_desktop_FRAMEWORKS := $(TEST_GUI_STACK)
+TEST_desktop_FRAMEWORKS := UISERVICE=0 WINDOWSERVER=0
+# Keep normal desktop operation free of per-syscall traces and diagnostic dumps.
+# BOOT_ARGS appears first, so explicit debug settings still override these defaults.
+TEST_desktop_BOOT_ARGS := ui.userland=1 log.trace=0 log.stats_ms=0
 TEST_desktop_DISPLAY := $(TEST_GUI_DISPLAY)
 TEST_desktop_GPU := ,xres=$(QEMU_GPU_XRES),yres=$(QEMU_GPU_YRES)
 TEST_desktop_RAMFB := $(QEMU_RAMFB_DEVICE)
@@ -371,7 +374,7 @@ test: $(DISK) $(DISK_FORMAT_STAMP)
 		-smp $(or $(TEST_$(TEST)_SMP),1) \
 		-m 8G \
 		-kernel BUILD/$(TEST)/kernel.bin \
-		-append "$(BOOT_ARGS) ui.scale=$(QEMU_UI_SCALE_PERMILLE)" \
+		-append "$(BOOT_ARGS) $(TEST_$(TEST)_BOOT_ARGS) ui.scale=$(QEMU_UI_SCALE_PERMILLE)" \
 		-display $(or $(TEST_$(TEST)_DISPLAY),none) \
 		-global virtio-mmio.force-legacy=false \
 		-drive if=none,format=raw,file=$(DISK),id=nxudisk \
