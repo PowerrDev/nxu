@@ -15,7 +15,14 @@
 _start:
 	xorl %ebp, %ebp
 	andl $-16, %esp
+	/* The runtime entry accepts (uint64_t argc, char **argv). Spawn has no
+	 * argument vector on this port; preserve 16-byte call-site alignment. */
+	subl $4, %esp
+	pushl $0
+	pushl $0
+	pushl $0
 	call main
+	addl $16, %esp
 	movl %eax, %ebx
 	movl $1, %eax
 	int $0x80
