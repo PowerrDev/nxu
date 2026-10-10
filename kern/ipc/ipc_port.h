@@ -21,6 +21,7 @@ void ipc_port_init(void);
 ipc_return_t ipc_port_alloc(ipc_port_t *portp);
 bool ipc_port_reference(ipc_port_t port);
 void ipc_port_release(ipc_port_t port);
+void ipc_port_deactivate(ipc_port_t port);
 
 ipc_return_t ipc_port_enqueue(ipc_port_t port, ipc_kmsg_t kmsg);
 ipc_return_t ipc_port_dequeue(ipc_port_t port, ipc_kmsg_t *kmsgp);

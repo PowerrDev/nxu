@@ -18,14 +18,12 @@
 #define IPC_SPACE_MAX 32U
 #define IPC_SPACE_NAME_INVALID 0U
 
-typedef enum {
-	IPC_SPACE_ENTRY_FREE = 0,
-	IPC_SPACE_ENTRY_PORT
-} ipc_space_entry_type_t;
+typedef enum { IPC_SPACE_ENTRY_FREE = 0, IPC_SPACE_ENTRY_PORT } ipc_space_entry_type_t;
 
 typedef struct {
 	ipc_space_entry_type_t type;
 	ipc_port_t port;
+	bool receive;
 } ipc_space_entry_t;
 
 typedef struct ipc_space *ipc_space_t;
@@ -46,14 +44,14 @@ struct ipc_space {
 	volatile uint32_t is_lock;
 };
 
+bool ipc_space_can_receive(ipc_space_t space, uint32_t name);
 void ipc_space_init(ipc_space_t space);
 void ipc_space_close_all(ipc_space_t space);
 
 /*
  * fork: child (freshly initialised, empty) receives a name for every port
- * parent holds, at the same name, each with its own reference. Ports are not
- * split into send and receive rights here, so parent and child both hold the
- * full capability -- like two processes sharing an inherited pipe. On
+ * parent holds, at the same name, each with its own reference. The child inherits
+ * send access only; the parent retains exclusive receive ownership. On
  * failure child is left empty.
  */
 bool ipc_space_fork(ipc_space_t child, ipc_space_t parent);
@@ -64,9 +62,11 @@ bool ipc_space_fork(ipc_space_t child, ipc_space_t parent);
  * filedesc_install) -- ipc_space_insert_port does not take its own.
  */
 ipc_return_t ipc_space_insert_port(ipc_space_t space, ipc_port_t port, uint32_t *name);
+ipc_return_t ipc_space_insert_receive(ipc_space_t space, ipc_port_t port, uint32_t *name);
 
 /* Returns a new reference the caller must eventually release. */
 ipc_return_t ipc_space_lookup_port(ipc_space_t space, uint32_t name, ipc_port_t *result);
+ipc_return_t ipc_space_lookup_receive(ipc_space_t space, uint32_t name, ipc_port_t *result);
 
 /* Removes the name and hands the space's own reference to the caller. */
 ipc_return_t ipc_space_remove(ipc_space_t space, uint32_t name, ipc_port_t *result);

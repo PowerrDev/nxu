@@ -38,7 +38,8 @@ typedef enum {
 	IPC_BUFFER_TOO_SMALL,
 	IPC_OVERFLOW,
 	IPC_SPACE_FULL,
-	IPC_NAME_INVALID
+	IPC_NAME_INVALID,
+	IPC_ACCESS_DENIED
 } ipc_return_t;
 
 /*
@@ -47,11 +48,7 @@ typedef enum {
  * alongside vm_shm_region_t (see vm/vm_shm.h); only IPC_KMSG_XFER_PORT is
  * used until then.
  */
-typedef enum {
-	IPC_KMSG_XFER_NONE = 0,
-	IPC_KMSG_XFER_PORT,
-	IPC_KMSG_XFER_MEMORY
-} ipc_kmsg_xfer_type_t;
+typedef enum { IPC_KMSG_XFER_NONE = 0, IPC_KMSG_XFER_PORT, IPC_KMSG_XFER_MEMORY } ipc_kmsg_xfer_type_t;
 
 struct ipc_kmsg;
 struct ipc_port;

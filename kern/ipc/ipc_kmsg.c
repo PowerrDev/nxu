@@ -26,8 +26,7 @@ static uint64_t g_kmsg_outstanding_bytes;
  *              Initialize kernel-message accounting before any ports become
  *              visible to the rest of NXU.
  */
-void
-ipc_kmsg_init(void)
+void ipc_kmsg_init(void)
 {
 	g_kmsg_outstanding_count = 0ULL;
 	g_kmsg_outstanding_bytes = 0ULL;
@@ -41,8 +40,7 @@ ipc_kmsg_init(void)
  *              If xfer_port is not IPC_PORT_NULL, the message takes over the
  *              caller's reference on it (the caller must already own one).
  */
-ipc_return_t
-ipc_kmsg_alloc(const void *data, size_t size, ipc_port_t xfer_port, ipc_kmsg_t *kmsgp)
+ipc_return_t ipc_kmsg_alloc(const void *data, size_t size, ipc_port_t xfer_port, ipc_kmsg_t *kmsgp)
 {
 	if (data == 0 || kmsgp == 0 || size == 0U) {
 		return IPC_INVALID_ARGUMENT;
@@ -57,8 +55,10 @@ ipc_kmsg_alloc(const void *data, size_t size, ipc_port_t xfer_port, ipc_kmsg_t *
 	}
 
 	ipc_kmsg_t kmsg = kmalloc(sizeof(struct ipc_kmsg) + size);
-	if (kmsg == IPC_KMSG_NULL) return IPC_NO_MEMORY;
+	if (kmsg == IPC_KMSG_NULL)
+		return IPC_NO_MEMORY;
 
+	kmsg->ikm_sender = (nxu_ipc_peer_t){0};
 	kmsg->ikm_next = IPC_KMSG_NULL;
 	kmsg->ikm_size = size;
 	kmsg->ikm_flags = 0U;
@@ -84,10 +84,10 @@ ipc_kmsg_alloc(const void *data, size_t size, ipc_port_t xfer_port, ipc_kmsg_t *
  *              that was never received (dropped with the port still active,
  *              or the destination port destroyed while still queued).
  */
-void
-ipc_kmsg_free(ipc_kmsg_t kmsg)
+void ipc_kmsg_free(ipc_kmsg_t kmsg)
 {
-	if (kmsg == IPC_KMSG_NULL) return;
+	if (kmsg == IPC_KMSG_NULL)
+		return;
 
 	if (kmsg->ikm_xfer_type == IPC_KMSG_XFER_PORT) {
 		ipc_port_release(kmsg->ikm_xfer_port);
@@ -111,8 +111,7 @@ ipc_kmsg_free(ipc_kmsg_t kmsg)
 	(void)kfree(kmsg);
 }
 
-uint64_t
-ipc_kmsg_outstanding_count(void)
+uint64_t ipc_kmsg_outstanding_count(void)
 {
 	uint64_t irq_state = ml_irq_save();
 	uint64_t count = g_kmsg_outstanding_count;
@@ -120,8 +119,7 @@ ipc_kmsg_outstanding_count(void)
 	return count;
 }
 
-uint64_t
-ipc_kmsg_outstanding_bytes(void)
+uint64_t ipc_kmsg_outstanding_bytes(void)
 {
 	uint64_t irq_state = ml_irq_save();
 	uint64_t bytes = g_kmsg_outstanding_bytes;

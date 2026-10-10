@@ -11,6 +11,7 @@
 #define NXU_KERN_IPC_KMSG_H
 
 #include <kern/ipc/ipc_types.h>
+#include <frameworks/include/nxu/ipc_peer.h>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -28,6 +29,7 @@
  */
 struct ipc_kmsg {
 	ipc_kmsg_t ikm_next;
+	nxu_ipc_peer_t ikm_sender;
 	size_t ikm_size;
 	uint32_t ikm_flags;
 	ipc_kmsg_xfer_type_t ikm_xfer_type;
