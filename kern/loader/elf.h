@@ -65,5 +65,8 @@ loader_status_t loader_exec(proc_t proc, const char *path, const loader_exec_arg
 loader_status_t loader_images_equal(const char *left_path, const char *right_path, bool *equal);
 
 const char *loader_status_name(loader_status_t status);
+/* ARM64 PIE image mapping for the in-process runtime. */
+loader_status_t loader_dyrld_map(proc_t proc, nxu_dyrld_image_t *image);
+loader_status_t loader_dyrld_finalize(proc_t proc);
 
 #endif
