@@ -80,6 +80,7 @@ typedef struct {
 	vfs_status_t (*lookup)(vnode_t directory, const char *name, vnode_t *result);
 	vfs_status_t (*create)(vnode_t directory, const char *name, vnode_type_t type, vnode_t *result);
 	vfs_status_t (*unlink)(vnode_t directory, const char *name);
+	vfs_status_t (*unlink_held)(vnode_t directory, const char *name, vnode_t *expected);
 	vfs_status_t (*readdir)(vnode_t directory, uint64_t *offset, vfs_dirent_t *entry);
 	vfs_status_t (*read)(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint64_t *read_size);
 	vfs_status_t (*write)(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint64_t *written_size);
@@ -139,15 +140,8 @@ struct vnode {
 	bool v_active;
 };
 
-void vnode_init(
-	vnode_t vnode,
-	mount_t mount,
-	vnode_t parent,
-	const vnode_operations_t *operations,
-	vnode_type_t type,
-	uint64_t identifier,
-	void *data
-);
+void vnode_init(vnode_t vnode, mount_t mount, vnode_t parent, const vnode_operations_t *operations, vnode_type_t type,
+				uint64_t identifier, void *data);
 
 bool vnode_reference(vnode_t vnode);
 void vnode_rele(vnode_t vnode);

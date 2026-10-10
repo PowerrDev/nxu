@@ -86,12 +86,15 @@ vfs_status_t vfs_lookup(const char *path, vnode_t *result);
 vfs_status_t vfs_create(const char *path, vnode_type_t type, vnode_t *result);
 vfs_status_t vfs_mkdir(const char *path);
 vfs_status_t vfs_unlink(const char *path);
+/* Held target is consumed only by a filesystem that can unlink it atomically. */
+vfs_status_t vfs_unlink_held(const char *path, vnode_t *expected);
 
 vfs_status_t vfs_open(filedesc_t filedesc, const char *path, uint32_t flags, uint32_t *descriptor);
 vfs_status_t vfs_close(filedesc_t filedesc, uint32_t descriptor);
 vfs_status_t vfs_read(filedesc_t filedesc, uint32_t descriptor, void *buffer, uint64_t size, uint64_t *read_size);
 vfs_status_t vfs_readdir(filedesc_t filedesc, uint32_t descriptor, vfs_dirent_t *entry);
-vfs_status_t vfs_write(filedesc_t filedesc, uint32_t descriptor, const void *buffer, uint64_t size, uint64_t *written_size);
+vfs_status_t vfs_write(filedesc_t filedesc, uint32_t descriptor, const void *buffer, uint64_t size,
+					   uint64_t *written_size);
 vfs_status_t vfs_seek(filedesc_t filedesc, uint32_t descriptor, uint64_t offset);
 vfs_status_t vfs_ioctl(filedesc_t filedesc, uint32_t descriptor, uint32_t command, void *argument);
 
