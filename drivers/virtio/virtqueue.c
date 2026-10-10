@@ -2,11 +2,31 @@
 
 #include <kern/machine/barrier.h>
 #include <vm/pmm.h>
+#include <kern/lock.h>
 #include <vm/vmm.h>
 
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+
+static nxu_stats_virtio_t g_virtqueue_stats;
+static nxu_spinlock_t g_virtqueue_stats_lock = NXU_SPINLOCK_INIT;
+
+static void virtqueue_count(uint64_t *counter, uint64_t amount)
+{
+	uint64_t irq = nxu_spin_lock_irqsave(&g_virtqueue_stats_lock);
+	*counter += amount;
+	nxu_spin_unlock_irqrestore(&g_virtqueue_stats_lock, irq);
+}
+
+void virtqueue_statistics(nxu_stats_virtio_t *out)
+{
+	uint64_t irq = nxu_spin_lock_irqsave(&g_virtqueue_stats_lock);
+	*out = g_virtqueue_stats;
+	nxu_spin_unlock_irqrestore(&g_virtqueue_stats_lock, irq);
+	out->struct_size = sizeof(*out);
+	out->version = NXU_STATS_VERSION;
+}
 
 #define VIRTQUEUE_STORAGE_SIZE PMM_PAGE_SIZE
 
@@ -38,10 +58,13 @@ static inline void virtqueue_consume_barrier(void)
  */
 bool virtqueue_init(virtqueue_t *queue, uint16_t size)
 {
-	if (queue == 0 || size == 0U || size > VIRTQUEUE_MAX_SIZE) return false;
+	if (queue == 0 || size == 0U || size > VIRTQUEUE_MAX_SIZE)
+		return false;
 
-	if ((size & (uint16_t)(size - 1U)) != 0U) return false;
-	if (!vmm_higher_half_direct_map_enabled()) return false;
+	if ((size & (uint16_t)(size - 1U)) != 0U)
+		return false;
+	if (!vmm_higher_half_direct_map_enabled())
+		return false;
 
 	memset(queue, 0, sizeof(*queue));
 
@@ -49,16 +72,15 @@ bool virtqueue_init(virtqueue_t *queue, uint16_t size)
 	uint64_t descriptors_size = (uint64_t)size * sizeof(virtq_desc_t);
 	uint64_t available_offset = descriptors_size;
 	uint64_t available_size = 4ULL + (uint64_t)size * sizeof(uint16_t);
-	uint64_t used_offset = virtqueue_align_up(
-		available_offset + available_size,
-		4ULL
-	);
+	uint64_t used_offset = virtqueue_align_up(available_offset + available_size, 4ULL);
 	uint64_t used_size = 4ULL + (uint64_t)size * sizeof(virtq_used_elem_t);
 
-	if (used_offset + used_size > VIRTQUEUE_STORAGE_SIZE) return false;
+	if (used_offset + used_size > VIRTQUEUE_STORAGE_SIZE)
+		return false;
 
 	uint64_t physical;
-	if (!pmm_allocate_page(&physical)) return false;
+	if (!pmm_allocate_page(&physical))
+		return false;
 
 	uint64_t virtual_address;
 	if (!vmm_physical_to_higher_half(physical, &virtual_address)) {
@@ -85,12 +107,11 @@ bool virtqueue_init(virtqueue_t *queue, uint16_t size)
 	queue->last_used_index = 0U;
 
 	for (uint16_t index = 0U; index < size; index++) {
-		queue->free_next[index] = index + 1U < size
-			? (uint16_t)(index + 1U)
-			: UINT16_MAX;
+		queue->free_next[index] = index + 1U < size ? (uint16_t)(index + 1U) : UINT16_MAX;
 	}
 
 	queue->initialized = true;
+	virtqueue_count(&g_virtqueue_stats.live_queues, 1ULL);
 	return true;
 }
 
@@ -103,18 +124,18 @@ bool virtqueue_init(virtqueue_t *queue, uint16_t size)
  */
 bool virtqueue_init_legacy(virtqueue_t *queue, uint16_t size)
 {
-	if (queue == 0 || size == 0U || size > VIRTQUEUE_LEGACY_MAX_SIZE) return false;
+	if (queue == 0 || size == 0U || size > VIRTQUEUE_LEGACY_MAX_SIZE)
+		return false;
 
-	if ((size & (uint16_t)(size - 1U)) != 0U) return false;
-	if (!vmm_higher_half_direct_map_enabled()) return false;
+	if ((size & (uint16_t)(size - 1U)) != 0U)
+		return false;
+	if (!vmm_higher_half_direct_map_enabled())
+		return false;
 
 	uint64_t descriptors_size = (uint64_t)size * sizeof(virtq_desc_t);
 	uint64_t available_offset = descriptors_size;
 	uint64_t available_size = 6ULL + (uint64_t)size * sizeof(uint16_t);
-	uint64_t used_offset = virtqueue_align_up(
-		available_offset + available_size,
-		PMM_PAGE_SIZE
-	);
+	uint64_t used_offset = virtqueue_align_up(available_offset + available_size, PMM_PAGE_SIZE);
 	uint64_t used_size = 6ULL + (uint64_t)size * sizeof(virtq_used_elem_t);
 	uint64_t total = virtqueue_align_up(used_offset + used_size, PMM_PAGE_SIZE);
 	uint32_t pages = (uint32_t)(total / PMM_PAGE_SIZE);
@@ -122,7 +143,8 @@ bool virtqueue_init_legacy(virtqueue_t *queue, uint16_t size)
 	memset(queue, 0, sizeof(*queue));
 
 	uint64_t physical;
-	if (!pmm_allocate_contiguous_pages(pages, &physical)) return false;
+	if (!pmm_allocate_contiguous_pages(pages, &physical))
+		return false;
 
 	uint64_t virtual_address;
 	if (!vmm_physical_to_higher_half(physical, &virtual_address)) {
@@ -152,12 +174,11 @@ bool virtqueue_init_legacy(virtqueue_t *queue, uint16_t size)
 	queue->free_count = usable;
 
 	for (uint16_t index = 0U; index < usable; index++) {
-		queue->free_next[index] = index + 1U < usable
-			? (uint16_t)(index + 1U)
-			: UINT16_MAX;
+		queue->free_next[index] = index + 1U < usable ? (uint16_t)(index + 1U) : UINT16_MAX;
 	}
 
 	queue->initialized = true;
+	virtqueue_count(&g_virtqueue_stats.live_queues, 1ULL);
 	return true;
 }
 
@@ -168,13 +189,17 @@ bool virtqueue_init_legacy(virtqueue_t *queue, uint16_t size)
  */
 bool virtqueue_destroy(virtqueue_t *queue)
 {
-	if (queue == 0 || !queue->initialized) return false;
+	if (queue == 0 || !queue->initialized)
+		return false;
 
 	uint64_t physical = queue->storage_physical;
 	uint32_t pages = queue->storage_pages;
 	memset(queue, 0, sizeof(*queue));
+	/* Removed from service even if returning its backing pages fails. */
+	virtqueue_count(&g_virtqueue_stats.live_queues, UINT64_MAX);
 
-	if (pages > 1U) return pmm_free_contiguous_pages(physical, pages);
+	if (pages > 1U)
+		return pmm_free_contiguous_pages(physical, pages);
 	return pmm_free_page(physical);
 }
 
@@ -185,9 +210,13 @@ bool virtqueue_destroy(virtqueue_t *queue)
  */
 bool virtqueue_alloc_descriptor(virtqueue_t *queue, uint16_t *index)
 {
-	if (queue == 0 || index == 0 || !queue->initialized) return false;
+	if (queue == 0 || index == 0 || !queue->initialized)
+		return false;
 
-	if (queue->free_count == 0U || queue->free_head == UINT16_MAX) return false;
+	if (queue->free_count == 0U || queue->free_head == UINT16_MAX) {
+		virtqueue_count(&g_virtqueue_stats.descriptor_exhaustions, 1ULL);
+		return false;
+	}
 
 	uint16_t descriptor = queue->free_head;
 	queue->free_head = queue->free_next[descriptor];
@@ -205,9 +234,11 @@ bool virtqueue_alloc_descriptor(virtqueue_t *queue, uint16_t *index)
  */
 bool virtqueue_free_descriptor(virtqueue_t *queue, uint16_t index)
 {
-	if (queue == 0 || !queue->initialized || index >= queue->size || index >= VIRTQUEUE_MAX_SIZE) return false;
+	if (queue == 0 || !queue->initialized || index >= queue->size || index >= VIRTQUEUE_MAX_SIZE)
+		return false;
 
-	if (queue->free_count >= queue->size) return false;
+	if (queue->free_count >= queue->size)
+		return false;
 
 	memset(&queue->descriptors[index], 0, sizeof(queue->descriptors[index]));
 	queue->free_next[index] = queue->free_head;
@@ -224,13 +255,17 @@ bool virtqueue_free_descriptor(virtqueue_t *queue, uint16_t index)
  */
 bool virtqueue_submit(virtqueue_t *queue, uint16_t head)
 {
-	if (queue == 0 || !queue->initialized || head >= queue->size) return false;
+	if (queue == 0 || !queue->initialized || head >= queue->size) {
+		virtqueue_count(&g_virtqueue_stats.rejected_submissions, 1ULL);
+		return false;
+	}
 
 	uint16_t available = *queue->available_index;
 	queue->available_ring[available % queue->size] = head;
 	virtqueue_publish_barrier();
 	*queue->available_index = (uint16_t)(available + 1U);
 	virtqueue_publish_barrier();
+	virtqueue_count(&g_virtqueue_stats.submissions, 1ULL);
 	return true;
 }
 
@@ -240,11 +275,7 @@ bool virtqueue_submit(virtqueue_t *queue, uint16_t head)
  * Consume the next used-ring completion after ordering device writes
  * before CPU reads.
  */
-bool virtqueue_pop_used(
-	virtqueue_t *queue,
-	uint32_t *id,
-	uint32_t *length
-)
+bool virtqueue_pop_used(virtqueue_t *queue, uint32_t *id, uint32_t *length)
 {
 	if (queue == 0 || id == 0 || length == 0 || !queue->initialized) {
 		return false;
@@ -253,7 +284,8 @@ bool virtqueue_pop_used(
 	uint16_t device_index = *queue->used_index;
 	virtqueue_consume_barrier();
 
-	if (queue->last_used_index == device_index) return false;
+	if (queue->last_used_index == device_index)
+		return false;
 
 	volatile virtq_used_elem_t *element = &queue->used_ring[queue->last_used_index % queue->size];
 
@@ -261,6 +293,12 @@ bool virtqueue_pop_used(
 	uint32_t used_length = element->length;
 	virtqueue_consume_barrier();
 
+	uint64_t irq = nxu_spin_lock_irqsave(&g_virtqueue_stats_lock);
+	g_virtqueue_stats.completions++;
+	g_virtqueue_stats.used_bytes += used_length;
+	if (used_id >= queue->size || used_id >= VIRTQUEUE_MAX_SIZE)
+		g_virtqueue_stats.invalid_completions++;
+	nxu_spin_unlock_irqrestore(&g_virtqueue_stats_lock, irq);
 	queue->last_used_index++;
 	*id = used_id;
 	*length = used_length;
@@ -269,24 +307,25 @@ bool virtqueue_pop_used(
 
 uint64_t virtqueue_desc_physical(const virtqueue_t *queue)
 {
-	if (queue == 0 || !queue->initialized) return 0ULL;
+	if (queue == 0 || !queue->initialized)
+		return 0ULL;
 	return queue->storage_physical;
 }
 
 uint64_t virtqueue_available_physical(const virtqueue_t *queue)
 {
-	if (queue == 0 || !queue->initialized) return 0ULL;
+	if (queue == 0 || !queue->initialized)
+		return 0ULL;
 
 	return queue->storage_physical +
-		(uint64_t)((const uint8_t *)queue->available_flags -
-		(const uint8_t *)queue->storage_virtual);
+		   (uint64_t)((const uint8_t *)queue->available_flags - (const uint8_t *)queue->storage_virtual);
 }
 
 uint64_t virtqueue_used_physical(const virtqueue_t *queue)
 {
-	if (queue == 0 || !queue->initialized) return 0ULL;
+	if (queue == 0 || !queue->initialized)
+		return 0ULL;
 
 	return queue->storage_physical +
-		(uint64_t)((const uint8_t *)queue->used_flags -
-		(const uint8_t *)queue->storage_virtual);
+		   (uint64_t)((const uint8_t *)queue->used_flags - (const uint8_t *)queue->storage_virtual);
 }

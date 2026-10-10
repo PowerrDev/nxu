@@ -2,6 +2,7 @@
 #define NXU_DRIVERS_VIRTIO_VIRTQUEUE_H
 
 #include <stdbool.h>
+#include <kern/syscall/statistics.h>
 #include <stdint.h>
 
 #define VIRTQUEUE_MAX_SIZE 128U
@@ -66,6 +67,8 @@ typedef struct {
  */
 bool virtqueue_init(virtqueue_t *queue, uint16_t size);
 
+void virtqueue_statistics(nxu_stats_virtio_t *out);
+
 /*
  * virtqueue_init_legacy:
  *
@@ -125,11 +128,7 @@ bool virtqueue_submit(virtqueue_t *queue, uint16_t head);
  *
  * Returns true when a completion was available.
  */
-bool virtqueue_pop_used(
-	virtqueue_t *queue,
-	uint32_t *descriptor_id,
-	uint32_t *length
-);
+bool virtqueue_pop_used(virtqueue_t *queue, uint32_t *descriptor_id, uint32_t *length);
 
 uint64_t virtqueue_desc_physical(const virtqueue_t *queue);
 uint64_t virtqueue_available_physical(const virtqueue_t *queue);
