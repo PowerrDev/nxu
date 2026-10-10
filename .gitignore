@@ -17,3 +17,7 @@ btrfs_disk.img
 
 # Signed with the local tepOS boot-signing key (tools/sign_boot_image.sh): only valid on this machine.
 tools/DiskRoot/System/Library/CoreServices/bootd.manifest
+
+# Generated crash symbol maps are staged from the current ELF build.
+/tools/DiskRoot/**/*.crashsym
+__pycache__/

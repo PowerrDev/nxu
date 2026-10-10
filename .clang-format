@@ -3,9 +3,12 @@ UseTab: Always
 IndentWidth: 4
 TabWidth: 4
 ColumnLimit: 120
-AllowShortIfStatementsOnASingleLine: true
+AllowShortIfStatementsOnASingleLine: Never
 AllowShortFunctionsOnASingleLine: Empty
 BinPackArguments: true
 BinPackParameters: true
 BreakBeforeBraces: Linux
 SortIncludes: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+SeparateDefinitionBlocks: Always
