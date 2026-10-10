@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+	<dict>
+		<key>Label</key>
+		<string>com.nxu.crashd</string>
+		<key>Program</key>
+		<string>/disk/System/Library/CoreServices/crashd</string>
+		<key>RecoveryProgram</key>
+		<string>/disk/System/Library/CoreServices/crashd.recovery</string>
+		<key>RunAtLoad</key>
+		<true />
+		<key>KeepAlive</key>
+		<true />
+		<key>AllowFilesystemWrite</key>
+		<true />
+		<key>AllowCrashReports</key>
+		<true />
+		<key>DisabledBootArgument</key>
+		<string>-no-crashd</string>
+	</dict>
+</plist>
