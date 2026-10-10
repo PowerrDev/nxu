@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+	<dict>
+		<key>Label</key>
+		<string>com.nxu.crashtest</string>
+		<key>Program</key>
+		<string>/disk/System/Library/CoreServices/crashtest</string>
+		<key>RequiredBootArgument</key>
+		<string>crash.test=1</string>
+		<key>RunAtLoad</key>
+		<true />
+		<key>KeepAlive</key>
+		<false />
+	</dict>
+</plist>

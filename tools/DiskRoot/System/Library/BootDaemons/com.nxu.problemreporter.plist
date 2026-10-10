@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+	<dict>
+		<key>Label</key>
+		<string>com.nxu.problemreporter</string>
+		<key>Program</key>
+		<string>/disk/System/Library/CoreServices/problemreporter</string>
+		<key>RunAtLoad</key>
+		<true />
+		<key>KeepAlive</key>
+		<true />
+		<key>AllowCrashNotifications</key>
+		<true />
+		<key>DisabledInSafeMode</key>
+		<true />
+		<key>DisabledBootArgument</key>
+		<string>-no-crash-ui</string>
+	</dict>
+</plist>
