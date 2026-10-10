@@ -97,16 +97,16 @@ inside the file, which is only true because the symbol table follows.
 Built by `makedefs/i386/userland.mk` into `$(BUILD_ROOT)/i386/user`, with
 `--target=i386-none-elf`, the same flags as the arm64 userland, `-Werror`:
 `bootd`, `logd`, `patchd`, `ipctest_a`, `ipctest_b`, `threadtest`,
-`sockettest_server`, `sockettest_client`. No UI programs. No arm64 source
-needed changing: they were already 32-bit clean. 64-bit division is provided by
+`sockettest_server`, `sockettest_client`. The desktop services and framework
+images are built separately by `makedefs/i386/frameworks.mk`. 64-bit division is provided by
 `libk/udivmoddi4.c` in an archive (`libnxurt.a`), pulled in only if a program
 divides 64-bit values (none does today).
 
 The plists are not duplicated: `com.nxu.logd.plist` / `com.nxu.patchd.plist`
 name `/disk/System/Library/CoreServices/<program>`, which is architecture
 neutral, and bootd discovers `/disk/System/Library/BootDaemons/*.plist`. Only
-those two are staged; the windowserver / about-sevos plists would just make
-bootd retry a launch that cannot succeed.
+those two are staged for a standard userland boot. The desktop build also
+stages `dyrld`, WindowServer and desktop service plists.
 
 Staged tree (`$(BUILD_ROOT)/i386/diskroot`, same shape as `tools/DiskRoot`,
 which is only read): `hello.txt`, `System/README.txt`,
@@ -136,14 +136,30 @@ aligned and offset/vaddr congruent, inside `[0x1000, VM_MAP_BASE)`, no shared
 page, file bounds; prints sizes) and `tools/test_i386_userland.sh` (boots
 `test=userland`).
 
-## Not done yet
+## Userland GUI frameworks
 
-* Launching bootd end to end: needs the loader linked into the i386 kernel and
-  the int 0x80 path, vfs, vm and threads. The user code has been checked
-  statically (ELF checks, disassembly of the wrappers, crt0 and trampoline),
-  not executed.
-* The kernel side of the ABI above (threads area), notably `NXU_SYS_UPTIME_US`
-  returning the low 32 bits in `eax`, and syscalls that take user pointers to
-  64-bit objects (`waitpid`, `klog_read`) reading/writing all eight bytes.
-* `kern/kern_init.c` still includes `<kern/arm64/cache.h>` directly (arm64
-  only, not mine to change).
+`make run-i386-desktop` builds the i386 kernel with `UISERVICE=0` and
+`WINDOWSERVER=0`. It builds ELF32 `Runtime`, `CoreFoundation`, `WindowServer`,
+`CoreGraphics` and `DesktopService` shared libraries under
+`$(BUILD_ROOT)/i386/user`, stages them under
+`/System/Library/Frameworks`, and launches `dyrld`, `windowserver_service` and
+`desktop_service` through bootd. The desktop disk defaults to 64 MiB for the
+frameworks and apps. `make i386-frameworks BUILD_ROOT=BUILD/BUILD-i386-desktop`
+builds the framework images without rebuilding the kernel.
+
+The i386 loader validates ELF32 images, maps each into a bounded slot below the
+shared-memory window, requests enclave-backed random slides and measures load
+bytes through the registered `dyrld` daemon. It supports `R_386_32`,
+`R_386_GLOB_DAT`, `R_386_JMP_SLOT` and `R_386_RELATIVE` with implicit addends,
+runs constructors after binding, and seals writable GNU_RELRO pages. TLS, text
+relocations, symbol versions and RELR remain unsupported. Custom i386 signal
+handler restoration is also not implemented; default fatal signals and
+read-only page protection work.
+
+`python3 tools/check_i386_gui_frames.py --enclave` tests the live desktop and
+framework runtime on a private TCG disk. It checks mailbox random and
+measurement requests, trusted display/input exclusion before login, rejected
+and accepted credentials, runtime allocation and constructors, RELRO write
+faults, frame rendering, input and app cleanup. The fixture exercises the i386
+mailbox protocol; boot `make run-i386-desktop` to validate the production
+enclave connection.
