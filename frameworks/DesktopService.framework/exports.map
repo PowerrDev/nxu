@@ -1,0 +1,11 @@
+{
+  global:
+    DesktopServiceRun;
+    DesktopServiceBeginSession;
+    DesktopServiceGetTime;
+    DesktopServiceShutdown;
+    DesktopServiceScale;
+    DesktopServiceGetActivity;
+    DesktopServiceListDirectory;
+  local: *;
+};
