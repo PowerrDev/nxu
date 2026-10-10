@@ -17,9 +17,6 @@
 	<key>AllowDisplay</key>
 	<true/>
 
-	<key>DisabledInSafeMode</key>
-	<true/>
-
 	<key>DisabledBootArgument</key>
 	<string>-no-windowserver</string>
 </dict>
