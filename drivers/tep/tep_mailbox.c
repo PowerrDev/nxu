@@ -396,7 +396,7 @@ bool tep_mailbox_start(void)
 
 	if (!kernel_thread_create(proc_task(proc_kernel()), tep_mailbox_monitor, 0, &thread) || !sched_thread_start(thread)) {
 		TEP_MAILBOX_LOG("monitor thread could not be started: tepOS unavailable\n");
-		g_link_state = TEP_LINK_ABSENT;
+		g_link_state = TEP_LINK_UNAVAILABLE;
 		return false;
 	}
 
