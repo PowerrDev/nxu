@@ -310,7 +310,7 @@ resident vnodes and a global mount table. `ramfs` remains the bootstrap root,
 while the development VirtIO Block disk is mounted as writable ext4 at
 `/disk`.
 
-`make run` keeps a persistent 64 MiB ext4 `disk.img`. A filesystem-format stamp
+`make run` keeps a persistent 128 MiB ext4 `tools/disk.img`. A filesystem-format stamp
 recreates an older lesson image once when the required on-disk profile changes;
 after that, normal kernel rebuilds preserve guest data. Use `make disk-reset`
 when a deliberately fresh filesystem is required.

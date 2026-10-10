@@ -21,3 +21,6 @@ tools/DiskRoot/System/Library/CoreServices/bootd.manifest
 # Generated crash symbol maps are staged from the current ELF build.
 /tools/DiskRoot/**/*.crashsym
 __pycache__/
+
+# Persistent local development image; too large for GitHub.
+/tools/disk.img

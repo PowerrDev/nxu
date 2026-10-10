@@ -4,7 +4,7 @@
 # registry in makedefs/tests.mk (through `make check-list`), then run the i386
 # suites, and print one pass/fail table. Exit status is 0 only if all passed.
 #
-# It never touches the tracked disk.img or tools/DiskRoot. Each test gets a
+# It never touches the tracked tools/disk.img or tools/DiskRoot. Each test gets a
 # fresh disk image built from a scratch copy of tools/DiskRoot, with its own
 # stage stamp: the stamp normally lives in the shared build directory, so
 # without the override an up-to-date stamp would skip staging into the scratch

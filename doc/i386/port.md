@@ -120,7 +120,7 @@ Supply your phase by defining the strong `i386_init_<phase>` and
   The shell is zsh, which does not word-split unquoted variables: loop over
   file lists in a `bash` script. macOS ships make 3.81 and bash 3.2 (no
   associative arrays, no `$(let)`/`$(file)`).
-* Do not modify `disk.img` or anything under `tools/DiskRoot` (arm64 artifacts).
+* Do not modify `tools/disk.img` or anything under `tools/DiskRoot` (arm64 artifacts).
 
 ## Style
 

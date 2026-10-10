@@ -49,7 +49,7 @@ anyway.
 
 ### What it does not touch
 
-The tracked `disk.img` and `tools/DiskRoot` are left alone. `tools/check.sh`
+The tracked `tools/disk.img` and `tools/DiskRoot` are left alone. `tools/check.sh`
 copies `tools/DiskRoot` into a scratch directory and builds a fresh disk image
 from it for every test, so a test that writes to the disk cannot affect the next.
 It also overrides `USER_STAGE_STAMP`: that stamp normally lives in the shared

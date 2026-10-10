@@ -306,8 +306,8 @@ make test-i386-btrfs BUILD_ROOT=<scratch>        # in-kernel, second..fourth vir
 make test-arm64-btrfs BUILD_ROOT=<scratch> CONFIG=base   # in-kernel, virtio-blk-device, 50 checks
 ```
 
-Always pass a scratch `BUILD_ROOT`. None of them touches `disk.img` or
-`tools/DiskRoot` (the arm64 test copies `disk.img`); if `disk.img` looks stale to
+Always pass a scratch `BUILD_ROOT`. None of them touches `tools/disk.img` or
+`tools/DiskRoot` (the arm64 test copies `tools/disk.img`); if `tools/disk.img` looks stale to
 make, pass `DISK=`, `DISK_ROOT=` and `DISK_FORMAT_STAMP=` pointing at scratch copies
 so the rebuild does not dirty the tracked files. Counts above are from the last run
 of the commands as written (2026-09-20); the sweep length is `BTRFS_SWEEP_ITERS`

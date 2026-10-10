@@ -12,7 +12,7 @@
 #      minute of it is tepOS's passcode delay running out).
 #
 # Like tools/check.sh it builds against a scratch disk, so the tracked
-# disk.img and tools/DiskRoot are left alone.
+# tools/disk.img and tools/DiskRoot are left alone.
 #
 #   TEP_DIR=<path>   the TrustedEnclaveProcessor checkout (default: next to
 #                    this repository's main checkout)

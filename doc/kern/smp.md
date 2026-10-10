@@ -394,7 +394,7 @@ Any kernel boots SMP with QEMU's `-smp N`:
 ```sh
 qemu-system-aarch64 -machine virt,gic-version=3 -cpu cortex-a72 -smp 4 -m 512M \
     -kernel BUILD/default/kernel.bin -global virtio-mmio.force-legacy=false \
-    -drive if=none,format=raw,file=disk.img,id=nxudisk,snapshot=on \
+    -drive if=none,format=raw,file=tools/disk.img,id=nxudisk,snapshot=on \
     -device virtio-blk-device,drive=nxudisk -serial stdio -display none -monitor none
 ```
 
