@@ -17,6 +17,7 @@
 #include <kern/i386/smp.h>
 
 #include <kern/console/console.h>
+#include <kern/process/statistics.h>
 #include <string.h>
 
 #include <stdbool.h>
@@ -30,40 +31,38 @@
 extern uint8_t i386_boot_stack_bottom[];
 extern uint8_t i386_boot_stack_top[];
 
-static const char *const g_exception_names[T_EXCEPTION_COUNT] = {
-	"#DE Divide Error",
-	"#DB Debug",
-	"NMI",
-	"#BP Breakpoint",
-	"#OF Overflow",
-	"#BR Bound Range Exceeded",
-	"#UD Invalid Opcode",
-	"#NM Device Not Available",
-	"#DF Double Fault",
-	"Coprocessor Segment Overrun",
-	"#TS Invalid TSS",
-	"#NP Segment Not Present",
-	"#SS Stack-Segment Fault",
-	"#GP General Protection Fault",
-	"#PF Page Fault",
-	"reserved",
-	"#MF x87 Floating-Point Error",
-	"#AC Alignment Check",
-	"#MC Machine Check",
-	"#XM SIMD Floating-Point Exception",
-	"#VE Virtualization Exception",
-	"#CP Control Protection",
-	"reserved",
-	"reserved",
-	"reserved",
-	"reserved",
-	"reserved",
-	"reserved",
-	"#HV Hypervisor Injection",
-	"#VC VMM Communication",
-	"#SX Security Exception",
-	"reserved"
-};
+static const char *const g_exception_names[T_EXCEPTION_COUNT] = {"#DE Divide Error",
+																 "#DB Debug",
+																 "NMI",
+																 "#BP Breakpoint",
+																 "#OF Overflow",
+																 "#BR Bound Range Exceeded",
+																 "#UD Invalid Opcode",
+																 "#NM Device Not Available",
+																 "#DF Double Fault",
+																 "Coprocessor Segment Overrun",
+																 "#TS Invalid TSS",
+																 "#NP Segment Not Present",
+																 "#SS Stack-Segment Fault",
+																 "#GP General Protection Fault",
+																 "#PF Page Fault",
+																 "reserved",
+																 "#MF x87 Floating-Point Error",
+																 "#AC Alignment Check",
+																 "#MC Machine Check",
+																 "#XM SIMD Floating-Point Exception",
+																 "#VE Virtualization Exception",
+																 "#CP Control Protection",
+																 "reserved",
+																 "reserved",
+																 "reserved",
+																 "reserved",
+																 "reserved",
+																 "reserved",
+																 "#HV Hypervisor Injection",
+																 "#VC VMM Communication",
+																 "#SX Security Exception",
+																 "reserved"};
 
 static volatile uint32_t g_breakpoint_count;
 static volatile uint32_t g_last_breakpoint_eip;
@@ -110,17 +109,19 @@ static void trap_halt(void)
 
 static const char *trap_exception_name(uint32_t vector)
 {
-	if (vector < T_EXCEPTION_COUNT) return g_exception_names[vector];
-	if (vector >= T_IRQ_BASE && vector < T_IRQ_BASE + T_IRQ_COUNT) return "hardware interrupt";
-	if (vector == T_SYSCALL) return "system call";
+	if (vector < T_EXCEPTION_COUNT)
+		return g_exception_names[vector];
+	if (vector >= T_IRQ_BASE && vector < T_IRQ_BASE + T_IRQ_COUNT)
+		return "hardware interrupt";
+	if (vector == T_SYSCALL)
+		return "system call";
 	return "unknown vector";
 }
 
 static bool trap_has_error_code(uint32_t vector)
 {
-	return vector == T_DOUBLE_FAULT ||
-		(vector >= T_INVALID_TSS && vector <= T_PAGE_FAULT) ||
-		vector == T_ALIGNMENT_CHECK;
+	return vector == T_DOUBLE_FAULT || (vector >= T_INVALID_TSS && vector <= T_PAGE_FAULT) ||
+		   vector == T_ALIGNMENT_CHECK;
 }
 
 static void trap_print_flags(uint32_t efl)
@@ -128,22 +129,20 @@ static void trap_print_flags(uint32_t efl)
 	static const struct {
 		uint32_t bit;
 		const char *name;
-	} flags[] = {
-		{ 1U << 0U, "CF" }, { 1U << 2U, "PF" }, { 1U << 4U, "AF" },
-		{ 1U << 6U, "ZF" }, { 1U << 7U, "SF" }, { 1U << 8U, "TF" },
-		{ 1U << 9U, "IF" }, { 1U << 10U, "DF" }, { 1U << 11U, "OF" },
-		{ 1U << 14U, "NT" }, { 1U << 16U, "RF" }, { 1U << 17U, "VM" },
-		{ 1U << 18U, "AC" }
-	};
+	} flags[] = {{1U << 0U, "CF"},	{1U << 2U, "PF"},  {1U << 4U, "AF"},  {1U << 6U, "ZF"},	 {1U << 7U, "SF"},
+				 {1U << 8U, "TF"},	{1U << 9U, "IF"},  {1U << 10U, "DF"}, {1U << 11U, "OF"}, {1U << 14U, "NT"},
+				 {1U << 16U, "RF"}, {1U << 17U, "VM"}, {1U << 18U, "AC"}};
 
 	kputs(" [");
 
 	bool first = true;
 
 	for (uint32_t index = 0U; index < sizeof(flags) / sizeof(flags[0]); index++) {
-		if ((efl & flags[index].bit) == 0U) continue;
+		if ((efl & flags[index].bit) == 0U)
+			continue;
 
-		if (!first) kputc(' ');
+		if (!first)
+			kputc(' ');
 		kputs(flags[index].name);
 		first = false;
 	}
@@ -159,25 +158,18 @@ static void trap_print_selector_error(uint32_t err)
 		return;
 	}
 
-	kprintf(
-		"  cause: selector 0x%x, %s, index %u%s\n",
-		err & 0xFFFFU,
-		(err & 2U) != 0U ? "IDT" : ((err & 4U) != 0U ? "LDT" : "GDT"),
-		(err >> 3U) & 0x1FFFU,
-		(err & 1U) != 0U ? ", raised by an external event" : ""
-	);
+	kprintf("  cause: selector 0x%x, %s, index %u%s\n", err & 0xFFFFU,
+			(err & 2U) != 0U ? "IDT" : ((err & 4U) != 0U ? "LDT" : "GDT"), (err >> 3U) & 0x1FFFU,
+			(err & 1U) != 0U ? ", raised by an external event" : "");
 }
 
 static void trap_print_page_fault(uint32_t err, uint32_t address)
 {
-	kprintf(
-		"  cause: %s of 0x%x by %s: %s%s\n",
-		(err & PF_FETCH) != 0U ? "instruction fetch" : ((err & PF_WRITE) != 0U ? "write" : "read"),
-		address,
-		(err & PF_USER) != 0U ? "user code" : "kernel code",
-		(err & PF_PRESENT) != 0U ? "protection violation" : "page not present",
-		(err & PF_RESERVED) != 0U ? ", reserved bit set in a paging structure" : ""
-	);
+	kprintf("  cause: %s of 0x%x by %s: %s%s\n",
+			(err & PF_FETCH) != 0U ? "instruction fetch" : ((err & PF_WRITE) != 0U ? "write" : "read"), address,
+			(err & PF_USER) != 0U ? "user code" : "kernel code",
+			(err & PF_PRESENT) != 0U ? "protection violation" : "page not present",
+			(err & PF_RESERVED) != 0U ? ", reserved bit set in a paging structure" : "");
 }
 
 static void trap_print_backtrace(uint32_t eip, uint32_t ebp)
@@ -191,14 +183,17 @@ static void trap_print_backtrace(uint32_t eip, uint32_t ebp)
 
 	for (uint32_t depth = 1U; depth < TRAP_BACKTRACE_DEPTH; depth++) {
 		/* Only walk frames that provably lie inside the boot stack. */
-		if (frame < low || frame + 8U > high || (frame & 3U) != 0U) break;
+		if (frame < low || frame + 8U > high || (frame & 3U) != 0U)
+			break;
 
 		const uint32_t *words = (const uint32_t *)frame;
 
-		if (words[1] == 0U) break;
+		if (words[1] == 0U)
+			break;
 		kprintf(" #%u 0x%x", depth, words[1]);
 
-		if (words[0] <= frame) break;
+		if (words[0] <= frame)
+			break;
 		frame = words[0];
 	}
 
@@ -214,27 +209,21 @@ static void trap_panic(const x86_saved_state_t *state, uint32_t esp, const char 
 
 static void trap_panic(const x86_saved_state_t *state, uint32_t esp, const char *how)
 {
-	if (g_in_panic) trap_halt();
+	if (g_in_panic)
+		trap_halt();
 	g_in_panic = true;
 
 	uint32_t vector = state->trapno;
 
 	kputc('\n');
-	kprintf(
-		"panic: %s %u (%s) at 0x%x:0x%x%s\n",
-		how,
-		vector,
-		trap_exception_name(vector),
-		state->cs & 0xFFFFU,
-		state->eip,
-		x86_saved_state_is_user(state) ? " (user mode)" : ""
-	);
+	kprintf("panic: %s %u (%s) at 0x%x:0x%x%s\n", how, vector, trap_exception_name(vector), state->cs & 0xFFFFU,
+			state->eip, x86_saved_state_is_user(state) ? " (user mode)" : "");
 
 	if (trap_has_error_code(vector)) {
 		kprintf("  error code 0x%x\n", state->err);
 
-		if (vector == T_INVALID_TSS || vector == T_SEGMENT_NOT_PRESENT ||
-			vector == T_STACK_FAULT || vector == T_GENERAL_PROTECTION) {
+		if (vector == T_INVALID_TSS || vector == T_SEGMENT_NOT_PRESENT || vector == T_STACK_FAULT ||
+			vector == T_GENERAL_PROTECTION) {
 			trap_print_selector_error(state->err);
 		} else if (vector == T_PAGE_FAULT) {
 			trap_print_page_fault(state->err, state->cr2);
@@ -275,15 +264,8 @@ static void trap_panic(const x86_saved_state_t *state, uint32_t esp, const char 
 		__asm__ volatile("movl %%ss, %0" : "=r"(ss));
 	}
 
-	kprintf(
-		"  cs=0x%x ss=0x%x ds=0x%x es=0x%x fs=0x%x gs=0x%x\n",
-		state->cs & 0xFFFFU,
-		ss & 0xFFFFU,
-		state->ds & 0xFFFFU,
-		state->es & 0xFFFFU,
-		state->fs & 0xFFFFU,
-		state->gs & 0xFFFFU
-	);
+	kprintf("  cs=0x%x ss=0x%x ds=0x%x es=0x%x fs=0x%x gs=0x%x\n", state->cs & 0xFFFFU, ss & 0xFFFFU,
+			state->ds & 0xFFFFU, state->es & 0xFFFFU, state->fs & 0xFFFFU, state->gs & 0xFFFFU);
 
 	kputs("  cr0=");
 	kputhex32(trap_read_cr0());
@@ -369,6 +351,11 @@ __attribute__((weak)) void i386_trap_exit(x86_saved_state_t *state)
 void i386_trap_handler(x86_saved_state_t *state)
 {
 	uint32_t vector = state->trapno;
+	if (vector == T_PAGE_FAULT)
+		statistics_note_page_fault(x86_saved_state_is_user(state));
+	if ((vector >= T_IRQ_BASE && vector < T_IRQ_BASE + T_IRQ_COUNT) || vector == T_IPI_RESCHEDULE ||
+		vector == T_IPI_CPU_STOP || vector == T_IPI_TICK)
+		statistics_note_interrupt();
 
 	if (vector == T_BREAKPOINT && !x86_saved_state_is_user(state)) {
 		/* A kernel breakpoint resumes after the int3; nothing is wrong. */
@@ -462,18 +449,19 @@ bool i386_trap_self_test(void)
 	uint32_t after = 0U;
 	uint32_t before_count = g_breakpoint_count;
 
-	__asm__ volatile(
-		"int3\n"
-		"1:\n\t"
-		"movl $1b, %0"
-		: "=r"(after)
-		:
-		: "memory"
-	);
+	__asm__ volatile("int3\n"
+					 "1:\n\t"
+					 "movl $1b, %0"
+					 : "=r"(after)
+					 :
+					 : "memory");
 
-	if (g_breakpoint_count != before_count + 1U) return false;
-	if (g_last_breakpoint_eip != after) return false;
-	if (g_last_breakpoint_cs != GDT_KERNEL_CODE_SEL) return false;
+	if (g_breakpoint_count != before_count + 1U)
+		return false;
+	if (g_last_breakpoint_eip != after)
+		return false;
+	if (g_last_breakpoint_cs != GDT_KERNEL_CODE_SEL)
+		return false;
 
 	/*
 	 * A system call through the DPL 3 gate: eax must come back rewritten by
@@ -486,16 +474,14 @@ bool i386_trap_self_test(void)
 	uint32_t esi = 0x51515151U;
 	uint32_t edi = 0xD1D1D1D1U;
 
-	__asm__ volatile(
-		"int $0x80"
-		: "+a"(eax), "+c"(ecx), "+d"(edx), "+S"(esi), "+D"(edi)
-		:
-		: "memory"
-	);
+	__asm__ volatile("int $0x80" : "+a"(eax), "+c"(ecx), "+d"(edx), "+S"(esi), "+D"(edi) : : "memory");
 
-	if (eax != I386_SYSCALL_UNIMPLEMENTED) return false;
-	if (ecx != 0xC0DEC0DEU || edx != 0xD00DD00DU) return false;
-	if (esi != 0x51515151U || edi != 0xD1D1D1D1U) return false;
+	if (eax != I386_SYSCALL_UNIMPLEMENTED)
+		return false;
+	if (ecx != 0xC0DEC0DEU || edx != 0xD00DD00DU)
+		return false;
+	if (esi != 0x51515151U || edi != 0xD1D1D1D1U)
+		return false;
 
 	return true;
 }

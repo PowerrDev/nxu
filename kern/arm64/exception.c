@@ -11,7 +11,9 @@
 #include <kern/syscall/syscall.h>
 #include <kern/process/proc.h>
 #include <kern/process/signal.h>
+#include <kern/process/crash.h>
 #include <kern/process/thread.h>
+#include <kern/process/statistics.h>
 #include <kern/arm64/user.h>
 #include <kern/logging/version.h>
 #include <kern/machine/vm_param.h>
@@ -25,6 +27,7 @@
 #define ARM64_EC_ILLEGAL_STATE 0x0EU
 #define ARM64_EC_SVC64 0x15U
 #define ARM64_EC_IABT_LOWER 0x20U
+#define ARM64_EC_IABT_CURRENT 0x21U
 #define ARM64_EC_PC_ALIGNMENT 0x22U
 #define ARM64_EC_DABT_LOWER 0x24U
 #define ARM64_EC_DABT_CURRENT 0x25U
@@ -50,45 +53,21 @@
 
 extern const char exception_vectors[];
 
-_Static_assert(
-	sizeof(arm64_exception_frame_t) == 304U,
-	"exception frame size must match exception_vectors.S"
-);
+_Static_assert(sizeof(arm64_exception_frame_t) == 304U, "exception frame size must match exception_vectors.S");
 
-_Static_assert(
-	offsetof(arm64_exception_frame_t, sp) == 248U,
-	"exception frame SP offset mismatch"
-);
+_Static_assert(offsetof(arm64_exception_frame_t, sp) == 248U, "exception frame SP offset mismatch");
 
-_Static_assert(
-	offsetof(arm64_exception_frame_t, elr) == 256U,
-	"exception frame ELR offset mismatch"
-);
+_Static_assert(offsetof(arm64_exception_frame_t, elr) == 256U, "exception frame ELR offset mismatch");
 
-_Static_assert(
-	offsetof(arm64_exception_frame_t, spsr) == 264U,
-	"exception frame SPSR offset mismatch"
-);
+_Static_assert(offsetof(arm64_exception_frame_t, spsr) == 264U, "exception frame SPSR offset mismatch");
 
-_Static_assert(
-	offsetof(arm64_exception_frame_t, far) == 272U,
-	"exception frame FAR offset mismatch"
-);
+_Static_assert(offsetof(arm64_exception_frame_t, far) == 272U, "exception frame FAR offset mismatch");
 
-_Static_assert(
-	offsetof(arm64_exception_frame_t, esr) == 280U,
-	"exception frame ESR offset mismatch"
-);
+_Static_assert(offsetof(arm64_exception_frame_t, esr) == 280U, "exception frame ESR offset mismatch");
 
-_Static_assert(
-	offsetof(arm64_exception_frame_t, vector_id) == 288U,
-	"exception frame vector offset mismatch"
-);
+_Static_assert(offsetof(arm64_exception_frame_t, vector_id) == 288U, "exception frame vector offset mismatch");
 
-_Static_assert(
-	offsetof(arm64_exception_frame_t, sp_el0) == 296U,
-	"exception frame SP_EL0 offset mismatch"
-);
+_Static_assert(offsetof(arm64_exception_frame_t, sp_el0) == 296U, "exception frame SP_EL0 offset mismatch");
 
 static bool g_panic_active;
 
@@ -115,8 +94,7 @@ static uint32_t exception_iss(uint64_t esr)
  * pointer tables already contain higher-half addresses, so direct PC-relative
  * printing keeps the panic path usable during both bootstrap and runtime.
  */
-static __attribute__((noinline, optnone))
-void exception_print_name(uint8_t ec)
+static __attribute__((noinline, optnone)) void exception_print_name(uint8_t ec)
 {
 	if (ec == 0x00U) {
 		kputs("Undefined Instruction");
@@ -156,8 +134,7 @@ void exception_print_name(uint8_t ec)
 	kputs("Unhandled ARM64 Exception");
 }
 
-static __attribute__((noinline, optnone))
-void exception_print_origin(arm64_exception_origin_t origin)
+static __attribute__((noinline, optnone)) void exception_print_origin(arm64_exception_origin_t origin)
 {
 	if (origin == ARM64_EXCEPTION_ORIGIN_CURRENT_EL_SP0) {
 		kputs("current EL using SP_EL0");
@@ -182,8 +159,7 @@ void exception_print_origin(arm64_exception_origin_t origin)
 	kputs("invalid vector source");
 }
 
-static __attribute__((noinline, optnone))
-void exception_print_instruction_length(uint8_t il)
+static __attribute__((noinline, optnone)) void exception_print_instruction_length(uint8_t il)
 {
 	if (il != 0U) {
 		kputs("32-bit instruction");
@@ -193,8 +169,7 @@ void exception_print_instruction_length(uint8_t il)
 	kputs("16-bit or unknown");
 }
 
-static __attribute__((noinline, optnone))
-void exception_print_trap_origin(uint64_t vector_id)
+static __attribute__((noinline, optnone)) void exception_print_trap_origin(uint64_t vector_id)
 {
 	if (exception_vector_from_aarch64_el0(vector_id)) {
 		kputs("User trap type ");
@@ -230,15 +205,9 @@ static uint8_t panic_trap_type(uint8_t ec)
 	}
 }
 
-static __attribute__((noreturn))
-void panic_halt(void)
+static __attribute__((noreturn)) void panic_halt(void)
 {
-	__asm__ volatile(
-		"msr daifset, #0xf"
-		:
-		:
-		: "memory"
-	);
+	__asm__ volatile("msr daifset, #0xf" : : : "memory");
 
 	for (;;) {
 		__asm__ volatile("wfe");
@@ -268,18 +237,12 @@ static void panic_print_x_register(uint32_t index, uint64_t value)
 	kputhex64(value);
 }
 
-static uint64_t exception_interrupted_stack_pointer(
-	const arm64_exception_frame_t *frame
-)
+static uint64_t exception_interrupted_stack_pointer(const arm64_exception_frame_t *frame)
 {
-	return exception_vector_from_aarch64_el0(frame->vector_id)
-		? frame->sp_el0
-		: frame->sp;
+	return exception_vector_from_aarch64_el0(frame->vector_id) ? frame->sp_el0 : frame->sp;
 }
 
-static void panic_print_thread_state(
-	const arm64_exception_frame_t *frame
-)
+static void panic_print_thread_state(const arm64_exception_frame_t *frame)
 {
 	kputln("ARM Thread State (64-bit):");
 
@@ -355,24 +318,14 @@ bool exception_vector_from_aarch64_el0(uint64_t vector_id)
 
 bool exception_validate_vector_classification(void)
 {
-	return
-		exception_vector_kind(4ULL) ==
-			ARM64_EXCEPTION_KIND_SYNCHRONOUS &&
-		exception_vector_origin(4ULL) ==
-			ARM64_EXCEPTION_ORIGIN_CURRENT_EL_SPX &&
-		exception_vector_kind(5ULL) ==
-			ARM64_EXCEPTION_KIND_IRQ &&
-		exception_vector_origin(5ULL) ==
-			ARM64_EXCEPTION_ORIGIN_CURRENT_EL_SPX &&
-		exception_vector_kind(8ULL) ==
-			ARM64_EXCEPTION_KIND_SYNCHRONOUS &&
-		exception_vector_from_aarch64_el0(8ULL) &&
-		exception_vector_kind(9ULL) ==
-			ARM64_EXCEPTION_KIND_IRQ &&
-		exception_vector_from_aarch64_el0(9ULL) &&
-		exception_vector_kind(16ULL) ==
-			ARM64_EXCEPTION_KIND_INVALID &&
-		exception_vector_origin(16ULL) == ARM64_EXCEPTION_ORIGIN_INVALID;
+	return exception_vector_kind(4ULL) == ARM64_EXCEPTION_KIND_SYNCHRONOUS &&
+		   exception_vector_origin(4ULL) == ARM64_EXCEPTION_ORIGIN_CURRENT_EL_SPX &&
+		   exception_vector_kind(5ULL) == ARM64_EXCEPTION_KIND_IRQ &&
+		   exception_vector_origin(5ULL) == ARM64_EXCEPTION_ORIGIN_CURRENT_EL_SPX &&
+		   exception_vector_kind(8ULL) == ARM64_EXCEPTION_KIND_SYNCHRONOUS && exception_vector_from_aarch64_el0(8ULL) &&
+		   exception_vector_kind(9ULL) == ARM64_EXCEPTION_KIND_IRQ && exception_vector_from_aarch64_el0(9ULL) &&
+		   exception_vector_kind(16ULL) == ARM64_EXCEPTION_KIND_INVALID &&
+		   exception_vector_origin(16ULL) == ARM64_EXCEPTION_ORIGIN_INVALID;
 }
 
 static void irq_handle(void)
@@ -383,6 +336,8 @@ static void irq_handle(void)
 	if (intid >= 1020U) {
 		return;
 	}
+
+	statistics_note_interrupt();
 
 	if (intid == PHYSICAL_TIMER_INTID) {
 		timer_handle_interrupt();
@@ -415,10 +370,7 @@ static void exception_unwind_to_kernel(arm64_exception_frame_t *frame)
 
 static bool exception_handle_user_svc(arm64_exception_frame_t *frame)
 {
-	if (
-		!exception_vector_from_aarch64_el0(frame->vector_id) ||
-		exception_class(frame->esr) != ARM64_EC_SVC64
-	) {
+	if (!exception_vector_from_aarch64_el0(frame->vector_id) || exception_class(frame->esr) != ARM64_EC_SVC64) {
 		return false;
 	}
 
@@ -430,15 +382,7 @@ static bool exception_handle_user_svc(arm64_exception_frame_t *frame)
 
 	syscall_request_t request = {
 		.number = frame->x[8],
-		.arguments = {
-			frame->x[0],
-			frame->x[1],
-			frame->x[2],
-			frame->x[3],
-			frame->x[4],
-			frame->x[5]
-		}
-	};
+		.arguments = {frame->x[0], frame->x[1], frame->x[2], frame->x[3], frame->x[4], frame->x[5]}};
 
 	syscall_result_t result = syscall_dispatch(&request);
 
@@ -479,10 +423,7 @@ static uint32_t exception_user_fault_signal(const arm64_exception_frame_t *frame
 	switch (exception_class(frame->esr)) {
 	case ARM64_EC_IABT_LOWER:
 	case ARM64_EC_DABT_LOWER:
-		if (
-			fault_status == ARM64_FSC_ALIGNMENT ||
-			fault_status == ARM64_FSC_SYNC_EXTERNAL_ABORT
-		) {
+		if (fault_status == ARM64_FSC_ALIGNMENT || fault_status == ARM64_FSC_SYNC_EXTERNAL_ABORT) {
 			return NXU_SIGBUS;
 		}
 
@@ -508,11 +449,16 @@ static uint32_t exception_user_fault_signal(const arm64_exception_frame_t *frame
 static const char *exception_signal_name(uint32_t signal)
 {
 	switch (signal) {
-	case NXU_SIGSEGV: return "SIGSEGV";
-	case NXU_SIGBUS: return "SIGBUS";
-	case NXU_SIGFPE: return "SIGFPE";
-	case NXU_SIGTRAP: return "SIGTRAP";
-	default: return "SIGILL";
+	case NXU_SIGSEGV:
+		return "SIGSEGV";
+	case NXU_SIGBUS:
+		return "SIGBUS";
+	case NXU_SIGFPE:
+		return "SIGFPE";
+	case NXU_SIGTRAP:
+		return "SIGTRAP";
+	default:
+		return "SIGILL";
 	}
 }
 
@@ -528,10 +474,7 @@ static bool exception_resolve_page_fault(const arm64_exception_frame_t *frame, b
 {
 	uint32_t fault_status = exception_iss(frame->esr) & 0x3FU;
 
-	if (
-		fault_status < ARM64_FSC_RESOLVABLE_FIRST ||
-		fault_status > ARM64_FSC_RESOLVABLE_LAST
-	) {
+	if (fault_status < ARM64_FSC_RESOLVABLE_FIRST || fault_status > ARM64_FSC_RESOLVABLE_LAST) {
 		return false;
 	}
 
@@ -544,9 +487,9 @@ static bool exception_resolve_page_fault(const arm64_exception_frame_t *frame, b
 		return false;
 	}
 
-	vm_fault_access_t access = instruction
-		? VM_FAULT_EXECUTE
-		: ((exception_iss(frame->esr) & ARM64_ISS_WNR) != 0U ? VM_FAULT_WRITE : VM_FAULT_READ);
+	vm_fault_access_t access =
+		instruction ? VM_FAULT_EXECUTE
+					: ((exception_iss(frame->esr) & ARM64_ISS_WNR) != 0U ? VM_FAULT_WRITE : VM_FAULT_READ);
 
 	return vm_fault_user(space, frame->far, access);
 }
@@ -577,10 +520,8 @@ static bool exception_handle_user_fault(arm64_exception_frame_t *frame)
 
 	uint32_t exception_class_value = exception_class(frame->esr);
 
-	if (
-		(exception_class_value == ARM64_EC_DABT_LOWER || exception_class_value == ARM64_EC_IABT_LOWER) &&
-		exception_resolve_page_fault(frame, exception_class_value == ARM64_EC_IABT_LOWER)
-	) {
+	if ((exception_class_value == ARM64_EC_DABT_LOWER || exception_class_value == ARM64_EC_IABT_LOWER) &&
+		exception_resolve_page_fault(frame, exception_class_value == ARM64_EC_IABT_LOWER)) {
 		return true;
 	}
 
@@ -614,15 +555,9 @@ static bool exception_handle_user_fault(arm64_exception_frame_t *frame)
 	name[0] = '\0';
 	(void)proc_get_name(proc, name, sizeof(name));
 
-	kprintf(
-		"exception_handle_user_fault: pid %u (%s) killed by %s, pc 0x%llx, far 0x%llx, esr 0x%llx\n",
-		(uint32_t)proc_selfpid(),
-		name,
-		exception_signal_name(signal),
-		(unsigned long long)frame->elr,
-		(unsigned long long)frame->far,
-		(unsigned long long)frame->esr
-	);
+	kprintf("exception_handle_user_fault: pid %u (%s) killed by %s, pc 0x%llx, far 0x%llx, esr 0x%llx\n",
+			(uint32_t)proc_selfpid(), name, exception_signal_name(signal), (unsigned long long)frame->elr,
+			(unsigned long long)frame->far, (unsigned long long)frame->esr);
 
 	if (!proc_exit_current(NXU_EXIT_KILLED_SIGNAL(signal))) {
 		return false;
@@ -644,11 +579,8 @@ static bool exception_handle_user_fault(arm64_exception_frame_t *frame)
  */
 static bool exception_handle_kernel_user_access(arm64_exception_frame_t *frame)
 {
-	if (
-		exception_vector_origin(frame->vector_id) != ARM64_EXCEPTION_ORIGIN_CURRENT_EL_SPX ||
-		exception_class(frame->esr) != ARM64_EC_DABT_CURRENT ||
-		frame->far >= VM_MAX_USER_ADDRESS
-	) {
+	if (exception_vector_origin(frame->vector_id) != ARM64_EXCEPTION_ORIGIN_CURRENT_EL_SPX ||
+		exception_class(frame->esr) != ARM64_EC_DABT_CURRENT || frame->far >= VM_MAX_USER_ADDRESS) {
 		return false;
 	}
 
@@ -669,20 +601,16 @@ static void exception_deliver_pending_signals(arm64_exception_frame_t *frame)
 	proc_t proc = current_proc();
 	thread_t thread = current_thread();
 
-	if (
-		proc == 0 ||
-		proc == proc_kernel() ||
-		thread == 0 ||
-		!thread_is_active(thread) ||
-		(proc->p_flag & PROC_FLAG_EXITING) != 0U
-	) {
+	if (proc == 0 || proc == proc_kernel() || thread == 0 || !thread_is_active(thread) ||
+		(proc->p_flag & PROC_FLAG_EXITING) != 0U) {
 		return;
 	}
 
 	for (;;) {
 		uint32_t signal = signal_dequeue(proc, thread);
 
-		if (signal == 0U) return;
+		if (signal == 0U)
+			return;
 
 		nxu_sigaction_t action;
 
@@ -695,7 +623,8 @@ static void exception_deliver_pending_signals(arm64_exception_frame_t *frame)
 		} else if (action.handler == NXU_SIG_IGN) {
 			continue;
 		} else if (action.handler == NXU_SIG_DFL) {
-			if (signal_default_action(signal) == SIGNAL_DEFAULT_IGNORE) continue;
+			if (signal_default_action(signal) == SIGNAL_DEFAULT_IGNORE)
+				continue;
 			terminate_with = signal;
 		} else {
 			uint32_t previous_mask = thread->sig_blocked;
@@ -723,6 +652,12 @@ static void exception_dispatch(arm64_exception_frame_t *frame)
 
 	arm64_exception_origin_t origin = exception_vector_origin(frame->vector_id);
 
+	uint32_t fault_class = exception_class(frame->esr);
+	if (kind == ARM64_EXCEPTION_KIND_SYNCHRONOUS &&
+		(fault_class == ARM64_EC_IABT_LOWER || fault_class == ARM64_EC_IABT_CURRENT ||
+		 fault_class == ARM64_EC_DABT_LOWER || fault_class == ARM64_EC_DABT_CURRENT))
+		statistics_note_page_fault(exception_vector_from_aarch64_el0(frame->vector_id));
+
 	if (kind == ARM64_EXCEPTION_KIND_IRQ) {
 		irq_handle();
 
@@ -733,9 +668,8 @@ static void exception_dispatch(arm64_exception_frame_t *frame)
 		 * only where they ask to.
 		 */
 		thread_t thread = current_thread();
-		bool scheduler_safe =
-			exception_vector_from_aarch64_el0(frame->vector_id) ||
-			(thread != 0 && (thread_is_idle(thread) || thread_is_preemptible(thread)));
+		bool scheduler_safe = exception_vector_from_aarch64_el0(frame->vector_id) ||
+							  (thread != 0 && (thread_is_idle(thread) || thread_is_preemptible(thread)));
 
 		if (scheduler_safe && sched_preemption_pending()) {
 			if (!sched_preempt()) {
@@ -746,24 +680,15 @@ static void exception_dispatch(arm64_exception_frame_t *frame)
 		return;
 	}
 
-	if (
-		kind == ARM64_EXCEPTION_KIND_SYNCHRONOUS &&
-		exception_handle_user_svc(frame)
-	) {
+	if (kind == ARM64_EXCEPTION_KIND_SYNCHRONOUS && exception_handle_user_svc(frame)) {
 		return;
 	}
 
-	if (
-		kind == ARM64_EXCEPTION_KIND_SYNCHRONOUS &&
-		exception_handle_kernel_user_access(frame)
-	) {
+	if (kind == ARM64_EXCEPTION_KIND_SYNCHRONOUS && exception_handle_kernel_user_access(frame)) {
 		return;
 	}
 
-	if (
-		kind == ARM64_EXCEPTION_KIND_SYNCHRONOUS &&
-		exception_handle_user_fault(frame)
-	) {
+	if (kind == ARM64_EXCEPTION_KIND_SYNCHRONOUS && exception_handle_user_fault(frame)) {
 		return;
 	}
 
@@ -856,9 +781,7 @@ static void exception_dispatch(arm64_exception_frame_t *frame)
  */
 void exception_handle(arm64_exception_frame_t *frame)
 {
-	thread_t thread = exception_vector_from_aarch64_el0(frame->vector_id)
-		? current_thread()
-		: 0;
+	thread_t thread = exception_vector_from_aarch64_el0(frame->vector_id) ? current_thread() : 0;
 
 	if (thread != 0) {
 		thread->machine.user_frame = frame;
@@ -876,6 +799,7 @@ void exception_handle(arm64_exception_frame_t *frame)
 		 * here). Signal delivery is pointless for a dead thread.
 		 */
 		if (thread_is_terminated(thread)) {
+			crash_save_current(frame);
 			exception_unwind_to_kernel(frame);
 		} else {
 			exception_deliver_pending_signals(frame);
