@@ -168,7 +168,13 @@ static ioreg_id_t virtio_gpu_ioreg_family(void)
 static void virtio_gpu_lock(virtio_gpu_device_t *device)
 {
 	while (__atomic_exchange_n(&device->lock, 1U, __ATOMIC_ACQUIRE) != 0U) {
-		ml_cpu_relax();
+		/* The owner may be asleep waiting for a GPU completion. Kernel
+		 * workers share the boot CPU, so spinning here can starve it. */
+		if (sched_is_initialized() && ml_irq_enabled() && current_thread() != 0 &&
+			current_thread() != sched_idle_thread())
+			(void)sched_sleep_us(1000ULL);
+		else
+			ml_cpu_relax();
 	}
 }
 
@@ -179,7 +185,8 @@ static void virtio_gpu_unlock(virtio_gpu_device_t *device)
 
 static bool virtio_gpu_allocate_page(uint64_t *physical, uint8_t **virtual_address)
 {
-	if (!pmm_allocate_page(physical)) return false;
+	if (!pmm_allocate_page(physical))
+		return false;
 
 	uint64_t higher_half;
 	if (!vmm_physical_to_higher_half(*physical, &higher_half)) {
@@ -203,7 +210,8 @@ static bool virtio_gpu_allocate_page(uint64_t *physical, uint8_t **virtual_addre
 
 static bool virtio_gpu_can_sleep(const virtio_gpu_device_t *device)
 {
-	return device->irq_attached && device->irq_count != 0ULL && sched_is_initialized() && ml_irq_enabled() && current_thread() != 0 && current_thread() != sched_idle_thread();
+	return device->irq_attached && device->irq_count != 0ULL && sched_is_initialized() && ml_irq_enabled() &&
+		   current_thread() != 0 && current_thread() != sched_idle_thread();
 }
 
 /*
@@ -215,7 +223,8 @@ static bool virtio_gpu_can_sleep(const virtio_gpu_device_t *device)
 static void virtio_gpu_wait(virtio_gpu_device_t *device, uint32_t *id, uint32_t *length)
 {
 	if (!virtio_gpu_can_sleep(device)) {
-		while (!virtqueue_pop_used(&device->controlq, id, length)) ml_cpu_relax();
+		while (!virtqueue_pop_used(&device->controlq, id, length))
+			ml_cpu_relax();
 		return;
 	}
 
@@ -224,16 +233,19 @@ static void virtio_gpu_wait(virtio_gpu_device_t *device, uint32_t *id, uint32_t 
 	 * polls its devices) the sleep still ends at the next tick, so a
 	 * completion is never waited for for good.
 	 */
-	while (!virtqueue_pop_used(&device->controlq, id, length)) (void)sched_sleep_until_kicked(VIRTIO_GPU_WAIT_US);
+	while (!virtqueue_pop_used(&device->controlq, id, length))
+		(void)sched_sleep_until_kicked(VIRTIO_GPU_WAIT_US);
 }
 
 static void virtio_gpu_irq(uint32_t intid, void *context)
 {
 	virtio_gpu_device_t *device = context;
-	if (device == 0 || device->transport.intid != intid) return;
+	if (device == 0 || device->transport.intid != intid)
+		return;
 
 	uint32_t status = virtio_device_interrupt_status(&device->transport);
-	if (status == 0U) return;
+	if (status == 0U)
+		return;
 
 	virtio_device_interrupt_ack(&device->transport, status);
 	device->irq_count++;
@@ -251,29 +263,22 @@ static uint32_t g_virtio_gpu_failures;
 
 static void virtio_gpu_log_failure(uint32_t command, const char *why, const char *what, uint32_t value)
 {
-	if (++g_virtio_gpu_failures > VIRTIO_GPU_FAILURES_LOGGED) return;
+	if (++g_virtio_gpu_failures > VIRTIO_GPU_FAILURES_LOGGED)
+		return;
 
 	kprintf("VirtIOGPUFamily: command 0x%x failed: %s\n", command, why);
-	if (what != 0) kprintf("VirtIOGPUFamily: %s: 0x%x\n", what, value);
-	if (g_virtio_gpu_failures == VIRTIO_GPU_FAILURES_LOGGED) kputln("VirtIOGPUFamily: further command failures are not logged");
+	if (what != 0)
+		kprintf("VirtIOGPUFamily: %s: 0x%x\n", what, value);
+	if (g_virtio_gpu_failures == VIRTIO_GPU_FAILURES_LOGGED)
+		kputln("VirtIOGPUFamily: further command failures are not logged");
 }
 
-static bool virtio_gpu_command(
-	virtio_gpu_device_t *device,
-	void *request,
-	uint32_t request_size,
-	uint32_t expected_response,
-	uint32_t response_capacity
-)
+static bool virtio_gpu_command(virtio_gpu_device_t *device, void *request, uint32_t request_size,
+							   uint32_t expected_response, uint32_t response_capacity)
 {
-	if (
-		device == 0 ||
-		request == 0 ||
-		request_size < sizeof(virtio_gpu_ctrl_hdr_t) ||
-		request_size > VIRTIO_GPU_CONTROL_RESPONSE_OFFSET ||
-		response_capacity < sizeof(virtio_gpu_ctrl_hdr_t) ||
-		response_capacity > VIRTIO_GPU_CONTROL_RESPONSE_CAPACITY
-	) {
+	if (device == 0 || request == 0 || request_size < sizeof(virtio_gpu_ctrl_hdr_t) ||
+		request_size > VIRTIO_GPU_CONTROL_RESPONSE_OFFSET || response_capacity < sizeof(virtio_gpu_ctrl_hdr_t) ||
+		response_capacity > VIRTIO_GPU_CONTROL_RESPONSE_CAPACITY) {
 		return false;
 	}
 
@@ -355,7 +360,8 @@ static bool virtio_gpu_command(
 	(void)virtqueue_free_descriptor(&device->controlq, request_desc);
 	virtio_gpu_unlock(device);
 
-	if (!ok) virtio_gpu_log_failure(command, why, what, value);
+	if (!ok)
+		virtio_gpu_log_failure(command, why, what, value);
 	return ok;
 }
 
@@ -365,23 +371,21 @@ static bool virtio_gpu_get_display_info(virtio_gpu_device_t *device)
 	memset(&request, 0, sizeof(request));
 	request.type = VIRTIO_GPU_CMD_GET_DISPLAY_INFO;
 
-	if (!virtio_gpu_command(
-		device,
-		&request,
-		sizeof(request),
-		VIRTIO_GPU_RESP_OK_DISPLAY_INFO,
-		sizeof(virtio_gpu_resp_display_info_t)
-	)) {
+	if (!virtio_gpu_command(device, &request, sizeof(request), VIRTIO_GPU_RESP_OK_DISPLAY_INFO,
+							sizeof(virtio_gpu_resp_display_info_t))) {
 		return false;
 	}
 
-	const virtio_gpu_resp_display_info_t *response = (const virtio_gpu_resp_display_info_t *)(device->control + VIRTIO_GPU_CONTROL_RESPONSE_OFFSET);
+	const virtio_gpu_resp_display_info_t *response =
+		(const virtio_gpu_resp_display_info_t *)(device->control + VIRTIO_GPU_CONTROL_RESPONSE_OFFSET);
 
 	for (uint32_t index = 0U; index < VIRTIO_GPU_MAX_SCANOUTS; index++) {
 		const virtio_gpu_display_one_t *mode = &response->scanouts[index];
-		if (mode->enabled == 0U || mode->rect.width == 0U || mode->rect.height == 0U) continue;
+		if (mode->enabled == 0U || mode->rect.width == 0U || mode->rect.height == 0U)
+			continue;
 
-		if (mode->rect.width > VIRTIO_GPU_MAX_WIDTH || mode->rect.height > VIRTIO_GPU_MAX_HEIGHT) return false;
+		if (mode->rect.width > VIRTIO_GPU_MAX_WIDTH || mode->rect.height > VIRTIO_GPU_MAX_HEIGHT)
+			return false;
 
 		device->scanout_id = index;
 		device->width = mode->rect.width;
@@ -402,18 +406,14 @@ static bool virtio_gpu_create_resource(virtio_gpu_device_t *device)
 	request.width = device->width;
 	request.height = device->height;
 
-	return virtio_gpu_command(
-		device,
-		&request,
-		sizeof(request),
-		VIRTIO_GPU_RESP_OK_NODATA,
-		sizeof(virtio_gpu_ctrl_hdr_t)
-	);
+	return virtio_gpu_command(device, &request, sizeof(request), VIRTIO_GPU_RESP_OK_NODATA,
+							  sizeof(virtio_gpu_ctrl_hdr_t));
 }
 
 static bool virtio_gpu_attach_backing(virtio_gpu_device_t *device)
 {
-	if (device->framebuffer_bytes > UINT32_MAX) return false;
+	if (device->framebuffer_bytes > UINT32_MAX)
+		return false;
 
 	virtio_gpu_resource_attach_backing_t request;
 	memset(&request, 0, sizeof(request));
@@ -423,13 +423,8 @@ static bool virtio_gpu_attach_backing(virtio_gpu_device_t *device)
 	request.entry.address = device->framebuffer_physical;
 	request.entry.length = (uint32_t)device->framebuffer_bytes;
 
-	return virtio_gpu_command(
-		device,
-		&request,
-		sizeof(request),
-		VIRTIO_GPU_RESP_OK_NODATA,
-		sizeof(virtio_gpu_ctrl_hdr_t)
-	);
+	return virtio_gpu_command(device, &request, sizeof(request), VIRTIO_GPU_RESP_OK_NODATA,
+							  sizeof(virtio_gpu_ctrl_hdr_t));
 }
 
 static bool virtio_gpu_set_scanout(virtio_gpu_device_t *device)
@@ -442,22 +437,11 @@ static bool virtio_gpu_set_scanout(virtio_gpu_device_t *device)
 	request.scanout_id = device->scanout_id;
 	request.resource_id = VIRTIO_GPU_RESOURCE_ID;
 
-	return virtio_gpu_command(
-		device,
-		&request,
-		sizeof(request),
-		VIRTIO_GPU_RESP_OK_NODATA,
-		sizeof(virtio_gpu_ctrl_hdr_t)
-	);
+	return virtio_gpu_command(device, &request, sizeof(request), VIRTIO_GPU_RESP_OK_NODATA,
+							  sizeof(virtio_gpu_ctrl_hdr_t));
 }
 
-static bool virtio_gpu_transfer(
-	virtio_gpu_device_t *device,
-	uint32_t x,
-	uint32_t y,
-	uint32_t width,
-	uint32_t height
-)
+static bool virtio_gpu_transfer(virtio_gpu_device_t *device, uint32_t x, uint32_t y, uint32_t width, uint32_t height)
 {
 	virtio_gpu_transfer_to_host_2d_t request;
 	memset(&request, 0, sizeof(request));
@@ -469,22 +453,11 @@ static bool virtio_gpu_transfer(
 	request.offset = ((uint64_t)y * device->width + x) * VIRTIO_GPU_BYTES_PER_PIXEL;
 	request.resource_id = VIRTIO_GPU_RESOURCE_ID;
 
-	return virtio_gpu_command(
-		device,
-		&request,
-		sizeof(request),
-		VIRTIO_GPU_RESP_OK_NODATA,
-		sizeof(virtio_gpu_ctrl_hdr_t)
-	);
+	return virtio_gpu_command(device, &request, sizeof(request), VIRTIO_GPU_RESP_OK_NODATA,
+							  sizeof(virtio_gpu_ctrl_hdr_t));
 }
 
-static bool virtio_gpu_flush(
-	virtio_gpu_device_t *device,
-	uint32_t x,
-	uint32_t y,
-	uint32_t width,
-	uint32_t height
-)
+static bool virtio_gpu_flush(virtio_gpu_device_t *device, uint32_t x, uint32_t y, uint32_t width, uint32_t height)
 {
 	virtio_gpu_resource_flush_t request;
 	memset(&request, 0, sizeof(request));
@@ -495,24 +468,15 @@ static bool virtio_gpu_flush(
 	request.rect.height = height;
 	request.resource_id = VIRTIO_GPU_RESOURCE_ID;
 
-	return virtio_gpu_command(
-		device,
-		&request,
-		sizeof(request),
-		VIRTIO_GPU_RESP_OK_NODATA,
-		sizeof(virtio_gpu_ctrl_hdr_t)
-	);
+	return virtio_gpu_command(device, &request, sizeof(request), VIRTIO_GPU_RESP_OK_NODATA,
+							  sizeof(virtio_gpu_ctrl_hdr_t));
 }
 
-static bool virtio_gpu_display_present(
-	display_device_t *display,
-	uint32_t x,
-	uint32_t y,
-	uint32_t width,
-	uint32_t height
-)
+static bool virtio_gpu_display_present(display_device_t *display, uint32_t x, uint32_t y, uint32_t width,
+									   uint32_t height)
 {
-	if (display == 0 || display->driver == 0) return false;
+	if (display == 0 || display->driver == 0)
+		return false;
 	virtio_gpu_device_t *device = display->driver;
 
 	/*
@@ -522,7 +486,8 @@ static bool virtio_gpu_display_present(
 	 */
 	for (uint32_t attempt = 0U; attempt < 2U; attempt++) {
 		if (virtio_gpu_transfer(device, x, y, width, height) && virtio_gpu_flush(device, x, y, width, height)) {
-			if (attempt != 0U) kputln("VirtIOGPUFamily: present succeeded on retry");
+			if (attempt != 0U)
+				kputln("VirtIOGPUFamily: present succeeded on retry");
 			device->present_count++;
 			return true;
 		}
@@ -538,25 +503,27 @@ static bool virtio_gpu_sl_present(void *context, uint32_t index, sl_rect_t rect)
 {
 	virtio_gpu_device_t *device = context;
 
-	if (device == 0 || index != device->scanout_id || rect.x < 0 || rect.y < 0) return false;
+	if (device == 0 || index != device->scanout_id || rect.x < 0 || rect.y < 0)
+		return false;
 	return virtio_gpu_display_present(&device->display, (uint32_t)rect.x, (uint32_t)rect.y, rect.width, rect.height);
 }
 
-static const sl_backend_ops_t g_virtio_gpu_sl_ops = {
-	.present = virtio_gpu_sl_present
-};
+static const sl_backend_ops_t g_virtio_gpu_sl_ops = {.present = virtio_gpu_sl_present};
 
 static bool virtio_gpu_allocate_framebuffer(virtio_gpu_device_t *device)
 {
 	uint64_t pixels = (uint64_t)device->width * device->height;
-	if (pixels > UINT64_MAX / VIRTIO_GPU_BYTES_PER_PIXEL) return false;
+	if (pixels > UINT64_MAX / VIRTIO_GPU_BYTES_PER_PIXEL)
+		return false;
 
 	uint64_t bytes = pixels * VIRTIO_GPU_BYTES_PER_PIXEL;
-	if (bytes == 0ULL || bytes > VIRTIO_GPU_MAX_FRAMEBUFFER_BYTES) return false;
+	if (bytes == 0ULL || bytes > VIRTIO_GPU_MAX_FRAMEBUFFER_BYTES)
+		return false;
 
 	uint64_t pages = (bytes + PMM_PAGE_SIZE - 1ULL) / PMM_PAGE_SIZE;
 	uint64_t physical;
-	if (!pmm_allocate_contiguous_pages(pages, &physical)) return false;
+	if (!pmm_allocate_contiguous_pages(pages, &physical))
+		return false;
 
 	uint64_t higher_half;
 	if (!vmm_physical_to_higher_half(physical, &higher_half)) {
@@ -573,9 +540,11 @@ static bool virtio_gpu_allocate_framebuffer(virtio_gpu_device_t *device)
 
 bool virtio_gpu_attach(const virtio_device_t *transport)
 {
-	if (transport == 0 || transport->device_id != VIRTIO_DEVICE_ID_GPU) return false;
+	if (transport == 0 || transport->device_id != VIRTIO_DEVICE_ID_GPU)
+		return false;
 
-	if (g_virtio_gpu_device_count >= VIRTIO_GPU_MAX_DEVICES) return false;
+	if (g_virtio_gpu_device_count >= VIRTIO_GPU_MAX_DEVICES)
+		return false;
 
 	virtio_gpu_device_t *device = &g_virtio_gpu_devices[g_virtio_gpu_device_count];
 	const char *failure_stage = "transport initialization";
@@ -594,17 +563,21 @@ bool virtio_gpu_attach(const virtio_device_t *transport)
 	 * claims controlq. QEMU does not require cursorq for 2D scanout commands.
 	 */
 	failure_stage = "control queue allocation";
-	if (!virtio_device_queue_init(&device->transport, VIRTIO_GPU_CONTROLQ, VIRTIO_GPU_QUEUE_SIZE, &device->controlq)) goto fail;
+	if (!virtio_device_queue_init(&device->transport, VIRTIO_GPU_CONTROLQ, VIRTIO_GPU_QUEUE_SIZE, &device->controlq))
+		goto fail;
 
 	*device->controlq.available_flags = VIRTQ_AVAIL_F_NO_INTERRUPT;
 
 	failure_stage = "control queue transport setup";
-	if (!virtio_device_setup_queue(&device->transport, VIRTIO_GPU_CONTROLQ, &device->controlq)) goto fail;
+	if (!virtio_device_setup_queue(&device->transport, VIRTIO_GPU_CONTROLQ, &device->controlq))
+		goto fail;
 
 	failure_stage = "control request page allocation";
-	if (!virtio_gpu_allocate_page(&device->control_physical, &device->control)) goto fail;
+	if (!virtio_gpu_allocate_page(&device->control_physical, &device->control))
+		goto fail;
 	failure_stage = "DRIVER_OK transition";
-	if (!virtio_device_finish(&device->transport)) goto fail;
+	if (!virtio_device_finish(&device->transport))
+		goto fail;
 
 	/* Completions by interrupt when it can be had; spinning stays the fallback. */
 	if (virtio_device_irq_attach(&device->transport, virtio_gpu_irq, device)) {
@@ -615,17 +588,22 @@ bool virtio_gpu_attach(const virtio_device_t *transport)
 	}
 
 	failure_stage = "GET_DISPLAY_INFO";
-	if (!virtio_gpu_get_display_info(device)) goto fail;
+	if (!virtio_gpu_get_display_info(device))
+		goto fail;
 	failure_stage = "framebuffer allocation";
-	if (!virtio_gpu_allocate_framebuffer(device)) goto fail;
+	if (!virtio_gpu_allocate_framebuffer(device))
+		goto fail;
 	failure_stage = "RESOURCE_CREATE_2D";
-	if (!virtio_gpu_create_resource(device)) goto fail;
+	if (!virtio_gpu_create_resource(device))
+		goto fail;
 
 	failure_stage = "RESOURCE_ATTACH_BACKING";
-	if (!virtio_gpu_attach_backing(device)) goto fail;
+	if (!virtio_gpu_attach_backing(device))
+		goto fail;
 
 	failure_stage = "SET_SCANOUT";
-	if (!virtio_gpu_set_scanout(device)) goto fail;
+	if (!virtio_gpu_set_scanout(device))
+		goto fail;
 
 	device->display.framebuffer = device->framebuffer;
 	device->display.width = device->width;
@@ -647,19 +625,22 @@ bool virtio_gpu_attach(const virtio_device_t *transport)
 	 */
 
 	failure_stage = "display registry insertion";
-	if (!display_register(&device->display)) goto fail;
+	if (!display_register(&device->display))
+		goto fail;
 
 	/* The same scanout, for Skylight's clients (WindowServer, UIService). */
 	sl_device_t *sl_device;
 	sl_display_t *sl_display;
 	if (!sl_device_register("VirtIOGPUFamily", &g_virtio_gpu_sl_ops, device, &sl_device) ||
-		!sl_display_register(sl_device, device->scanout_id, device->framebuffer, device->width, device->height, device->width, &sl_display)) {
+		!sl_display_register(sl_device, device->scanout_id, device->framebuffer, device->width, device->height,
+							 device->width, &sl_display)) {
 		kputln("VirtIOGPUFamily: Skylight registration failed; only the early display path has this scanout");
 	}
 
 	device->attached = true;
 	g_virtio_gpu_device_count++;
-	kprintf("VirtIOGPUFamily: scanout %u online at %ux%u, framebuffer %llu bytes\n", device->scanout_id, device->width, device->height, (unsigned long long)device->framebuffer_bytes);
+	kprintf("VirtIOGPUFamily: scanout %u online at %ux%u, framebuffer %llu bytes\n", device->scanout_id, device->width,
+			device->height, (unsigned long long)device->framebuffer_bytes);
 	(void)ioreg_add(virtio_gpu_ioreg_family(), "Display0", "VirtIOGPUDevice");
 	return true;
 
@@ -671,8 +652,10 @@ fail:
 		(void)pmm_free_contiguous_pages(device->framebuffer_physical, device->framebuffer_pages);
 	}
 
-	if (device->control_physical != 0ULL) (void)pmm_free_page(device->control_physical);
-	if (device->controlq.initialized) (void)virtqueue_destroy(&device->controlq);
+	if (device->control_physical != 0ULL)
+		(void)pmm_free_page(device->control_physical);
+	if (device->controlq.initialized)
+		(void)virtqueue_destroy(&device->controlq);
 	memset(device, 0, sizeof(*device));
 	return false;
 }
@@ -688,7 +671,8 @@ void virtio_gpu_dump(void)
 		const virtio_gpu_device_t *device = &g_virtio_gpu_devices[index];
 		kprintf("VirtIOGPUFamily: device %u: %ux%u\n", index + 1U, device->width, device->height);
 		kverbosef("VirtIOGPUFamily: device %u: scanout %u\n", index + 1U, device->scanout_id);
-		kverbosef("VirtIOGPUFamily: device %u: framebuffer %llu bytes\n", index + 1U, (unsigned long long)device->framebuffer_bytes);
+		kverbosef("VirtIOGPUFamily: device %u: framebuffer %llu bytes\n", index + 1U,
+				  (unsigned long long)device->framebuffer_bytes);
 		kverbosef("VirtIOGPUFamily: device %u: %llu presents\n", index + 1U, (unsigned long long)device->present_count);
 	}
 }
