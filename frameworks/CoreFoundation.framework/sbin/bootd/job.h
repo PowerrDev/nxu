@@ -5,6 +5,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <nxu/ipc_peer.h>
 
 #define BOOTD_PROCESS_NAME_MAX 31U
 
@@ -21,6 +22,7 @@ typedef struct {
 	service_config_t config;
 	bootd_job_state_t state;
 	uint64_t pid;
+	nxu_ipc_peer_t identity;
 	uint64_t restart_after_us;
 	uint64_t crash_window_start_us;
 	uint32_t crash_count;

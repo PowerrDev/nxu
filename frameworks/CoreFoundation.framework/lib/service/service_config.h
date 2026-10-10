@@ -14,14 +14,18 @@ typedef struct {
 	char program[SERVICE_PATH_MAX + 1U];
 	char recovery_program[SERVICE_PATH_MAX + 1U];
 	char disabled_boot_argument[SERVICE_BOOT_ARGUMENT_MAX + 1U];
+	char required_boot_argument[SERVICE_BOOT_ARGUMENT_MAX + 1U];
 	bool run_at_load;
 	bool keep_alive;
 	bool disabled;
 	bool disabled_in_safe_mode;
 	bool start_on_login;
+
 	/* Capabilities bootd hands the job's process at spawn (default: none). */
 	bool allow_filesystem_write;
 	bool allow_display;
+	bool allow_crash_reports;
+	bool allow_crash_notifications;
 } service_config_t;
 
 typedef enum {
