@@ -31,6 +31,16 @@
  */
 bool shm_registry_publish(vm_shm_region_t region, uint32_t *out_id);
 
+/* Like publish, but withdrawn when the creating task exits. Zero means
+ * kernel-owned, with explicit withdrawal only. Use the task's unique ID,
+ * never its recyclable PID. Ownership transfers only on success. */
+bool shm_registry_publish_owned(vm_shm_region_t region, uint64_t owner_uniqueid, uint32_t *out_id);
+
+/* The owner must no longer be able to publish (all its threads off CPU).
+ * Drops only registry references; existing attachments remain valid.
+ * Returns the number withdrawn. Repeating cleanup is harmless. */
+uint32_t shm_registry_withdraw_owner(uint64_t owner_uniqueid);
+
 /*
  * Returns a new handle reference (vm_shm_reference) to the region
  * registered under id, or false if id is unknown. The caller owns the

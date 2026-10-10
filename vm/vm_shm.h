@@ -36,7 +36,7 @@ struct vm_shm_region;
 typedef struct vm_shm_region *vm_shm_region_t;
 
 #define VM_SHM_REGION_NULL ((vm_shm_region_t)0)
-#define VM_SHM_MAX_BYTES (16ULL * 1024ULL * 1024ULL)
+#define VM_SHM_MAX_BYTES (64ULL * 1024ULL * 1024ULL)
 
 /*
  * Reserved per-process window for shared-memory mappings, bump-allocated by
