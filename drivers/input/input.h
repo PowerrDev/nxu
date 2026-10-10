@@ -6,11 +6,7 @@
 
 #define INPUT_EVENT_QUEUE_CAPACITY 256U
 
-typedef enum {
-	INPUT_DEVICE_UNKNOWN = 0,
-	INPUT_DEVICE_KEYBOARD,
-	INPUT_DEVICE_MOUSE
-} input_device_class_t;
+typedef enum { INPUT_DEVICE_UNKNOWN = 0, INPUT_DEVICE_KEYBOARD, INPUT_DEVICE_MOUSE } input_device_class_t;
 
 typedef struct {
 	uint32_t device_id;
@@ -58,6 +54,7 @@ bool input_publish(const input_event_t *event);
  * Returns true when an event was returned.
  */
 bool input_read(input_event_t *event);
+void input_flush(void);
 
 uint64_t input_event_count(void);
 uint64_t input_drop_count(void);

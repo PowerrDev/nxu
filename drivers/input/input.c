@@ -31,7 +31,8 @@ static input_state_t g_input;
  */
 bool input_init(void)
 {
-	if (g_input.initialized) return true;
+	if (g_input.initialized)
+		return true;
 	memset(&g_input, 0, sizeof(g_input));
 	g_input.initialized = true;
 	return true;
@@ -45,7 +46,12 @@ bool input_init(void)
  */
 bool input_publish(const input_event_t *event)
 {
-	if (!g_input.initialized || event == 0) return false;
+	if (!g_input.initialized || event == 0)
+		return false;
+	/* Secure entry belongs only to the keyboard class's private queue.
+	 * Keeping a raw copy would reveal it to display clients after the modal. */
+	if (event->device_class == INPUT_DEVICE_KEYBOARD && keyboard_secure_active())
+		return true;
 
 	uint64_t irq_state = ml_irq_save();
 
@@ -72,7 +78,8 @@ bool input_publish(const input_event_t *event)
  */
 bool input_read(input_event_t *event)
 {
-	if (!g_input.initialized || event == 0) return false;
+	if (!g_input.initialized || event == 0)
+		return false;
 
 	uint64_t irq_state = ml_irq_save();
 
@@ -82,11 +89,20 @@ bool input_read(input_event_t *event)
 	}
 
 	*event = g_input.events[g_input.head];
+	memset(&g_input.events[g_input.head], 0, sizeof(input_event_t));
 	g_input.head = (g_input.head + 1U) % INPUT_EVENT_QUEUE_CAPACITY;
 	g_input.count--;
 
 	ml_irq_restore(irq_state);
 	return true;
+}
+
+void input_flush(void)
+{
+	uint64_t irq_state = ml_irq_save();
+	memset(g_input.events, 0, sizeof(g_input.events));
+	g_input.head = g_input.tail = g_input.count = 0;
+	ml_irq_restore(irq_state);
 }
 
 /*
@@ -126,15 +142,13 @@ uint32_t input_pending_count(void)
  */
 void input_dump_activity(void)
 {
-	if (!g_input.initialized) return;
+	if (!g_input.initialized)
+		return;
 
 	uint64_t published = input_event_count();
 	uint64_t dropped = input_drop_count();
 
-	if (
-		published == g_input.last_dump_published &&
-		dropped == g_input.last_dump_dropped
-	) {
+	if (published == g_input.last_dump_published && dropped == g_input.last_dump_dropped) {
 		return;
 	}
 

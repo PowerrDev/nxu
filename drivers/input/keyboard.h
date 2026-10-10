@@ -7,9 +7,9 @@
 #include <stdint.h>
 
 #define KEYBOARD_MOD_SHIFT 0x01U
-#define KEYBOARD_MOD_CTRL  0x02U
-#define KEYBOARD_MOD_ALT   0x04U
-#define KEYBOARD_MOD_CAPS  0x08U
+#define KEYBOARD_MOD_CTRL 0x02U
+#define KEYBOARD_MOD_ALT 0x04U
+#define KEYBOARD_MOD_CAPS 0x08U
 
 /*
  * keyboard_init:
@@ -67,6 +67,8 @@ typedef struct {
 bool keyboard_take_key(keyboard_key_t *key);
 /* Forget queued presses (e.g. typed before a login screen appeared). */
 void keyboard_flush_keys(void);
+void keyboard_set_secure(bool secure);
+bool keyboard_secure_active(void);
 void keyboard_dump_state(void);
 
 #endif

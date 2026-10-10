@@ -36,8 +36,8 @@ static keyboard_state_t g_keyboard;
 /* Single producer (keyboard_handle_event) and single consumer (the UI). */
 #define KEYBOARD_QUEUE_SIZE 64U
 static keyboard_key_t g_key_queue[KEYBOARD_QUEUE_SIZE];
-static uint32_t g_key_head;	/* next to read; written by the consumer */
-static uint32_t g_key_tail;	/* next to write; written by the producer */
+static uint32_t g_key_head; /* next to read; written by the consumer */
+static uint32_t g_key_tail; /* next to write; written by the producer */
 
 static bool keyboard_key_in_bitmap(uint16_t code)
 {
@@ -46,7 +46,8 @@ static bool keyboard_key_in_bitmap(uint16_t code)
 
 static void keyboard_set_down(uint16_t code, bool down)
 {
-	if (!keyboard_key_in_bitmap(code)) return;
+	if (!keyboard_key_in_bitmap(code))
+		return;
 
 	uint32_t word = code / 64U;
 	uint32_t bit = code % 64U;
@@ -61,7 +62,8 @@ static void keyboard_set_down(uint16_t code, bool down)
 
 static bool keyboard_is_down(uint16_t code)
 {
-	if (!keyboard_key_in_bitmap(code)) return false;
+	if (!keyboard_key_in_bitmap(code))
+		return false;
 	return (g_keyboard.down[code / 64U] & (1ULL << (code % 64U))) != 0ULL;
 }
 
@@ -93,14 +95,12 @@ static void keyboard_update_modifiers(void)
 static char keyboard_letter(uint16_t code, bool upper)
 {
 	static const char letters[] = "qwertyuiopasdfghjklzxcvbnm";
-	static const uint16_t codes[] = {
-		16U, 17U, 18U, 19U, 20U, 21U, 22U, 23U, 24U, 25U,
-		30U, 31U, 32U, 33U, 34U, 35U, 36U, 37U, 38U,
-		44U, 45U, 46U, 47U, 48U, 49U, 50U
-	};
+	static const uint16_t codes[] = {16U, 17U, 18U, 19U, 20U, 21U, 22U, 23U, 24U, 25U, 30U, 31U, 32U,
+									 33U, 34U, 35U, 36U, 37U, 38U, 44U, 45U, 46U, 47U, 48U, 49U, 50U};
 
 	for (uint32_t index = 0U; index < sizeof(codes) / sizeof(codes[0]); index++) {
-		if (codes[index] != code) continue;
+		if (codes[index] != code)
+			continue;
 		char value = letters[index];
 		return upper ? (char)(value - 'a' + 'A') : value;
 	}
@@ -120,7 +120,8 @@ static char keyboard_translate(uint16_t code)
 	bool shift = (g_keyboard.modifiers & KEYBOARD_MOD_SHIFT) != 0U;
 	bool caps = (g_keyboard.modifiers & KEYBOARD_MOD_CAPS) != 0U;
 	char letter = keyboard_letter(code, shift != caps);
-	if (letter != '\0') return letter;
+	if (letter != '\0')
+		return letter;
 
 	if (code >= 2U && code <= 11U) {
 		static const char normal[] = "1234567890";
@@ -129,23 +130,40 @@ static char keyboard_translate(uint16_t code)
 	}
 
 	switch (code) {
-	case 1U: return 27;
-	case 12U: return shift ? '_' : '-';
-	case 13U: return shift ? '+' : '=';
-	case 14U: return '\b';
-	case 15U: return '\t';
-	case 26U: return shift ? '{' : '[';
-	case 27U: return shift ? '}' : ']';
-	case 28U: return '\n';
-	case 39U: return shift ? ':' : ';';
-	case 40U: return shift ? '"' : '\'';
-	case 41U: return shift ? '~' : '`';
-	case 43U: return shift ? '|' : '\\';
-	case 51U: return shift ? '<' : ',';
-	case 52U: return shift ? '>' : '.';
-	case 53U: return shift ? '?' : '/';
-	case 57U: return ' ';
-	default: return '\0';
+	case 1U:
+		return 27;
+	case 12U:
+		return shift ? '_' : '-';
+	case 13U:
+		return shift ? '+' : '=';
+	case 14U:
+		return '\b';
+	case 15U:
+		return '\t';
+	case 26U:
+		return shift ? '{' : '[';
+	case 27U:
+		return shift ? '}' : ']';
+	case 28U:
+		return '\n';
+	case 39U:
+		return shift ? ':' : ';';
+	case 40U:
+		return shift ? '"' : '\'';
+	case 41U:
+		return shift ? '~' : '`';
+	case 43U:
+		return shift ? '|' : '\\';
+	case 51U:
+		return shift ? '<' : ',';
+	case 52U:
+		return shift ? '>' : '.';
+	case 53U:
+		return shift ? '?' : '/';
+	case 57U:
+		return ' ';
+	default:
+		return '\0';
 	}
 }
 
@@ -156,7 +174,8 @@ static char keyboard_translate(uint16_t code)
  */
 bool keyboard_init(void)
 {
-	if (g_keyboard.initialized) return true;
+	if (g_keyboard.initialized)
+		return true;
 	memset(&g_keyboard, 0, sizeof(g_keyboard));
 	g_keyboard.initialized = true;
 	return true;
@@ -169,7 +188,8 @@ bool keyboard_init(void)
  */
 bool keyboard_attach(uint32_t device_id)
 {
-	if (!g_keyboard.initialized || g_keyboard.present || device_id == 0U) return false;
+	if (!g_keyboard.initialized || g_keyboard.present || device_id == 0U)
+		return false;
 	g_keyboard.device_id = device_id;
 	g_keyboard.present = true;
 	return true;
@@ -182,14 +202,22 @@ bool keyboard_attach(uint32_t device_id)
  * state. The routine is bounded and safe for invocation from the input
  * interrupt path.
  */
+static bool g_secure_input;
+
+void keyboard_set_secure(bool secure)
+{
+	__atomic_store_n(&g_secure_input, secure, __ATOMIC_RELEASE);
+	g_keyboard.last_character = 0;
+}
+
+bool keyboard_secure_active(void)
+{
+	return __atomic_load_n(&g_secure_input, __ATOMIC_ACQUIRE);
+}
+
 void keyboard_handle_event(const input_event_t *event)
 {
-	if (
-		event == 0 ||
-		!g_keyboard.present ||
-		event->device_id != g_keyboard.device_id ||
-		event->type != 1U
-	) {
+	if (event == 0 || !g_keyboard.present || event->device_id != g_keyboard.device_id || event->type != 1U) {
 		return;
 	}
 
@@ -207,17 +235,15 @@ void keyboard_handle_event(const input_event_t *event)
 
 	if (press) {
 		char character = keyboard_translate(event->code);
-		if (character != '\0') g_keyboard.last_character = character;
+		if (character != '\0' && !__atomic_load_n(&g_secure_input, __ATOMIC_ACQUIRE))
+			g_keyboard.last_character = character;
 
 		uint32_t tail = __atomic_load_n(&g_key_tail, __ATOMIC_RELAXED);
 		uint32_t head = __atomic_load_n(&g_key_head, __ATOMIC_ACQUIRE);
 
 		if (tail - head < KEYBOARD_QUEUE_SIZE) {
-			g_key_queue[tail % KEYBOARD_QUEUE_SIZE] = (keyboard_key_t) {
-				.code = event->code,
-				.character = (uint8_t)character,
-				.modifiers = (uint8_t)g_keyboard.modifiers
-			};
+			g_key_queue[tail % KEYBOARD_QUEUE_SIZE] = (keyboard_key_t){
+				.code = event->code, .character = (uint8_t)character, .modifiers = (uint8_t)g_keyboard.modifiers};
 			__atomic_store_n(&g_key_tail, tail + 1U, __ATOMIC_RELEASE);
 		}
 	}
@@ -228,10 +254,11 @@ bool keyboard_take_key(keyboard_key_t *key)
 	uint32_t head = __atomic_load_n(&g_key_head, __ATOMIC_RELAXED);
 	uint32_t tail = __atomic_load_n(&g_key_tail, __ATOMIC_ACQUIRE);
 
-	if (key == 0 || head == tail) return false;
+	if (key == 0 || head == tail)
+		return false;
 
 	*key = g_key_queue[head % KEYBOARD_QUEUE_SIZE];
-	g_key_queue[head % KEYBOARD_QUEUE_SIZE] = (keyboard_key_t) { 0 };
+	g_key_queue[head % KEYBOARD_QUEUE_SIZE] = (keyboard_key_t){0};
 	__atomic_store_n(&g_key_head, head + 1U, __ATOMIC_RELEASE);
 	return true;
 }
@@ -276,7 +303,8 @@ char keyboard_last_character(void)
  */
 void keyboard_dump_state(void)
 {
-	if (!g_keyboard.present) return;
+	if (!g_keyboard.present)
+		return;
 
 	kputs("keyboard: events ");
 	kputu64(g_keyboard.events);
