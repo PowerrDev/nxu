@@ -36,6 +36,11 @@ I386_C_SOURCES += \
     kern/process/signal.c \
     kern/process/task.c \
     kern/process/thread.c \
+    kern/process/statistics.c \
+    kern/process/crash.c \
+    kern/security/sap.c \
+    kern/logging/diagnostics.c \
+    kern/tests/statistics_test.c \
     kern/sched_prism/processor.c \
     kern/sched_prism/run_queue.c \
     kern/sched_prism/waitq.c \
