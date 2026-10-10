@@ -34,6 +34,9 @@ typedef struct vm_address_space {
 
 	/* Translation tables this space owns; only ever changed under `lock`. */
 	uint64_t table_count;
+	/* Present user leaf mappings, maintained under lock (aliases count). */
+	uint64_t resident_pages;
+	uint64_t shared_pages;
 
 	/* True while at least one CPU runs with this space in TTBR0. */
 	bool active;
@@ -91,12 +94,8 @@ bool vm_address_space_activate(vm_address_space_t *space);
 bool vm_address_space_deactivate(void);
 
 /* Map one Normal-memory page with EL0 permissions. */
-bool vm_address_space_map_page(
-	vm_address_space_t *space,
-	uint64_t virtual_address,
-	uint64_t physical_address,
-	vm_user_protection_t protection
-);
+bool vm_address_space_map_page(vm_address_space_t *space, uint64_t virtual_address, uint64_t physical_address,
+							   vm_user_protection_t protection);
 
 /*
  * Remove one EL0 page mapping without freeing the underlying physical page
@@ -105,42 +104,30 @@ bool vm_address_space_map_page(
  * than one address space (vm/vm_shm.h) can be unmapped from just one of
  * them. Safe to call whether or not space is the currently active one.
  */
-bool vm_address_space_unmap_page(
-	vm_address_space_t *space,
-	uint64_t virtual_address
-);
+bool vm_address_space_unmap_page(vm_address_space_t *space, uint64_t virtual_address);
+
+/* ARM64 loader finalization: remove write/COW permission from an existing
+ * non-executable page. Never grants permission or changes page ownership. */
+bool vm_address_space_restrict_page(vm_address_space_t *space, uint64_t address);
 
 /* Inspect one existing EL0 page mapping. */
-bool vm_address_space_query_page(
-	const vm_address_space_t *space,
-	uint64_t virtual_address,
-	vm_user_page_mapping_t *mapping
-);
+bool vm_address_space_query_page(const vm_address_space_t *space, uint64_t virtual_address,
+								 vm_user_page_mapping_t *mapping);
 
 /* Test an active address-space translation as an EL0 read or write. */
-bool vm_address_space_translate_read(
-	const vm_address_space_t *space,
-	uint64_t virtual_address,
-	uint64_t *physical_address
-);
+bool vm_address_space_translate_read(const vm_address_space_t *space, uint64_t virtual_address,
+									 uint64_t *physical_address);
 
-bool vm_address_space_translate_write(
-	const vm_address_space_t *space,
-	uint64_t virtual_address,
-	uint64_t *physical_address
-);
+bool vm_address_space_translate_write(const vm_address_space_t *space, uint64_t virtual_address,
+									  uint64_t *physical_address);
 
 bool vm_address_space_is_active(const vm_address_space_t *space);
 
 const vm_address_space_t *vm_address_space_current(void);
 
-uint64_t vm_address_space_root_physical(
-	const vm_address_space_t *space
-);
+uint64_t vm_address_space_root_physical(const vm_address_space_t *space);
 
-uint64_t vm_address_space_table_count(
-	const vm_address_space_t *space
-);
+uint64_t vm_address_space_table_count(const vm_address_space_t *space);
 
 /*
  * vm_address_space_fork
@@ -156,10 +143,7 @@ uint64_t vm_address_space_table_count(
  * page already marked copy-on-write simply copies, or reclaims, on its next
  * write). Returns false on ports that cannot fork.
  */
-bool vm_address_space_fork(
-	vm_address_space_t *parent,
-	vm_address_space_t *child
-);
+bool vm_address_space_fork(vm_address_space_t *parent, vm_address_space_t *child);
 
 /*
  * vm_address_space_cow_break
@@ -169,10 +153,7 @@ bool vm_address_space_fork(
  * to a fresh page. Returns false when the page is absent or not
  * copy-on-write.
  */
-bool vm_address_space_cow_break(
-	vm_address_space_t *space,
-	uint64_t virtual_address
-);
+bool vm_address_space_cow_break(vm_address_space_t *space, uint64_t virtual_address);
 
 /*
  * Teardown, implemented by every port that reclaims address spaces (the
@@ -210,11 +191,7 @@ bool vm_address_space_quiesce(vm_address_space_t *space);
  * that checks the region list and installs the page as one step). Same rules: the
  * slot must be empty.
  */
-bool vm_address_space_map_page_locked(
-	vm_address_space_t *space,
-	uint64_t virtual_address,
-	uint64_t physical_address,
-	vm_user_protection_t protection
-);
+bool vm_address_space_map_page_locked(vm_address_space_t *space, uint64_t virtual_address, uint64_t physical_address,
+									  vm_user_protection_t protection);
 
 #endif

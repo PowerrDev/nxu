@@ -6,6 +6,7 @@
 #include <vm/vmm.h>
 
 #include <stdint.h>
+#include <libk/memops.h>
 
 /*
  * vm_user_copy_page
@@ -103,9 +104,7 @@ bool vm_copy_from_user(
 
 		const uint8_t *source = (const uint8_t *)(kernel_address + page_offset);
 
-		for (uint64_t index = 0ULL; index < chunk_size; index++) {
-			destination_bytes[copied + index] = source[index];
-		}
+		nxu_memops_copy_forward(destination_bytes + copied, source, (size_t)chunk_size);
 
 		copied += chunk_size;
 	}
@@ -174,9 +173,7 @@ bool vm_copy_to_user(
 
 		uint8_t *destination = (uint8_t *)(kernel_address + page_offset);
 
-		for (uint64_t index = 0ULL; index < chunk_size; index++) {
-			destination[index] = source_bytes[copied + index];
-		}
+		nxu_memops_copy_forward(destination, source_bytes + copied, (size_t)chunk_size);
 
 		copied += chunk_size;
 	}

@@ -103,10 +103,14 @@ static bool vm_user_entry_flags(vm_user_protection_t protection, uint32_t *flags
 
 static bool vm_user_entry_protection(uint32_t entry, vm_user_protection_t *protection)
 {
-	if ((entry & (PTE_PRESENT | PTE_USER)) != (PTE_PRESENT | PTE_USER)) return false;
+	if ((entry & (PTE_PRESENT | PTE_USER)) != (PTE_PRESENT | PTE_USER))
+		return false;
 
-	if ((entry & PTE_WRITE) != 0U) *protection = VM_USER_PROTECTION_READ_WRITE;
-	else *protection = (entry & PTE_SOFTWARE_EXEC) != 0U ? VM_USER_PROTECTION_READ_EXECUTE : VM_USER_PROTECTION_READ_ONLY;
+	if ((entry & PTE_WRITE) != 0U)
+		*protection = VM_USER_PROTECTION_READ_WRITE;
+	else
+		*protection =
+			(entry & PTE_SOFTWARE_EXEC) != 0U ? VM_USER_PROTECTION_READ_EXECUTE : VM_USER_PROTECTION_READ_ONLY;
 
 	return true;
 }
@@ -114,10 +118,8 @@ static bool vm_user_entry_protection(uint32_t entry, vm_user_protection_t *prote
 /* A page-aligned address inside the mappable part of user space. */
 static bool vm_user_page_valid(uint64_t virtual_address)
 {
-	return
-		(virtual_address & PMAP_PAGE_MASK) == 0ULL &&
-		virtual_address >= VM_USER_NULL_GUARD_SIZE &&
-		virtual_address < VM_MAX_USER_ADDRESS;
+	return (virtual_address & PMAP_PAGE_MASK) == 0ULL && virtual_address >= VM_USER_NULL_GUARD_SIZE &&
+		   virtual_address < VM_MAX_USER_ADDRESS;
 }
 
 /* Physical pages a user mapping may name: real, page-aligned, inside the direct map. */
@@ -126,31 +128,26 @@ static bool vm_user_physical_valid(uint64_t physical_address)
 	return (physical_address & PMAP_PAGE_MASK) == 0ULL && physical_address < VM_DIRECT_MAP_SIZE;
 }
 
-static bool vm_address_space_translate(
-	const vm_address_space_t *space,
-	uint64_t virtual_address,
-	bool write,
-	uint64_t *physical_address
-)
+static bool vm_address_space_translate(const vm_address_space_t *space, uint64_t virtual_address, bool write,
+									   uint64_t *physical_address)
 {
-	if (
-		!vm_address_space_is_active(space) ||
-		physical_address == 0 ||
-		virtual_address < VM_USER_NULL_GUARD_SIZE ||
-		virtual_address >= VM_MAX_USER_ADDRESS
-	) {
+	if (!vm_address_space_is_active(space) || physical_address == 0 || virtual_address < VM_USER_NULL_GUARD_SIZE ||
+		virtual_address >= VM_MAX_USER_ADDRESS) {
 		return false;
 	}
 
 	uint32_t address = (uint32_t)virtual_address;
 	uint32_t directory_entry = ((const uint32_t *)space->root)[pmap_directory_index(address)];
 
-	if ((directory_entry & (PTE_PRESENT | PTE_USER)) != (PTE_PRESENT | PTE_USER) || (directory_entry & PTE_LARGE) != 0U) return false;
+	if ((directory_entry & (PTE_PRESENT | PTE_USER)) != (PTE_PRESENT | PTE_USER) || (directory_entry & PTE_LARGE) != 0U)
+		return false;
 
 	uint32_t entry = pmap_table_pointer(directory_entry & PTE_FRAME)[pmap_table_index(address)];
 
-	if ((entry & (PTE_PRESENT | PTE_USER)) != (PTE_PRESENT | PTE_USER)) return false;
-	if (write && (entry & PTE_WRITE) == 0U) return false;
+	if ((entry & (PTE_PRESENT | PTE_USER)) != (PTE_PRESENT | PTE_USER))
+		return false;
+	if (write && (entry & PTE_WRITE) == 0U)
+		return false;
 
 	*physical_address = (uint64_t)(entry & PTE_FRAME) | (address & PMAP_PAGE_MASK);
 	return true;
@@ -163,14 +160,8 @@ const vm_address_space_t *vm_address_space_current(void)
 
 bool vm_address_space_create(vm_address_space_t *space)
 {
-	if (
-		space == 0 ||
-		!pmap_initialized() ||
-		space->root != 0 ||
-		space->root_physical != 0ULL ||
-		space->table_count != 0ULL ||
-		space->active
-	) {
+	if (space == 0 || !pmap_initialized() || space->root != 0 || space->root_physical != 0ULL ||
+		space->table_count != 0ULL || space->active) {
 		return false;
 	}
 
@@ -178,12 +169,14 @@ bool vm_address_space_create(vm_address_space_t *space)
 
 	uint32_t directory_physical;
 
-	if (!pmap_table_alloc(&directory_physical)) return false;
+	if (!pmap_table_alloc(&directory_physical))
+		return false;
 
 	uint32_t *directory = pmap_table_pointer(directory_physical);
 	const uint32_t *master = pmap_kernel_directory();
 
-	for (uint32_t index = PMAP_KERNEL_FIRST_PDE; index < PMAP_TABLE_ENTRIES; index++) directory[index] = master[index];
+	for (uint32_t index = PMAP_KERNEL_FIRST_PDE; index < PMAP_TABLE_ENTRIES; index++)
+		directory[index] = master[index];
 
 	space->root = (uint64_t *)directory;
 	space->root_physical = directory_physical;
@@ -194,13 +187,8 @@ bool vm_address_space_create(vm_address_space_t *space)
 
 bool vm_address_space_activate(vm_address_space_t *space)
 {
-	if (
-		space == 0 ||
-		space->root == 0 ||
-		space->root_physical == 0ULL ||
-		space->table_count == 0ULL ||
-		!pmap_initialized()
-	) {
+	if (space == 0 || space->root == 0 || space->root_physical == 0ULL || space->table_count == 0ULL ||
+		!pmap_initialized()) {
 		return false;
 	}
 
@@ -210,7 +198,8 @@ bool vm_address_space_activate(vm_address_space_t *space)
 
 	if (cpu == 0) {
 		if (g_boot_active_space != space) {
-			if (g_boot_active_space != 0) g_boot_active_space->active = false;
+			if (g_boot_active_space != 0)
+				g_boot_active_space->active = false;
 			pmap_load_directory((uint32_t)space->root_physical);
 			space->active = true;
 			g_boot_active_space = space;
@@ -233,7 +222,8 @@ bool vm_address_space_activate(vm_address_space_t *space)
 
 	cpu->active_space = space;
 
-	if (previous != 0) vm_space_leave(previous, cpu->cpu_id);
+	if (previous != 0)
+		vm_space_leave(previous, cpu->cpu_id);
 
 	ml_irq_restore(irq_state);
 	return true;
@@ -241,7 +231,8 @@ bool vm_address_space_activate(vm_address_space_t *space)
 
 bool vm_address_space_deactivate(void)
 {
-	if (!pmap_initialized()) return false;
+	if (!pmap_initialized())
+		return false;
 
 	uint64_t irq_state = ml_irq_save();
 	processor_t cpu = current_processor();
@@ -251,7 +242,8 @@ bool vm_address_space_deactivate(void)
 
 	if (cpu != 0) {
 		cpu->active_space = 0;
-		if (previous != 0) vm_space_leave(previous, cpu->cpu_id);
+		if (previous != 0)
+			vm_space_leave(previous, cpu->cpu_id);
 	} else if (g_boot_active_space != 0) {
 		g_boot_active_space->active = false;
 		g_boot_active_space = 0;
@@ -269,9 +261,11 @@ bool vm_address_space_deactivate(void)
  */
 bool vm_address_space_quiesce(vm_address_space_t *space)
 {
-	if (space == 0 || space->root == 0) return false;
+	if (space == 0 || space->root == 0)
+		return false;
 
-	if (vm_space_local() == space) (void)vm_address_space_deactivate();
+	if (vm_space_local() == space)
+		(void)vm_address_space_deactivate();
 
 	processor_t self = current_processor();
 	uint64_t deadline = timer_get_microseconds() + 2000000ULL;
@@ -280,17 +274,20 @@ bool vm_address_space_quiesce(vm_address_space_t *space)
 	for (;;) {
 		__atomic_thread_fence(__ATOMIC_SEQ_CST);
 
-		if (cpuset_empty(&space->active_cpus)) return true;
+		if (cpuset_empty(&space->active_cpus))
+			return true;
 
 		uint64_t now = timer_get_microseconds();
 
-		if (now > deadline) return false;
+		if (now > deadline)
+			return false;
 
 		if (now >= next_kick && self != 0) {
 			next_kick = now + 500ULL;
 
 			for (uint32_t cpu = 0U; cpu < NXU_MAX_CPUS; cpu++) {
-				if (cpu != self->cpu_id && cpuset_contains_atomic(&space->active_cpus, cpu)) ipi_send(cpu, IPI_RESCHEDULE);
+				if (cpu != self->cpu_id && cpuset_contains_atomic(&space->active_cpus, cpu))
+					ipi_send(cpu, IPI_RESCHEDULE);
 			}
 		}
 
@@ -298,22 +295,18 @@ bool vm_address_space_quiesce(vm_address_space_t *space)
 	}
 }
 
-bool vm_address_space_map_page(
-	vm_address_space_t *space,
-	uint64_t virtual_address,
-	uint64_t physical_address,
-	vm_user_protection_t protection
-)
+static bool vm_stats_shm_address(uint64_t address)
+{
+	return address >= VM_SHM_BASE && address < VM_SHM_BASE + VM_SHM_WINDOW_SIZE;
+}
+
+bool vm_address_space_map_page(vm_address_space_t *space, uint64_t virtual_address, uint64_t physical_address,
+							   vm_user_protection_t protection)
 {
 	uint32_t flags;
 
-	if (
-		space == 0 ||
-		space->root == 0 ||
-		!vm_user_page_valid(virtual_address) ||
-		!vm_user_physical_valid(physical_address) ||
-		!vm_user_entry_flags(protection, &flags)
-	) {
+	if (space == 0 || space->root == 0 || !vm_user_page_valid(virtual_address) ||
+		!vm_user_physical_valid(physical_address) || !vm_user_entry_flags(protection, &flags)) {
 		return false;
 	}
 
@@ -332,9 +325,13 @@ bool vm_address_space_map_page(
 	}
 
 	*entry = (uint32_t)physical_address | flags;
+	space->resident_pages++;
+	if (vm_stats_shm_address(virtual_address))
+		space->shared_pages++;
 
 	/* A not-present entry is never cached, but stay strictly correct for the active space. */
-	if (space == vm_space_local()) pmap_invalidate_page((uint32_t)virtual_address);
+	if (space == vm_space_local())
+		pmap_invalidate_page((uint32_t)virtual_address);
 
 	nxu_spin_unlock(&space->lock);
 
@@ -343,39 +340,59 @@ bool vm_address_space_map_page(
 
 bool vm_address_space_unmap_page(vm_address_space_t *space, uint64_t virtual_address)
 {
-	if (space == 0 || space->root == 0 || !vm_user_page_valid(virtual_address)) return false;
+	if (space == 0 || space->root == 0 || !vm_user_page_valid(virtual_address))
+		return false;
 
 	nxu_spin_lock(&space->lock);
 
 	uint32_t *entry;
 
-	if (!pmap_get_entry((uint32_t *)space->root, (uint32_t)virtual_address, false, true, 0, &entry) || (*entry & PTE_PRESENT) == 0U) {
+	if (!pmap_get_entry((uint32_t *)space->root, (uint32_t)virtual_address, false, true, 0, &entry) ||
+		(*entry & PTE_PRESENT) == 0U) {
 		nxu_spin_unlock(&space->lock);
 		return false;
 	}
 
 	*entry = 0U;
+	space->resident_pages--;
+	if (vm_stats_shm_address(virtual_address))
+		space->shared_pages--;
 
-	if (space == vm_space_local()) pmap_invalidate_page((uint32_t)virtual_address);
+	if (space == vm_space_local())
+		pmap_invalidate_page((uint32_t)virtual_address);
 
 	nxu_spin_unlock(&space->lock);
 
 	return true;
 }
 
-bool vm_address_space_query_page(
-	const vm_address_space_t *space,
-	uint64_t virtual_address,
-	vm_user_page_mapping_t *mapping
-)
+/* Seal loader RELRO without freeing or replacing the underlying page. */
+bool vm_address_space_restrict_page(vm_address_space_t *space, uint64_t address)
 {
-	if (
-		space == 0 ||
-		space->root == 0 ||
-		mapping == 0 ||
-		virtual_address < VM_USER_NULL_GUARD_SIZE ||
-		virtual_address >= VM_MAX_USER_ADDRESS
-	) {
+	if (!space || !space->root || !vm_user_page_valid(address))
+		return false;
+
+	nxu_spin_lock(&space->lock);
+	uint32_t *entry;
+	vm_user_protection_t protection;
+	bool ok = pmap_get_entry((uint32_t *)space->root, (uint32_t)address, false, true, 0, &entry) &&
+			  vm_user_entry_protection(*entry, &protection) && protection != VM_USER_PROTECTION_READ_EXECUTE;
+
+	if (ok) {
+		*entry &= ~PTE_WRITE;
+		if (space == vm_space_local())
+			pmap_invalidate_page((uint32_t)address);
+	}
+
+	nxu_spin_unlock(&space->lock);
+	return ok;
+}
+
+bool vm_address_space_query_page(const vm_address_space_t *space, uint64_t virtual_address,
+								 vm_user_page_mapping_t *mapping)
+{
+	if (space == 0 || space->root == 0 || mapping == 0 || virtual_address < VM_USER_NULL_GUARD_SIZE ||
+		virtual_address >= VM_MAX_USER_ADDRESS) {
 		return false;
 	}
 
@@ -395,19 +412,22 @@ bool vm_address_space_query_page(
 
 	nxu_spin_unlock(lock);
 
-	if (!vm_user_entry_protection(value, &mapping->protection)) return false;
+	if (!vm_user_entry_protection(value, &mapping->protection))
+		return false;
 
 	mapping->physical_address = value & PTE_FRAME;
 	mapping->cow = false;
 	return true;
 }
 
-bool vm_address_space_translate_read(const vm_address_space_t *space, uint64_t virtual_address, uint64_t *physical_address)
+bool vm_address_space_translate_read(const vm_address_space_t *space, uint64_t virtual_address,
+									 uint64_t *physical_address)
 {
 	return vm_address_space_translate(space, virtual_address, false, physical_address);
 }
 
-bool vm_address_space_translate_write(const vm_address_space_t *space, uint64_t virtual_address, uint64_t *physical_address)
+bool vm_address_space_translate_write(const vm_address_space_t *space, uint64_t virtual_address,
+									  uint64_t *physical_address)
 {
 	return vm_address_space_translate(space, virtual_address, true, physical_address);
 }
@@ -430,7 +450,8 @@ uint64_t vm_address_space_table_count(const vm_address_space_t *space)
 
 uint64_t vm_address_space_release_pages(vm_address_space_t *space)
 {
-	if (space == 0 || space->root == 0) return 0ULL;
+	if (space == 0 || space->root == 0)
+		return 0ULL;
 
 	uint32_t *directory = (uint32_t *)space->root;
 	uint64_t released = 0ULL;
@@ -438,12 +459,14 @@ uint64_t vm_address_space_release_pages(vm_address_space_t *space)
 	nxu_spin_lock(&space->lock);
 
 	for (uint32_t index = 0U; index < PMAP_KERNEL_FIRST_PDE; index++) {
-		if ((directory[index] & PTE_PRESENT) == 0U) continue;
+		if ((directory[index] & PTE_PRESENT) == 0U)
+			continue;
 
 		uint32_t *table = pmap_table_pointer(directory[index] & PTE_FRAME);
 
 		for (uint32_t slot = 0U; slot < PMAP_TABLE_ENTRIES; slot++) {
-			if ((table[slot] & PTE_PRESENT) == 0U) continue;
+			if ((table[slot] & PTE_PRESENT) == 0U)
+				continue;
 
 			(void)pmm_free_page(table[slot] & PTE_FRAME);
 			table[slot] = 0U;
@@ -451,8 +474,12 @@ uint64_t vm_address_space_release_pages(vm_address_space_t *space)
 		}
 	}
 
+	space->resident_pages = 0ULL;
+	space->shared_pages = 0ULL;
+
 	/* Every translation this space had is gone; make the CPU forget them too. */
-	if (space == vm_space_local()) pmap_flush_tlb();
+	if (space == vm_space_local())
+		pmap_flush_tlb();
 
 	nxu_spin_unlock(&space->lock);
 
@@ -461,16 +488,20 @@ uint64_t vm_address_space_release_pages(vm_address_space_t *space)
 
 bool vm_address_space_destroy(vm_address_space_t *space)
 {
-	if (space == 0 || space->root == 0 || !pmap_initialized()) return false;
+	if (space == 0 || space->root == 0 || !pmap_initialized())
+		return false;
 
 	/* Never free a directory a CPU is still walking. */
-	if (space == vm_space_local() && !vm_address_space_deactivate()) return false;
-	if (!cpuset_empty(&space->active_cpus) && !vm_address_space_quiesce(space)) return false;
+	if (space == vm_space_local() && !vm_address_space_deactivate())
+		return false;
+	if (!cpuset_empty(&space->active_cpus) && !vm_address_space_quiesce(space))
+		return false;
 
 	uint32_t *directory = (uint32_t *)space->root;
 
 	for (uint32_t index = 0U; index < PMAP_KERNEL_FIRST_PDE; index++) {
-		if ((directory[index] & PTE_PRESENT) != 0U) pmap_table_free(directory[index] & PTE_FRAME);
+		if ((directory[index] & PTE_PRESENT) != 0U)
+			pmap_table_free(directory[index] & PTE_FRAME);
 	}
 
 	pmap_table_free((uint32_t)space->root_physical);
