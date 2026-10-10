@@ -57,10 +57,7 @@ typedef struct {
 typedef struct {
 	heap_page_t *head;
 
-	heap_large_allocation_t
-		large_allocations[
-			HEAP_MAX_LARGE_ALLOCATIONS
-		];
+	heap_large_allocation_t large_allocations[HEAP_MAX_LARGE_ALLOCATIONS];
 
 	/*
 	 * Number of small arena pages retained by the heap.
@@ -85,17 +82,9 @@ static heap_state_t g_heap;
 /* Serialises the heap's pages, blocks and large-allocation records; outermost of the memory locks. */
 static nxu_rlock_t g_heap_lock = NXU_RLOCK_INIT;
 
-static bool heap_align_up(
-	size_t value,
-	size_t alignment,
-	size_t *result
-)
+static bool heap_align_up(size_t value, size_t alignment, size_t *result)
 {
-	if (
-		result == 0 ||
-		alignment == 0U ||
-		(alignment & (alignment - 1U)) != 0U
-	) {
+	if (result == 0 || alignment == 0U || (alignment & (alignment - 1U)) != 0U) {
 		return false;
 	}
 
@@ -110,15 +99,9 @@ static bool heap_align_up(
 	return true;
 }
 
-static bool heap_size_to_pages(
-	size_t size,
-	uint64_t *page_count
-)
+static bool heap_size_to_pages(size_t size, uint64_t *page_count)
 {
-	if (
-		size == 0U ||
-		page_count == 0
-	) {
+	if (size == 0U || page_count == 0) {
 		return false;
 	}
 
@@ -130,9 +113,7 @@ static bool heap_size_to_pages(
 		return false;
 	}
 
-	uint64_t pages =
-		(value + mask) /
-		PMM_PAGE_SIZE;
+	uint64_t pages = (value + mask) / PMM_PAGE_SIZE;
 
 	if (pages == 0ULL) {
 		return false;
@@ -147,11 +128,7 @@ static size_t heap_page_header_size(void)
 {
 	size_t result;
 
-	if (!heap_align_up(
-		sizeof(heap_page_t),
-		HEAP_ALIGNMENT,
-		&result
-	)) {
+	if (!heap_align_up(sizeof(heap_page_t), HEAP_ALIGNMENT, &result)) {
 		return 0U;
 	}
 
@@ -162,31 +139,19 @@ static size_t heap_block_header_size(void)
 {
 	size_t result;
 
-	if (!heap_align_up(
-		sizeof(heap_block_t),
-		HEAP_ALIGNMENT,
-		&result
-	)) {
+	if (!heap_align_up(sizeof(heap_block_t), HEAP_ALIGNMENT, &result)) {
 		return 0U;
 	}
 
 	return result;
 }
 
-static bool heap_block_is_free(
-	const heap_block_t *block
-)
+static bool heap_block_is_free(const heap_block_t *block)
 {
-	return (
-		block->flags &
-		HEAP_BLOCK_FREE
-	) != 0ULL;
+	return (block->flags & HEAP_BLOCK_FREE) != 0ULL;
 }
 
-static void heap_block_set_free(
-	heap_block_t *block,
-	bool free
-)
+static void heap_block_set_free(heap_block_t *block, bool free)
 {
 	if (free) {
 		block->flags |= HEAP_BLOCK_FREE;
@@ -195,28 +160,17 @@ static void heap_block_set_free(
 	}
 }
 
-static void *heap_block_payload(
-	heap_block_t *block
-)
+static void *heap_block_payload(heap_block_t *block)
 {
-	return
-		(uint8_t *)block +
-		heap_block_header_size();
+	return (uint8_t *)block + heap_block_header_size();
 }
 
-static heap_block_t *heap_page_first_block(
-	heap_page_t *page
-)
+static heap_block_t *heap_page_first_block(heap_page_t *page)
 {
-	return (heap_block_t *)(
-		(uint8_t *)page +
-		heap_page_header_size()
-	);
+	return (heap_block_t *)((uint8_t *)page + heap_page_header_size());
 }
 
-static heap_page_t *heap_page_from_address(
-	const void *address
-)
+static heap_page_t *heap_page_from_address(const void *address)
 {
 	uint64_t value = (uint64_t)address;
 
@@ -235,10 +189,7 @@ static heap_page_t *heap_create_page(void)
 
 	uint64_t virtual_address;
 
-	if (!vmm_physical_to_higher_half(
-		physical_address,
-		&virtual_address
-	)) {
+	if (!vmm_physical_to_higher_half(physical_address, &virtual_address)) {
 		(void)pmm_free_page(physical_address);
 		return 0;
 	}
@@ -256,12 +207,7 @@ static heap_page_t *heap_create_page(void)
 
 	size_t block_header_size = heap_block_header_size();
 
-	if (
-		page_header_size == 0U ||
-		block_header_size == 0U ||
-		page_header_size + block_header_size >=
-			PMM_PAGE_SIZE
-	) {
+	if (page_header_size == 0U || block_header_size == 0U || page_header_size + block_header_size >= PMM_PAGE_SIZE) {
 		(void)pmm_free_page(physical_address);
 		return 0;
 	}
@@ -270,10 +216,7 @@ static heap_page_t *heap_create_page(void)
 
 	block->magic = HEAP_BLOCK_MAGIC;
 
-	block->size =
-		PMM_PAGE_SIZE -
-		page_header_size -
-		block_header_size;
+	block->size = PMM_PAGE_SIZE - page_header_size - block_header_size;
 
 	block->next = 0;
 	block->previous = 0;
@@ -302,36 +245,19 @@ static void heap_append_page(heap_page_t *page)
 	current->next = page;
 }
 
-static heap_block_t *heap_find_free_block(
-	size_t size,
-	heap_page_t **owner
-)
+static heap_block_t *heap_find_free_block(size_t size, heap_page_t **owner)
 {
-	for (
-		heap_page_t *page = g_heap.head;
-		page != 0;
-		page = page->next
-	) {
+	for (heap_page_t *page = g_heap.head; page != 0; page = page->next) {
 		if (page->magic != HEAP_PAGE_MAGIC) {
 			return 0;
 		}
 
-		for (
-			heap_block_t *block = heap_page_first_block(page);
-			block != 0;
-			block = block->next
-		) {
-			if (
-				block->magic !=
-				HEAP_BLOCK_MAGIC
-			) {
+		for (heap_block_t *block = heap_page_first_block(page); block != 0; block = block->next) {
+			if (block->magic != HEAP_BLOCK_MAGIC) {
 				return 0;
 			}
 
-			if (
-				heap_block_is_free(block) &&
-				block->size >= size
-			) {
+			if (heap_block_is_free(block) && block->size >= size) {
 				if (owner != 0) {
 					*owner = page;
 				}
@@ -344,31 +270,17 @@ static heap_block_t *heap_find_free_block(
 	return 0;
 }
 
-static void heap_split_block(
-	heap_block_t *block,
-	size_t requested_size
-)
+static void heap_split_block(heap_block_t *block, size_t requested_size)
 {
 	size_t header_size = heap_block_header_size();
 
-	if (
-		block->size < requested_size ||
-		block->size - requested_size <
-			header_size + HEAP_MIN_SPLIT
-	) {
+	if (block->size < requested_size || block->size - requested_size < header_size + HEAP_MIN_SPLIT) {
 		return;
 	}
 
-	size_t remaining =
-		block->size -
-		requested_size -
-		header_size;
+	size_t remaining = block->size - requested_size - header_size;
 
-	heap_block_t *new_block =
-		(heap_block_t *)(
-			(uint8_t *)heap_block_payload(block) +
-			requested_size
-		);
+	heap_block_t *new_block = (heap_block_t *)((uint8_t *)heap_block_payload(block) + requested_size);
 
 	new_block->magic = HEAP_BLOCK_MAGIC;
 	new_block->size = remaining;
@@ -387,23 +299,15 @@ static void heap_split_block(
 	block->size = requested_size;
 }
 
-static void heap_merge_with_next(
-	heap_block_t *block
-)
+static void heap_merge_with_next(heap_block_t *block)
 {
 	heap_block_t *next = block->next;
 
-	if (
-		next == 0 ||
-		next->magic != HEAP_BLOCK_MAGIC ||
-		!heap_block_is_free(next)
-	) {
+	if (next == 0 || next->magic != HEAP_BLOCK_MAGIC || !heap_block_is_free(next)) {
 		return;
 	}
 
-	block->size +=
-		heap_block_header_size() +
-		next->size;
+	block->size += heap_block_header_size() + next->size;
 
 	block->next = next->next;
 
@@ -414,16 +318,11 @@ static void heap_merge_with_next(
 	next->magic = 0ULL;
 }
 
-static heap_block_t *heap_coalesce(
-	heap_block_t *block
-)
+static heap_block_t *heap_coalesce(heap_block_t *block)
 {
 	heap_merge_with_next(block);
 
-	if (
-		block->previous != 0 &&
-		heap_block_is_free(block->previous)
-	) {
+	if (block->previous != 0 && heap_block_is_free(block->previous)) {
 		block = block->previous;
 		heap_merge_with_next(block);
 	}
@@ -433,19 +332,13 @@ static heap_block_t *heap_coalesce(
 
 static bool heap_unlink_page(heap_page_t *target)
 {
-	if (
-		target == 0 ||
-		target == g_heap.head
-	) {
+	if (target == 0 || target == g_heap.head) {
 		return false;
 	}
 
 	heap_page_t *previous = g_heap.head;
 
-	while (
-		previous != 0 &&
-		previous->next != target
-	) {
+	while (previous != 0 && previous->next != target) {
 		previous = previous->next;
 	}
 
@@ -472,14 +365,9 @@ static bool heap_unlink_page(heap_page_t *target)
 	return true;
 }
 
-static heap_large_allocation_t *
-heap_find_free_large_record(void)
+static heap_large_allocation_t *heap_find_free_large_record(void)
 {
-	for (
-		uint32_t index = 0U;
-		index < HEAP_MAX_LARGE_ALLOCATIONS;
-		index++
-	) {
+	for (uint32_t index = 0U; index < HEAP_MAX_LARGE_ALLOCATIONS; index++) {
 		heap_large_allocation_t *record = &g_heap.large_allocations[index];
 
 		if (!record->active) {
@@ -490,26 +378,16 @@ heap_find_free_large_record(void)
 	return 0;
 }
 
-static heap_large_allocation_t *
-heap_find_large_record(
-	const void *address
-)
+static heap_large_allocation_t *heap_find_large_record(const void *address)
 {
 	if (address == 0) {
 		return 0;
 	}
 
-	for (
-		uint32_t index = 0U;
-		index < HEAP_MAX_LARGE_ALLOCATIONS;
-		index++
-	) {
+	for (uint32_t index = 0U; index < HEAP_MAX_LARGE_ALLOCATIONS; index++) {
 		heap_large_allocation_t *record = &g_heap.large_allocations[index];
 
-		if (
-			record->active &&
-			record->address == address
-		) {
+		if (record->active && record->address == address) {
 			return record;
 		}
 	}
@@ -555,20 +433,13 @@ static void *heap_allocate_large(size_t size)
 
 	uint64_t page_count;
 
-	if (!heap_size_to_pages(
-		size,
-		&page_count
-	)) {
+	if (!heap_size_to_pages(size, &page_count)) {
 		return 0;
 	}
 
 	void *address;
 
-	if (!vm_kern_allocate(
-		size,
-		VMM_PROTECTION_READ_WRITE,
-		&address
-	)) {
+	if (!vm_kern_allocate(size, VMM_PROTECTION_READ_WRITE, &address)) {
 		return 0;
 	}
 
@@ -589,15 +460,9 @@ static void *heap_allocate_large(size_t size)
 	return address;
 }
 
-static bool heap_free_large(
-	heap_large_allocation_t *record
-)
+static bool heap_free_large(heap_large_allocation_t *record)
 {
-	if (
-		record == 0 ||
-		!record->active ||
-		record->address == 0
-	) {
+	if (record == 0 || !record->active || record->address == 0) {
 		return false;
 	}
 
@@ -607,25 +472,13 @@ static bool heap_free_large(
 
 	uint64_t page_count = record->page_count;
 
-	if (
-		g_heap.large_page_count <
-			page_count ||
-		g_heap.large_allocation_count ==
-			0ULL ||
-		g_heap.allocation_count ==
-			0ULL ||
-		g_heap.allocated_bytes <
-			(uint64_t)requested_size ||
-		g_heap.large_allocated_bytes <
-			(uint64_t)requested_size
-	) {
+	if (g_heap.large_page_count < page_count || g_heap.large_allocation_count == 0ULL ||
+		g_heap.allocation_count == 0ULL || g_heap.allocated_bytes < (uint64_t)requested_size ||
+		g_heap.large_allocated_bytes < (uint64_t)requested_size) {
 		return false;
 	}
 
-	if (!vm_kern_free(
-		address,
-		requested_size
-	)) {
+	if (!vm_kern_free(address, requested_size)) {
 		return false;
 	}
 
@@ -647,39 +500,25 @@ void *kmalloc(size_t size)
 {
 	NXU_RLOCK_GUARD(&g_heap_lock);
 
-	if (
-		!g_heap.initialized ||
-		size == 0U
-	) {
+	if (!g_heap.initialized || size == 0U) {
 		return 0;
 	}
 
 	size_t aligned_size;
 
-	if (!heap_align_up(
-		size,
-		HEAP_ALIGNMENT,
-		&aligned_size
-	)) {
+	if (!heap_align_up(size, HEAP_ALIGNMENT, &aligned_size)) {
 		return 0;
 	}
 
-	size_t maximum_size =
-		PMM_PAGE_SIZE -
-		heap_page_header_size() -
-		heap_block_header_size();
+	size_t maximum_size = PMM_PAGE_SIZE - heap_page_header_size() - heap_block_header_size();
 
 	if (aligned_size > maximum_size) {
 		return heap_allocate_large(size);
-	}	
-	
+	}
+
 	heap_page_t *page = 0;
 
-	heap_block_t *block =
-		heap_find_free_block(
-			aligned_size,
-			&page
-		);
+	heap_block_t *block = heap_find_free_block(aligned_size, &page);
 
 	if (block == 0) {
 		page = heap_create_page();
@@ -693,10 +532,7 @@ void *kmalloc(size_t size)
 		block = heap_page_first_block(page);
 	}
 
-	heap_split_block(
-		block,
-		aligned_size
-	);
+	heap_split_block(block, aligned_size);
 
 	heap_block_set_free(block, false);
 
@@ -708,15 +544,9 @@ void *kmalloc(size_t size)
 	return heap_block_payload(block);
 }
 
-void *kcalloc(
-	size_t count,
-	size_t size
-)
+void *kcalloc(size_t count, size_t size)
 {
-	if (
-		count == 0U ||
-		size == 0U
-	) {
+	if (count == 0U || size == 0U) {
 		return 0;
 	}
 
@@ -741,10 +571,7 @@ bool kfree(void *address)
 {
 	NXU_RLOCK_GUARD(&g_heap_lock);
 
-	if (
-		!g_heap.initialized ||
-		address == 0
-	) {
+	if (!g_heap.initialized || address == 0) {
 		return false;
 	}
 
@@ -754,9 +581,7 @@ bool kfree(void *address)
 	heap_large_allocation_t *large_record = heap_find_large_record(address);
 
 	if (large_record != 0) {
-		return heap_free_large(
-			large_record
-		);
+		return heap_free_large(large_record);
 	}
 
 	/*
@@ -790,10 +615,7 @@ bool kfree(void *address)
 
 	size_t block_header_size = heap_block_header_size();
 
-	if (
-		page_header_size == 0U ||
-		block_header_size == 0U
-	) {
+	if (page_header_size == 0U || block_header_size == 0U) {
 		return false;
 	}
 
@@ -803,27 +625,13 @@ bool kfree(void *address)
 
 	uint64_t payload_address = (uint64_t)address;
 
-	if (
-		payload_address <
-			page_start +
-			page_header_size +
-			block_header_size ||
-		payload_address >= page_end
-	) {
+	if (payload_address < page_start + page_header_size + block_header_size || payload_address >= page_end) {
 		return false;
 	}
 
-	heap_block_t *block =
-		(heap_block_t *)(
-			(uint8_t *)address -
-			block_header_size
-		);
+	heap_block_t *block = (heap_block_t *)((uint8_t *)address - block_header_size);
 
-	if (
-		block->magic != HEAP_BLOCK_MAGIC ||
-		heap_block_payload(block) != address ||
-		heap_block_is_free(block)
-	) {
+	if (block->magic != HEAP_BLOCK_MAGIC || heap_block_payload(block) != address || heap_block_is_free(block)) {
 		return false;
 	}
 
@@ -831,12 +639,7 @@ bool kfree(void *address)
 	 * Prevent accounting underflow if heap metadata has been
 	 * corrupted.
 	 */
-	if (
-		g_heap.allocation_count == 0ULL ||
-		g_heap.allocated_bytes <
-			block->size ||
-		page->allocation_count == 0ULL
-	) {
+	if (g_heap.allocation_count == 0ULL || g_heap.allocated_bytes < block->size || page->allocation_count == 0ULL) {
 		return false;
 	}
 
@@ -855,10 +658,7 @@ bool kfree(void *address)
 	 * heap can allocate without immediately requesting another
 	 * physical page.
 	 */
-	if (
-		page != g_heap.head &&
-		page->allocation_count == 0ULL
-	) {
+	if (page != g_heap.head && page->allocation_count == 0ULL) {
 		return heap_unlink_page(page);
 	}
 
@@ -867,18 +667,19 @@ bool kfree(void *address)
 
 uint64_t heap_get_page_count(void)
 {
-	return
-		g_heap.page_count +
-		g_heap.large_page_count;
+	NXU_RLOCK_GUARD(&g_heap_lock);
+	return g_heap.page_count + g_heap.large_page_count;
 }
 
 uint64_t heap_get_large_allocation_count(void)
 {
+	NXU_RLOCK_GUARD(&g_heap_lock);
 	return g_heap.large_allocation_count;
 }
 
 uint64_t heap_get_allocation_count(void)
 {
+	NXU_RLOCK_GUARD(&g_heap_lock);
 	return g_heap.allocation_count;
 }
 
@@ -887,7 +688,8 @@ void heap_dump(void)
 	kprintf("heap: total backing pages: %llu\n", (unsigned long long)(g_heap.page_count + g_heap.large_page_count));
 	kprintf("heap: active allocations: %llu\n", (unsigned long long)g_heap.allocation_count);
 
-	if (!kconsole_verbose()) return;
+	if (!kconsole_verbose())
+		return;
 
 	uint64_t free_blocks = 0ULL;
 	uint64_t free_bytes = 0ULL;
@@ -895,16 +697,8 @@ void heap_dump(void)
 	uint64_t used_blocks = 0ULL;
 	uint64_t used_bytes = 0ULL;
 
-	for (
-		heap_page_t *page = g_heap.head;
-		page != 0;
-		page = page->next
-	) {
-		for (
-			heap_block_t *block = heap_page_first_block(page);
-			block != 0;
-			block = block->next
-		) {
+	for (heap_page_t *page = g_heap.head; page != 0; page = page->next) {
+		for (heap_block_t *block = heap_page_first_block(page); block != 0; block = block->next) {
 			if (heap_block_is_free(block)) {
 				free_blocks++;
 				free_bytes += block->size;
@@ -924,7 +718,8 @@ void heap_dump(void)
 	kprintf("heap: small used payload bytes: %llu\n", (unsigned long long)used_bytes);
 	kprintf("heap: small free blocks: %llu\n", (unsigned long long)free_blocks);
 	kprintf("heap: small free payload bytes: %llu\n", (unsigned long long)free_bytes);
-	kprintf("heap: small allocation limit: %llu bytes\n", (unsigned long long)(PMM_PAGE_SIZE - heap_page_header_size() - heap_block_header_size()));
+	kprintf("heap: small allocation limit: %llu bytes\n",
+			(unsigned long long)(PMM_PAGE_SIZE - heap_page_header_size() - heap_block_header_size()));
 	kprintf("heap: virtual arena limit: %llu bytes\n", (unsigned long long)VM_KERN_SIZE);
 	kprintf("heap: large allocation record limit: %llu\n", (unsigned long long)HEAP_MAX_LARGE_ALLOCATIONS);
 }
