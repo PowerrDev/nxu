@@ -72,6 +72,17 @@
 #define NXU_SYS_UI_SUBMIT 68ULL
 #define NXU_SYS_UI_CONTROL 69ULL
 #define NXU_SYS_SLEEP_US 70ULL
+#define NXU_SYS_STATISTICS 71ULL
+#define NXU_SYS_CRASH 72ULL
+#define NXU_SYS_DYRLD 73ULL
+#define NXU_SYS_SAP_DELETE 74ULL
+#define NXU_SYS_GUI_HOST 75ULL
+#define NXU_SYS_SHM_MAP_SIZED 76ULL
+#define NXU_SYS_IPC_RECEIVE_PEER 77ULL
+#define NXU_SYS_PROCESS_IDENTITY 78ULL
+#define NXU_SYS_GUI_WINDOW_HANDLE 79ULL
+#include <kern/syscall/dyrld_defs.h>
+#include <kern/syscall/crash_defs.h>
 
 /* wait(): pass as the pid to wait for any child. */
 #define NXU_WAIT_ANY UINT64_MAX
@@ -92,7 +103,10 @@
 #define NXU_CAP_DISPLAY (1U << 1U)
 #define NXU_CAP_RESET (1U << 2U)
 #define NXU_CAP_AUDIO (1U << 3U)
-#define NXU_CAP_ALL (NXU_CAP_FS_WRITE | NXU_CAP_DISPLAY | NXU_CAP_RESET | NXU_CAP_AUDIO)
+#define NXU_CAP_CRASH (1U << 4U)	/* consume privileged process crash snapshots */
+#define NXU_CAP_CRASH_UI (1U << 5U) /* receive saved-report UI notifications */
+#define NXU_CAP_ALL                                                                                                    \
+	(NXU_CAP_FS_WRITE | NXU_CAP_DISPLAY | NXU_CAP_RESET | NXU_CAP_AUDIO | NXU_CAP_CRASH | NXU_CAP_CRASH_UI)
 
 /*
  * Exit status recorded for a process the kernel terminated (waitpid reports
@@ -214,7 +228,7 @@ typedef struct {
 #define NXU_IOC_OUT 2U
 #define NXU_IOC_SIZE_MAX 256U
 
-#define NXU_IOC(direction, group, number, size) \
+#define NXU_IOC(direction, group, number, size)                                                                        \
 	(((uint32_t)(direction) << 30U) | ((uint32_t)(size) << 16U) | ((uint32_t)(group) << 8U) | (uint32_t)(number))
 #define NXU_IOC_DIRECTION(command) (((command) >> 30U) & 3U)
 #define NXU_IOC_SIZE(command) (((command) >> 16U) & 0x3FFFU)
@@ -231,7 +245,6 @@ typedef struct {
 #define NXU_DIRENT_TYPE_UNKNOWN 0U
 #define NXU_DIRENT_TYPE_REGULAR 1U
 #define NXU_DIRENT_TYPE_DIRECTORY 2U
-
 
 #define NXU_RECOVERY_INPUT_NONE 0U
 #define NXU_RECOVERY_INPUT_KEY 1U
