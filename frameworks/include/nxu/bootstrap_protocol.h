@@ -22,20 +22,14 @@
 
 #define NXU_BOOTSTRAP_LABEL_MAX 64U
 
-typedef enum {
-	NXU_BOOTSTRAP_OP_REGISTER = 1,
-	NXU_BOOTSTRAP_OP_LOOKUP = 2
-} nxu_bootstrap_op_t;
+typedef enum { NXU_BOOTSTRAP_OP_REGISTER = 1, NXU_BOOTSTRAP_OP_LOOKUP = 2 } nxu_bootstrap_op_t;
 
 typedef struct {
 	uint32_t opcode;
 	char label[NXU_BOOTSTRAP_LABEL_MAX];
 } nxu_bootstrap_request_t;
 
-typedef enum {
-	NXU_BOOTSTRAP_STATUS_OK = 0,
-	NXU_BOOTSTRAP_STATUS_NOT_FOUND = 1
-} nxu_bootstrap_status_t;
+typedef enum { NXU_BOOTSTRAP_STATUS_OK = 0, NXU_BOOTSTRAP_STATUS_NOT_FOUND = 1 } nxu_bootstrap_status_t;
 
 typedef struct {
 	int32_t status;

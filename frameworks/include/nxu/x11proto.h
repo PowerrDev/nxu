@@ -31,6 +31,7 @@ typedef struct __attribute__((packed)) {
 	uint16_t authorization_protocol_data_length;
 	uint16_t pad2;
 } x11_setup_request_t;
+
 _Static_assert(sizeof(x11_setup_request_t) == 12U, "x11_setup_request_t size");
 
 /* First 8 bytes of every setup response, regardless of success/failure. */
@@ -41,6 +42,7 @@ typedef struct __attribute__((packed)) {
 	uint16_t protocol_minor_version;
 	uint16_t length; /* in 4-byte units, beyond this 8-byte prefix */
 } x11_setup_prefix_t;
+
 _Static_assert(sizeof(x11_setup_prefix_t) == 8U, "x11_setup_prefix_t size");
 
 /* Follows x11_setup_prefix_t when success == X11_SETUP_SUCCESS. */
@@ -51,7 +53,7 @@ typedef struct __attribute__((packed)) {
 	uint32_t motion_buffer_size;
 	uint16_t vendor_length;
 	uint16_t maximum_request_length;
-	uint8_t roots_length; /* number of SCREENs */
+	uint8_t roots_length;		   /* number of SCREENs */
 	uint8_t pixmap_formats_length; /* number of FORMATs */
 	uint8_t image_byte_order;
 	uint8_t bitmap_bit_order;
@@ -61,6 +63,7 @@ typedef struct __attribute__((packed)) {
 	uint8_t max_keycode;
 	uint32_t pad2;
 } x11_setup_success_t;
+
 _Static_assert(sizeof(x11_setup_success_t) == 32U, "x11_setup_success_t size");
 
 /* One PIXMAP FORMAT entry, pixmap_formats_length of these follow the vendor
@@ -71,6 +74,7 @@ typedef struct __attribute__((packed)) {
 	uint8_t scanline_pad;
 	uint8_t pad[5];
 } x11_format_t;
+
 _Static_assert(sizeof(x11_format_t) == 8U, "x11_format_t size");
 
 /* One VISUALTYPE entry, following a DEPTH header. */
@@ -84,6 +88,7 @@ typedef struct __attribute__((packed)) {
 	uint32_t blue_mask;
 	uint32_t pad;
 } x11_visualtype_t;
+
 _Static_assert(sizeof(x11_visualtype_t) == 24U, "x11_visualtype_t size");
 
 #define X11_VISUAL_CLASS_TRUE_COLOR 4U
@@ -95,6 +100,7 @@ typedef struct __attribute__((packed)) {
 	uint16_t visuals_length;
 	uint32_t pad1;
 } x11_depth_t;
+
 _Static_assert(sizeof(x11_depth_t) == 8U, "x11_depth_t size");
 
 /* One SCREEN entry: this header, then allowed_depths_length x11_depth_t
@@ -117,6 +123,7 @@ typedef struct __attribute__((packed)) {
 	uint8_t root_depth;
 	uint8_t allowed_depths_length;
 } x11_screen_t;
+
 _Static_assert(sizeof(x11_screen_t) == 40U, "x11_screen_t size");
 
 #define X11_BACKING_STORE_NEVER 0U
@@ -134,6 +141,7 @@ typedef struct __attribute__((packed)) {
 	uint8_t data;
 	uint16_t length; /* in 4-byte units, includes this header */
 } x11_request_header_t;
+
 _Static_assert(sizeof(x11_request_header_t) == 4U, "x11_request_header_t size");
 
 /* Generic 32-byte reply header; reply-specific fields fill the rest. */
@@ -143,6 +151,7 @@ typedef struct __attribute__((packed)) {
 	uint16_t sequence_number;
 	uint32_t length; /* in 4-byte units, beyond this 32-byte header */
 } x11_reply_header_t;
+
 _Static_assert(sizeof(x11_reply_header_t) == 8U, "x11_reply_header_t size");
 
 #define X11_REPLY 1U
@@ -157,6 +166,7 @@ typedef struct __attribute__((packed)) {
 	uint8_t major_opcode;
 	uint8_t pad[21];
 } x11_error_t;
+
 _Static_assert(sizeof(x11_error_t) == 32U, "x11_error_t size");
 
 #define X11_ERROR_REQUEST 1U
@@ -175,6 +185,7 @@ typedef struct __attribute__((packed)) {
 	uint16_t sequence_number;
 	uint8_t data[28];
 } x11_generic_event_t;
+
 _Static_assert(sizeof(x11_generic_event_t) == 32U, "x11_generic_event_t size");
 
 /* Core opcodes XAmethyst implements or explicitly special-cases; anything
@@ -221,12 +232,14 @@ typedef struct __attribute__((packed)) {
 	uint32_t visual;
 	uint32_t value_mask;
 } x11_create_window_fixed_t;
+
 _Static_assert(sizeof(x11_create_window_fixed_t) == 28U, "x11_create_window_fixed_t size");
 
 /* DestroyWindow/MapWindow/UnmapWindow body: just the target window. */
 typedef struct __attribute__((packed)) {
 	uint32_t window;
 } x11_window_only_t;
+
 _Static_assert(sizeof(x11_window_only_t) == 4U, "x11_window_only_t size");
 
 /* Fixed prefix of a ConfigureWindow request body: window, value-mask, then
@@ -237,12 +250,14 @@ typedef struct __attribute__((packed)) {
 	uint16_t value_mask;
 	uint16_t pad;
 } x11_configure_window_fixed_t;
+
 _Static_assert(sizeof(x11_configure_window_fixed_t) == 8U, "x11_configure_window_fixed_t size");
 
 /* GetGeometry request body: just the target drawable. */
 typedef struct __attribute__((packed)) {
 	uint32_t drawable;
 } x11_get_geometry_request_t;
+
 _Static_assert(sizeof(x11_get_geometry_request_t) == 4U, "x11_get_geometry_request_t size");
 
 typedef struct __attribute__((packed)) {
@@ -258,6 +273,7 @@ typedef struct __attribute__((packed)) {
 	uint16_t border_width;
 	uint8_t pad[10];
 } x11_get_geometry_reply_t;
+
 _Static_assert(sizeof(x11_get_geometry_reply_t) == 32U, "x11_get_geometry_reply_t size");
 
 /* Fixed prefix of a CreateGC request body: cid, drawable, value-mask, then
@@ -267,6 +283,7 @@ typedef struct __attribute__((packed)) {
 	uint32_t drawable;
 	uint32_t value_mask;
 } x11_create_gc_fixed_t;
+
 _Static_assert(sizeof(x11_create_gc_fixed_t) == 12U, "x11_create_gc_fixed_t size");
 
 /* Fixed prefix of a ChangeGC request body: gc, value-mask, then one 4-byte
@@ -275,6 +292,7 @@ typedef struct __attribute__((packed)) {
 	uint32_t gc;
 	uint32_t value_mask;
 } x11_change_gc_fixed_t;
+
 _Static_assert(sizeof(x11_change_gc_fixed_t) == 8U, "x11_change_gc_fixed_t size");
 
 /* Fixed prefix of a PolyFillRectangle request body: drawable, gc, then one
@@ -283,6 +301,7 @@ typedef struct __attribute__((packed)) {
 	uint32_t drawable;
 	uint32_t gc;
 } x11_poly_fill_rectangle_fixed_t;
+
 _Static_assert(sizeof(x11_poly_fill_rectangle_fixed_t) == 8U, "x11_poly_fill_rectangle_fixed_t size");
 
 typedef struct __attribute__((packed)) {
@@ -291,6 +310,7 @@ typedef struct __attribute__((packed)) {
 	uint16_t width;
 	uint16_t height;
 } x11_rectangle_t;
+
 _Static_assert(sizeof(x11_rectangle_t) == 8U, "x11_rectangle_t size");
 
 /* QueryExtension request body: name-length, then the name padded to 4. */
@@ -298,6 +318,7 @@ typedef struct __attribute__((packed)) {
 	uint16_t name_length;
 	uint16_t pad;
 } x11_query_extension_fixed_t;
+
 _Static_assert(sizeof(x11_query_extension_fixed_t) == 4U, "x11_query_extension_fixed_t size");
 
 typedef struct __attribute__((packed)) {
@@ -311,6 +332,7 @@ typedef struct __attribute__((packed)) {
 	uint8_t first_error;
 	uint8_t pad[20];
 } x11_query_extension_reply_t;
+
 _Static_assert(sizeof(x11_query_extension_reply_t) == 32U, "x11_query_extension_reply_t size");
 
 #define X11_EVENT_KEY_PRESS 2U
@@ -342,6 +364,7 @@ typedef struct __attribute__((packed)) {
 	uint8_t same_screen;
 	uint8_t pad;
 } x11_input_event_t;
+
 _Static_assert(sizeof(x11_input_event_t) == 32U, "x11_input_event_t size");
 
 typedef struct __attribute__((packed)) {
@@ -356,6 +379,7 @@ typedef struct __attribute__((packed)) {
 	uint16_t count;
 	uint8_t pad[14];
 } x11_expose_event_t;
+
 _Static_assert(sizeof(x11_expose_event_t) == 32U, "x11_expose_event_t size");
 
 #endif

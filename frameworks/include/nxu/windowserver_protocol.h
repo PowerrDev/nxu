@@ -4,6 +4,11 @@
 #include <stdint.h>
 
 /*
+ * Window handles are kernel-issued public IDs, not framework slot indexes.
+ * The service binds them to kernel-authenticated sender identities. Global
+ * desktop actions require DISPLAY capability; normal clients may only change
+ * their own windows. Transfers carry send access, never receive ownership.
+ *
  * Wire format for the standalone WindowServer process (see
  * frameworks/BootDaemons.framework/windowserver_service.c) -- a small
  * tagged-union request per message, one reply per request except
@@ -32,8 +37,28 @@ typedef enum {
 	WSMSG_CREATE_WINDOW = 1,
 	WSMSG_RENDER_WINDOW = 2,
 	WSMSG_PRESENT = 3,
-	WSMSG_RENDER_WINDOW_SHM = 4
+	WSMSG_RENDER_WINDOW_SHM = 4,
+	WSMSG_RESIZE_WINDOW = 5,
+	WSMSG_DESTROY_WINDOW = 6,
+	WSMSG_ACTION = 7
 } wsmsg_opcode_t;
+
+/* Desktop operations carried by WSMSG_ACTION. No process-local pointers. */
+typedef enum {
+	WS_ACTION_CREATE = 1,
+	WS_ACTION_BACKGROUND,
+	WS_ACTION_MOVE,
+	WS_ACTION_LIMITS,
+	WS_ACTION_FOCUS,
+	WS_ACTION_SHADOW,
+	WS_ACTION_KEY,
+	WS_ACTION_OPAQUE_INTERIOR,
+	WS_ACTION_SHADOW_SCALE,
+	WS_ACTION_POINTER,
+	WS_ACTION_CURSOR_KIND,
+	WS_ACTION_CURSOR,
+	WS_ACTION_DISPLAY_SIZE,
+} wsmsg_action_t;
 
 typedef struct {
 	uint32_t opcode;
@@ -68,11 +93,28 @@ typedef struct {
 
 typedef union {
 	uint32_t opcode;
+
+	struct {
+		uint32_t opcode, action, window_id;
+		uint32_t arguments[8];
+	} action;
+
 	wsmsg_create_window_t create_window;
 	wsmsg_render_window_t render_window;
 	wsmsg_present_t present;
 	wsmsg_render_window_shm_t render_window_shm;
+
+	struct wsmsg_resize_window {
+		uint32_t opcode, window_id;
+		int32_t x, y;
+		uint32_t width, height;
+	} resize_window;
+
+	struct {
+		uint32_t opcode, window_id;
+	} destroy_window;
 } wsmsg_request_t;
+typedef struct wsmsg_resize_window wsmsg_resize_window_t;
 
 typedef struct {
 	int32_t status;
