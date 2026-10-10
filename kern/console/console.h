@@ -51,9 +51,8 @@ int kvprintf(const char *format, va_list arguments);
  * Two tiers of boot output. kprintf() is the milestone log: what happened
  * and whether it passed, one fact per line, prefixed with the function that
  * printed it. kverbosef() is the detail behind it -- register values, per-slot
- * tables, allocator statistics -- and prints only when the `-v` boot-arg is
- * set (`make run BOOT_ARGS=-v`), so a normal boot, and the boot splash that
- * mirrors it, is not buried in state dumps. Both take the same formats.
+ * tables, allocator statistics -- enabled by default. log.verbose=0 selects
+ * milestones; -v explicitly enables detail. Both take the same formats.
  */
 void kconsole_set_verbose(bool verbose);
 bool kconsole_verbose(void);

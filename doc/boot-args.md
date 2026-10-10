@@ -21,11 +21,17 @@ changing boot-argument consumers.
 
 ## Supported arguments
 
-- `-v` turns on the verbose log tier: the `kverbosef()` detail lines (register
-  values, per-slot tables, allocator and scheduler statistics; see
-  `doc/kern/console.md`) are printed to the serial console and the boot splash
-  in addition to the milestone log.
+- Verbose output is enabled by default. `-v` explicitly enables it and is
+  appended to default verbose boot arguments for userland services.
+- `log.verbose=0` selects quiet milestone output (unless `-v` is supplied).
+- `log.stats_ms=N` sets recurring real kernel snapshot frequency in milliseconds
+  (default 1000, clamped to 250–60000; 0 disables snapshots).
+- `log.trace=0` disables individual syscall traces; interval call/error counts
+  remain available in snapshots. Hot polling, I/O and UI calls use interval
+  counts rather than individual traces.
 - `-x` enables safe mode and suppresses optional root daemons.
+- `-no-crashd` disables the crash-report daemon.
+- `-no-crash-ui` disables crash dialogs while reports continue to be saved.
 - `-no-gpu` prevents VirtIO GPU attachment.
 - `-no-input` prevents VirtIO keyboard/mouse attachment.
 - `-no-block` prevents VirtIO block attachment and therefore disk userspace.
@@ -34,5 +40,40 @@ changing boot-argument consumers.
   [VirtIO Sound](drivers/virtio-sound.md)).
 - `-no-logd` prevents `bootd` from starting `logd`.
 - `-no-patchd` prevents `bootd` from starting `patchd`.
+- `dyrld.aslr=0` disables runtime framework sliding for developer tests.
+  The default is 1 and requires randomness from tepOS for dynamic launches.
 
 The parser also supports `name=value` tokens for later kernel tunables.
+
+## Userland desktop integration
+
+`ui.userland=1` selects the independent trusted kernel login path and skips the
+legacy kernel desktop. With an enclave UART present, ordinary display/input
+operations remain excluded until tepOS accepts authentication. An unreachable
+enclave leaves the desktop locked; no enclave UART retains the existing
+no-login policy. Recovery boot bypasses this desktop login path.
+
+`make run` boots this mode by default. bootd starts the installed WindowServer
+and DesktopService jobs; DesktopService requires `ui.userland=1`. The kernel
+image excludes the legacy WindowServer and UIService archives. `-no-desktop`
+disables DesktopService, while safe mode keeps both essential GUI services.
+Legacy GUI test targets retain their kernel framework configuration.
+
+Normal desktop boot also sets `log.trace=0 log.stats_ms=0` to avoid continuous
+syscall traces and diagnostic snapshots feeding logd. Ordinary logs and crash
+reports remain enabled. For debugging, use
+`make run BOOT_ARGS="log.trace=1 log.stats_ms=1000"`.
+
+Run the production check against the desktop kernel:
+
+```sh
+python3 tools/check_gui_trusted.py --production --kernel BUILD/desktop/kernel.bin
+```
+
+It checks normal jobs, authentication, SAP, Dock app launches and crash reporting.
+Add `--restart` to exercise compositor recovery.
+
+The dynamic desktop reads `ui.scale=1000` as 1× and `ui.scale=2000` as 2×.
+Values from 500 through 4000 are accepted; invalid values use 1000. Scaling
+applies to desktop layout and pointer movement. The integration mode supports
+display dimensions up to 3840 by 2160 pixels.

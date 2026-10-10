@@ -65,14 +65,23 @@ implemented.
 Boot output comes in two tiers. `kprintf()` is the milestone log: what
 happened and whether it passed, one fact per line, prefixed with the function
 that printed it (`kern_test_live_vmm: live page mapping test passed`).
-`kverbosef()` takes the same formats but prints only when `-v` is in the
-boot-args, so a default boot -- and the boot splash that mirrors it -- is not
-buried in register values, per-slot tables and allocator statistics.
+`kverbosef()` takes the same formats and is enabled by default, including
+before boot arguments are parsed. `log.verbose=0` selects milestone output;
+`-v` explicitly enables detail. Default verbose boots also expose `-v` to
+userland services.
 
-`kconsole_set_verbose()` is set by `boot_args_init()`, so `kverbosef()` is
-silent for the few lines printed before boot-args are parsed. State dumps
-(`pmm_dump()`, `vmm_dump()`, `heap_dump()`, `sched_dump()`, ...) print their
-short summary and then `if (!kconsole_verbose()) return;` before the detail.
+The diagnostic thread prints actual CPU/scheduler, interrupt/fault, physical
+memory, process/thread, VM, IPC port and VirtIO counters every second. Tables
+are independently sampled. High-frequency syscalls report interval counts;
+other syscalls trace entry arguments and completion results. Counters are
+cumulative unless labelled `interval`; errors may complete in a later interval
+than their calls. No synthetic subsystem activity is emitted.
+
+`log.stats_ms=250` increases snapshot frequency (250–60000 ms); `0` disables
+periodic snapshots. `log.trace=0` disables individual syscall traces. Serial
+output and the boot display use the existing console sinks, and logd can read
+the console history. Verbosity adds execution and output overhead, especially
+with large process/thread tables.
 
 ```sh
 make run BOOT_ARGS=-v
@@ -104,7 +113,7 @@ with history replay enabled.
 
 - Four secondary sinks maximum.
 - 256 KiB retained history; older output is overwritten.
-- No output serialization yet.
+- Complete console records are serialized with the console lock.
 - No ANSI parser or terminal escape sequences.
 - No format width, precision or floating-point formatting.
 - UART remains permanently enabled as the primary diagnostic sink.
