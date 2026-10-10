@@ -12,11 +12,11 @@
 
 #include <drivers/video/ui_service_activity.h>
 
-#if defined(NXU_UI_SERVICE)
-
 #include <kern/console/console.h>
+#include <kern/lock.h>
 #include <kern/memory/heap.h>
 #include <kern/process/proc.h>
+#include <kern/process/statistics.h>
 #include <kern/machine/timer.h>
 #include <kern/process/thread.h>
 #include <kern/sched_prism/processor.h>
@@ -33,6 +33,7 @@ _Static_assert(offsetof(UIServiceActivity, cpus) == 56U, "UIServiceActivity layo
 _Static_assert(UI_SERVICE_ACTIVITY_NAME_MAX + 1U <= PROC_NAME_MAX, "process names fit");
 
 /* Big enough for every slot of both tables; static, not on the UI's stack. */
+static nxu_spinlock_t g_activity_lock;
 static proc_snapshot_t g_activity_procs[PROC_MAX];
 static thread_snapshot_t g_activity_threads[THREAD_MAX];
 
@@ -43,7 +44,8 @@ static uint32_t ui_service_activity_state(const proc_snapshot_t *proc, bool on_c
 		return UI_SERVICE_PROCESS_STATE_STOPPED;
 	case PROC_STATE_RUNNABLE:
 	case PROC_STATE_RUNNING:
-		if (on_cpu) return UI_SERVICE_PROCESS_STATE_RUNNING;
+		if (on_cpu)
+			return UI_SERVICE_PROCESS_STATE_RUNNING;
 		return runnable ? UI_SERVICE_PROCESS_STATE_RUNNABLE : UI_SERVICE_PROCESS_STATE_SLEEPING;
 	default:
 		return UI_SERVICE_PROCESS_STATE_OTHER;
@@ -57,28 +59,28 @@ static uint32_t ui_service_activity_state(const proc_snapshot_t *proc, bool on_c
  */
 static uint32_t ui_service_activity_flags(const proc_snapshot_t *proc)
 {
-	if (proc->pid == PROC_PID_KERNEL) return UI_SERVICE_PROCESS_FLAG_KERNEL | UI_SERVICE_PROCESS_FLAG_SYSTEM;
-	if ((proc->flags & PROC_FLAG_SYSTEM) != 0U || proc->pid == 1U || proc->ppid == 1U) return UI_SERVICE_PROCESS_FLAG_SYSTEM;
+	if (proc->pid == PROC_PID_KERNEL)
+		return UI_SERVICE_PROCESS_FLAG_KERNEL | UI_SERVICE_PROCESS_FLAG_SYSTEM;
+	if ((proc->flags & PROC_FLAG_SYSTEM) != 0U || proc->pid == 1U || proc->ppid == 1U)
+		return UI_SERVICE_PROCESS_FLAG_SYSTEM;
 	return 0U;
 }
 
-uint32_t ui_service_get_activity(
-	void *context,
-	UIServiceActivity *activity,
-	UIServiceProcessInfo *processes,
-	uint32_t capacity,
-	uint32_t *count_out
-)
+uint32_t ui_service_get_activity(void *context, UIServiceActivity *activity, UIServiceProcessInfo *processes,
+								 uint32_t capacity, uint32_t *count_out)
 {
 	(void)context;
 
-	if (activity == 0 || count_out == 0 || (processes == 0 && capacity != 0U)) return UI_SERVICE_STATUS_INVALID_ARGUMENT;
-	if (activity->struct_size < sizeof(UIServiceActivity)) return UI_SERVICE_STATUS_INVALID_ARGUMENT;
+	if (activity == 0 || count_out == 0 || (processes == 0 && capacity != 0U))
+		return UI_SERVICE_STATUS_INVALID_ARGUMENT;
+	if (activity->struct_size < sizeof(UIServiceActivity))
+		return UI_SERVICE_STATUS_INVALID_ARGUMENT;
 
 	*count_out = 0U;
 
 	uint32_t cpus = processor_count();
-	if (cpus > UI_SERVICE_ACTIVITY_CPU_MAX) cpus = UI_SERVICE_ACTIVITY_CPU_MAX;
+	if (cpus > UI_SERVICE_ACTIVITY_CPU_MAX)
+		cpus = UI_SERVICE_ACTIVITY_CPU_MAX;
 
 	activity->cpu_count = cpus;
 	activity->uptime_us = kconsole_uptime_us();
@@ -91,30 +93,24 @@ uint32_t ui_service_get_activity(
 		UIServiceCpuInfo *info = &activity->cpus[cpu];
 		processor_t processor = cpu < cpus ? processor_by_id(cpu) : 0;
 
-		/*
-		 * Microseconds, measured at each context switch (see thread->run_us):
-		 * the CPU's wall time and its busy part. Activity Monitor only takes
-		 * ratios, and its "ticks per second" comes out as 1000000.
-		 */
-		uint64_t busy = processor != 0 ? processor->busy_us : 0ULL;
-		uint64_t since = processor != 0 ? processor->busy_since_us : 0ULL;
-		uint64_t now = timer_get_microseconds();
+		nxu_stats_cpu_t snapshot;
+		statistics_cpu_snapshot(cpu, &snapshot);
+		info->ticks = processor != 0 ? snapshot.sampled_us : 0ULL;
+		info->busy_ticks = snapshot.busy_us;
+		info->context_switches = snapshot.context_switches;
 
-		if (since != 0ULL && now > since) busy += now - since;
-
-		info->ticks = processor != 0 ? activity->uptime_us : 0ULL;
-		info->busy_ticks = busy;
-		info->context_switches = processor != 0 ? processor->context_switch_count : 0ULL;
 		info->online = processor != 0 && processor_is_online(processor) ? 1U : 0U;
 		info->reserved = 0U;
 	}
 
+	uint64_t irq = nxu_spin_lock_irqsave(&g_activity_lock);
 	uint32_t proc_count = proc_snapshot(g_activity_procs, PROC_MAX);
 	uint32_t thread_count = thread_snapshot(g_activity_threads, THREAD_MAX);
 	uint32_t live_threads = 0U;
 
 	for (uint32_t thread = 0U; thread < thread_count; thread++) {
-		if (!g_activity_threads[thread].idle) live_threads++;
+		if (!g_activity_threads[thread].idle)
+			live_threads++;
 	}
 
 	activity->process_count = proc_count;
@@ -136,18 +132,21 @@ uint32_t ui_service_get_activity(
 		for (uint32_t thread = 0U; thread < thread_count; thread++) {
 			const thread_snapshot_t *snapshot = &g_activity_threads[thread];
 
-			if (snapshot->task_uniqueid != proc->uniqueid || snapshot->idle) continue;
+			if (snapshot->task_uniqueid != proc->uniqueid || snapshot->idle)
+				continue;
 
 			threads++;
 			ticks += snapshot->run_us;
-			if (snapshot->mlfq_level < level) level = snapshot->mlfq_level;
+			if (snapshot->mlfq_level < level)
+				level = snapshot->mlfq_level;
 			if (snapshot->on_cpu) {
 				on_cpu = true;
 				last_cpu = snapshot->last_cpu;
 			} else if (!on_cpu) {
 				last_cpu = snapshot->last_cpu;
 			}
-			if (!snapshot->waiting) runnable = true;
+			if (!snapshot->waiting)
+				runnable = true;
 		}
 
 		info->uniqueid = proc->uniqueid;
@@ -170,8 +169,7 @@ uint32_t ui_service_get_activity(
 		info->name_length = length;
 	}
 
+	nxu_spin_unlock_irqrestore(&g_activity_lock, irq);
 	*count_out = written;
 	return UI_SERVICE_STATUS_OK;
 }
-
-#endif
