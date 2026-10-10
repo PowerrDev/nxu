@@ -42,6 +42,8 @@
 #include <kern/process/thread.h>
 #include <kern/sched_prism/sched.h>
 #include <kern/syscall/syscall.h>
+#include <kern/syscall/statistics.h>
+#include <kern/tests/statistics_test.h>
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -62,12 +64,12 @@
 
 #define SELFTEST_LOG_SIZE 64U
 
-#define SELFTEST_CHECK(condition, what) \
-	do { \
-		if (!(condition)) { \
-			kprintf("i386_init_threads_selftest: FAIL %s (line %u)\n", (what), (uint32_t)__LINE__); \
-			return false; \
-		} \
+#define SELFTEST_CHECK(condition, what)                                                                                \
+	do {                                                                                                               \
+		if (!(condition)) {                                                                                            \
+			kprintf("i386_init_threads_selftest: FAIL %s (line %u)\n", (what), (uint32_t)__LINE__);                    \
+			return false;                                                                                              \
+		}                                                                                                              \
 	} while (0)
 
 /* ---- shared state -------------------------------------------------------- */
@@ -89,7 +91,8 @@ static void log_put(char value)
 {
 	uint32_t index = g_log_length;
 
-	if (index + 1U >= SELFTEST_LOG_SIZE) return;
+	if (index + 1U >= SELFTEST_LOG_SIZE)
+		return;
 
 	g_log[index] = value;
 	g_log[index + 1U] = '\0';
@@ -101,7 +104,8 @@ static bool log_equals(const char *expected)
 	uint32_t index = 0U;
 
 	while (expected[index] != '\0') {
-		if (index >= g_log_length || g_log[index] != expected[index]) return false;
+		if (index >= g_log_length || g_log[index] != expected[index])
+			return false;
 		index++;
 	}
 
@@ -110,7 +114,8 @@ static bool log_equals(const char *expected)
 
 static void thread_check(bool condition, const char *what)
 {
-	if (condition) return;
+	if (condition)
+		return;
 
 	kprintf("i386_init_threads_selftest: FAIL (in thread) %s\n", what);
 	g_thread_failures++;
@@ -146,7 +151,8 @@ static bool selftest_tick_to_level(uint8_t level)
 	thread_t self = current_thread();
 
 	for (uint32_t ticks = 0U; ticks < 2U * SCHED_MLFQ_BOOST_INTERVAL_TICKS; ticks++) {
-		if (self->mlfq_level == level) return true;
+		if (self->mlfq_level == level)
+			return true;
 		sched_tick();
 	}
 
@@ -170,8 +176,9 @@ static bool selftest_boost_self(void)
 }
 
 /* Yield until `done` holds, with a bound so a bug fails instead of hanging. */
-#define SELFTEST_YIELD_UNTIL(condition) \
-	for (uint32_t spins_ = 0U; !(condition) && spins_ < 100000U; spins_++) (void)sched_yield()
+#define SELFTEST_YIELD_UNTIL(condition)                                                                                \
+	for (uint32_t spins_ = 0U; !(condition) && spins_ < 100000U; spins_++)                                             \
+	(void)sched_yield()
 
 /*
  * With paging on (the integrated kernel) user code must live in mapped user
@@ -215,7 +222,8 @@ static bool test_machine_thread(void)
 	SELFTEST_CHECK(machine_thread_user_pc(&machine) == 0x1000ULL, "user pc");
 	SELFTEST_CHECK(machine_thread_user_sp(&machine) == 0x2000ULL, "user sp");
 	SELFTEST_CHECK(machine.user.arg == 7U, "user argument");
-	SELFTEST_CHECK(machine.user.eflags == I386_THREAD_EFLAGS_USER && (machine.user.eflags & 0x200U) != 0U, "user eflags has IF");
+	SELFTEST_CHECK(machine.user.eflags == I386_THREAD_EFLAGS_USER && (machine.user.eflags & 0x200U) != 0U,
+				   "user eflags has IF");
 
 	SELFTEST_CHECK(machine_thread_set_user_state(&machine, 0x3000ULL, 0x4000ULL, 9ULL), "set_user_state");
 	SELFTEST_CHECK(machine_thread_user_pc(&machine) == 0x3000ULL && machine.user.arg == 9U, "set_user_state stores");
@@ -223,7 +231,8 @@ static bool test_machine_thread(void)
 	SELFTEST_CHECK(!machine_thread_init_user(&machine, 0ULL, 0x2000ULL, 0ULL), "zero entry rejected");
 	SELFTEST_CHECK(!machine_thread_init_user(&machine, 0x1000ULL, 0ULL, 0ULL), "zero stack rejected");
 	SELFTEST_CHECK(!machine_thread_init_user(&machine, 0x100000000ULL, 0x2000ULL, 0ULL), "64-bit entry rejected");
-	SELFTEST_CHECK(!machine_thread_init_user(&machine, 0x1000ULL, 0x2000ULL, 0x100000000ULL), "64-bit argument rejected");
+	SELFTEST_CHECK(!machine_thread_init_user(&machine, 0x1000ULL, 0x2000ULL, 0x100000000ULL),
+				   "64-bit argument rejected");
 
 	uint64_t top = (uint64_t)(uintptr_t)&g_context_buffer[sizeof(g_context_buffer)];
 
@@ -236,7 +245,8 @@ static bool test_machine_thread(void)
 	const uint32_t *frame = (const uint32_t *)(uintptr_t)machine.context.sp;
 
 	SELFTEST_CHECK(frame[4] == 0x1234U, "initial return address is the entry");
-	SELFTEST_CHECK(frame[0] == 0U && frame[1] == 0U && frame[2] == 0U && frame[3] == 0U, "initial callee-saved registers zero");
+	SELFTEST_CHECK(frame[0] == 0U && frame[1] == 0U && frame[2] == 0U && frame[3] == 0U,
+				   "initial callee-saved registers zero");
 	SELFTEST_CHECK(((machine.context.sp + 5U * 4U) & 0xFU) == 12U, "entry sees an ABI-aligned stack");
 
 	kputln("i386_init_threads_selftest: machine_thread contracts passed");
@@ -256,10 +266,8 @@ static void pingpong_thread(void *parameter)
 		log_put((char)('A' + id));
 
 		/* TSS esp0 must name this thread's kernel stack whenever it runs. */
-		thread_check(
-			i386_gdt_main_tss()->esp0 == (uint32_t)thread_kernel_stack_top(self),
-			"TSS esp0 follows the context switch"
-		);
+		thread_check(i386_gdt_main_tss()->esp0 == (uint32_t)thread_kernel_stack_top(self),
+					 "TSS esp0 follows the context switch");
 
 		thread_check(sched_yield(), "sched_yield in kernel thread");
 	}
@@ -278,8 +286,7 @@ static bool test_kernel_threads(void)
 	for (uint32_t index = 0U; index < SELFTEST_PINGPONG_THREADS; index++) {
 		SELFTEST_CHECK(
 			kernel_thread_create(proc_task(proc_kernel()), pingpong_thread, (void *)(uintptr_t)index, &threads[index]),
-			"kernel_thread_create"
-		);
+			"kernel_thread_create");
 		SELFTEST_CHECK(sched_thread_start(threads[index]), "sched_thread_start");
 	}
 
@@ -330,7 +337,8 @@ static bool test_tick_and_preempt(void)
 	/* A full quantum of ticks demotes one level and requests preemption. */
 	uint32_t quantum = sched_mlfq_level_quantum(SCHED_MLFQ_TOP_LEVEL);
 
-	for (uint32_t tick = 0U; tick + 1U < quantum; tick++) sched_tick();
+	for (uint32_t tick = 0U; tick + 1U < quantum; tick++)
+		sched_tick();
 
 	SELFTEST_CHECK(self->mlfq_level == SCHED_MLFQ_TOP_LEVEL, "still level 0 before the quantum expires");
 	SELFTEST_CHECK(!sched_preemption_pending(), "no preemption before the quantum expires");
@@ -358,7 +366,8 @@ static bool test_tick_and_preempt(void)
 	thread_t worker;
 
 	log_reset();
-	SELFTEST_CHECK(kernel_thread_create(proc_task(proc_kernel()), log_once_thread, (void *)(uintptr_t)'W', &worker), "create worker");
+	SELFTEST_CHECK(kernel_thread_create(proc_task(proc_kernel()), log_once_thread, (void *)(uintptr_t)'W', &worker),
+				   "create worker");
 	SELFTEST_CHECK(sched_thread_start(worker), "start worker");
 	SELFTEST_CHECK(sched_preemption_pending(), "a higher-priority thread becoming runnable requests preemption");
 
@@ -453,6 +462,7 @@ typedef struct {
 	uint32_t preserved_ok;
 	uint32_t ebp_after;
 	uint32_t finished;
+	uint32_t statistics_ok;
 } selftest_user_report_t;
 
 /* Registers as they were on the very first instruction of a user thread. */
@@ -491,73 +501,71 @@ void i386_selftest_user_log(uint32_t value);
  * instruction can see the initial register state the kernel promises:
  * eax = argument, everything else zero, esp = the stack top it was given.
  */
-__asm__(
-	".text\n"
-	".globl i386_selftest_user_entry\n"
-	".type i386_selftest_user_entry, @function\n"
-	"i386_selftest_user_entry:\n"
-	"	movl %eax, i386_selftest_user_entry_state+0\n"
-	"	movl %ebx, i386_selftest_user_entry_state+4\n"
-	"	movl %ecx, i386_selftest_user_entry_state+8\n"
-	"	movl %edx, i386_selftest_user_entry_state+12\n"
-	"	movl %esi, i386_selftest_user_entry_state+16\n"
-	"	movl %edi, i386_selftest_user_entry_state+20\n"
-	"	movl %ebp, i386_selftest_user_entry_state+24\n"
-	"	movl %esp, i386_selftest_user_entry_state+28\n"
-	"	pushfl\n"
-	"	popl %eax\n"
-	"	movl %eax, i386_selftest_user_entry_state+32\n"
-	"	movl %cs, %eax\n"
-	"	movl %eax, i386_selftest_user_entry_state+36\n"
-	"	movl %ss, %eax\n"
-	"	movl %eax, i386_selftest_user_entry_state+40\n"
-	"	movl %ds, %eax\n"
-	"	movl %eax, i386_selftest_user_entry_state+44\n"
-	"	call i386_selftest_user_main\n"
-	"1:	jmp 1b\n"
-	".size i386_selftest_user_entry, . - i386_selftest_user_entry\n"
+__asm__(".text\n"
+		".globl i386_selftest_user_entry\n"
+		".type i386_selftest_user_entry, @function\n"
+		"i386_selftest_user_entry:\n"
+		"	movl %eax, i386_selftest_user_entry_state+0\n"
+		"	movl %ebx, i386_selftest_user_entry_state+4\n"
+		"	movl %ecx, i386_selftest_user_entry_state+8\n"
+		"	movl %edx, i386_selftest_user_entry_state+12\n"
+		"	movl %esi, i386_selftest_user_entry_state+16\n"
+		"	movl %edi, i386_selftest_user_entry_state+20\n"
+		"	movl %ebp, i386_selftest_user_entry_state+24\n"
+		"	movl %esp, i386_selftest_user_entry_state+28\n"
+		"	pushfl\n"
+		"	popl %eax\n"
+		"	movl %eax, i386_selftest_user_entry_state+32\n"
+		"	movl %cs, %eax\n"
+		"	movl %eax, i386_selftest_user_entry_state+36\n"
+		"	movl %ss, %eax\n"
+		"	movl %eax, i386_selftest_user_entry_state+40\n"
+		"	movl %ds, %eax\n"
+		"	movl %eax, i386_selftest_user_entry_state+44\n"
+		"	call i386_selftest_user_main\n"
+		"1:	jmp 1b\n"
+		".size i386_selftest_user_entry, . - i386_selftest_user_entry\n"
 
-	/* Eight software ticks, logging 'u' after each, then exit(7). */
-	".globl i386_selftest_user_entry_tick\n"
-	".type i386_selftest_user_entry_tick, @function\n"
-	"i386_selftest_user_entry_tick:\n"
-	"	movl $8, %ecx\n"
-	"2:	int $22\n"
-	"	pushl %ecx\n"
-	"	pushl $117\n"
-	"	call i386_selftest_user_log\n"
-	"	addl $4, %esp\n"
-	"	popl %ecx\n"
-	"	decl %ecx\n"
-	"	jnz 2b\n"
-	"	movl $1, %eax\n"
-	"	movl $7, %ebx\n"
-	"	int $0x80\n"
-	"3:	jmp 3b\n"
-	".size i386_selftest_user_entry_tick, . - i386_selftest_user_entry_tick\n"
+		/* Eight software ticks, logging 'u' after each, then exit(7). */
+		".globl i386_selftest_user_entry_tick\n"
+		".type i386_selftest_user_entry_tick, @function\n"
+		"i386_selftest_user_entry_tick:\n"
+		"	movl $8, %ecx\n"
+		"2:	int $22\n"
+		"	pushl %ecx\n"
+		"	pushl $117\n"
+		"	call i386_selftest_user_log\n"
+		"	addl $4, %esp\n"
+		"	popl %ecx\n"
+		"	decl %ecx\n"
+		"	jnz 2b\n"
+		"	movl $1, %eax\n"
+		"	movl $7, %ebx\n"
+		"	int $0x80\n"
+		"3:	jmp 3b\n"
+		".size i386_selftest_user_entry_tick, . - i386_selftest_user_entry_tick\n"
 
-	/* Faulting programs: each one raises a different exception in ring 3. */
-	".globl i386_selftest_user_fault_cli\n"
-	"i386_selftest_user_fault_cli:\n"
-	"	cli\n"
-	"	jmp i386_selftest_user_fault_cli\n"
+		/* Faulting programs: each one raises a different exception in ring 3. */
+		".globl i386_selftest_user_fault_cli\n"
+		"i386_selftest_user_fault_cli:\n"
+		"	cli\n"
+		"	jmp i386_selftest_user_fault_cli\n"
 
-	".globl i386_selftest_user_fault_ud2\n"
-	"i386_selftest_user_fault_ud2:\n"
-	"	ud2\n"
+		".globl i386_selftest_user_fault_ud2\n"
+		"i386_selftest_user_fault_ud2:\n"
+		"	ud2\n"
 
-	".globl i386_selftest_user_fault_div0\n"
-	"i386_selftest_user_fault_div0:\n"
-	"	xorl %ecx, %ecx\n"
-	"	movl $1, %eax\n"
-	"	xorl %edx, %edx\n"
-	"	divl %ecx\n"
+		".globl i386_selftest_user_fault_div0\n"
+		"i386_selftest_user_fault_div0:\n"
+		"	xorl %ecx, %ecx\n"
+		"	movl $1, %eax\n"
+		"	xorl %edx, %edx\n"
+		"	divl %ecx\n"
 
-	".globl i386_selftest_user_fault_segment\n"
-	"i386_selftest_user_fault_segment:\n"
-	"	movl $0x1238, %eax\n"
-	"	movw %ax, %ds\n"
-);
+		".globl i386_selftest_user_fault_segment\n"
+		"i386_selftest_user_fault_segment:\n"
+		"	movl $0x1238, %eax\n"
+		"	movw %ax, %ds\n");
 
 void i386_selftest_user_log(uint32_t value)
 {
@@ -584,11 +592,25 @@ void i386_selftest_user_main(void)
 	report->yield_result = user_syscall(SYSCALL_YIELD, 0U, 0U, 0U);
 	report->uptime_first = user_syscall(SYSCALL_UPTIME_US, 0U, 0U, 0U);
 	report->uptime_second = user_syscall(SYSCALL_UPTIME_US, 0U, 0U, 0U);
-	report->version_length = user_syscall(SYSCALL_GET_VERSION, (uint32_t)(uintptr_t)i386_selftest_user_version, sizeof(i386_selftest_user_version), 0U);
-	report->write_result = user_syscall(SYSCALL_WRITE, 1U, (uint32_t)(uintptr_t)g_user_message, (uint32_t)sizeof(g_user_message) - 1U);
+	report->version_length = user_syscall(SYSCALL_GET_VERSION, (uint32_t)(uintptr_t)i386_selftest_user_version,
+										  sizeof(i386_selftest_user_version), 0U);
+	report->write_result =
+		user_syscall(SYSCALL_WRITE, 1U, (uint32_t)(uintptr_t)g_user_message, (uint32_t)sizeof(g_user_message) - 1U);
 	report->write_bad_address = user_syscall(SYSCALL_WRITE, 1U, 0xC0000000U, 4U);
 	report->unknown_syscall = user_syscall(0x7777U, 0U, 0U, 0U);
 	report->bad_descriptor = user_syscall(SYSCALL_CLOSE, 0xFFFFU, 0U, 0U);
+
+	nxu_stats_system_t system;
+	nxu_stats_request_t statistics = {.struct_size = sizeof(statistics),
+									  .version = NXU_STATS_VERSION,
+									  .kind = NXU_STATS_SYSTEM,
+									  .record_size = sizeof(system),
+									  .records = (uint64_t)(uintptr_t)&system,
+									  .capacity = 1U};
+	uint32_t stats_result = user_syscall(SYSCALL_STATISTICS, (uint32_t)(uintptr_t)&statistics, 0U, 0U);
+	report->statistics_ok = stats_result == 1U && statistics.count == 1U && statistics.total == 1U &&
+							system.struct_size == sizeof(system) && system.version == NXU_STATS_VERSION &&
+							system.total_pages >= system.free_pages && system.page_size == 4096U;
 
 	/* Every register but eax must survive a system call (ebp included). */
 	uint32_t eax = SYSCALL_GETPID;
@@ -603,23 +625,20 @@ void i386_selftest_user_main(void)
 	 * while it holds the test value: compare it inside the asm and hand
 	 * the verdict back in eax, which is free after the call.
 	 */
-	__asm__ volatile(
-		"pushl %%ebp\n\t"
-		"movl $0xEBEBEBEB, %%ebp\n\t"
-		"int $0x80\n\t"
-		"xorl %%eax, %%eax\n\t"
-		"cmpl $0xEBEBEBEB, %%ebp\n\t"
-		"sete %%al\n\t"
-		"popl %%ebp"
-		: "+a"(eax), "+b"(ebx), "+c"(ecx), "+d"(edx), "+S"(esi), "+D"(edi)
-		:
-		: "memory", "cc"
-	);
+	__asm__ volatile("pushl %%ebp\n\t"
+					 "movl $0xEBEBEBEB, %%ebp\n\t"
+					 "int $0x80\n\t"
+					 "xorl %%eax, %%eax\n\t"
+					 "cmpl $0xEBEBEBEB, %%ebp\n\t"
+					 "sete %%al\n\t"
+					 "popl %%ebp"
+					 : "+a"(eax), "+b"(ebx), "+c"(ecx), "+d"(edx), "+S"(esi), "+D"(edi)
+					 :
+					 : "memory", "cc");
 
 	report->ebp_after = eax;
-	report->preserved_ok =
-		eax == 1U && ebx == 0xB0B0B0B0U && ecx == 0xC0DEC0DEU && edx == 0xD00DD00DU &&
-		esi == 0x51515151U && edi == 0xD1D1D1D1U;
+	report->preserved_ok = eax == 1U && ebx == 0xB0B0B0B0U && ecx == 0xC0DEC0DEU && edx == 0xD00DD00DU &&
+						   esi == 0x51515151U && edi == 0xD1D1D1D1U;
 	report->finished = 1U;
 
 	(void)user_syscall(SYSCALL_EXIT, 42U, 0U, 0U);
@@ -635,12 +654,14 @@ static uint32_t g_tick_count;
 /* Software timer: an `int $22` from ring 3 charges one scheduler tick. */
 static bool selftest_tick_hook(x86_saved_state_t *state)
 {
-	if (state->trapno != SELFTEST_TICK_VECTOR) return false;
+	if (state->trapno != SELFTEST_TICK_VECTOR)
+		return false;
 
 	g_tick_hook_ran = true;
 	sched_tick();
 
-	if (g_tick_count < sizeof(g_tick_levels)) g_tick_levels[g_tick_count] = current_thread()->mlfq_level;
+	if (g_tick_count < sizeof(g_tick_levels))
+		g_tick_levels[g_tick_count] = current_thread()->mlfq_level;
 	g_tick_count++;
 	return true;
 }
@@ -651,31 +672,32 @@ typedef struct {
 	thread_t thread;
 } selftest_process_t;
 
-static bool selftest_spawn(
-	const char *name,
-	void (*entry)(void),
-	uint32_t argument,
-	selftest_process_t *process
-)
+static bool selftest_spawn(const char *name, void (*entry)(void), uint32_t argument, selftest_process_t *process)
 {
-	if (g_user_stack_next >= SELFTEST_USER_STACKS) return false;
+	if (g_user_stack_next >= SELFTEST_USER_STACKS)
+		return false;
 
 	uint8_t *stack = g_user_stacks[g_user_stack_next++];
 	uint64_t stack_top = (uint64_t)(uintptr_t)stack + SELFTEST_USER_STACK_SIZE;
 	uint64_t entry_address = (uint64_t)(uintptr_t)entry;
 
-	if (!proc_create_user(proc_kernel(), name, entry_address, stack_top, &process->proc)) return false;
+	if (!proc_create_user(proc_kernel(), name, entry_address, stack_top, &process->proc))
+		return false;
 
 	process->pid = process->proc->p_ident.pid;
 	process->thread = task_first_thread_ref(proc_task(process->proc));
 
-	if (process->thread == 0) return false;
+	if (process->thread == 0)
+		return false;
 
 	/* The process's own first thread starts with argument 0; give this one a value. */
-	if (argument != 0U && !thread_set_user_state(process->thread, entry_address, stack_top, argument)) return false;
+	if (argument != 0U && !thread_set_user_state(process->thread, entry_address, stack_top, argument))
+		return false;
 
-	if (!thread_stack_alloc(process->thread)) return false;
-	if (!proc_make_runnable(process->proc) || !proc_mark_running(process->proc)) return false;
+	if (!thread_stack_alloc(process->thread))
+		return false;
+	if (!proc_make_runnable(process->proc) || !proc_mark_running(process->proc))
+		return false;
 
 	return sched_thread_start(process->thread);
 }
@@ -684,7 +706,8 @@ static bool selftest_reap(selftest_process_t *process, uint64_t *status)
 {
 	SELFTEST_YIELD_UNTIL(proc_state(process->proc) == PROC_STATE_ZOMBIE);
 
-	if (proc_state(process->proc) != PROC_STATE_ZOMBIE) return false;
+	if (proc_state(process->proc) != PROC_STATE_ZOMBIE)
+		return false;
 
 	/* Let the terminated thread finish unwinding and be reaped by its successor. */
 	(void)sched_yield();
@@ -695,13 +718,15 @@ static bool selftest_reap(selftest_process_t *process, uint64_t *status)
 
 static bool test_ring3_syscalls(void)
 {
+	SELFTEST_CHECK(statistics_self_test(), "VirtIO statistics and queue cleanup");
 	selftest_process_t process;
 	uint64_t status = 0ULL;
 
 	memset((void *)&i386_selftest_user_report, 0, sizeof(i386_selftest_user_report));
 	memset((void *)&i386_selftest_user_entry_state, 0, sizeof(i386_selftest_user_entry_state));
 
-	SELFTEST_CHECK(selftest_spawn("ring3-syscalls", i386_selftest_user_entry, 0U, &process), "spawn the basic ring 3 process");
+	SELFTEST_CHECK(selftest_spawn("ring3-syscalls", i386_selftest_user_entry, 0U, &process),
+				   "spawn the basic ring 3 process");
 
 	uint32_t tid = (uint32_t)thread_tid(process.thread);
 
@@ -717,25 +742,35 @@ static bool test_ring3_syscalls(void)
 	SELFTEST_CHECK(entry->eax == 0U, "initial eax is the argument (0)");
 	SELFTEST_CHECK(entry->ebx == 0U && entry->ecx == 0U && entry->edx == 0U, "ebx, ecx, edx start at zero");
 	SELFTEST_CHECK(entry->esi == 0U && entry->edi == 0U && entry->ebp == 0U, "esi, edi, ebp start at zero");
-	SELFTEST_CHECK(entry->esp == (uint32_t)(uintptr_t)g_user_stacks[g_user_stack_next - 1U] + SELFTEST_USER_STACK_SIZE, "esp is the given stack, no return address pushed");
+	SELFTEST_CHECK(entry->esp == (uint32_t)(uintptr_t)g_user_stacks[g_user_stack_next - 1U] + SELFTEST_USER_STACK_SIZE,
+				   "esp is the given stack, no return address pushed");
 	SELFTEST_CHECK((entry->eflags & 0x200U) != 0U && (entry->eflags & 0x3000U) == 0U, "eflags has IF set and IOPL 0");
-	SELFTEST_CHECK((entry->cs & 3U) == 3U && (entry->cs & 0xFFFFU) == GDT_USER_CODE_SEL, "runs at CPL 3 on the user code segment");
-	SELFTEST_CHECK((entry->ss & 0xFFFFU) == GDT_USER_DATA_SEL && (entry->ds & 0xFFFFU) == GDT_USER_DATA_SEL, "user data segments loaded");
+	SELFTEST_CHECK((entry->cs & 3U) == 3U && (entry->cs & 0xFFFFU) == GDT_USER_CODE_SEL,
+				   "runs at CPL 3 on the user code segment");
+	SELFTEST_CHECK((entry->ss & 0xFFFFU) == GDT_USER_DATA_SEL && (entry->ds & 0xFFFFU) == GDT_USER_DATA_SEL,
+				   "user data segments loaded");
 
 	/* The system calls. */
 	SELFTEST_CHECK(report->pid == process.pid && report->pid != PROC_PID_KERNEL, "getpid returns the process's pid");
 	SELFTEST_CHECK(report->tid == tid, "thread_self returns the thread's tid");
 	SELFTEST_CHECK(report->yield_result == 0U, "yield returns 0");
-	SELFTEST_CHECK(report->uptime_first != 0U && report->uptime_second >= report->uptime_first, "uptime is nonzero and monotonic");
-	SELFTEST_CHECK(report->version_length != 0U && i386_selftest_user_version[report->version_length - 1U] == '\n', "get_version fills the user buffer");
+	SELFTEST_CHECK(report->uptime_first != 0U && report->uptime_second >= report->uptime_first,
+				   "uptime is nonzero and monotonic");
+	SELFTEST_CHECK(report->version_length != 0U && i386_selftest_user_version[report->version_length - 1U] == '\n',
+				   "get_version fills the user buffer");
 	SELFTEST_CHECK(report->write_result == (uint32_t)sizeof(g_user_message) - 1U, "write returns the byte count");
-	SELFTEST_CHECK(report->write_bad_address == (uint32_t)(0 - (int32_t)SYSCALL_ERROR_BAD_ADDRESS), "kernel-half pointer gives -BAD_ADDRESS");
-	SELFTEST_CHECK(report->unknown_syscall == (uint32_t)(0 - (int32_t)SYSCALL_ERROR_UNKNOWN), "unknown syscall gives -1");
-	SELFTEST_CHECK(report->bad_descriptor == (uint32_t)(0 - (int32_t)SYSCALL_ERROR_BAD_FD), "bad descriptor gives -BAD_FD");
+	SELFTEST_CHECK(report->write_bad_address == (uint32_t)(0 - (int32_t)SYSCALL_ERROR_BAD_ADDRESS),
+				   "kernel-half pointer gives -BAD_ADDRESS");
+	SELFTEST_CHECK(report->unknown_syscall == (uint32_t)(0 - (int32_t)SYSCALL_ERROR_UNKNOWN),
+				   "unknown syscall gives -1");
+	SELFTEST_CHECK(report->bad_descriptor == (uint32_t)(0 - (int32_t)SYSCALL_ERROR_BAD_FD),
+				   "bad descriptor gives -BAD_FD");
+	SELFTEST_CHECK(report->statistics_ok == 1U, "versioned statistics syscall works from i386 ring 3");
 	SELFTEST_CHECK(report->preserved_ok == 1U, "system call preserves every register but eax");
 
 	/* A thread created with an initial argument (the pthread-create shape). */
-	SELFTEST_CHECK(selftest_spawn("ring3-argument", i386_selftest_user_entry, 0xC0FFEEU, &process), "spawn with an argument");
+	SELFTEST_CHECK(selftest_spawn("ring3-argument", i386_selftest_user_entry, 0xC0FFEEU, &process),
+				   "spawn with an argument");
 	SELFTEST_CHECK(selftest_reap(&process, &status), "the second ring 3 process exits");
 	SELFTEST_CHECK(entry->eax == 0xC0FFEEU, "initial eax carries the thread argument");
 	SELFTEST_CHECK(entry->ebx == 0U && entry->ebp == 0U, "other registers still zero");
@@ -753,20 +788,21 @@ typedef struct {
 static bool test_ring3_faults(void)
 {
 	static const selftest_fault_t faults[] = {
-		{ "ring3-cli", i386_selftest_user_fault_cli, T_GENERAL_PROTECTION },
-		{ "ring3-ud2", i386_selftest_user_fault_ud2, T_INVALID_OPCODE },
-		{ "ring3-div0", i386_selftest_user_fault_div0, T_DIVIDE_ERROR },
-		{ "ring3-segment", i386_selftest_user_fault_segment, T_GENERAL_PROTECTION }
-	};
+		{"ring3-cli", i386_selftest_user_fault_cli, T_GENERAL_PROTECTION},
+		{"ring3-ud2", i386_selftest_user_fault_ud2, T_INVALID_OPCODE},
+		{"ring3-div0", i386_selftest_user_fault_div0, T_DIVIDE_ERROR},
+		{"ring3-segment", i386_selftest_user_fault_segment, T_GENERAL_PROTECTION}};
 
 	for (uint32_t index = 0U; index < sizeof(faults) / sizeof(faults[0]); index++) {
 		selftest_process_t process;
 		uint64_t status = 0ULL;
 		uint32_t baseline = thread_count();
 
-		SELFTEST_CHECK(selftest_spawn(faults[index].name, faults[index].entry, 0U, &process), "spawn a faulting process");
+		SELFTEST_CHECK(selftest_spawn(faults[index].name, faults[index].entry, 0U, &process),
+					   "spawn a faulting process");
 		SELFTEST_CHECK(selftest_reap(&process, &status), "the faulting process is terminated and reaped");
-		SELFTEST_CHECK(status == (uint64_t)(I386_USER_FAULT_STATUS_BASE | faults[index].vector), "exit status records the fault vector");
+		SELFTEST_CHECK(status == (uint64_t)(I386_USER_FAULT_STATUS_BASE | faults[index].vector),
+					   "exit status records the fault vector");
 		SELFTEST_CHECK(thread_count() == baseline, "the faulting thread is gone");
 		SELFTEST_CHECK(current_thread() == sched_bootstrap_thread(), "the kernel carries on");
 	}
@@ -791,12 +827,8 @@ static bool test_ring3_preemption(void)
 	SELFTEST_CHECK(selftest_tick_to_level(1U), "demote the test thread to level 1");
 	sched_clear_preemption();
 
-	i386_idt_set_gate(
-		(uint8_t)SELFTEST_TICK_VECTOR,
-		i386_isr_table[SELFTEST_TICK_VECTOR],
-		GDT_KERNEL_CODE_SEL,
-		IDT_GATE_INTERRUPT_USER
-	);
+	i386_idt_set_gate((uint8_t)SELFTEST_TICK_VECTOR, i386_isr_table[SELFTEST_TICK_VECTOR], GDT_KERNEL_CODE_SEL,
+					  IDT_GATE_INTERRUPT_USER);
 	i386_trap_set_user_exception_hook(selftest_tick_hook);
 
 	log_reset();
@@ -804,19 +836,17 @@ static bool test_ring3_preemption(void)
 	g_tick_hook_ran = false;
 
 	/* The user thread starts first; the observer waits behind it in the queue. */
-	SELFTEST_CHECK(selftest_spawn("ring3-ticks", i386_selftest_user_entry_tick, 0U, &process), "spawn the ticking process");
-	SELFTEST_CHECK(kernel_thread_create(proc_task(proc_kernel()), log_once_thread, (void *)(uintptr_t)'V', &observer), "create the observer");
+	SELFTEST_CHECK(selftest_spawn("ring3-ticks", i386_selftest_user_entry_tick, 0U, &process),
+				   "spawn the ticking process");
+	SELFTEST_CHECK(kernel_thread_create(proc_task(proc_kernel()), log_once_thread, (void *)(uintptr_t)'V', &observer),
+				   "create the observer");
 	SELFTEST_CHECK(sched_thread_start(observer), "start the observer");
 
 	bool reaped = selftest_reap(&process, &status);
 
 	i386_trap_set_user_exception_hook(0);
-	i386_idt_set_gate(
-		(uint8_t)SELFTEST_TICK_VECTOR,
-		i386_isr_table[SELFTEST_TICK_VECTOR],
-		GDT_KERNEL_CODE_SEL,
-		IDT_GATE_INTERRUPT
-	);
+	i386_idt_set_gate((uint8_t)SELFTEST_TICK_VECTOR, i386_isr_table[SELFTEST_TICK_VECTOR], GDT_KERNEL_CODE_SEL,
+					  IDT_GATE_INTERRUPT);
 
 	SELFTEST_CHECK(reaped, "the ticking process exits");
 	SELFTEST_CHECK(status == 7ULL, "ticking process exit status");
@@ -827,7 +857,8 @@ static bool test_ring3_preemption(void)
 	 * level-0 quantum, so the trap-exit path preempts it for the observer
 	 * before it logs, and it resumes afterwards.
 	 */
-	SELFTEST_CHECK(g_tick_levels[2] == 0U && g_tick_levels[3] == 1U, "the fourth tick demotes the user thread to level 1");
+	SELFTEST_CHECK(g_tick_levels[2] == 0U && g_tick_levels[3] == 1U,
+				   "the fourth tick demotes the user thread to level 1");
 	SELFTEST_CHECK(log_equals("uuuVuuuuu"), "user thread preempted on trap exit for the observer (uuuVuuuuu)");
 
 	SELFTEST_YIELD_UNTIL(thread_is_terminated(observer));
@@ -867,13 +898,8 @@ bool i386_init_threads_selftest(const i386_boot_info_t *boot)
 
 	selftest_mask_pic();
 
-	bool passed =
-		test_shared_scheduler() &&
-		test_machine_thread() &&
-		test_kernel_threads() &&
-		test_tick_and_preempt() &&
-		test_syscall_frame() &&
-		test_ring3();
+	bool passed = test_shared_scheduler() && test_machine_thread() && test_kernel_threads() &&
+				  test_tick_and_preempt() && test_syscall_frame() && test_ring3();
 
 	selftest_restore_pic();
 

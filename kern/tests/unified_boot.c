@@ -43,12 +43,7 @@
 #define UNIFIED_BOOT_NO_WINDOWSERVER "-no-windowserver"
 #define UNIFIED_BOOT_NO_ABOUT_SEVOS "-no-about-sevos"
 
-typedef enum {
-	UNIFIED_PENDING,
-	UNIFIED_RUNNING,
-	UNIFIED_PASSED,
-	UNIFIED_FAILED
-} unified_state_t;
+typedef enum { UNIFIED_PENDING, UNIFIED_RUNNING, UNIFIED_PASSED, UNIFIED_FAILED } unified_state_t;
 
 typedef struct {
 	const char *name;
@@ -63,11 +58,11 @@ typedef struct {
  * private one (see the *_shared variants for the two that had to change).
  */
 static unified_test_t g_unified_tests[] = {
-	{ "ipc_process_test", ipc_process_test, UNIFIED_PENDING },
-	{ "thread_process_test", thread_process_test, UNIFIED_PENDING },
-	{ "process_control_test", process_control_test_shared, UNIFIED_PENDING },
-	{ "socket_process_test", socket_process_test, UNIFIED_PENDING },
-	{ "sound_test", sound_test_run_shared, UNIFIED_PENDING },
+	{"ipc_process_test", ipc_process_test, UNIFIED_PENDING},
+	{"thread_process_test", thread_process_test, UNIFIED_PENDING},
+	{"process_control_test", process_control_test_shared, UNIFIED_PENDING},
+	{"socket_process_test", socket_process_test, UNIFIED_PENDING},
+	{"sound_test", sound_test_run_shared, UNIFIED_PENDING},
 };
 
 #define UNIFIED_TEST_COUNT (sizeof(g_unified_tests) / sizeof(g_unified_tests[0]))
@@ -77,10 +72,14 @@ static volatile bool g_unified_ui_failed;
 static const char *unified_state_name(unified_state_t state)
 {
 	switch (state) {
-	case UNIFIED_PENDING: return "not run";
-	case UNIFIED_RUNNING: return "still running";
-	case UNIFIED_PASSED: return "passed";
-	case UNIFIED_FAILED: return "FAILED";
+	case UNIFIED_PENDING:
+		return "not run";
+	case UNIFIED_RUNNING:
+		return "still running";
+	case UNIFIED_PASSED:
+		return "passed";
+	case UNIFIED_FAILED:
+		return "FAILED";
 	}
 
 	return "unknown";
@@ -89,10 +88,14 @@ static const char *unified_state_name(unified_state_t state)
 static const char *unified_chime_name(void)
 {
 	switch (boot_chime_state()) {
-	case BOOT_CHIME_IDLE: return "was not started";
-	case BOOT_CHIME_PLAYING: return "is still playing";
-	case BOOT_CHIME_PLAYED: return "played";
-	case BOOT_CHIME_FAILED: return "played with underruns or did not play (see the boot_chime_play lines)";
+	case BOOT_CHIME_IDLE:
+		return "was not started";
+	case BOOT_CHIME_PLAYING:
+		return "is still playing";
+	case BOOT_CHIME_PLAYED:
+		return "played";
+	case BOOT_CHIME_FAILED:
+		return "played with underruns or did not play (see the boot_chime_play lines)";
 	}
 
 	return "unknown";
@@ -101,13 +104,15 @@ static const char *unified_chime_name(void)
 /* True when the UI loop's poll count moves while this thread waits: the session is alive, not just started. */
 static bool unified_ui_alive(void)
 {
-	if (!ui_service_running()) return false;
+	if (!ui_service_running())
+		return false;
 
 	uint64_t polls = ui_service_poll_count();
 	uint64_t deadline = timer_get_microseconds() + UNIFIED_BOOT_UI_WATCH_US;
 
 	while (timer_get_microseconds() < deadline) {
-		if (!sched_yield()) break;
+		if (!sched_yield())
+			break;
 	}
 
 	return ui_service_running() && ui_service_poll_count() > polls;
@@ -129,7 +134,8 @@ static bool unified_boot_summary(void)
 		unified_test_t *test = &g_unified_tests[index];
 
 		kprintf("unified_boot_summary: %s %s\n", test->name, unified_state_name(test->state));
-		if (test->state == UNIFIED_PASSED) passed++;
+		if (test->state == UNIFIED_PASSED)
+			passed++;
 	}
 
 	kprintf("unified_boot_summary: boot_chime %s\n", unified_chime_name());
@@ -137,26 +143,31 @@ static bool unified_boot_summary(void)
 	bool ui_alive = unified_ui_alive();
 
 	if (ui_alive) {
-		kprintf("unified_boot_summary: UIService desktop running (%llu event polls so far)\n", (unsigned long long)ui_service_poll_count());
+		kprintf("unified_boot_summary: UIService desktop running (%llu event polls so far)\n",
+				(unsigned long long)ui_service_poll_count());
 	} else {
-		kprintf("unified_boot_summary: UIService desktop FAILED: %s\n", g_unified_ui_failed ? "the session did not start" : "its event loop is not running");
+		kprintf("unified_boot_summary: UIService desktop FAILED: %s\n",
+				g_unified_ui_failed ? "the session did not start" : "its event loop is not running");
 	}
 
 	/* Everything still alive in the process table is one of the boot's own daemons or a test's leftover. */
 	for (proc_id_t pid = 1U; pid <= UNIFIED_BOOT_PID_SCAN_MAX; pid++) {
 		proc_t proc = proc_find(pid);
 
-		if (proc != 0) kprintf("unified_boot_summary: process %u (%s) running\n", (unsigned int)pid, proc->p_comm);
+		if (proc != 0)
+			kprintf("unified_boot_summary: process %u (%s) running\n", (unsigned int)pid, proc->p_comm);
 	}
 
 	bool bootd_alive = proc_find(1U) != 0;
 
-	if (!bootd_alive) kputln("unified_boot_summary: bootd FAILED: PID 1 is gone");
+	if (!bootd_alive)
+		kputln("unified_boot_summary: bootd FAILED: PID 1 is gone");
 
 	bool all = passed == UNIFIED_TEST_COUNT && ui_alive && bootd_alive;
 
 	if (all) {
-		kprintf("unified_boot_summary: all %u test(s) passed, the UI session and bootd are running\n", (unsigned int)UNIFIED_TEST_COUNT);
+		kprintf("unified_boot_summary: all %u test(s) passed, the UI session and bootd are running\n",
+				(unsigned int)UNIFIED_TEST_COUNT);
 	} else {
 		kprintf("unified_boot_summary: FAILED: %u of %u test(s) passed\n", passed, (unsigned int)UNIFIED_TEST_COUNT);
 	}
@@ -180,7 +191,8 @@ static void unified_boot_wait_for_registry(void)
 			return;
 		}
 
-		if (!sched_yield()) return;
+		if (!sched_yield())
+			return;
 	}
 }
 
@@ -207,8 +219,10 @@ static void unified_boot_thread(void *parameter)
 
 		test->state = ok ? UNIFIED_PASSED : UNIFIED_FAILED;
 
-		if (ok) kprintf("%s: passed\n", test->name);
-		else kprintf("%s: FAILED\n", test->name);
+		if (ok)
+			kprintf("%s: passed\n", test->name);
+		else
+			kprintf("%s: FAILED\n", test->name);
 	}
 
 	(void)unified_boot_summary();
@@ -216,6 +230,11 @@ static void unified_boot_thread(void *parameter)
 
 void unified_boot_prepare(void)
 {
+	if (boot_arg_bool("ui.userland", false)) {
+		UNIFIED_BOOT_LOG("bootd owns the dynamic desktop services\n");
+		return;
+	}
+
 	if (!boot_args_append(UNIFIED_BOOT_NO_WINDOWSERVER) || !boot_args_append(UNIFIED_BOOT_NO_ABOUT_SEVOS)) {
 		UNIFIED_BOOT_LOG("the boot arguments are full: bootd will start services that claim the display\n");
 		return;
@@ -228,7 +247,8 @@ void unified_boot_run(void)
 {
 	thread_t thread;
 
-	if (!kernel_thread_create(proc_task(proc_kernel()), unified_boot_thread, 0, &thread) || !sched_thread_start(thread)) {
+	if (!kernel_thread_create(proc_task(proc_kernel()), unified_boot_thread, 0, &thread) ||
+		!sched_thread_start(thread)) {
 		UNIFIED_BOOT_LOG("the test thread could not be started\n");
 		return;
 	}
@@ -238,7 +258,7 @@ void unified_boot_run(void)
 	/* The session below never returns while it works, so it has to share the CPU or nothing else would run. */
 	ui_service_set_cooperative(true);
 
-	if (!windowserver_bootstrap()) {
+	if (!boot_arg_bool("ui.userland", false) && !windowserver_bootstrap()) {
 		UNIFIED_BOOT_LOG("WindowServer bootstrap failed: no UI session\n");
 		g_unified_ui_failed = true;
 		return;
@@ -255,7 +275,7 @@ void unified_boot_run_ui_only(void)
 	/* The session below never returns while it works, so it has to share the CPU or nothing else would run. */
 	ui_service_set_cooperative(true);
 
-	if (!windowserver_bootstrap()) {
+	if (!boot_arg_bool("ui.userland", false) && !windowserver_bootstrap()) {
 		UNIFIED_BOOT_LOG("WindowServer bootstrap failed: no UI session\n");
 		g_unified_ui_failed = true;
 		return;

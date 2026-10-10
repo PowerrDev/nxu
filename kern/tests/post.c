@@ -18,6 +18,7 @@
 #include <kern/tests/ipc_test.h>
 #include <kern/tests/vm_map_test.h>
 #include <kern/tests/vm_shm_test.h>
+#include <kern/tests/statistics_test.h>
 #include <kern/arm64/exception.h>
 #include <vfs/vfs.h>
 #include <vm/pmm.h>
@@ -73,51 +74,58 @@ static const char g_vfs_test_message[] = "NXU VFS ramfs self-test\n";
 static bool post_test_vfs(void)
 {
 	proc_t kernel_proc = proc_kernel();
-	if (kernel_proc == 0) return false;
+	if (kernel_proc == 0)
+		return false;
 
 	filedesc_t filedesc = &kernel_proc->p_fd;
 
-	if (vfs_mkdir("/tmp") != VFS_STATUS_OK) return false;
+	if (vfs_mkdir("/tmp") != VFS_STATUS_OK)
+		return false;
 
 	uint32_t descriptor;
-	vfs_status_t status = vfs_open(
-		filedesc,
-		"/tmp/hello",
-		VFS_OPEN_READ | VFS_OPEN_WRITE | VFS_OPEN_CREATE | VFS_OPEN_TRUNCATE,
-		&descriptor
-	);
-	if (status != VFS_STATUS_OK) return false;
+	vfs_status_t status = vfs_open(filedesc, "/tmp/hello",
+								   VFS_OPEN_READ | VFS_OPEN_WRITE | VFS_OPEN_CREATE | VFS_OPEN_TRUNCATE, &descriptor);
+	if (status != VFS_STATUS_OK)
+		return false;
 
 	uint64_t message_size = sizeof(g_vfs_test_message) - 1ULL;
 	uint64_t written_size;
 	status = vfs_write(filedesc, descriptor, g_vfs_test_message, message_size, &written_size);
-	if (status != VFS_STATUS_OK || written_size != message_size) goto fail_close;
+	if (status != VFS_STATUS_OK || written_size != message_size)
+		goto fail_close;
 
-	if (vfs_seek(filedesc, descriptor, 0ULL) != VFS_STATUS_OK) goto fail_close;
+	if (vfs_seek(filedesc, descriptor, 0ULL) != VFS_STATUS_OK)
+		goto fail_close;
 
 	char buffer[sizeof(g_vfs_test_message)];
 	memset(buffer, 0, sizeof(buffer));
 
 	uint64_t read_size;
 	status = vfs_read(filedesc, descriptor, buffer, message_size, &read_size);
-	if (status != VFS_STATUS_OK || read_size != message_size) goto fail_close;
+	if (status != VFS_STATUS_OK || read_size != message_size)
+		goto fail_close;
 
 	for (uint64_t index = 0ULL; index < message_size; index++) {
-		if (buffer[index] != g_vfs_test_message[index]) goto fail_close;
+		if (buffer[index] != g_vfs_test_message[index])
+			goto fail_close;
 	}
 
-	if (vfs_close(filedesc, descriptor) != VFS_STATUS_OK) return false;
+	if (vfs_close(filedesc, descriptor) != VFS_STATUS_OK)
+		return false;
 
 	vnode_t vnode;
 	status = vfs_lookup("/tmp/./../tmp/hello", &vnode);
-	if (status != VFS_STATUS_OK) return false;
+	if (status != VFS_STATUS_OK)
+		return false;
 
 	bool vnode_valid = vnode->v_type == VNODE_TYPE_REGULAR && vnode->v_size == message_size;
 	vnode_rele(vnode);
-	if (!vnode_valid) return false;
+	if (!vnode_valid)
+		return false;
 
 	status = vfs_read(filedesc, descriptor, buffer, sizeof(buffer), &read_size);
-	if (status != VFS_STATUS_BAD_FD) return false;
+	if (status != VFS_STATUS_BAD_FD)
+		return false;
 
 	return filedesc->fd_open_count == 0U;
 
@@ -151,35 +159,22 @@ static bool post_test_vm_kern(void)
 	bool passed = false;
 	bool cleanup_passed = true;
 
-	if (!vm_kern_allocate(
-		KERNEL_VM_KERN_TEST_A_SIZE,
-		VMM_PROTECTION_READ_WRITE,
-		&allocation_a
-	)) {
+	if (!vm_kern_allocate(KERNEL_VM_KERN_TEST_A_SIZE, VMM_PROTECTION_READ_WRITE, &allocation_a)) {
 		goto cleanup;
 	}
 
 	allocation_a_active = true;
 
 	for (uint64_t index = 0ULL; index < 3ULL; index++) {
-		uint64_t virtual_address =
-			(uint64_t)allocation_a +
-			index * PMM_PAGE_SIZE;
+		uint64_t virtual_address = (uint64_t)allocation_a + index * PMM_PAGE_SIZE;
 
 		vmm_page_mapping_t mapping;
 
-		if (!vmm_query_page(
-			virtual_address,
-			&mapping
-		)) {
+		if (!vmm_query_page(virtual_address, &mapping)) {
 			goto cleanup;
 		}
 
-		if (
-			mapping.memory_type != VMM_MEMORY_NORMAL ||
-			mapping.protection !=
-			VMM_PROTECTION_READ_WRITE
-		) {
+		if (mapping.memory_type != VMM_MEMORY_NORMAL || mapping.protection != VMM_PROTECTION_READ_WRITE) {
 			goto cleanup;
 		}
 
@@ -187,10 +182,7 @@ static bool post_test_vm_kern(void)
 
 		uint64_t direct_map_address;
 
-		if (!vmm_physical_to_higher_half(
-			mapping.physical_address,
-			&direct_map_address
-		)) {
+		if (!vmm_physical_to_higher_half(mapping.physical_address, &direct_map_address)) {
 			goto cleanup;
 		}
 
@@ -205,30 +197,19 @@ static bool post_test_vm_kern(void)
 		}
 	}
 
-	if (!vm_kern_allocate(
-		KERNEL_VM_KERN_TEST_B_SIZE,
-		VMM_PROTECTION_READ_WRITE,
-		&allocation_b
-	)) {
+	if (!vm_kern_allocate(KERNEL_VM_KERN_TEST_B_SIZE, VMM_PROTECTION_READ_WRITE, &allocation_b)) {
 		goto cleanup;
 	}
 
 	allocation_b_active = true;
 
-	if (!vm_kern_free(
-		allocation_a,
-		KERNEL_VM_KERN_TEST_A_SIZE
-	)) {
+	if (!vm_kern_free(allocation_a, KERNEL_VM_KERN_TEST_A_SIZE)) {
 		goto cleanup;
 	}
 
 	allocation_a_active = false;
 
-	if (!vm_kern_allocate(
-		KERNEL_VM_KERN_TEST_A_SIZE,
-		VMM_PROTECTION_READ_WRITE,
-		&reused_allocation
-	)) {
+	if (!vm_kern_allocate(KERNEL_VM_KERN_TEST_A_SIZE, VMM_PROTECTION_READ_WRITE, &reused_allocation)) {
 		goto cleanup;
 	}
 
@@ -241,33 +222,15 @@ static bool post_test_vm_kern(void)
 	passed = true;
 
 cleanup:
-	if (
-		allocation_a_active &&
-		!vm_kern_free(
-			allocation_a,
-			KERNEL_VM_KERN_TEST_A_SIZE
-		)
-	) {
+	if (allocation_a_active && !vm_kern_free(allocation_a, KERNEL_VM_KERN_TEST_A_SIZE)) {
 		cleanup_passed = false;
 	}
 
-	if (
-		allocation_b_active &&
-		!vm_kern_free(
-			allocation_b,
-			KERNEL_VM_KERN_TEST_B_SIZE
-		)
-	) {
+	if (allocation_b_active && !vm_kern_free(allocation_b, KERNEL_VM_KERN_TEST_B_SIZE)) {
 		cleanup_passed = false;
 	}
 
-	if (
-		reused_allocation_active &&
-		!vm_kern_free(
-			reused_allocation,
-			KERNEL_VM_KERN_TEST_A_SIZE
-		)
-	) {
+	if (reused_allocation_active && !vm_kern_free(reused_allocation, KERNEL_VM_KERN_TEST_A_SIZE)) {
 		cleanup_passed = false;
 	}
 
@@ -280,11 +243,7 @@ static bool post_test_small_heap(void)
 	void *allocation_b = kmalloc(200U);
 	void *allocation_c = kcalloc(32U, 8U);
 
-	if (
-		allocation_a == 0 ||
-		allocation_b == 0 ||
-		allocation_c == 0
-	) {
+	if (allocation_a == 0 || allocation_b == 0 || allocation_c == 0) {
 		return false;
 	}
 
@@ -298,18 +257,11 @@ static bool post_test_small_heap(void)
 
 	void *reused_allocation = kmalloc(128U);
 
-	if (
-		reused_allocation == 0 ||
-		reused_allocation != allocation_b
-	) {
+	if (reused_allocation == 0 || reused_allocation != allocation_b) {
 		return false;
 	}
 
-	if (
-		!kfree(allocation_a) ||
-		!kfree(allocation_c) ||
-		!kfree(reused_allocation)
-	) {
+	if (!kfree(allocation_a) || !kfree(allocation_c) || !kfree(reused_allocation)) {
 		return false;
 	}
 
@@ -320,84 +272,40 @@ static bool post_test_large_heap(void)
 {
 	void *large_allocation = kmalloc(KERNEL_HEAP_LARGE_TEST_SIZE);
 
-	if (
-		large_allocation == 0 ||
-		!vm_kern_contains(large_allocation)
-	) {
+	if (large_allocation == 0 || !vm_kern_contains(large_allocation)) {
 		return false;
 	}
 
 	uint8_t *large_bytes = (uint8_t *)large_allocation;
 
-	uint64_t page_count =
-		(KERNEL_HEAP_LARGE_TEST_SIZE +
-		PMM_PAGE_SIZE - 1ULL) /
-		PMM_PAGE_SIZE;
+	uint64_t page_count = (KERNEL_HEAP_LARGE_TEST_SIZE + PMM_PAGE_SIZE - 1ULL) / PMM_PAGE_SIZE;
 
-	for (
-		uint64_t page = 0ULL;
-		page < page_count;
-		page++
-	) {
+	for (uint64_t page = 0ULL; page < page_count; page++) {
 		uint64_t first_offset = page * PMM_PAGE_SIZE;
 
 		uint64_t last_offset = first_offset + PMM_PAGE_SIZE - 1ULL;
 
-		if (
-			first_offset <
-			KERNEL_HEAP_LARGE_TEST_SIZE
-		) {
-			large_bytes[first_offset] =
-				(uint8_t)(
-					KERNEL_HEAP_LARGE_TEST_VALUE +
-					page
-				);
+		if (first_offset < KERNEL_HEAP_LARGE_TEST_SIZE) {
+			large_bytes[first_offset] = (uint8_t)(KERNEL_HEAP_LARGE_TEST_VALUE + page);
 		}
 
-		if (
-			last_offset <
-			KERNEL_HEAP_LARGE_TEST_SIZE
-		) {
-			large_bytes[last_offset] =
-				(uint8_t)(
-					KERNEL_HEAP_LARGE_TEST_VALUE +
-					page +
-					16ULL
-				);
+		if (last_offset < KERNEL_HEAP_LARGE_TEST_SIZE) {
+			large_bytes[last_offset] = (uint8_t)(KERNEL_HEAP_LARGE_TEST_VALUE + page + 16ULL);
 		}
 	}
 
-	for (
-		uint64_t page = 0ULL;
-		page < page_count;
-		page++
-	) {
+	for (uint64_t page = 0ULL; page < page_count; page++) {
 		uint64_t first_offset = page * PMM_PAGE_SIZE;
 
 		uint64_t last_offset = first_offset + PMM_PAGE_SIZE - 1ULL;
 
-		if (
-			first_offset <
-				KERNEL_HEAP_LARGE_TEST_SIZE &&
-			large_bytes[first_offset] !=
-				(uint8_t)(
-					KERNEL_HEAP_LARGE_TEST_VALUE +
-					page
-				)
-		) {
+		if (first_offset < KERNEL_HEAP_LARGE_TEST_SIZE &&
+			large_bytes[first_offset] != (uint8_t)(KERNEL_HEAP_LARGE_TEST_VALUE + page)) {
 			return false;
 		}
 
-		if (
-			last_offset <
-				KERNEL_HEAP_LARGE_TEST_SIZE &&
-			large_bytes[last_offset] !=
-				(uint8_t)(
-					KERNEL_HEAP_LARGE_TEST_VALUE +
-					page +
-					16ULL
-				)
-		) {
+		if (last_offset < KERNEL_HEAP_LARGE_TEST_SIZE &&
+			large_bytes[last_offset] != (uint8_t)(KERNEL_HEAP_LARGE_TEST_VALUE + page + 16ULL)) {
 			return false;
 		}
 	}
@@ -480,6 +388,9 @@ static bool post_core(void)
 		return post_fail("shm_registry: self-test failed");
 	}
 
+	if (!statistics_self_test())
+		return post_fail("statistics: self-test failed");
+
 	if (!vm_map_self_test()) {
 		return post_fail("vm_map: self-test failed");
 	}
@@ -527,12 +438,8 @@ static bool post_core(void)
 	g_sched_context_test_stage = 0U;
 	thread_t context_test_thread;
 
-	if (!kernel_thread_create(
-		proc_task(proc_kernel()),
-		post_sched_context_test_continue,
-		(void *)&g_sched_context_test_stage,
-		&context_test_thread
-	)) {
+	if (!kernel_thread_create(proc_task(proc_kernel()), post_sched_context_test_continue,
+							  (void *)&g_sched_context_test_stage, &context_test_thread)) {
 		return post_fail("kernel_thread_create: context-switch test thread creation failed");
 	}
 
@@ -544,10 +451,7 @@ static bool post_core(void)
 		return post_fail("sched_yield: context-switch test dispatch failed");
 	}
 
-	if (
-		g_sched_context_test_stage != 1U ||
-		current_thread() != sched_bootstrap_thread()
-	) {
+	if (g_sched_context_test_stage != 1U || current_thread() != sched_bootstrap_thread()) {
 		return post_fail("sched_bootstrap_thread: AArch64 context-switch test failed");
 	}
 

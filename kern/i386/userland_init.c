@@ -1,3 +1,4 @@
+#include <kern/logging/diagnostics.h>
 /*
  * Copyright (c) 2026 NXU Project. All rights reserved.
  */
@@ -25,11 +26,13 @@
 #include <drivers/video/ui_service_host.h>
 #include <kern/aqua/window_server.h>
 #include <kern/boot/boot_chime.h>
+#include <kern/boot/boot_args.h>
 #include <kern/boot/boot_mode.h>
 #include <kern/console/console.h>
 #include <kern/loader/elf.h>
 #include <kern/process/proc.h>
 #include <kern/sched_prism/sched.h>
+#include <kern/sched_prism/waitq.h>
 #include <kern/tests/ipc_process_test.h>
 #include <kern/tests/socket_process_test.h>
 #include <kern/tests/sound_test.h>
@@ -46,6 +49,7 @@
 #define USERLAND_BOOTD_RECOVERY_PATH "/disk/System/Library/CoreServices/bootd.recovery"
 
 static proc_t g_boot_process;
+static waitq_t g_boot_dispatch_wait;
 
 /* Decimal boot-arg value to uint32_t; stops at the first non-digit. */
 static uint32_t userland_parse_u32(const char *text)
@@ -63,9 +67,12 @@ static bool userland_run_process_test(const char *name)
 {
 	bool ok;
 
-	if (strcmp(name, "ipc") == 0) ok = ipc_process_test();
-	else if (strcmp(name, "thread") == 0) ok = thread_process_test();
-	else if (strcmp(name, "socket") == 0) ok = socket_process_test();
+	if (strcmp(name, "ipc") == 0)
+		ok = ipc_process_test();
+	else if (strcmp(name, "thread") == 0)
+		ok = thread_process_test();
+	else if (strcmp(name, "socket") == 0)
+		ok = socket_process_test();
 	else {
 		kprintf("i386_init_userland: unknown process-test \"%s\"\n", name);
 		return false;
@@ -140,14 +147,18 @@ bool i386_init_userland(const i386_boot_info_t *boot)
 	memset(&list_request, 0, sizeof(list_request));
 	list_request.list = i386_boot_arg("btrfs-ls", list_value, sizeof(list_value));
 
-	if (i386_boot_arg("btrfs-cat", list_value, sizeof(list_value))) list_request.cat_path = list_value;
+	if (i386_boot_arg("btrfs-cat", list_value, sizeof(list_value)))
+		list_request.cat_path = list_value;
 
 	if (list_request.list || list_request.cat_path != 0) {
 		char option[24];
 
-		if (i386_boot_arg("btrfs-dev", option, sizeof(option))) list_request.device_index = userland_parse_u32(option);
-		if (i386_boot_arg("btrfs-subvol", option, sizeof(option))) list_request.subvolume = userland_parse_u32(option);
-		if (i386_boot_arg("btrfs-max", option, sizeof(option))) list_request.max_entries = userland_parse_u32(option);
+		if (i386_boot_arg("btrfs-dev", option, sizeof(option)))
+			list_request.device_index = userland_parse_u32(option);
+		if (i386_boot_arg("btrfs-subvol", option, sizeof(option)))
+			list_request.subvolume = userland_parse_u32(option);
+		if (i386_boot_arg("btrfs-max", option, sizeof(option)))
+			list_request.max_entries = userland_parse_u32(option);
 		list_request.noverify = i386_boot_arg("btrfs-noverify", option, sizeof(option));
 
 		bool list_ok = btrfs_list_run(&list_request);
@@ -175,7 +186,8 @@ bool i386_init_userland(const i386_boot_info_t *boot)
 	 */
 	char test[16];
 
-	if (i386_boot_arg("process-test", test, sizeof(test))) return userland_run_process_test(test);
+	if (i386_boot_arg("process-test", test, sizeof(test)))
+		return userland_run_process_test(test);
 
 	/*
 	 * "sound-test=1": play the test tone through the VirtIO Sound driver
@@ -228,7 +240,19 @@ bool i386_init_userland(const i386_boot_info_t *boot)
 	 * false, so its result is this phase's result outright.
 	 */
 	if (selected_present && strcmp(selected, "desktop") == 0) {
-		if (!userland_spawn_bootd()) kputln("i386_init_userland: the desktop starts without bootd, so without the Dock");
+		diagnostics_start();
+		if (boot_arg_bool("ui.userland", false)) {
+			if (!boot_mode_is_triage_os() && !ui_service_trusted_prepare())
+				return false;
+			if (!userland_spawn_bootd())
+				return false;
+			boot_chime_arm();
+			boot_chime_start();
+			return true;
+		}
+
+		if (!userland_spawn_bootd())
+			kputln("i386_init_userland: the desktop starts without bootd, so without the Dock");
 
 		/*
 		 * The boot chime, as on arm64: the display is about to show the
@@ -259,7 +283,8 @@ bool i386_init_run(const i386_boot_info_t *boot)
 	 * left to run. The tepOS mailbox monitor is a kernel thread, though, so
 	 * keep scheduling while the machine has a mailbox link.
 	 */
-	if (g_boot_process == 0 && tep_mailbox_link_state() == TEP_LINK_ABSENT) return true;
+	if (g_boot_process == 0 && tep_mailbox_link_state() == TEP_LINK_ABSENT)
+		return true;
 
 	char value[16];
 	uint64_t limit_us = 0ULL;
@@ -274,9 +299,16 @@ bool i386_init_run(const i386_boot_info_t *boot)
 
 	uint64_t start_us = timer_get_microseconds();
 
-	kputln(g_boot_process != 0
-		? "i386_init_run: root userspace services active, dispatching"
-		: "i386_init_run: no userspace; running kernel threads (tepOS mailbox monitor)");
+	kputln(g_boot_process != 0 ? "i386_init_run: root userspace services active, dispatching"
+							   : "i386_init_run: no userspace; running kernel threads (tepOS mailbox monitor)");
+
+	/* PID 1 and its services run on their own threads. Keep the bootstrap
+	 * context parked instead of yielding forever and burning CPU0. */
+	if (g_boot_process != 0 && limit_us == 0ULL) {
+		waitq_init(&g_boot_dispatch_wait);
+		for (;;)
+			(void)waitq_block(&g_boot_dispatch_wait, false);
+	}
 
 	for (;;) {
 		if (!sched_yield()) {
@@ -284,7 +316,8 @@ bool i386_init_run(const i386_boot_info_t *boot)
 			return false;
 		}
 
-		if (limit_us != 0ULL && timer_get_microseconds() - start_us >= limit_us) break;
+		if (limit_us != 0ULL && timer_get_microseconds() - start_us >= limit_us)
+			break;
 	}
 
 	kputln("i386_init_run: run time elapsed, leaving the scheduler");

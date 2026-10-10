@@ -1,3 +1,4 @@
+#include <kern/logging/diagnostics.h>
 #include <kern/console/console.h>
 #include <kern/boot/boot_args.h>
 #include <kern/boot/boot_chime.h>
@@ -16,6 +17,7 @@
 #include <drivers/virtio/virtio.h>
 #include <drivers/virtio/virtio_input.h>
 #include <drivers/video/display.h>
+#include <drivers/video/ui_service_host.h>
 #include <drivers/block/block_device.h>
 #include <drivers/tep/tep_boot.h>
 #include <drivers/tep/tep_mailbox.h>
@@ -67,61 +69,37 @@
 /* Higher-half direct-map test. */
 #define KERNEL_HIGHER_HALF_RAM_TEST_VALUE 0x484947484D415000ULL
 
-typedef uint64_t (*kern_higher_half_probe_t)(
-	uint64_t left,
-	uint64_t right
-);
+typedef uint64_t (*kern_higher_half_probe_t)(uint64_t left, uint64_t right);
 
-static __attribute__((noinline))
-uint64_t kern_higher_half_probe(uint64_t left, uint64_t right);
+static __attribute__((noinline)) uint64_t kern_higher_half_probe(uint64_t left, uint64_t right);
 
 static const char g_kernel_link_probe_string[] = "higher-half-linked";
 
-static const char *const volatile g_kernel_link_string_table[] = {
-	g_kernel_link_probe_string
-};
+static const char *const volatile g_kernel_link_string_table[] = {g_kernel_link_probe_string};
 
-static kern_higher_half_probe_t const volatile g_kernel_link_function_table[] = {
-	kern_higher_half_probe
-};
+static kern_higher_half_probe_t const volatile g_kernel_link_function_table[] = {kern_higher_half_probe};
 
 /* PID 1 loaded from the mounted system volume. */
 static proc_t g_boot_process;
 
-
-static __attribute__((noreturn, noinline))
-void kern_init_higher_half(void);
+static __attribute__((noreturn, noinline)) void kern_init_higher_half(void);
 
 /* Fatal boot handling. */
 
-static __attribute__((noreturn))
-void kern_halt(void)
+static __attribute__((noreturn)) void kern_halt(void)
 {
 	for (;;) {
 		__asm__ volatile("wfe");
 	}
 }
 
-static __attribute__((noreturn))
-void kern_fail(const char *message)
+static __attribute__((noreturn)) void kern_fail(const char *message)
 {
 	kputln(message);
 	kern_halt();
 }
 
-
-
-
-
-
-
-
-
-
-
-
 /* Early boot diagnostics and physical-memory validation. */
-
 static void kern_dump_boot_dtb(const dtb_t *device_tree)
 {
 	kputln("dtb: valid flattened Device Tree");
@@ -134,7 +112,8 @@ static void kern_dump_boot_dtb(const dtb_t *device_tree)
 	kputu64(device_tree->total_size);
 	kputln(" bytes");
 
-	if (!kconsole_verbose()) return;
+	if (!kconsole_verbose())
+		return;
 
 	kprintf("dtb: address: %p\n", (void *)device_tree->base);
 
@@ -166,24 +145,17 @@ static bool kern_test_pmm(void)
 	return true;
 }
 
-/* Virtual-memory self-tests. */
-
+/* Virtual-memory self-test. */
 static bool kern_validate_identity_mappings(const platform_t *platform)
 {
 	uint64_t translated_address;
 	uint64_t stack_probe = (uint64_t)&translated_address;
 
-	if (
-		!vmm_translate(stack_probe, &translated_address) ||
-		translated_address != stack_probe
-	) {
+	if (!vmm_translate(stack_probe, &translated_address) || translated_address != stack_probe) {
 		return false;
 	}
 
-	if (
-		!vmm_translate(platform->uart.base, &translated_address) ||
-		translated_address != platform->uart.base
-	) {
+	if (!vmm_translate(platform->uart.base, &translated_address) || translated_address != platform->uart.base) {
 		return false;
 	}
 
@@ -205,12 +177,7 @@ static bool kern_test_live_vmm(void)
 	uint64_t unmapped_address;
 	vmm_page_mapping_t mapping;
 
-	if (!vmm_map_page(
-		KERNEL_VMM_TEST_ADDRESS,
-		physical_address,
-		VMM_MEMORY_NORMAL,
-		VMM_PROTECTION_READ_WRITE
-	)) {
+	if (!vmm_map_page(KERNEL_VMM_TEST_ADDRESS, physical_address, VMM_MEMORY_NORMAL, VMM_PROTECTION_READ_WRITE)) {
 		goto cleanup;
 	}
 
@@ -220,11 +187,8 @@ static bool kern_test_live_vmm(void)
 		goto cleanup;
 	}
 
-	if (
-		mapping.physical_address != physical_address ||
-		mapping.memory_type != VMM_MEMORY_NORMAL ||
-		mapping.protection != VMM_PROTECTION_READ_WRITE
-	) {
+	if (mapping.physical_address != physical_address || mapping.memory_type != VMM_MEMORY_NORMAL ||
+		mapping.protection != VMM_PROTECTION_READ_WRITE) {
 		goto cleanup;
 	}
 
@@ -246,24 +210,15 @@ static bool kern_test_live_vmm(void)
 		goto cleanup;
 	}
 
-	if (!vmm_protect_page(
-		KERNEL_VMM_TEST_ADDRESS,
-		VMM_PROTECTION_READ_ONLY
-	)) {
+	if (!vmm_protect_page(KERNEL_VMM_TEST_ADDRESS, VMM_PROTECTION_READ_ONLY)) {
 		goto cleanup;
 	}
 
-	if (vmm_translate_write(
-		KERNEL_VMM_TEST_ADDRESS,
-		&translated_address
-	)) {
+	if (vmm_translate_write(KERNEL_VMM_TEST_ADDRESS, &translated_address)) {
 		goto cleanup;
 	}
 
-	if (!vmm_translate(
-		KERNEL_VMM_TEST_ADDRESS,
-		&translated_address
-	)) {
+	if (!vmm_translate(KERNEL_VMM_TEST_ADDRESS, &translated_address)) {
 		goto cleanup;
 	}
 
@@ -279,10 +234,7 @@ static bool kern_test_live_vmm(void)
 		goto cleanup;
 	}
 
-	if (!vmm_unmap_page(
-		KERNEL_VMM_TEST_ADDRESS,
-		&unmapped_address
-	)) {
+	if (!vmm_unmap_page(KERNEL_VMM_TEST_ADDRESS, &unmapped_address)) {
 		goto cleanup;
 	}
 
@@ -292,10 +244,7 @@ static bool kern_test_live_vmm(void)
 		goto cleanup;
 	}
 
-	if (vmm_translate(
-		KERNEL_VMM_TEST_ADDRESS,
-		&translated_address
-	)) {
+	if (vmm_translate(KERNEL_VMM_TEST_ADDRESS, &translated_address)) {
 		goto cleanup;
 	}
 
@@ -305,10 +254,7 @@ cleanup:
 	if (mapped) {
 		uint64_t ignored_address;
 
-		if (!vmm_unmap_page(
-			KERNEL_VMM_TEST_ADDRESS,
-			&ignored_address
-		)) {
+		if (!vmm_unmap_page(KERNEL_VMM_TEST_ADDRESS, &ignored_address)) {
 			return false;
 		}
 	}
@@ -320,8 +266,7 @@ cleanup:
 	return passed;
 }
 
-static __attribute__((noinline))
-uint64_t kern_higher_half_probe(uint64_t left, uint64_t right)
+static __attribute__((noinline)) uint64_t kern_higher_half_probe(uint64_t left, uint64_t right)
 {
 	return (left ^ 0x41524D4F53000000ULL) + (right << 7U);
 }
@@ -330,28 +275,19 @@ static bool kern_test_higher_half_alias(void)
 {
 	uint64_t physical_address;
 
-	if (!vmm_kernel_address_to_physical(
-		(uint64_t)&kern_higher_half_probe,
-		&physical_address
-	)) {
+	if (!vmm_kernel_address_to_physical((uint64_t)&kern_higher_half_probe, &physical_address)) {
 		return false;
 	}
 
 	uint64_t higher_half_address;
 
-	if (!vmm_physical_to_higher_half(
-		physical_address,
-		&higher_half_address
-	)) {
+	if (!vmm_physical_to_higher_half(physical_address, &higher_half_address)) {
 		return false;
 	}
 
 	uint64_t translated_address;
 
-	if (!vmm_translate(
-		higher_half_address,
-		&translated_address
-	)) {
+	if (!vmm_translate(higher_half_address, &translated_address)) {
 		return false;
 	}
 
@@ -376,19 +312,13 @@ static bool kern_test_linked_kernel_pointers(void)
 	const char *string_pointer = g_kernel_link_string_table[0];
 	kern_higher_half_probe_t function_pointer = g_kernel_link_function_table[0];
 
-	if (
-		!vmm_is_higher_half_address((uint64_t)string_pointer) ||
-		!vmm_is_higher_half_address((uint64_t)function_pointer)
-	) {
+	if (!vmm_is_higher_half_address((uint64_t)string_pointer) ||
+		!vmm_is_higher_half_address((uint64_t)function_pointer)) {
 		return false;
 	}
 
-	if (
-		string_pointer[0] != 'h' ||
-		string_pointer[6] != '-' ||
-		string_pointer[11] != '-' ||
-		string_pointer[18] != '\0'
-	) {
+	if (string_pointer[0] != 'h' || string_pointer[6] != '-' || string_pointer[11] != '-' ||
+		string_pointer[18] != '\0') {
 		return false;
 	}
 
@@ -408,10 +338,7 @@ static bool kern_test_higher_half_ram_alias(void)
 
 	uint64_t virtual_address;
 
-	if (!vmm_physical_to_higher_half(
-		physical_address,
-		&virtual_address
-	)) {
+	if (!vmm_physical_to_higher_half(physical_address, &virtual_address)) {
 		(void)pmm_free_page(physical_address);
 		return false;
 	}
@@ -429,10 +356,7 @@ static bool kern_test_higher_half_ram_alias(void)
 
 	*virtual_word = KERNEL_HIGHER_HALF_RAM_TEST_VALUE + 1ULL;
 
-	if (
-		*physical_word !=
-		KERNEL_HIGHER_HALF_RAM_TEST_VALUE + 1ULL
-	) {
+	if (*physical_word != KERNEL_HIGHER_HALF_RAM_TEST_VALUE + 1ULL) {
 		(void)pmm_free_page(physical_address);
 		return false;
 	}
@@ -442,9 +366,6 @@ static bool kern_test_higher_half_ram_alias(void)
 
 /* Kernel virtual arena and heap self-tests. */
 
-
-
-
 /* Higher-half transition validation and entry. */
 
 static bool kern_validate_higher_half_state(void)
@@ -453,32 +374,18 @@ static bool kern_validate_higher_half_state(void)
 	uint64_t sp = arm64_read_stack_pointer();
 	uint64_t vbar = arm64_read_vector_base();
 
-	if (
-		!vmm_is_higher_half_address(pc) ||
-		!vmm_is_higher_half_address(sp) ||
-		!vmm_is_higher_half_address(vbar)
-	) {
+	if (!vmm_is_higher_half_address(pc) || !vmm_is_higher_half_address(sp) || !vmm_is_higher_half_address(vbar)) {
 		return false;
 	}
 
 	const platform_t *platform = platform_get();
 	const dtb_t *device_tree = dtb_get_boot();
 
-	if (
-		platform == 0 ||
-		device_tree == 0
-	) {
+	if (platform == 0 || device_tree == 0) {
 		return false;
 	}
 
-	if (
-		!vmm_is_higher_half_address(
-			(uint64_t)platform
-		) ||
-		!vmm_is_higher_half_address(
-			(uint64_t)device_tree
-		)
-	) {
+	if (!vmm_is_higher_half_address((uint64_t)platform) || !vmm_is_higher_half_address((uint64_t)device_tree)) {
 		return false;
 	}
 
@@ -488,10 +395,7 @@ static bool kern_validate_higher_half_state(void)
 		return false;
 	}
 
-	if (!vmm_translate_write(
-		sp - 16ULL,
-		&physical_address
-	)) {
+	if (!vmm_translate_write(sp - 16ULL, &physical_address)) {
 		return false;
 	}
 
@@ -499,17 +403,11 @@ static bool kern_validate_higher_half_state(void)
 		return false;
 	}
 
-	if (!vmm_translate_write(
-		(uint64_t)platform,
-		&physical_address
-	)) {
+	if (!vmm_translate_write((uint64_t)platform, &physical_address)) {
 		return false;
 	}
 
-	if (!vmm_translate_write(
-		(uint64_t)device_tree,
-		&physical_address
-	)) {
+	if (!vmm_translate_write((uint64_t)device_tree, &physical_address)) {
 		return false;
 	}
 
@@ -518,7 +416,8 @@ static bool kern_validate_higher_half_state(void)
 
 static void kern_dump_higher_half_state(void)
 {
-	if (!kconsole_verbose()) return;
+	if (!kconsole_verbose())
+		return;
 
 	kprintf("kern_init: higher-half PC: %p\n", (void *)arm64_read_program_counter());
 	kprintf("kern_init: higher-half SP: %p\n", (void *)arm64_read_stack_pointer());
@@ -557,13 +456,8 @@ static bool kern_prepare_higher_half_runtime(void)
 
 static bool kern_validate_ttbr0_shutdown(void)
 {
-	if (
-		!vmm_ttbr0_disabled() ||
-		!pmm_higher_half_enabled() ||
-		!dtb_higher_half_enabled() ||
-		!gic_higher_half_enabled() ||
-		!uart_higher_half_enabled()
-	) {
+	if (!vmm_ttbr0_disabled() || !pmm_higher_half_enabled() || !dtb_higher_half_enabled() ||
+		!gic_higher_half_enabled() || !uart_higher_half_enabled()) {
 		return false;
 	}
 
@@ -571,53 +465,33 @@ static bool kern_validate_ttbr0_shutdown(void)
 
 	uint64_t lower_pc;
 
-	if (!vmm_higher_half_to_physical(
-		higher_pc,
-		&lower_pc
-	)) {
+	if (!vmm_higher_half_to_physical(higher_pc, &lower_pc)) {
 		return false;
 	}
 
 	uint64_t translated_address;
 
 	/* The old TTBR0 alias must now fault. */
-	if (vmm_translate(
-		lower_pc,
-		&translated_address
-	)) {
+	if (vmm_translate(lower_pc, &translated_address)) {
 		return false;
 	}
 
 	/* The same instruction must remain reachable through TTBR1. */
-	if (
-		!vmm_translate(
-			higher_pc,
-			&translated_address
-		) ||
-		translated_address != lower_pc
-	) {
+	if (!vmm_translate(higher_pc, &translated_address) || translated_address != lower_pc) {
 		return false;
 	}
 
 	const dtb_t *device_tree = dtb_get_boot();
 
-	if (
-		device_tree == 0 ||
-		!vmm_is_higher_half_address(
-			(uint64_t)device_tree->base
-		) ||
-		!vmm_is_higher_half_address(
-			vmm_get_ttbr1_root()
-		)
-	) {
+	if (device_tree == 0 || !vmm_is_higher_half_address((uint64_t)device_tree->base) ||
+		!vmm_is_higher_half_address(vmm_get_ttbr1_root())) {
 		return false;
 	}
 
 	return true;
 }
 
-static __attribute__((noreturn))
-void kern_enter_higher_half(void)
+static __attribute__((noreturn)) void kern_enter_higher_half(void)
 {
 	uint64_t lower_vbar = arm64_read_vector_base();
 
@@ -627,24 +501,14 @@ void kern_enter_higher_half(void)
 	uint64_t translated_address;
 
 	if ((lower_vbar & 0x7FFULL) != 0ULL) {
-		kern_fail(
-			"kern_init: lower exception vector is misaligned"
-		);
+		kern_fail("kern_init: lower exception vector is misaligned");
 	}
 
-	if (!vmm_physical_to_higher_half(
-		lower_vbar,
-		&higher_vbar
-	)) {
-		kern_fail(
-			"kern_init: higher VBAR conversion failed"
-		);
+	if (!vmm_physical_to_higher_half(lower_vbar, &higher_vbar)) {
+		kern_fail("kern_init: higher VBAR conversion failed");
 	}
 
-	if (!vmm_kernel_address_to_physical(
-		(uint64_t)&kern_init_higher_half,
-		&entry_physical
-	)) {
+	if (!vmm_kernel_address_to_physical((uint64_t)&kern_init_higher_half, &entry_physical)) {
 		kern_fail("kern_init: entry physical conversion failed");
 	}
 
@@ -652,34 +516,17 @@ void kern_enter_higher_half(void)
 		kern_fail("kern_init: higher entry conversion failed");
 	}
 
-	if (
-		!vmm_translate(
-			higher_vbar,
-			&translated_address
-		) ||
-		translated_address != lower_vbar
-	) {
-		kern_fail(
-			"kern_init: higher VBAR translation mismatch"
-		);
+	if (!vmm_translate(higher_vbar, &translated_address) || translated_address != lower_vbar) {
+		kern_fail("kern_init: higher VBAR translation mismatch");
 	}
 
-	if (
-		!vmm_translate(higher_entry, &translated_address) ||
-		translated_address != entry_physical
-	) {
-		kern_fail(
-			"kern_init: higher entry translation mismatch"
-		);
+	if (!vmm_translate(higher_entry, &translated_address) || translated_address != entry_physical) {
+		kern_fail("kern_init: higher entry translation mismatch");
 	}
 
 	kputln("kern_init: entering higher-half kernel");
 
-	arm64_enter_higher_half(
-		VMM_HIGHER_HALF_BASE,
-		higher_vbar,
-		higher_entry
-	);
+	arm64_enter_higher_half(VMM_HIGHER_HALF_BASE, higher_vbar, higher_entry);
 }
 
 /*
@@ -835,19 +682,26 @@ static void kern_init_filesystem(void)
 {
 	kputln("IOVirtualFSDriver initializing virtual filesystem");
 
-	if (!vfs_init()) kern_fail("IOVirtualFSDriver initialization failed");
-	if (!ramfs_register()) kern_fail("IOVirtualFSDriver ramfs registration failed");
-	if (!ext4_register()) kern_fail("IOVirtualFSDriver ext4 registration failed");
-	if (!devfs_register()) kern_fail("IOVirtualFSDriver devfs registration failed");
+	if (!vfs_init())
+		kern_fail("IOVirtualFSDriver initialization failed");
+	if (!ramfs_register())
+		kern_fail("IOVirtualFSDriver ramfs registration failed");
+	if (!ext4_register())
+		kern_fail("IOVirtualFSDriver ext4 registration failed");
+	if (!devfs_register())
+		kern_fail("IOVirtualFSDriver devfs registration failed");
 
 	vfs_status_t mount_status = vfs_mount("ramfs", 0, "/");
-	if (mount_status != VFS_STATUS_OK) kern_fail("IOVirtualFSDriver root ramfs mount failed");
+	if (mount_status != VFS_STATUS_OK)
+		kern_fail("IOVirtualFSDriver root ramfs mount failed");
 
 	kputln("IOVirtualFSDriver mounted ramfs at /");
 
-	if (vfs_mkdir("/disk") != VFS_STATUS_OK) kern_fail("IOVirtualFSDriver: /disk mountpoint creation failed");
+	if (vfs_mkdir("/disk") != VFS_STATUS_OK)
+		kern_fail("IOVirtualFSDriver: /disk mountpoint creation failed");
 
-	if (vfs_mkdir("/dev") != VFS_STATUS_OK || vfs_mount("devfs", 0, "/dev") != VFS_STATUS_OK) kern_fail("IOVirtualFSDriver: devfs mount at /dev failed");
+	if (vfs_mkdir("/dev") != VFS_STATUS_OK || vfs_mount("devfs", 0, "/dev") != VFS_STATUS_OK)
+		kern_fail("IOVirtualFSDriver: devfs mount at /dev failed");
 
 	kputln("IOVirtualFSDriver mounted devfs at /dev");
 }
@@ -905,9 +759,8 @@ static void kern_launch_init_process(display_device_t *boot_display)
 {
 	bool recovery_boot = boot_mode_is_triage_os();
 	const char *bootd_recovery_path = "/disk/System/Library/CoreServices/bootd.recovery";
-	const char *init_path = recovery_boot
-		? "/disk/System/Recovery/triageOS"
-		: "/disk/System/Library/CoreServices/bootd";
+	const char *init_path =
+		recovery_boot ? "/disk/System/Recovery/triageOS" : "/disk/System/Library/CoreServices/bootd";
 	const char *init_name = recovery_boot ? "triageOS" : "bootd";
 	bool init_uses_fallback = false;
 
@@ -922,8 +775,10 @@ static void kern_launch_init_process(display_device_t *boot_display)
 	}
 
 	kprintf("boot: selected environment: %s\n", boot_mode_name());
-	if (boot_display != 0) ioreg_dump();
-	if (boot_display != 0 && !boot_splash_finish()) kern_fail("boot_splash_finish: completion failed");
+	if (boot_display != 0)
+		ioreg_dump();
+	if (boot_display != 0 && !boot_splash_finish())
+		kern_fail("boot_splash_finish: completion failed");
 	kputs("loader_spawn: loading ");
 	kputs(init_path);
 	kputln(" as PID 1");
@@ -942,7 +797,8 @@ static void kern_launch_init_process(display_device_t *boot_display)
 		kern_fail("loader_spawn: PID 1 launch failed");
 	}
 
-	if (g_boot_process->p_ident.pid != 1U) kern_fail("loader_spawn: selected environment did not receive PID 1");
+	if (g_boot_process->p_ident.pid != 1U)
+		kern_fail("loader_spawn: selected environment did not receive PID 1");
 	kprintf("%s: PID %u ready for scheduler dispatch\n", init_name, g_boot_process->p_ident.pid);
 	kputln("VirtIOBlockFamily: VirtIO block device initialized");
 }
@@ -953,10 +809,10 @@ static void kern_launch_init_process(display_device_t *boot_display)
  * Start the periodic timer, enable IRQs and hand the CPU to userspace. Only
  * returns control to the idle loop when no PID 1 was launched.
  */
-static __attribute__((noreturn))
-void kern_start_scheduler(const driverkit_config_t *drivers)
+static __attribute__((noreturn)) void kern_start_scheduler(const driverkit_config_t *drivers)
 {
-	if (drivers->input_enabled) kputln("input: VirtIO keyboard and mouse initialized");
+	if (drivers->input_enabled)
+		kputln("input: VirtIO keyboard and mouse initialized");
 
 	gic_enable_ppi(PHYSICAL_TIMER_INTID, 0x80U);
 	kputln("kern_init: physical timer PPI enabled");
@@ -970,38 +826,47 @@ void kern_start_scheduler(const driverkit_config_t *drivers)
 
 	arm64_enable_irqs();
 	kputln("kern_init: IRQs enabled");
+	diagnostics_start();
 
 #if defined(NXU_SMP_USER_TEST)
 	/* Real user processes and threads on every CPU: the boot thread supervises. */
-	if (!smp_user_test_run()) kern_fail("smp_user_test: failed");
+	if (!smp_user_test_run())
+		kern_fail("smp_user_test: failed");
 	kputln("smp_user_test: passed; halting (test build)");
-	for (;;) __asm__ volatile("wfe");
+	for (;;)
+		__asm__ volatile("wfe");
 #endif
 
 #if defined(NXU_SMP_TEST)
 	/* The secondary CPUs are up and the boot CPU takes interrupts: the SMP suite runs on the boot thread. */
-	if (!smp_test_run()) kern_fail("smp_test: failed");
+	if (!smp_test_run())
+		kern_fail("smp_test: failed");
 	kputln("smp_test: passed; halting (test build)");
-	for (;;) __asm__ volatile("wfe");
+	for (;;)
+		__asm__ volatile("wfe");
 #endif
 
 	if (g_boot_process != 0) {
-		kprintf("sched: dispatching %s PID %u\n", boot_mode_is_triage_os() ? "triageOS" : "bootd", g_boot_process->p_ident.pid);
-		kputln(boot_mode_is_triage_os() ? "kern_init: recovery userspace active" : "kern_init: root userspace services active");
+		kprintf("sched: dispatching %s PID %u\n", boot_mode_is_triage_os() ? "triageOS" : "bootd",
+				g_boot_process->p_ident.pid);
+		kputln(boot_mode_is_triage_os() ? "kern_init: recovery userspace active"
+										: "kern_init: root userspace services active");
 
 		/* The unified boot runs its UI session here, on this thread, yielding to everything else. */
 		boot_test_unified();
 
 		for (;;) {
-			if (!sched_yield()) kern_fail("sched: userspace dispatch failed");
+			if (!sched_yield())
+				kern_fail("sched: userspace dispatch failed");
 		}
 	}
 
 	kputln("kern_init: remaining in kernel-only mode");
 
 	uint64_t last_second = 0ULL;
-		
+
 	for (;;) {
+		(void)sched_yield();
 		uint64_t interrupt_count = timer_get_interrupt_count();
 		uint64_t seconds = interrupt_count / KERNEL_TIMER_HZ;
 
@@ -1013,7 +878,6 @@ void kern_start_scheduler(const driverkit_config_t *drivers)
 			kputln(" second(s)");
 			input_dump_activity();
 		}
-
 	}
 }
 
@@ -1022,8 +886,7 @@ void kern_start_scheduler(const driverkit_config_t *drivers)
  *
  * The boot sequence after the TTBR1 transition, top to bottom.
  */
-static __attribute__((noreturn, noinline))
-void kern_init_higher_half(void)
+static __attribute__((noreturn, noinline)) void kern_init_higher_half(void)
 {
 	kern_finish_higher_half_transition();
 	kern_init_memory();
@@ -1048,7 +911,11 @@ void kern_init_higher_half(void)
 	 * The Trusted Enclave link; its monitor thread runs once the scheduler does. Absent, tepOS requests fail closed.
 	 * With it, tepOS checks bootd against its signed manifest: reported, never waited for or enforced.
 	 */
-	if (tep_mailbox_start()) (void)tep_boot_check_start();
+	if (tep_mailbox_start())
+		(void)tep_boot_check_start();
+
+	if (!boot_mode_is_triage_os() && boot_arg_bool("ui.userland", false) && !ui_service_trusted_prepare())
+		kern_fail("trusted-login: unable to establish login boundary");
 
 	boot_test_graphical(boot_display);
 
@@ -1086,7 +953,6 @@ void kern_init_higher_half(void)
 	kern_start_scheduler(&drivers);
 }
 
-
 /*
  * The lower-half phase builds and validates both translation regimes.
  * It never initializes long-lived kernel services after the transition.
@@ -1109,14 +975,8 @@ void kern_init(const void *dtb_address)
 
 	kputs("dtb: first bytes: ");
 
-	for (
-		uint32_t index = 0U;
-		index < 4U;
-		index++
-	) {
-		kputhex_byte(
-			dtb_bytes[index]
-		);
+	for (uint32_t index = 0U; index < 4U; index++) {
+		kputhex_byte(dtb_bytes[index]);
 
 		kputc(' ');
 	}
@@ -1134,17 +994,17 @@ void kern_init(const void *dtb_address)
 	const dtb_t *device_tree = dtb_get_boot();
 
 	if (device_tree == 0) {
-		kern_fail(
-			"dtb_t device_tree: boot Device Tree unavailable"
-		);
+		kern_fail("dtb_t device_tree: boot Device Tree unavailable");
 	}
 
 	kputln("nvram_bootstrap: bootstrap begin");
-	if (!nvram_bootstrap(device_tree)) kern_fail("nvram_bootstrap: bootstrap failed");
+	if (!nvram_bootstrap(device_tree))
+		kern_fail("nvram_bootstrap: bootstrap failed");
 	kputln("nvram_bootstrap: bootstrap complete");
 
 	kputln("boot_args: initialization begin");
-	if (!boot_args_init()) kern_fail("boot_args_init: initialization failed");
+	if (!boot_args_init())
+		kern_fail("boot_args_init: initialization failed");
 	kputln("boot_args_init: initialization complete");
 	boot_args_dump();
 
@@ -1155,7 +1015,8 @@ void kern_init(const void *dtb_address)
 	 */
 	char affinity_policy[8];
 
-	if (boot_arg_value("sched.affinity", affinity_policy, sizeof(affinity_policy)) && strcmp(affinity_policy, "all") == 0) {
+	if (boot_arg_value("sched.affinity", affinity_policy, sizeof(affinity_policy)) &&
+		strcmp(affinity_policy, "all") == 0) {
 		nxu_cpuset_t everywhere;
 
 		cpuset_fill(&everywhere, NXU_MAX_CPUS);
@@ -1169,7 +1030,8 @@ void kern_init(const void *dtb_address)
 	 * (sched_bind_boot_cpu), so this is about user code, not the kernel's own
 	 * threads. `sched.user=boot` keeps user threads on the boot CPU alone.
 	 */
-	if (boot_arg_value("sched.user", affinity_policy, sizeof(affinity_policy)) && strcmp(affinity_policy, "boot") == 0) {
+	if (boot_arg_value("sched.user", affinity_policy, sizeof(affinity_policy)) &&
+		strcmp(affinity_policy, "boot") == 0) {
 		nxu_cpuset_t boot_only;
 
 		cpuset_clear(&boot_only);
@@ -1210,10 +1072,7 @@ void kern_init(const void *dtb_address)
 	/* Physical memory manager. */
 	kputln("pmm_init: initializing physical memory manager");
 
-	if (!pmm_init(
-		platform,
-		device_tree
-	)) {
+	if (!pmm_init(platform, device_tree)) {
 		kern_fail("pmm_init: initialization failed");
 	}
 
@@ -1257,9 +1116,7 @@ void kern_init(const void *dtb_address)
 
 	kputln("vmm_validate_kernel_permissions: kernel permissions validated");
 
-	if (!kern_validate_identity_mappings(
-		platform
-	)) {
+	if (!kern_validate_identity_mappings(platform)) {
 		kern_fail("kern_validate_identity_mappings: identity translation test failed");
 	}
 
@@ -1286,7 +1143,8 @@ void kern_init(const void *dtb_address)
 
 	kputln("vmm_init_higher_half_alias: TTBR1 higher-half alias installed");
 
-	if (kconsole_verbose()) vmm_dump_higher_half();
+	if (kconsole_verbose())
+		vmm_dump_higher_half();
 
 	/* The live mapping test now targets a TTBR1 virtual address */
 	kputln("kern_test_live_vmm: testing live page mappings");
@@ -1307,17 +1165,13 @@ void kern_init(const void *dtb_address)
 
 	kputln("vmm_map_higher_half_direct_map: building higher-half direct map");
 
-	if (!vmm_map_higher_half_direct_map(
-		platform
-	)) {
+	if (!vmm_map_higher_half_direct_map(platform)) {
 		kern_fail("vmm_map_higher_half_direct_map: higher-half direct map failed");
 	}
 
 	kputln("vmm_map_higher_half_direct_map: higher-half direct map installed");
 
-	if (!vmm_validate_higher_half_direct_map(
-		platform
-	)) {
+	if (!vmm_validate_higher_half_direct_map(platform)) {
 		kern_fail("vmm_validate_higher_half_direct_map: higher-half direct map validation failed");
 	}
 
