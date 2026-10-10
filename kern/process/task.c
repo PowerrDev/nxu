@@ -1,4 +1,6 @@
 #include <kern/process/task.h>
+#include <kern/process/crash.h>
+#include <kern/ipc/shm_registry.h>
 #include <kern/console/console.h>
 #include <kern/sched_prism/sched.h>
 #include <kern/process/thread.h>
@@ -19,28 +21,21 @@
  */
 static void task_reset(task_t task)
 {
-	*task = (struct task) {
-		.task_uniqueid = 0ULL,
-		.ref_count = 0U,
-		.state = TASK_STATE_INACTIVE,
-		.flags = TASK_FLAG_NONE,
-		.active = false,
-		.halting = false,
-		.map = {
-			.root = 0,
-			.root_physical = 0ULL,
-			.table_count = 0ULL,
-			.active = false
-		},
-		.shm_next_va = 0ULL,
-		.threads = 0,
-		.thread_count = 0U,
-		.active_thread_count = 0U,
-		.suspend_count = 0U,
-		.priority = TASK_PRIORITY_DEFAULT,
-		.max_priority = TASK_PRIORITY_MAX,
-		.bsd_info = 0
-	};
+	*task = (struct task){.task_uniqueid = 0ULL,
+						  .ref_count = 0U,
+						  .state = TASK_STATE_INACTIVE,
+						  .flags = TASK_FLAG_NONE,
+						  .active = false,
+						  .halting = false,
+						  .map = {.root = 0, .root_physical = 0ULL, .table_count = 0ULL, .active = false},
+						  .shm_next_va = 0ULL,
+						  .threads = 0,
+						  .thread_count = 0U,
+						  .active_thread_count = 0U,
+						  .suspend_count = 0U,
+						  .priority = TASK_PRIORITY_DEFAULT,
+						  .max_priority = TASK_PRIORITY_MAX,
+						  .bsd_info = 0};
 }
 
 /*
@@ -49,13 +44,10 @@ static void task_reset(task_t task)
  * Initialize the kernel task. Kernel threads may later be attached to this
  * task but it does not own a userspace address space.
  */
-bool task_init_kernel(
-	task_t task,
-	uint64_t uniqueid,
-	struct proc *bsd_info
-)
+bool task_init_kernel(task_t task, uint64_t uniqueid, struct proc *bsd_info)
 {
-	if (task == 0 || bsd_info == 0) return false;
+	if (task == 0 || bsd_info == 0)
+		return false;
 
 	task_reset(task);
 
@@ -75,26 +67,16 @@ bool task_init_kernel(
  * Initialize a userspace task and create the first thread which will execute
  * in its address space.
  */
-bool task_init_user(
-	task_t task,
-	uint64_t uniqueid,
-	struct proc *bsd_info,
-	uint64_t entry,
-	uint64_t stack
-)
+bool task_init_user(task_t task, uint64_t uniqueid, struct proc *bsd_info, uint64_t entry, uint64_t stack)
 {
-	if (
-		task == 0 ||
-		bsd_info == 0 ||
-		entry == 0ULL ||
-		stack == 0ULL
-	) {
+	if (task == 0 || bsd_info == 0 || entry == 0ULL || stack == 0ULL) {
 		return false;
 	}
 
 	task_reset(task);
 
-	if (!vm_address_space_create(&task->map)) return false;
+	if (!vm_address_space_create(&task->map))
+		return false;
 
 	task->shm_next_va = VM_SHM_BASE;
 	task->task_uniqueid = uniqueid;
@@ -106,13 +88,7 @@ bool task_init_user(
 
 	thread_t initial_thread;
 
-	if (!thread_create(
-		task,
-		entry,
-		stack,
-		0ULL,
-		&initial_thread
-	)) {
+	if (!thread_create(task, entry, stack, 0ULL, &initial_thread)) {
 		task->active = false;
 		task->state = TASK_STATE_TERMINATED;
 		return false;
@@ -133,30 +109,21 @@ bool task_init_user(
  *
  * Initialize a userspace task as a copy of parent. See task.h.
  */
-bool task_fork(
-	task_t task,
-	task_t parent,
-	uint64_t uniqueid,
-	struct proc *bsd_info
-)
+bool task_fork(task_t task, task_t parent, uint64_t uniqueid, struct proc *bsd_info)
 {
-	if (
-		task == 0 ||
-		parent == 0 ||
-		bsd_info == 0 ||
-		task_is_kernel(parent) ||
-		!task_is_active(parent)
-	) {
+	if (task == 0 || parent == 0 || bsd_info == 0 || task_is_kernel(parent) || !task_is_active(parent)) {
 		return false;
 	}
 
 	thread_t caller = current_thread();
 
-	if (caller == 0 || caller->task != parent) return false;
+	if (caller == 0 || caller->task != parent)
+		return false;
 
 	task_reset(task);
 
-	if (!vm_address_space_fork(&parent->map, &task->map)) return false;
+	if (!vm_address_space_fork(&parent->map, &task->map))
+		return false;
 
 	if (!vm_map_fork(&parent->map, &task->map)) {
 		(void)vm_address_space_release_pages(&task->map);
@@ -212,11 +179,7 @@ fail_address_space:
  */
 bool task_reference(task_t task)
 {
-	if (
-		task == 0 ||
-		task->ref_count == UINT32_MAX ||
-		task->state == TASK_STATE_TERMINATED
-	) {
+	if (task == 0 || task->ref_count == UINT32_MAX || task->state == TASK_STATE_TERMINATED) {
 		return false;
 	}
 
@@ -229,7 +192,8 @@ bool task_reference(task_t task)
  */
 bool task_deallocate(task_t task)
 {
-	if (task == 0 || task->ref_count == 0U) return false;
+	if (task == 0 || task->ref_count == 0U)
+		return false;
 
 	task->ref_count--;
 	return true;
@@ -240,11 +204,7 @@ bool task_deallocate(task_t task)
  */
 bool task_activate_address_space(task_t task)
 {
-	if (
-		task == 0 ||
-		!task->active ||
-		task_is_kernel(task)
-	) {
+	if (task == 0 || !task->active || task_is_kernel(task)) {
 		return false;
 	}
 
@@ -266,11 +226,11 @@ bool task_activate_address_space(task_t task)
  * still be executing (task_terminate's all_off_cpu): a thread mid-syscall in
  * syscall_shm_map/_unmap touches this same table.
  */
-static void
-task_release_shm_attachments(task_t task)
+static void task_release_shm_attachments(task_t task)
 {
 	for (uint32_t index = 0U; index < TASK_SHM_ATTACH_MAX; index++) {
-		if (task->shm_attachments[index].region == VM_SHM_REGION_NULL) continue;
+		if (task->shm_attachments[index].region == VM_SHM_REGION_NULL)
+			continue;
 
 		vm_shm_release(task->shm_attachments[index].region);
 		task->shm_attachments[index].region = VM_SHM_REGION_NULL;
@@ -289,11 +249,7 @@ task_release_shm_attachments(task_t task)
  */
 bool task_terminate(task_t task)
 {
-	if (
-		task == 0 ||
-		!task->active ||
-		task->state == TASK_STATE_TERMINATED
-	) {
+	if (task == 0 || !task->active || task->state == TASK_STATE_TERMINATED) {
 		return false;
 	}
 
@@ -302,18 +258,21 @@ bool task_terminate(task_t task)
 
 	thread_t self = current_thread();
 	bool all_off_cpu = true;
+	thread_t stopped[THREAD_MAX];
+	uint32_t stopped_count = 0U;
 
 	for (;;) {
 		thread_t thread = task_first_thread_ref(task);
 
-		if (thread == 0) break;
+		if (thread == 0)
+			break;
 
-		bool terminated = sched_is_initialized()
-			? sched_thread_terminate(thread)
-			: thread_terminate(thread);
+		bool terminated = sched_is_initialized() ? sched_thread_terminate(thread) : thread_terminate(thread);
 
 		if (!terminated) {
 			thread_deallocate(thread);
+			for (uint32_t i = 0U; i < stopped_count; i++)
+				thread_deallocate(stopped[i]);
 
 			task->halting = false;
 			task->state = TASK_STATE_ACTIVE;
@@ -321,6 +280,13 @@ bool task_terminate(task_t task)
 			return false;
 		}
 
+		/* Keep the reference and its stack until every sibling is stopped.
+		 * No crash backtrace reads an address space another sibling can mutate. */
+		stopped[stopped_count++] = thread;
+	}
+
+	for (uint32_t i = 0U; i < stopped_count; i++) {
+		thread_t thread = stopped[i];
 		/*
 		 * The thread is terminated but may still be running: on another CPU, in
 		 * user mode or in the middle of a system call. Nothing of the task can
@@ -333,12 +299,21 @@ bool task_terminate(task_t task)
 			all_off_cpu = false;
 			kprintf("task_terminate: a thread of the task would not stop; its memory is leaked\n");
 		}
+	}
 
+	for (uint32_t i = 0U; i < stopped_count; i++) {
+		thread_t thread = stopped[i];
 		/*
 		 * Reaping may legitimately fail for the current thread because its
 		 * kernel stack cannot be reclaimed until another thread is running.
 		 */
-		if (all_off_cpu) thread_reap(thread);
+		if (all_off_cpu)
+			crash_collect_thread(task, thread);
+		else
+			crash_incomplete(task);
+		__atomic_store_n(&thread->crash_collected, true, __ATOMIC_RELEASE);
+		if (all_off_cpu)
+			thread_reap(thread);
 		thread_deallocate(thread);
 	}
 
@@ -349,7 +324,10 @@ bool task_terminate(task_t task)
 	 * still held (its mappings' own PMM references come back below,
 	 * regardless of this).
 	 */
-	if (all_off_cpu && !task_is_kernel(task)) task_release_shm_attachments(task);
+	if (all_off_cpu && !task_is_kernel(task)) {
+		shm_registry_withdraw_owner(task->task_uniqueid);
+		task_release_shm_attachments(task);
+	}
 
 	/*
 	 * ... except that a CPU may still have the address space loaded in TTBR0
@@ -391,10 +369,7 @@ bool task_is_active(task_t task)
  */
 bool task_is_kernel(task_t task)
 {
-	return (
-		task != 0 &&
-		(task->flags & TASK_FLAG_KERNEL) != 0U
-	);
+	return (task != 0 && (task->flags & TASK_FLAG_KERNEL) != 0U);
 }
 
 /*
@@ -402,7 +377,8 @@ bool task_is_kernel(task_t task)
  */
 vm_address_space_t *task_map(task_t task)
 {
-	if (task == 0) return 0;
+	if (task == 0)
+		return 0;
 	return &task->map;
 }
 
@@ -411,7 +387,8 @@ vm_address_space_t *task_map(task_t task)
  */
 struct proc *task_get_proc(task_t task)
 {
-	if (task == 0) return 0;
+	if (task == 0)
+		return 0;
 	return task->bsd_info;
 }
 
@@ -422,11 +399,13 @@ struct proc *task_get_proc(task_t task)
  */
 uint64_t task_user_entry(task_t task)
 {
-	if (task == 0) return 0ULL;
+	if (task == 0)
+		return 0ULL;
 
 	thread_t thread = task_first_thread_ref(task);
 
-	if (thread == 0) return 0ULL;
+	if (thread == 0)
+		return 0ULL;
 
 	uint64_t entry = thread_user_entry(thread);
 
@@ -441,11 +420,13 @@ uint64_t task_user_entry(task_t task)
  */
 uint64_t task_user_stack(task_t task)
 {
-	if (task == 0) return 0ULL;
+	if (task == 0)
+		return 0ULL;
 
 	thread_t thread = task_first_thread_ref(task);
 
-	if (thread == 0) return 0ULL;
+	if (thread == 0)
+		return 0ULL;
 
 	uint64_t stack = thread_user_stack(thread);
 

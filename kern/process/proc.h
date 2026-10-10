@@ -103,6 +103,16 @@ typedef struct {
  *     security model for the system calls that change the machine.
  */
 struct proc {
+	uint64_t p_gui_epoch, p_gui_features;
+	uint32_t p_gui_record_limit;
+	uint16_t p_gui_minor;
+
+	char p_dyrld_main[NXU_DYRLD_PATH];
+	uint32_t p_dyrld_count;
+	bool p_dyrld_finalized;
+	uint64_t p_dyrld_relro_start[NXU_DYRLD_IMAGES], p_dyrld_relro_end[NXU_DYRLD_IMAGES];
+	nxu_dyrld_image_t p_dyrld_interpreter;
+	nxu_dyrld_image_t p_dyrld_images[NXU_DYRLD_IMAGES];
 	proc_t p_list_prev;
 	proc_t p_list_next;
 
@@ -140,6 +150,9 @@ struct proc {
 	uint64_t p_xstat;
 
 	char p_comm[PROC_NAME_MAX];
+	char p_exec_path[NXU_CRASH_PATH_MAX];
+	uint8_t p_image_id[32];
+	nxu_crash_report_t *p_crash_report;
 
 	uint32_t p_slot;
 };
@@ -149,13 +162,7 @@ bool proc_bootstrap(void);
 proc_t proc_kernel(void);
 proc_t proc_initproc(void);
 
-bool proc_create_user(
-	proc_t parent,
-	const char *name,
-	uint64_t entry,
-	uint64_t stack,
-	proc_t *result
-);
+bool proc_create_user(proc_t parent, const char *name, uint64_t entry, uint64_t stack, proc_t *result);
 
 /*
  * proc_fork
@@ -186,11 +193,7 @@ bool proc_continue(proc_t proc);
 bool proc_exit(proc_t proc, uint64_t status);
 bool proc_exit_current(uint64_t status);
 
-typedef enum {
-	PROC_WAIT_REAPED,
-	PROC_WAIT_NOT_YET,
-	PROC_WAIT_NO_CHILD
-} proc_wait_result_t;
+typedef enum { PROC_WAIT_REAPED, PROC_WAIT_NOT_YET, PROC_WAIT_NO_CHILD } proc_wait_result_t;
 
 /*
  * proc_wait_child
@@ -200,18 +203,9 @@ typedef enum {
  * exit status. PROC_WAIT_NOT_YET means the child (or every child) is still
  * running; PROC_WAIT_NO_CHILD means there is nothing to wait for.
  */
-proc_wait_result_t proc_wait_child(
-	proc_t parent,
-	proc_id_t pid,
-	proc_id_t *reaped_pid,
-	uint64_t *status
-);
+proc_wait_result_t proc_wait_child(proc_t parent, proc_id_t pid, proc_id_t *reaped_pid, uint64_t *status);
 
-bool proc_reap(
-	proc_t parent,
-	proc_id_t pid,
-	uint64_t *status
-);
+bool proc_reap(proc_t parent, proc_id_t pid, uint64_t *status);
 
 bool proc_set_current(proc_t proc);
 proc_t current_proc(void);
@@ -231,29 +225,16 @@ proc_t proc_parent_ref(proc_t proc);
 proc_t proc_first_child_ref(proc_t proc);
 proc_t proc_next_sibling_ref(proc_t proc);
 
-bool proc_is_inferior(
-	proc_t proc,
-	proc_t ancestor
-);
+bool proc_is_inferior(proc_t proc, proc_t ancestor);
 
 task_t proc_task(proc_t proc);
 vm_address_space_t *proc_vm_map(proc_t proc);
 
-bool proc_get_ident(
-	proc_t proc,
-	proc_ident_t *ident
-);
+bool proc_get_ident(proc_t proc, proc_ident_t *ident);
 
-bool proc_set_name(
-	proc_t proc,
-	const char *name
-);
+bool proc_set_name(proc_t proc, const char *name);
 
-bool proc_get_name(
-	proc_t proc,
-	char *buffer,
-	uint32_t size
-);
+bool proc_get_name(proc_t proc, char *buffer, uint32_t size);
 
 proc_state_t proc_state(proc_t proc);
 
@@ -280,6 +261,12 @@ typedef struct {
 } proc_snapshot_t;
 
 uint32_t proc_snapshot(proc_snapshot_t *out, uint32_t capacity);
+
+#include <kern/syscall/statistics.h>
+/* Binds to the boot CPU to serialize map replacement/destruction by exec/exit;
+ * map locks still serialize remote faults and mmap/munmap. Returns total live
+ * processes and fills at most capacity records. */
+uint32_t proc_memory_snapshot(nxu_stats_process_memory_t *out, uint32_t capacity);
 
 bool proc_validate(void);
 void proc_dump(void);

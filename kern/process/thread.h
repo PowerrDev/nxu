@@ -2,6 +2,7 @@
 #define NXU_KERN_THREAD_H
 
 #include <kern/cpuset.h>
+#include <kern/syscall/crash_defs.h>
 #include <kern/lock.h>
 #include <kern/machine/thread.h>
 
@@ -181,9 +182,11 @@ struct thread {
 	/*
 	 * Timer ticks this thread has been the one running when its CPU took the
 	 * tick, over its whole life: its CPU time, in ticks. Only sched_tick()
-	 * writes it, with the CPU's runq_lock held; readers take it unlocked (see
-	 * thread_snapshot), a torn read on i386 costing one sample.
+	 * writes it, with runq_lock and accounting_lock held; snapshots take
+	 * accounting_lock so i386 reads cannot tear.
 	 */
+	nxu_spinlock_t accounting_lock; /* run_ticks, run_us, dispatched_us, page_faults */
+	uint64_t page_faults;			/* hardware user faults; accounting_lock */
 	uint64_t run_ticks;
 
 	/*
@@ -223,6 +226,9 @@ struct thread {
 	uint64_t kernel_stack_size;
 
 	machine_thread_t machine;
+	/* Written at a terminal user trap; read only after this thread is off CPU. */
+	nxu_crash_thread_t crash_state;
+	bool crash_collected;
 
 	uint32_t slot;
 };
@@ -245,13 +251,7 @@ bool thread_bootstrap(void);
  * The task maintains a residency reference while the thread remains
  * attached. The returned thread also carries a caller reference.
  */
-bool thread_create(
-	task_t task,
-	uint64_t entry,
-	uint64_t stack,
-	uint64_t arg,
-	thread_t *result
-);
+bool thread_create(task_t task, uint64_t entry, uint64_t stack, uint64_t arg, thread_t *result);
 
 /*
  * kernel_thread_create
@@ -261,12 +261,7 @@ bool thread_create(
  * continuation becomes the thread's initial C entry point once scheduler
  * bootstrap and machine context startup are implemented.
  */
-bool kernel_thread_create(
-	task_t task,
-	thread_continue_t continuation,
-	void *parameter,
-	thread_t *result
-);
+bool kernel_thread_create(task_t task, thread_continue_t continuation, void *parameter, thread_t *result);
 
 /*
  * thread_create_bootstrap
@@ -376,6 +371,7 @@ thread_t thread_next_task_thread_ref(thread_t thread);
  */
 typedef struct {
 	uint64_t task_uniqueid;
+	uint64_t page_faults;
 	uint64_t run_ticks;
 	/* run_us, plus the time since it got the CPU if it is on one now. */
 	uint64_t run_us;
@@ -426,12 +422,7 @@ uint16_t thread_base_priority(thread_t thread);
 uint64_t thread_user_entry(thread_t thread);
 uint64_t thread_user_stack(thread_t thread);
 
-bool thread_set_user_state(
-	thread_t thread,
-	uint64_t entry,
-	uint64_t stack,
-	uint64_t arg
-);
+bool thread_set_user_state(thread_t thread, uint64_t entry, uint64_t stack, uint64_t arg);
 
 /*
  * Kernel stack inspection.

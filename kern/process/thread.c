@@ -2,6 +2,7 @@
 #include <kern/machine/timer.h>
 #include <kern/process/thread.h>
 #include <kern/process/task.h>
+#include <kern/process/proc.h>
 
 #include <kern/machine/cpu.h>
 #include <kern/sched_prism/processor.h>
@@ -43,13 +44,7 @@ static bool g_thread_initialized;
  */
 static void thread_lock(thread_lock_t *lock)
 {
-	while (
-		__atomic_exchange_n(
-			&lock->value,
-			1U,
-			__ATOMIC_ACQUIRE
-		) != 0U
-	) {
+	while (__atomic_exchange_n(&lock->value, 1U, __ATOMIC_ACQUIRE) != 0U) {
 		cpu_relax();
 	}
 }
@@ -69,49 +64,42 @@ static void thread_unlock(thread_lock_t *lock)
  */
 static void thread_reset_locked(thread_t thread, uint32_t slot)
 {
-	*thread = (struct thread) {
-		.threads_prev = 0,
-		.threads_next = 0,
-		.task_prev = 0,
-		.task_next = 0,
-		.sched_links = {
-			.runq = {
-				.prev = 0,
-				.next = 0
-			}
-		},
-		.runq = 0,
-		.sched_lock = NXU_SPINLOCK_INIT,
-		.on_cpu = 0,
-		.wakeup_deferred = false,
-		.affinity = { { 0 } },
-		.last_cpu = 0U,
-		.legacy_depth = 0U,
-		.home_task = 0,
-		.task = 0,
-		.thread_id = THREAD_ID_INVALID,
-		.ref_count = 0U,
-		.state = 0U,
-		.flags = TH_FLAG_NONE,
-		.active = false,
-		.started = false,
-		.sched_pri = THREAD_PRIORITY_DEFAULT,
-		.base_pri = THREAD_PRIORITY_DEFAULT,
-		.max_priority = THREAD_PRIORITY_MAX,
-		.mlfq_level = 0U,
-		.suspend_count = 0U,
-		.quantum_remaining = 0U,
-		.sig_blocked = 0U,
-		.wait_queue = 0,
-		.wait_interruptible = false,
-		.wait_interrupted = false,
-		.continuation = 0,
-		.parameter = 0,
-		.kernel_stack = 0,
-		.kernel_stack_size = 0ULL,
-		.machine = { 0 },
-		.slot = slot
-	};
+	*thread = (struct thread){.threads_prev = 0,
+							  .threads_next = 0,
+							  .task_prev = 0,
+							  .task_next = 0,
+							  .sched_links = {.runq = {.prev = 0, .next = 0}},
+							  .runq = 0,
+							  .sched_lock = NXU_SPINLOCK_INIT,
+							  .on_cpu = 0,
+							  .wakeup_deferred = false,
+							  .affinity = {{0}},
+							  .last_cpu = 0U,
+							  .legacy_depth = 0U,
+							  .home_task = 0,
+							  .task = 0,
+							  .thread_id = THREAD_ID_INVALID,
+							  .ref_count = 0U,
+							  .state = 0U,
+							  .flags = TH_FLAG_NONE,
+							  .active = false,
+							  .started = false,
+							  .sched_pri = THREAD_PRIORITY_DEFAULT,
+							  .base_pri = THREAD_PRIORITY_DEFAULT,
+							  .max_priority = THREAD_PRIORITY_MAX,
+							  .mlfq_level = 0U,
+							  .suspend_count = 0U,
+							  .quantum_remaining = 0U,
+							  .sig_blocked = 0U,
+							  .wait_queue = 0,
+							  .wait_interruptible = false,
+							  .wait_interrupted = false,
+							  .continuation = 0,
+							  .parameter = 0,
+							  .kernel_stack = 0,
+							  .kernel_stack_size = 0ULL,
+							  .machine = {0},
+							  .slot = slot};
 }
 
 /*
@@ -122,7 +110,8 @@ static void thread_reset_locked(thread_t thread, uint32_t slot)
 static thread_t thread_allocate_slot_locked(void)
 {
 	for (uint32_t index = 0U; index < THREAD_MAX; index++) {
-		if (g_thread_slot_used[index]) continue;
+		if (g_thread_slot_used[index])
+			continue;
 
 		g_thread_slot_used[index] = true;
 		thread_reset_locked(&g_thread_slots[index], index);
@@ -139,11 +128,13 @@ static thread_t thread_allocate_slot_locked(void)
  */
 static void thread_release_slot_locked(thread_t thread)
 {
-	if (thread == 0 || thread->slot >= THREAD_MAX) return;
+	if (thread == 0 || thread->slot >= THREAD_MAX)
+		return;
 
 	uint32_t slot = thread->slot;
 
-	if (&g_thread_slots[slot] != thread) return;
+	if (&g_thread_slots[slot] != thread)
+		return;
 
 	g_thread_slot_used[slot] = false;
 	thread_reset_locked(&g_thread_slots[slot], slot);
@@ -160,10 +151,7 @@ static thread_id_t thread_allocate_id_locked(void)
 	for (;;) {
 		thread_id_t thread_id = g_next_thread_id++;
 
-		if (
-			thread_id != 0ULL &&
-			thread_id != THREAD_ID_INVALID
-		) {
+		if (thread_id != 0ULL && thread_id != THREAD_ID_INVALID) {
 			return thread_id;
 		}
 	}
@@ -207,7 +195,8 @@ static void thread_global_remove_locked(thread_t thread)
 	thread->threads_prev = 0;
 	thread->threads_next = 0;
 
-	if (g_thread_count != 0U) g_thread_count--;
+	if (g_thread_count != 0U)
+		g_thread_count--;
 }
 
 /*
@@ -223,7 +212,8 @@ static void thread_task_insert_locked(task_t task, thread_t thread)
 	thread->task_prev = 0;
 	thread->task_next = task->threads;
 
-	if (task->threads != 0) task->threads->task_prev = thread;
+	if (task->threads != 0)
+		task->threads->task_prev = thread;
 
 	task->threads = thread;
 	task->thread_count++;
@@ -237,8 +227,8 @@ static void thread_task_remove_locked(thread_t thread)
 {
 	task_t task = thread->task;
 
-	if (task == 0) return;
-
+	if (task == 0)
+		return;
 
 	if (thread->task_prev != 0) {
 		thread->task_prev->task_next = thread->task_next;
@@ -250,8 +240,10 @@ static void thread_task_remove_locked(thread_t thread)
 		thread->task_next->task_prev = thread->task_prev;
 	}
 
-	if (task->thread_count != 0U) task->thread_count--;
-	if (thread->active && task->active_thread_count != 0U) task->active_thread_count--;
+	if (task->thread_count != 0U)
+		task->thread_count--;
+	if (thread->active && task->active_thread_count != 0U)
+		task->active_thread_count--;
 
 	thread->task_prev = 0;
 	thread->task_next = 0;
@@ -263,11 +255,7 @@ static void thread_task_remove_locked(thread_t thread)
  */
 static bool thread_reference_locked(thread_t thread)
 {
-	if (
-		thread == 0 ||
-		thread->ref_count == 0U ||
-		thread->ref_count == UINT32_MAX
-	) {
+	if (thread == 0 || thread->ref_count == 0U || thread->ref_count == UINT32_MAX) {
 		return false;
 	}
 
@@ -281,28 +269,28 @@ static bool thread_reference_locked(thread_t thread)
  * Allocate and attach one thread object. The task membership owns the first
  * reference and the caller receives a second reference through result.
  */
-static bool thread_create_common(
-	task_t task,
-	bool kernel_thread,
-	uint64_t entry,
-	uint64_t stack,
-	uint64_t user_arg,
-	thread_continue_t continuation,
-	void *parameter,
-	thread_t *result
-)
+static bool thread_create_common(task_t task, bool kernel_thread, uint64_t entry, uint64_t stack, uint64_t user_arg,
+								 thread_continue_t continuation, void *parameter, thread_t *result)
 {
-	if (task == 0 || result == 0 || !task_is_active(task)) return false;
+	if (task == 0 || result == 0 || !task_is_active(task) || task->halting)
+		return false;
 
-	if (!kernel_thread && (entry == 0ULL || stack == 0ULL)) return false;
-	if (kernel_thread && continuation == 0) return false;
+	if (!kernel_thread && (entry == 0ULL || stack == 0ULL))
+		return false;
+	if (kernel_thread && continuation == 0)
+		return false;
 
 	*result = 0;
 
-	if (!g_thread_initialized && !thread_bootstrap()) return false;
+	if (!g_thread_initialized && !thread_bootstrap())
+		return false;
 
 	thread_lock(&g_thread_lock);
 
+	if (task->halting) {
+		thread_unlock(&g_thread_lock);
+		return false;
+	}
 	thread_t thread = thread_allocate_slot_locked();
 
 	if (thread == 0) {
@@ -333,12 +321,7 @@ static bool thread_create_common(
 		machine_thread_init_kernel(&thread->machine);
 		machine_initialized = true;
 	} else {
-		machine_initialized = machine_thread_init_user(
-			&thread->machine,
-			entry,
-			stack,
-			user_arg
-		);
+		machine_initialized = machine_thread_init_user(&thread->machine, entry, stack, user_arg);
 	}
 
 	if (!machine_initialized) {
@@ -396,50 +379,23 @@ bool thread_bootstrap(void)
 /*
  * thread_create
  */
-bool thread_create(
-	task_t task,
-	uint64_t entry,
-	uint64_t stack,
-	uint64_t arg,
-	thread_t *result
-)
+bool thread_create(task_t task, uint64_t entry, uint64_t stack, uint64_t arg, thread_t *result)
 {
-	if (task_is_kernel(task)) return false;
+	if (task_is_kernel(task))
+		return false;
 
-	return thread_create_common(
-		task,
-		false,
-		entry,
-		stack,
-		arg,
-		0,
-		0,
-		result
-	);
+	return thread_create_common(task, false, entry, stack, arg, 0, 0, result);
 }
 
 /*
  * kernel_thread_create
  */
-bool kernel_thread_create(
-	task_t task,
-	thread_continue_t continuation,
-	void *parameter,
-	thread_t *result
-)
+bool kernel_thread_create(task_t task, thread_continue_t continuation, void *parameter, thread_t *result)
 {
-	if (!task_is_kernel(task)) return false;
+	if (!task_is_kernel(task))
+		return false;
 
-	return thread_create_common(
-		task,
-		true,
-		0ULL,
-		0ULL,
-		0ULL,
-		continuation,
-		parameter,
-		result
-	);
+	return thread_create_common(task, true, 0ULL, 0ULL, 0ULL, continuation, parameter, result);
 }
 
 /*
@@ -451,18 +407,14 @@ bool kernel_thread_create(
  */
 bool thread_create_bootstrap(task_t task, thread_t *result)
 {
-	if (
-		task == 0 ||
-		result == 0 ||
-		!task_is_active(task) ||
-		!task_is_kernel(task)
-	) {
+	if (task == 0 || result == 0 || !task_is_active(task) || !task_is_kernel(task)) {
 		return false;
 	}
 
 	*result = 0;
 
-	if (!g_thread_initialized && !thread_bootstrap()) return false;
+	if (!g_thread_initialized && !thread_bootstrap())
+		return false;
 
 	thread_lock(&g_thread_lock);
 
@@ -510,9 +462,11 @@ bool thread_create_bootstrap(task_t task, thread_t *result)
  */
 bool thread_create_cpu_idle(task_t task, uint32_t cpu, thread_t *result)
 {
-	if (result == 0 || cpu >= NXU_MAX_CPUS) return false;
+	if (result == 0 || cpu >= NXU_MAX_CPUS)
+		return false;
 
-	if (!thread_create_bootstrap(task, result)) return false;
+	if (!thread_create_bootstrap(task, result))
+		return false;
 
 	thread_t thread = *result;
 
@@ -532,13 +486,15 @@ bool thread_create_cpu_idle(task_t task, uint32_t cpu, thread_t *result)
  */
 bool thread_set_affinity(thread_t thread, const nxu_cpuset_t *affinity)
 {
-	if (thread == 0 || affinity == 0 || cpuset_empty(affinity)) return false;
+	if (thread == 0 || affinity == 0 || cpuset_empty(affinity))
+		return false;
 
 	thread_lock(&g_thread_lock);
 
 	bool valid = thread->active && (thread->state & (TH_IDLE | TH_TERMINATE)) == 0U;
 
-	if (valid) thread->affinity = *affinity;
+	if (valid)
+		thread->affinity = *affinity;
 
 	thread_unlock(&g_thread_lock);
 	return valid;
@@ -549,7 +505,8 @@ bool thread_set_affinity(thread_t thread, const nxu_cpuset_t *affinity)
  */
 bool thread_get_affinity(thread_t thread, nxu_cpuset_t *affinity)
 {
-	if (thread == 0 || affinity == 0) return false;
+	if (thread == 0 || affinity == 0)
+		return false;
 
 	thread_lock(&g_thread_lock);
 	*affinity = thread->affinity;
@@ -562,14 +519,17 @@ bool thread_get_affinity(thread_t thread, nxu_cpuset_t *affinity)
  */
 bool thread_set_preemptible(thread_t thread, bool preemptible)
 {
-	if (thread == 0) return false;
+	if (thread == 0)
+		return false;
 
 	thread_lock(&g_thread_lock);
 
 	bool valid = thread->active && (thread->flags & TH_FLAG_KERNEL) != 0U;
 
-	if (valid && preemptible) thread->flags |= TH_FLAG_PREEMPTIBLE;
-	if (valid && !preemptible) thread->flags &= ~TH_FLAG_PREEMPTIBLE;
+	if (valid && preemptible)
+		thread->flags |= TH_FLAG_PREEMPTIBLE;
+	if (valid && !preemptible)
+		thread->flags &= ~TH_FLAG_PREEMPTIBLE;
 
 	thread_unlock(&g_thread_lock);
 	return valid;
@@ -585,7 +545,8 @@ bool thread_is_preemptible(thread_t thread)
  */
 bool thread_reference(thread_t thread)
 {
-	if (thread == 0) return false;
+	if (thread == 0)
+		return false;
 
 	thread_lock(&g_thread_lock);
 
@@ -604,24 +565,19 @@ bool thread_reference(thread_t thread)
  */
 void thread_deallocate(thread_t thread)
 {
-	if (thread == 0) return;
+	if (thread == 0)
+		return;
 
 	thread_lock(&g_thread_lock);
 
 	uint32_t residency =
-		(thread->task != 0 ||
-		((thread->state & TH_TERMINATE) != 0U &&
-		(thread->flags & TH_FLAG_REAPED) == 0U))
-			? 1U
-			: 0U;
+		(thread->task != 0 || ((thread->state & TH_TERMINATE) != 0U && (thread->flags & TH_FLAG_REAPED) == 0U)) ? 1U
+																												: 0U;
 
-	if (thread->ref_count > residency) thread->ref_count--;
+	if (thread->ref_count > residency)
+		thread->ref_count--;
 
-	if (
-		thread->ref_count == 0U &&
-		!thread->active &&
-		thread->task == 0
-	) {
+	if (thread->ref_count == 0U && !thread->active && thread->task == 0) {
 		thread_release_slot_locked(thread);
 	}
 
@@ -635,15 +591,13 @@ void thread_deallocate(thread_t thread)
  */
 bool thread_start(thread_t thread)
 {
-	if (thread == 0) return false;
+	if (thread == 0)
+		return false;
 
 	thread_lock(&g_thread_lock);
 
 	bool valid =
-		thread->active &&
-		!thread->started &&
-		(thread->state & TH_TERMINATE) == 0U &&
-		thread->suspend_count != 0U;
+		thread->active && !thread->started && (thread->state & TH_TERMINATE) == 0U && thread->suspend_count != 0U;
 
 	if (valid) {
 		thread->started = true;
@@ -667,16 +621,13 @@ bool thread_start(thread_t thread)
  */
 bool thread_wait(thread_t thread, bool uninterruptible)
 {
-	if (thread == 0) return false;
+	if (thread == 0)
+		return false;
 
 	thread_lock(&g_thread_lock);
 
-	bool valid =
-		thread->active &&
-		thread->started &&
-		thread->runq == 0 &&
-		(thread->state & TH_TERMINATE) == 0U &&
-		(thread->state & TH_WAIT) == 0U;
+	bool valid = thread->active && thread->started && thread->runq == 0 && (thread->state & TH_TERMINATE) == 0U &&
+				 (thread->state & TH_WAIT) == 0U;
 
 	if (valid) {
 		thread->state &= ~TH_RUN;
@@ -701,19 +652,18 @@ bool thread_wait(thread_t thread, bool uninterruptible)
  */
 bool thread_go(thread_t thread)
 {
-	if (thread == 0) return false;
+	if (thread == 0)
+		return false;
 
 	thread_lock(&g_thread_lock);
 
-	bool valid =
-		thread->active &&
-		(thread->state & TH_WAIT) != 0U &&
-		(thread->state & TH_TERMINATE) == 0U;
+	bool valid = thread->active && (thread->state & TH_WAIT) != 0U && (thread->state & TH_TERMINATE) == 0U;
 
 	if (valid) {
 		thread->state &= ~(TH_WAIT | TH_UNINT | TH_WAKING);
 
-		if (thread->suspend_count == 0U) thread->state |= TH_RUN;
+		if (thread->suspend_count == 0U)
+			thread->state |= TH_RUN;
 	}
 
 	thread_unlock(&g_thread_lock);
@@ -727,15 +677,13 @@ bool thread_go(thread_t thread)
  */
 bool thread_hold(thread_t thread)
 {
-	if (thread == 0) return false;
+	if (thread == 0)
+		return false;
 
 	thread_lock(&g_thread_lock);
 
-	bool valid =
-		thread->active &&
-		thread->runq == 0 &&
-		(thread->state & TH_TERMINATE) == 0U &&
-		thread->suspend_count != UINT32_MAX;
+	bool valid = thread->active && thread->runq == 0 && (thread->state & TH_TERMINATE) == 0U &&
+				 thread->suspend_count != UINT32_MAX;
 
 	if (valid) {
 		thread->suspend_count++;
@@ -754,14 +702,12 @@ bool thread_hold(thread_t thread)
  */
 bool thread_release(thread_t thread)
 {
-	if (thread == 0) return false;
+	if (thread == 0)
+		return false;
 
 	thread_lock(&g_thread_lock);
 
-	bool valid =
-		thread->active &&
-		thread->suspend_count != 0U &&
-		(thread->state & TH_TERMINATE) == 0U;
+	bool valid = thread->active && thread->suspend_count != 0U && (thread->state & TH_TERMINATE) == 0U;
 
 	if (valid) {
 		thread->suspend_count--;
@@ -769,10 +715,7 @@ bool thread_release(thread_t thread)
 		if (thread->suspend_count == 0U) {
 			thread->state &= ~TH_SUSP;
 
-			if (
-				thread->started &&
-				(thread->state & TH_WAIT) == 0U
-			) {
+			if (thread->started && (thread->state & TH_WAIT) == 0U) {
 				thread->state |= TH_RUN;
 			}
 		}
@@ -791,15 +734,12 @@ bool thread_release(thread_t thread)
  */
 bool thread_terminate(thread_t thread)
 {
-	if (thread == 0) return false;
+	if (thread == 0)
+		return false;
 
 	thread_lock(&g_thread_lock);
 
-	if (
-		!thread->active ||
-		thread->runq != 0 ||
-		(thread->state & TH_TERMINATE) != 0U
-	) {
+	if (!thread->active || thread->runq != 0 || (thread->state & TH_TERMINATE) != 0U) {
 		thread_unlock(&g_thread_lock);
 		return false;
 	}
@@ -832,17 +772,19 @@ bool thread_terminate(thread_t thread)
  */
 bool thread_reap(thread_t thread)
 {
-	if (thread == 0) return false;
+	if (thread == 0)
+		return false;
 
 	thread_lock(&g_thread_lock);
 
-	if (
-		thread->active ||
-		thread->task != 0 ||
-		(thread->state & TH_TERMINATE) == 0U ||
-		__atomic_load_n(&thread->on_cpu, __ATOMIC_ACQUIRE) != 0 ||
-		thread->ref_count == 0U
-	) {
+	proc_t owner = thread->home_task != 0 ? thread->home_task->bsd_info : 0;
+	/* A crash rendezvous must read blocked/preempted trap frames before the
+	 * scheduler reclaims their stacks. The task clears this gate after capture. */
+	bool collecting = !__atomic_load_n(&thread->crash_collected, __ATOMIC_ACQUIRE) && owner != 0 &&
+					  __atomic_load_n(&owner->p_crash_report, __ATOMIC_ACQUIRE) != 0;
+
+	if (collecting || thread->active || thread->task != 0 || (thread->state & TH_TERMINATE) == 0U ||
+		__atomic_load_n(&thread->on_cpu, __ATOMIC_ACQUIRE) != 0 || thread->ref_count == 0U) {
 		thread_unlock(&g_thread_lock);
 		return false;
 	}
@@ -865,18 +807,14 @@ bool thread_reap(thread_t thread)
 	thread_unlock(&g_thread_lock);
 
 	if (stack != 0 && stack_size != 0ULL) {
-		if (!vm_kern_free(stack, (size_t)stack_size)) return false;
+		if (!vm_kern_free(stack, (size_t)stack_size))
+			return false;
 	}
 
 	if (release_slot) {
 		thread_lock(&g_thread_lock);
 
-		if (
-			thread->ref_count == 0U &&
-			!thread->active &&
-			thread->task == 0 &&
-			thread->kernel_stack == 0
-		) {
+		if (thread->ref_count == 0U && !thread->active && thread->task == 0 && thread->kernel_stack == 0) {
 			thread_release_slot_locked(thread);
 		}
 
@@ -893,26 +831,21 @@ bool thread_reap(thread_t thread)
  */
 bool thread_stack_alloc(thread_t thread)
 {
-	if (thread == 0) return false;
+	if (thread == 0)
+		return false;
 
 	thread_lock(&g_thread_lock);
 
-	bool valid =
-		thread->active &&
-		thread->kernel_stack == 0 &&
-		(thread->state & TH_TERMINATE) == 0U;
+	bool valid = thread->active && thread->kernel_stack == 0 && (thread->state & TH_TERMINATE) == 0U;
 
 	thread_unlock(&g_thread_lock);
 
-	if (!valid) return false;
+	if (!valid)
+		return false;
 
 	void *stack = 0;
 
-	if (!vm_kern_allocate(
-		(size_t)THREAD_KERNEL_STACK_SIZE,
-		VMM_PROTECTION_READ_WRITE,
-		&stack
-	)) {
+	if (!vm_kern_allocate((size_t)THREAD_KERNEL_STACK_SIZE, VMM_PROTECTION_READ_WRITE, &stack)) {
 		return false;
 	}
 
@@ -920,16 +853,9 @@ bool thread_stack_alloc(thread_t thread)
 
 	thread_lock(&g_thread_lock);
 
-	if (
-		!thread->active ||
-		thread->kernel_stack != 0 ||
-		(thread->state & TH_TERMINATE) != 0U
-	) {
+	if (!thread->active || thread->kernel_stack != 0 || (thread->state & TH_TERMINATE) != 0U) {
 		thread_unlock(&g_thread_lock);
-		return vm_kern_free(
-			stack,
-			(size_t)THREAD_KERNEL_STACK_SIZE
-		);
+		return vm_kern_free(stack, (size_t)THREAD_KERNEL_STACK_SIZE);
 	}
 
 	thread->kernel_stack = stack;
@@ -945,14 +871,12 @@ bool thread_stack_alloc(thread_t thread)
  */
 bool thread_stack_free(thread_t thread)
 {
-	if (thread == 0) return false;
+	if (thread == 0)
+		return false;
 
 	thread_lock(&g_thread_lock);
 
-	if (
-		thread->kernel_stack == 0 ||
-		__atomic_load_n(&thread->on_cpu, __ATOMIC_ACQUIRE) != 0
-	) {
+	if (thread->kernel_stack == 0 || __atomic_load_n(&thread->on_cpu, __ATOMIC_ACQUIRE) != 0) {
 		thread_unlock(&g_thread_lock);
 		return false;
 	}
@@ -979,23 +903,16 @@ bool thread_set_current(thread_t thread)
 {
 	processor_t processor = current_processor();
 
-	if (thread == 0 || processor == 0) return false;
+	if (thread == 0 || processor == 0)
+		return false;
 
 	thread_lock(&g_thread_lock);
 
-	bool valid =
-		thread->active &&
-		thread->started &&
-		(thread->state & TH_RUN) != 0U &&
-		(thread->state &
-			(TH_WAIT | TH_SUSP | TH_TERMINATE)) == 0U;
+	bool valid = thread->active && thread->started && (thread->state & TH_RUN) != 0U &&
+				 (thread->state & (TH_WAIT | TH_SUSP | TH_TERMINATE)) == 0U;
 
 	if (valid) {
-		__atomic_store_n(
-			&processor->active_thread,
-			thread,
-			__ATOMIC_RELEASE
-		);
+		__atomic_store_n(&processor->active_thread, thread, __ATOMIC_RELEASE);
 	}
 
 	thread_unlock(&g_thread_lock);
@@ -1012,12 +929,10 @@ thread_t current_thread(void)
 {
 	processor_t processor = current_processor();
 
-	if (processor == 0) return 0;
+	if (processor == 0)
+		return 0;
 
-	return __atomic_load_n(
-		&processor->active_thread,
-		__ATOMIC_ACQUIRE
-	);
+	return __atomic_load_n(&processor->active_thread, __ATOMIC_ACQUIRE);
 }
 
 /*
@@ -1025,16 +940,14 @@ thread_t current_thread(void)
  */
 thread_t task_first_thread_ref(task_t task)
 {
-	if (task == 0) return 0;
+	if (task == 0)
+		return 0;
 
 	thread_lock(&g_thread_lock);
 
 	thread_t thread = task->threads;
 
-	if (
-		thread != 0 &&
-		!thread_reference_locked(thread)
-	) {
+	if (thread != 0 && !thread_reference_locked(thread)) {
 		thread = 0;
 	}
 
@@ -1047,16 +960,14 @@ thread_t task_first_thread_ref(task_t task)
  */
 thread_t thread_next_task_thread_ref(thread_t thread)
 {
-	if (thread == 0) return 0;
+	if (thread == 0)
+		return 0;
 
 	thread_lock(&g_thread_lock);
 
 	thread_t next = thread->task_next;
 
-	if (
-		next != 0 &&
-		!thread_reference_locked(next)
-	) {
+	if (next != 0 && !thread_reference_locked(next)) {
 		next = 0;
 	}
 
@@ -1069,29 +980,37 @@ thread_t thread_next_task_thread_ref(thread_t thread)
  */
 uint32_t thread_snapshot(thread_snapshot_t *out, uint32_t capacity)
 {
-	if (out == 0) return 0U;
+	if (out == 0)
+		return 0U;
 
 	thread_lock(&g_thread_lock);
 
 	uint32_t count = 0U;
-	uint64_t now = timer_get_microseconds();
 
 	for (thread_t thread = g_threads_head; thread != 0 && count < capacity; thread = thread->threads_next) {
-		if (!thread->active) continue;
+		if (!thread->active)
+			continue;
 
 		task_t task = thread->home_task != 0 ? thread->home_task : thread->task;
 
-		out[count++] = (thread_snapshot_t) {
+		uint64_t irq_state = nxu_spin_lock_irqsave(&thread->accounting_lock);
+		uint64_t now = timer_get_microseconds();
+		out[count++] = (thread_snapshot_t){
 			.task_uniqueid = task != 0 ? task->task_uniqueid : 0ULL,
+			.page_faults = thread->page_faults,
 			.run_ticks = thread->run_ticks,
-			.run_us = thread->run_us + (thread->on_cpu != 0 && thread->dispatched_us != 0ULL && now > thread->dispatched_us ? now - thread->dispatched_us : 0ULL),
+			.run_us = (thread->state & TH_IDLE) != 0U
+						  ? 0ULL
+						  : thread->run_us + (thread->dispatched_us != 0ULL && now > thread->dispatched_us
+												  ? now - thread->dispatched_us
+												  : 0ULL),
 			.thread_id = thread->thread_id,
 			.last_cpu = thread->last_cpu,
 			.mlfq_level = thread->mlfq_level,
 			.idle = (thread->state & TH_IDLE) != 0U,
 			.on_cpu = thread->on_cpu != 0,
-			.waiting = (thread->state & TH_WAIT) != 0U
-		};
+			.waiting = (thread->state & TH_WAIT) != 0U};
+		nxu_spin_unlock_irqrestore(&thread->accounting_lock, irq_state);
 	}
 
 	thread_unlock(&g_thread_lock);
@@ -1103,7 +1022,8 @@ uint32_t thread_snapshot(thread_snapshot_t *out, uint32_t capacity)
  */
 thread_id_t thread_tid(thread_t thread)
 {
-	if (thread == 0) return THREAD_ID_INVALID;
+	if (thread == 0)
+		return THREAD_ID_INVALID;
 	return thread->thread_id;
 }
 
@@ -1112,7 +1032,8 @@ thread_id_t thread_tid(thread_t thread)
  */
 task_t thread_task(thread_t thread)
 {
-	if (thread == 0) return 0;
+	if (thread == 0)
+		return 0;
 	return thread->task;
 }
 
@@ -1126,7 +1047,8 @@ task_t thread_task(thread_t thread)
  */
 uint32_t task_active_thread_count(task_t task)
 {
-	if (task == 0) return 0U;
+	if (task == 0)
+		return 0U;
 
 	thread_lock(&g_thread_lock);
 	uint32_t count = task->active_thread_count;
@@ -1156,13 +1078,8 @@ bool thread_is_started(thread_t thread)
  */
 bool thread_is_runnable(thread_t thread)
 {
-	return (
-		thread != 0 &&
-		thread->active &&
-		(thread->state & TH_RUN) != 0U &&
-		(thread->state &
-			(TH_WAIT | TH_SUSP | TH_TERMINATE)) == 0U
-	);
+	return (thread != 0 && thread->active && (thread->state & TH_RUN) != 0U &&
+			(thread->state & (TH_WAIT | TH_SUSP | TH_TERMINATE)) == 0U);
 }
 
 /*
@@ -1170,10 +1087,7 @@ bool thread_is_runnable(thread_t thread)
  */
 bool thread_is_waiting(thread_t thread)
 {
-	return (
-		thread != 0 &&
-		(thread->state & TH_WAIT) != 0U
-	);
+	return (thread != 0 && (thread->state & TH_WAIT) != 0U);
 }
 
 /*
@@ -1181,10 +1095,7 @@ bool thread_is_waiting(thread_t thread)
  */
 bool thread_is_suspended(thread_t thread)
 {
-	return (
-		thread != 0 &&
-		(thread->state & TH_SUSP) != 0U
-	);
+	return (thread != 0 && (thread->state & TH_SUSP) != 0U);
 }
 
 /*
@@ -1192,10 +1103,7 @@ bool thread_is_suspended(thread_t thread)
  */
 bool thread_is_terminated(thread_t thread)
 {
-	return (
-		thread != 0 &&
-		(thread->state & TH_TERMINATE) != 0U
-	);
+	return (thread != 0 && (thread->state & TH_TERMINATE) != 0U);
 }
 
 /*
@@ -1221,19 +1129,16 @@ bool thread_is_bootstrap(thread_t thread)
  */
 bool thread_set_idle(thread_t thread)
 {
-	if (thread == 0) return false;
+	if (thread == 0)
+		return false;
 
 	thread_lock(&g_thread_lock);
 
-	bool valid =
-		thread->active &&
-		!thread->started &&
-		thread->runq == 0 &&
-		(thread->flags & TH_FLAG_KERNEL) != 0U &&
-		(thread->flags & TH_FLAG_BOOTSTRAP) == 0U &&
-		(thread->state & TH_TERMINATE) == 0U;
+	bool valid = thread->active && !thread->started && thread->runq == 0 && (thread->flags & TH_FLAG_KERNEL) != 0U &&
+				 (thread->flags & TH_FLAG_BOOTSTRAP) == 0U && (thread->state & TH_TERMINATE) == 0U;
 
-	if (valid) thread->state |= TH_IDLE;
+	if (valid)
+		thread->state |= TH_IDLE;
 
 	thread_unlock(&g_thread_lock);
 	return valid;
@@ -1247,21 +1152,14 @@ bool thread_set_idle(thread_t thread)
  */
 bool thread_set_priority(thread_t thread, uint16_t priority)
 {
-	if (
-		thread == 0 ||
-		priority < THREAD_PRIORITY_MIN ||
-		priority > THREAD_PRIORITY_MAX
-	) {
+	if (thread == 0 || priority < THREAD_PRIORITY_MIN || priority > THREAD_PRIORITY_MAX) {
 		return false;
 	}
 
 	thread_lock(&g_thread_lock);
 
 	bool valid =
-		thread->active &&
-		thread->runq == 0 &&
-		(thread->state & TH_TERMINATE) == 0U &&
-		priority <= thread->max_priority;
+		thread->active && thread->runq == 0 && (thread->state & TH_TERMINATE) == 0U && priority <= thread->max_priority;
 
 	if (valid) {
 		thread->base_pri = priority;
@@ -1293,10 +1191,7 @@ uint16_t thread_base_priority(thread_t thread)
  */
 uint64_t thread_user_entry(thread_t thread)
 {
-	if (
-		thread == 0 ||
-		!machine_thread_has_user_state(&thread->machine)
-	) {
+	if (thread == 0 || !machine_thread_has_user_state(&thread->machine)) {
 		return 0ULL;
 	}
 
@@ -1308,10 +1203,7 @@ uint64_t thread_user_entry(thread_t thread)
  */
 uint64_t thread_user_stack(thread_t thread)
 {
-	if (
-		thread == 0 ||
-		!machine_thread_has_user_state(&thread->machine)
-	) {
+	if (thread == 0 || !machine_thread_has_user_state(&thread->machine)) {
 		return 0ULL;
 	}
 
@@ -1321,33 +1213,18 @@ uint64_t thread_user_stack(thread_t thread)
 /*
  * thread_set_user_state
  */
-bool thread_set_user_state(
-	thread_t thread,
-	uint64_t entry,
-	uint64_t stack,
-	uint64_t arg
-)
+bool thread_set_user_state(thread_t thread, uint64_t entry, uint64_t stack, uint64_t arg)
 {
-	if (
-		thread == 0 ||
-		(thread->flags & TH_FLAG_KERNEL) != 0U
-	) {
+	if (thread == 0 || (thread->flags & TH_FLAG_KERNEL) != 0U) {
 		return false;
 	}
 
 	thread_lock(&g_thread_lock);
 
-	bool valid =
-		thread->active &&
-		(thread->state & TH_TERMINATE) == 0U;
+	bool valid = thread->active && (thread->state & TH_TERMINATE) == 0U;
 
 	if (valid) {
-		valid = machine_thread_set_user_state(
-			&thread->machine,
-			entry,
-			stack,
-			arg
-		);
+		valid = machine_thread_set_user_state(&thread->machine, entry, stack, arg);
 	}
 
 	thread_unlock(&g_thread_lock);
@@ -1359,7 +1236,8 @@ bool thread_set_user_state(
  */
 uint64_t thread_kernel_stack_base(thread_t thread)
 {
-	if (thread == 0) return 0ULL;
+	if (thread == 0)
+		return 0ULL;
 	return (uint64_t)thread->kernel_stack;
 }
 
@@ -1368,16 +1246,11 @@ uint64_t thread_kernel_stack_base(thread_t thread)
  */
 uint64_t thread_kernel_stack_top(thread_t thread)
 {
-	if (
-		thread == 0 ||
-		thread->kernel_stack == 0
-	) {
+	if (thread == 0 || thread->kernel_stack == 0) {
 		return 0ULL;
 	}
 
-	return
-		(uint64_t)thread->kernel_stack +
-		thread->kernel_stack_size;
+	return (uint64_t)thread->kernel_stack + thread->kernel_stack_size;
 }
 
 /*
@@ -1405,19 +1278,9 @@ bool thread_validate(void)
 	uint32_t global_count = 0U;
 	thread_t previous = 0;
 
-	for (
-		thread_t thread = g_threads_head;
-		thread != 0;
-		thread = thread->threads_next
-	) {
-		if (
-			thread->threads_prev != previous ||
-			!thread->active ||
-			thread->task == 0 ||
-			thread->ref_count == 0U ||
-			thread->slot >= THREAD_MAX ||
-			!g_thread_slot_used[thread->slot]
-		) {
+	for (thread_t thread = g_threads_head; thread != 0; thread = thread->threads_next) {
+		if (thread->threads_prev != previous || !thread->active || thread->task == 0 || thread->ref_count == 0U ||
+			thread->slot >= THREAD_MAX || !g_thread_slot_used[thread->slot]) {
 			thread_unlock(&g_thread_lock);
 			return false;
 		}
@@ -1426,15 +1289,13 @@ bool thread_validate(void)
 		uint32_t task_count = 0U;
 		uint32_t active_count = 0U;
 
-		for (
-			thread_t member = thread->task->threads;
-			member != 0;
-			member = member->task_next
-		) {
+		for (thread_t member = thread->task->threads; member != 0; member = member->task_next) {
 			task_count++;
-			if (member->active) active_count++;
+			if (member->active)
+				active_count++;
 
-			if (member == thread) found_in_task = true;
+			if (member == thread)
+				found_in_task = true;
 
 			if (task_count > THREAD_MAX) {
 				thread_unlock(&g_thread_lock);
@@ -1442,11 +1303,8 @@ bool thread_validate(void)
 			}
 		}
 
-		if (
-			!found_in_task ||
-			task_count != thread->task->thread_count ||
-			active_count != thread->task->active_thread_count
-		) {
+		if (!found_in_task || task_count != thread->task->thread_count ||
+			active_count != thread->task->active_thread_count) {
 			thread_unlock(&g_thread_lock);
 			return false;
 		}
@@ -1460,9 +1318,7 @@ bool thread_validate(void)
 		}
 	}
 
-	bool valid =
-		previous == g_threads_tail &&
-		global_count == g_thread_count;
+	bool valid = previous == g_threads_tail && global_count == g_thread_count;
 
 	thread_unlock(&g_thread_lock);
 	return valid;
@@ -1483,41 +1339,47 @@ static void thread_print_state(uint32_t state)
 	}
 
 	if ((state & TH_WAIT) != 0U) {
-		if (printed) kputc('|');
+		if (printed)
+			kputc('|');
 
 		kputs("wait");
 		printed = true;
 	}
 
 	if ((state & TH_SUSP) != 0U) {
-		if (printed) kputc('|');
+		if (printed)
+			kputc('|');
 
 		kputs("susp");
 		printed = true;
 	}
 
 	if ((state & TH_UNINT) != 0U) {
-		if (printed) kputc('|');
+		if (printed)
+			kputc('|');
 
 		kputs("unint");
 		printed = true;
 	}
 
 	if ((state & TH_TERMINATE) != 0U) {
-		if (printed) kputc('|');
+		if (printed)
+			kputc('|');
 
 		kputs("terminate");
 		printed = true;
 	}
 
 	if ((state & TH_IDLE) != 0U) {
-		if (printed) kputc('|');
+		if (printed)
+			kputc('|');
 
 		kputs("idle");
 		printed = true;
 	}
 
-	if (!printed) kputs("new");
+	if (!printed)
+		kputs("new");
 }
 
 /*
@@ -1536,19 +1398,11 @@ void thread_dump_sched(void)
 	for (thread_t thread = g_threads_head; thread != 0; thread = thread->threads_next) {
 		processor_t on_cpu = __atomic_load_n(&thread->on_cpu, __ATOMIC_ACQUIRE);
 
-		kprintf(
-			"thread_dump_sched: %llu 0x%x %s%u %s %u 0x%llx %u %u %llu\n",
-			(unsigned long long)thread->thread_id,
-			thread->state,
-			on_cpu != 0 ? "cpu" : "-",
-			on_cpu != 0 ? on_cpu->cpu_id : 0U,
-			thread->runq != 0 ? "yes" : "no",
-			thread->last_cpu,
-			(unsigned long long)thread->affinity.words[0],
-			thread->legacy_depth,
-			thread->wakeup_deferred ? 1U : 0U,
-			(unsigned long long)(thread->task != 0 ? thread->task->task_uniqueid : 0ULL)
-		);
+		kprintf("thread_dump_sched: %llu 0x%x %s%u %s %u 0x%llx %u %u %llu\n", (unsigned long long)thread->thread_id,
+				thread->state, on_cpu != 0 ? "cpu" : "-", on_cpu != 0 ? on_cpu->cpu_id : 0U,
+				thread->runq != 0 ? "yes" : "no", thread->last_cpu, (unsigned long long)thread->affinity.words[0],
+				thread->legacy_depth, thread->wakeup_deferred ? 1U : 0U,
+				(unsigned long long)(thread->task != 0 ? thread->task->task_uniqueid : 0ULL));
 	}
 
 	thread_unlock(&g_thread_lock);
@@ -1563,20 +1417,12 @@ void thread_dump(void)
 
 	kputln("thread: global thread list");
 
-	for (
-		thread_t thread = g_threads_head;
-		thread != 0;
-		thread = thread->threads_next
-	) {
+	for (thread_t thread = g_threads_head; thread != 0; thread = thread->threads_next) {
 		kputs("thread: tid ");
 		kputu64(thread->thread_id);
 
 		kputs(", task ");
-		kputu64(
-			thread->task != 0
-				? thread->task->task_uniqueid
-				: 0ULL
-		);
+		kputu64(thread->task != 0 ? thread->task->task_uniqueid : 0ULL);
 
 		kputs(", state ");
 		thread_print_state(thread->state);

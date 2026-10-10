@@ -29,17 +29,9 @@ typedef struct {
 typedef struct task *task_t;
 typedef struct thread *thread_t;
 
-typedef enum {
-	TASK_STATE_INACTIVE,
-	TASK_STATE_ACTIVE,
-	TASK_STATE_HALTING,
-	TASK_STATE_TERMINATED
-} task_state_t;
+typedef enum { TASK_STATE_INACTIVE, TASK_STATE_ACTIVE, TASK_STATE_HALTING, TASK_STATE_TERMINATED } task_state_t;
 
-typedef enum {
-	TASK_FLAG_NONE = 0U,
-	TASK_FLAG_KERNEL = 1U << 0U
-} task_flag_t;
+typedef enum { TASK_FLAG_NONE = 0U, TASK_FLAG_KERNEL = 1U << 0U } task_flag_t;
 
 /*
  * struct task
@@ -77,6 +69,8 @@ typedef enum {
  */
 struct task {
 	uint64_t task_uniqueid;
+	nxu_spinlock_t event_lock;
+	uint64_t page_faults;
 
 	uint32_t ref_count;
 	task_state_t state;
@@ -104,11 +98,7 @@ struct task {
 /*
  * Initialize the kernel task.
  */
-bool task_init_kernel(
-	task_t task,
-	uint64_t uniqueid,
-	struct proc *bsd_info
-);
+bool task_init_kernel(task_t task, uint64_t uniqueid, struct proc *bsd_info);
 
 /*
  * Initialize a userspace task and create its initial thread.
@@ -116,13 +106,7 @@ bool task_init_kernel(
  * entry and stack are assigned to that initial thread rather than stored
  * directly in struct task.
  */
-bool task_init_user(
-	task_t task,
-	uint64_t uniqueid,
-	struct proc *bsd_info,
-	uint64_t entry,
-	uint64_t stack
-);
+bool task_init_user(task_t task, uint64_t uniqueid, struct proc *bsd_info, uint64_t entry, uint64_t stack);
 
 /*
  * Initialize a userspace task as a copy of parent, for fork: a copy-on-write
@@ -131,12 +115,7 @@ bool task_init_user(
  * result register. Must be called by a thread of parent while it is inside
  * the kernel for a system call.
  */
-bool task_fork(
-	task_t task,
-	task_t parent,
-	uint64_t uniqueid,
-	struct proc *bsd_info
-);
+bool task_fork(task_t task, task_t parent, uint64_t uniqueid, struct proc *bsd_info);
 
 /*
  * Task reference management.
