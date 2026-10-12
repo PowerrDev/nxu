@@ -27,6 +27,12 @@ int64_t nxu_statistics(nxu_stats_request_t *request);
 /* Requires NXU_CAP_CRASH. NEXT argument is nxu_crash_report_t*, ACK is incident. */
 int64_t nxu_crash(uint32_t operation, uint64_t argument);
 
+/* Numeric echo diagnostics; timeouts return -NXU_SYS_E_AGAIN. */
+int64_t nxu_network(uint32_t operation, void *argument);
+int64_t nxu_dup2(uint32_t source, uint32_t destination);
+/* Connected local sockets only: E_AGAIN when empty, zero on EOF. */
+int64_t nxu_read_poll(uint32_t descriptor, void *buffer, uint32_t length);
+
 int64_t nxu_exit(uint64_t status);
 int64_t nxu_write(uint64_t descriptor, const void *buffer, uint64_t length);
 int64_t nxu_get_version(void *buffer, uint64_t capacity);
@@ -62,13 +68,23 @@ int64_t nxu_yield(void);
 
 /* Sleep for at least microseconds (at most 10 s a call): an idle loop's wait, instead of spinning on nxu_yield. */
 int64_t nxu_sleep_us(uint64_t microseconds);
+/* Sample with timeout=0 before checking input/IPC; wait with that sequence.
+ * Returns the current sequence, or an error if interrupted. */
+int64_t nxu_event_wait(uint32_t timeout_us, uint32_t sequence);
+/* Blocking receive; an expired nonzero timeout returns E_AGAIN.
+ * timeout_us=0 retains the indefinite wait of nxu_ipc_receive_wait. */
+int64_t nxu_ipc_receive_timed(uint32_t port, void *buffer, uint64_t capacity, uint32_t *transfer,
+                              uint32_t *type, uint32_t timeout_us);
 int64_t nxu_get_boot_args(char *buffer, uint64_t capacity);
 int64_t nxu_klog_read(uint64_t *cursor, char *buffer, uint64_t capacity);
 int64_t nxu_unlink(const char *path);
+int64_t nxu_rmdir(const char *path);
+int64_t nxu_recovery_block_partition_delete(uint32_t device, uint32_t partition);
 int64_t nxu_dyrld(uint32_t operation, void *argument);
 
 /* Trusted SAP UI collects the password; callers supply only a selected path. */
 int64_t nxu_sap_delete(const char *path);
+int64_t nxu_sap_remove_tree(const char *path);
 int64_t nxu_sync(void);
 int64_t nxu_uptime_us(void);
 int64_t nxu_readdir(uint64_t descriptor, nxu_dirent_t *entry);

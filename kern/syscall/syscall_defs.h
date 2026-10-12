@@ -81,6 +81,15 @@
 #define NXU_SYS_IPC_RECEIVE_PEER 77ULL
 #define NXU_SYS_PROCESS_IDENTITY 78ULL
 #define NXU_SYS_GUI_WINDOW_HANDLE 79ULL
+#define NXU_SYS_EVENT_WAIT 80ULL
+#define NXU_SYS_IPC_RECEIVE_TIMED 81ULL
+#define NXU_SYS_RECOVERY_BLOCK_PARTITION_DELETE 82ULL
+#define NXU_SYS_RMDIR 83ULL
+#define NXU_SYS_SAP_REMOVE_TREE 84ULL
+#define NXU_SYS_NETWORK 85ULL
+#define NXU_SYS_DUP2 86ULL
+#define NXU_SYS_READ_POLL 87ULL
+#include <kern/syscall/net_defs.h>
 #include <kern/syscall/dyrld_defs.h>
 #include <kern/syscall/crash_defs.h>
 
@@ -191,6 +200,10 @@ typedef struct {
 #define NXU_SYS_E_BUSY 12LL
 #define NXU_SYS_E_DENIED 13LL
 #define NXU_SYS_E_INTERRUPTED 14LL
+#define NXU_SYS_E_IS_DIRECTORY 15LL
+#define NXU_SYS_E_NOT_DIRECTORY 16LL
+#define NXU_SYS_E_READ_ONLY 17LL
+#define NXU_SYS_E_NOT_EMPTY 18LL
 
 /* Mirrors kern/ipc/ipc_types.h's ipc_kmsg_xfer_type_t numerically. */
 #define NXU_IPC_XFER_NONE 0U
@@ -249,6 +262,7 @@ typedef struct {
 #define NXU_RECOVERY_INPUT_NONE 0U
 #define NXU_RECOVERY_INPUT_KEY 1U
 #define NXU_RECOVERY_INPUT_POINTER 2U
+#define NXU_RECOVERY_INPUT_SCROLL 3U
 
 typedef struct {
 	uint32_t width;

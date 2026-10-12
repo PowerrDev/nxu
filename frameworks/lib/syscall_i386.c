@@ -223,6 +223,34 @@ int64_t nxu_waitpid(uint64_t pid, uint64_t *status)
 	return nxu_syscall2(NXU_SYS_WAITPID, (uint32_t)pid, NXU_PTR(status));
 }
 
+int64_t
+nxu_fork(void)
+{
+	return nxu_syscall0(NXU_SYS_FORK);
+}
+
+int64_t
+nxu_exec(const char *path, const char *const *argv)
+{
+	return nxu_syscall2(NXU_SYS_EXEC, NXU_PTR(path), NXU_PTR(argv));
+}
+
+int64_t
+nxu_wait(uint64_t pid, uint64_t *status)
+{
+	if (pid != NXU_WAIT_ANY) {
+		NXU_REQUIRE_U32(pid);
+	}
+
+	return nxu_syscall2(NXU_SYS_WAIT, (uint32_t)pid, NXU_PTR(status));
+}
+
+int64_t
+nxu_getppid(void)
+{
+	return nxu_syscall0(NXU_SYS_GETPPID);
+}
+
 int64_t nxu_getpid(void)
 {
 	return nxu_syscall0(NXU_SYS_GETPID);
@@ -591,4 +619,49 @@ int64_t nxu_shm_withdraw(uint64_t id)
 {
 	NXU_REQUIRE_U32(id);
 	return nxu_syscall1(NXU_SYS_SHM_WITHDRAW, (uint32_t)id);
+}
+
+int64_t nxu_event_wait(uint32_t timeout_us, uint32_t sequence)
+{
+	return nxu_syscall2(NXU_SYS_EVENT_WAIT, timeout_us, sequence);
+}
+
+int64_t nxu_ipc_receive_timed(uint32_t port, void *buffer, uint64_t capacity, uint32_t *transfer,
+                              uint32_t *type, uint32_t timeout_us)
+{
+	NXU_REQUIRE_LENGTH(capacity);
+	return nxu_syscall6(NXU_SYS_IPC_RECEIVE_TIMED, port, NXU_PTR(buffer), capacity,
+		NXU_PTR(transfer), NXU_PTR(type), timeout_us);
+}
+
+int64_t nxu_rmdir(const char *path)
+{
+	return nxu_syscall1(NXU_SYS_RMDIR, NXU_PTR(path));
+}
+int64_t nxu_recovery_block_partition_delete(uint32_t device, uint32_t partition)
+{
+	return nxu_syscall2(NXU_SYS_RECOVERY_BLOCK_PARTITION_DELETE, device, partition);
+}
+
+int64_t nxu_sap_remove_tree(const char *path)
+{
+	return nxu_syscall1(NXU_SYS_SAP_REMOVE_TREE, NXU_PTR(path));
+}
+
+int64_t
+nxu_network(uint32_t operation, void *argument)
+{
+	return nxu_syscall2(NXU_SYS_NETWORK, operation, (uint32_t)(uintptr_t)argument);
+}
+
+int64_t
+nxu_dup2(uint32_t source, uint32_t destination)
+{
+	return nxu_syscall2(NXU_SYS_DUP2, source, destination);
+}
+
+int64_t
+nxu_read_poll(uint32_t descriptor, void *buffer, uint32_t length)
+{
+	return nxu_syscall3(NXU_SYS_READ_POLL, descriptor, (uint32_t)(uintptr_t)buffer, length);
 }

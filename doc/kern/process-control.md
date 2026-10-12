@@ -132,7 +132,7 @@ that change the machine are gated by a per-process capability mask,
 | --- | --- |
 | `NXU_CAP_FS_WRITE` | `open` with write, create, truncate or append; `unlink`; `mkdir` |
 | `NXU_CAP_DISPLAY` | `display_claim` |
-| `NXU_CAP_RESET` | `system_reset` (which still also requires triage mode) |
+| `NXU_CAP_RESET` | `system_reset` (syncs filesystems before reboot; available to authorized mainOS and recovery processes) |
 | `NXU_CAP_AUDIO` | opening `/dev/audio0` (writing a device node does not need `NXU_CAP_FS_WRITE`; create, truncate and append still do) |
 
 A refused call returns `-NXU_SYS_E_DENIED`. Reading is never gated. `open` is

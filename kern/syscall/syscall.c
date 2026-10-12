@@ -1,3 +1,4 @@
+#include <kern/net/netif.h>
 #include <kern/logging/diagnostics.h>
 #include <kern/syscall/syscall.h>
 
@@ -47,6 +48,9 @@
 #define SYSCALL_STDOUT 1ULL
 #define SYSCALL_STDERR 2ULL
 #define SYSCALL_IO_BUFFER_SIZE 256ULL
+/* Page-sized file I/O avoids one ext4 transaction per 256 payload bytes.
+ * The 16 KiB kernel stack retains room for the VFS and syscall frames. */
+#define SYSCALL_FILE_IO_BUFFER_SIZE 4096ULL
 #define SYSCALL_PATH_BUFFER_SIZE VFS_PATH_MAX
 #define SYSCALL_MAX_RETURN_VALUE 0x7FFFFFFFFFFFFFFFULL
 #define INPUT_EVENT_TYPE_SYNCHRONIZATION 0U
@@ -75,6 +79,10 @@ static bool syscall_has_caps(uint32_t caps)
 static syscall_error_t syscall_vfs_error(vfs_status_t status)
 {
 	switch (status) {
+	case VFS_STATUS_IS_DIRECTORY: return SYSCALL_ERROR_IS_DIRECTORY;
+	case VFS_STATUS_NOT_DIRECTORY: return SYSCALL_ERROR_NOT_DIRECTORY;
+	case VFS_STATUS_READ_ONLY: return SYSCALL_ERROR_READ_ONLY;
+	case VFS_STATUS_NOT_EMPTY: return SYSCALL_ERROR_NOT_EMPTY;
 	case VFS_STATUS_NOT_FOUND:
 		return SYSCALL_ERROR_NOT_FOUND;
 	case VFS_STATUS_NO_MEMORY:
@@ -395,7 +403,7 @@ static syscall_result_t syscall_write(uint64_t file_descriptor, uint64_t user_bu
 	if (length != 0ULL && length - 1ULL > UINT64_MAX - user_buffer)
 		return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 
-	char buffer[SYSCALL_IO_BUFFER_SIZE];
+	char buffer[SYSCALL_FILE_IO_BUFFER_SIZE];
 	uint64_t written = 0ULL;
 
 	while (written < length) {
@@ -406,13 +414,32 @@ static syscall_result_t syscall_write(uint64_t file_descriptor, uint64_t user_bu
 			return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 
 		if (file_descriptor == SYSCALL_STDOUT || file_descriptor == SYSCALL_STDERR) {
-			for (uint64_t index = 0ULL; index < chunk_size; index++)
-				kputc(buffer[index]);
-			written += chunk_size;
+			file_t redirected;
+
+			if (filedesc_get(&current_proc()->p_fd, (uint32_t)file_descriptor, &redirected) == VFS_STATUS_OK) {
+				uint64_t count = 0;
+				vfs_status_t status = file_write(redirected, buffer, chunk_size, &count);
+				file_rele(redirected);
+
+				if (status != VFS_STATUS_OK) {
+					return syscall_error(syscall_vfs_error(status));
+				}
+
+				written += count;
+				if (count != chunk_size) {
+					break;
+				}
+			} else {
+				for (uint64_t index = 0; index < chunk_size; index++) {
+					kputc(buffer[index]);
+				}
+				written += chunk_size;
+			}
+
 			continue;
 		}
 
-		if (file_descriptor < VFS_FD_FIRST_FILE || file_descriptor >= VFS_FD_MAX)
+		if (file_descriptor >= VFS_FD_MAX)
 			return syscall_error(SYSCALL_ERROR_BAD_FD);
 
 		uint64_t file_written = 0ULL;
@@ -430,14 +457,14 @@ static syscall_result_t syscall_write(uint64_t file_descriptor, uint64_t user_bu
 
 static syscall_result_t syscall_read(uint64_t file_descriptor, uint64_t user_buffer, uint64_t length)
 {
-	if (file_descriptor < VFS_FD_FIRST_FILE || file_descriptor >= VFS_FD_MAX)
+	if (file_descriptor >= VFS_FD_MAX)
 		return syscall_error(SYSCALL_ERROR_BAD_FD);
 	if (length > SYSCALL_MAX_RETURN_VALUE)
 		return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 	if (length != 0ULL && length - 1ULL > UINT64_MAX - user_buffer)
 		return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 
-	char buffer[SYSCALL_IO_BUFFER_SIZE];
+	char buffer[SYSCALL_FILE_IO_BUFFER_SIZE];
 	uint64_t complete = 0ULL;
 
 	while (complete < length) {
@@ -541,7 +568,7 @@ static syscall_result_t syscall_ioctl(uint64_t descriptor, uint64_t command, uin
 
 static syscall_result_t syscall_close(uint64_t descriptor)
 {
-	if (descriptor < VFS_FD_FIRST_FILE || descriptor >= VFS_FD_MAX)
+	if (descriptor >= VFS_FD_MAX)
 		return syscall_error(SYSCALL_ERROR_BAD_FD);
 	vfs_status_t status = vfs_close(&current_proc()->p_fd, (uint32_t)descriptor);
 	return status == VFS_STATUS_OK ? syscall_return(0ULL) : syscall_error(syscall_vfs_error(status));
@@ -926,6 +953,28 @@ static syscall_result_t syscall_recovery_block_health_info(uint64_t device_index
 	return syscall_return(0ULL);
 }
 
+static syscall_result_t syscall_recovery_block_partition_delete(uint64_t device_index, uint64_t partition_index)
+{
+	if (!syscall_recovery_privileged()) return syscall_error(SYSCALL_ERROR_DENIED);
+	if (device_index > UINT32_MAX || partition_index > UINT32_MAX)
+		return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	block_device_t device = block_device_get((uint32_t)device_index);
+	if (device == 0) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+	/* A mounted filesystem may still write using the old partition layout. */
+	vfs_mount_info_t mount;
+	for (uint32_t index = 0; vfs_mount_get(index, &mount); index++)
+		if (block_device_overlaps(device, block_device_get(mount.device_index)))
+			return syscall_error(SYSCALL_ERROR_BUSY);
+	switch (block_partition_delete(device, (uint32_t)partition_index)) {
+	case BLOCK_PARTITION_STATUS_OK: return syscall_return(0);
+	case BLOCK_PARTITION_STATUS_INVALID: return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	case BLOCK_PARTITION_STATUS_READ_ONLY: return syscall_error(SYSCALL_ERROR_READ_ONLY);
+	case BLOCK_PARTITION_STATUS_NO_SPACE: return syscall_error(SYSCALL_ERROR_NO_SPACE);
+	case BLOCK_PARTITION_STATUS_NOT_SUPPORTED: return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+	default: return syscall_error(SYSCALL_ERROR_IO);
+	}
+}
+
 static syscall_result_t syscall_recovery_block_verify(uint64_t device_index)
 {
 	if (!syscall_recovery_privileged())
@@ -1058,17 +1107,24 @@ static syscall_result_t syscall_recovery_input_inner(uint64_t user_event)
 												 .value = input.value,
 												 .x = 0,
 												 .y = 0,
-												 .buttons = mouse_buttons(),
-												 .modifiers = keyboard_modifiers()};
+												 .buttons = input.buttons,
+												 .modifiers = input.modifiers};
 		} else if (input.device_class == INPUT_DEVICE_MOUSE && input.type == INPUT_EVENT_TYPE_SYNCHRONIZATION &&
 				   input.code == INPUT_EVENT_CODE_SYN_REPORT) {
 			event = (nxu_recovery_input_event_t){.kind = NXU_RECOVERY_INPUT_POINTER,
 												 .code = 0U,
 												 .value = 0,
-												 .x = (int32_t)mouse_x(),
-												 .y = (int32_t)mouse_y(),
-												 .buttons = mouse_buttons(),
-												 .modifiers = keyboard_modifiers()};
+												 .x = input.pointer_x,
+												 .y = input.pointer_y,
+												 .buttons = input.buttons,
+												 .modifiers = input.modifiers};
+		} else if (input.device_class == INPUT_DEVICE_MOUSE && input.type == 2U && input.code == 8U) {
+			/* REL_WHEEL is signed: preserve every notch for the desktop. */
+			event = (nxu_recovery_input_event_t){
+				.kind = NXU_RECOVERY_INPUT_SCROLL, .value = input.value,
+				.x = input.pointer_x, .y = input.pointer_y,
+				.buttons = input.buttons, .modifiers = input.modifiers,
+			};
 		} else {
 			if (!input_read(&input))
 				return syscall_return(0ULL);
@@ -1089,8 +1145,8 @@ static syscall_result_t syscall_system_reset(void)
 {
 	if (!syscall_has_caps(NXU_CAP_RESET))
 		return syscall_error(SYSCALL_ERROR_DENIED);
-	if (!boot_mode_is_triage_os())
-		return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+	if (vfs_sync_all() != VFS_STATUS_OK)
+		return syscall_error(SYSCALL_ERROR_IO);
 	machine_system_reset();
 	return syscall_error(SYSCALL_ERROR_IO);
 }
@@ -1197,6 +1253,15 @@ static syscall_result_t syscall_dyrld(uint64_t operation, uint64_t argument)
 																						  : SYSCALL_ERROR_IO);
 }
 
+static syscall_result_t syscall_sap_remove_tree(uint64_t user_path)
+{
+	if (!syscall_recovery_privileged()) return syscall_error(SYSCALL_ERROR_DENIED);
+	char path[VFS_PATH_MAX];
+	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	vfs_status_t status = sap_remove_tree(current_proc(), path);
+	return status == VFS_STATUS_OK ? syscall_return(0) : syscall_error(syscall_vfs_error(status));
+}
+
 static syscall_result_t syscall_sap_delete(uint64_t user_path)
 {
 	char path[VFS_PATH_MAX];
@@ -1221,6 +1286,16 @@ static syscall_result_t syscall_unlink(uint64_t user_path)
 			return syscall_error(SYSCALL_ERROR_DENIED);
 		status = vfs_unlink(canonical);
 	}
+	return status == VFS_STATUS_OK ? syscall_return(0) : syscall_error(syscall_vfs_error(status));
+}
+
+static syscall_result_t syscall_rmdir(uint64_t user_path)
+{
+	char path[VFS_PATH_MAX], canonical[VFS_PATH_MAX];
+	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	if (!syscall_has_caps(NXU_CAP_FS_WRITE) || !sap_canonical_path(path, canonical) || sap_protected_path(canonical))
+		return syscall_error(SYSCALL_ERROR_DENIED);
+	vfs_status_t status = vfs_rmdir(canonical);
 	return status == VFS_STATUS_OK ? syscall_return(0) : syscall_error(syscall_vfs_error(status));
 }
 
@@ -1357,7 +1432,7 @@ static syscall_result_t syscall_ipc_send(uint64_t dest_name, uint64_t user_buffe
  */
 static syscall_result_t syscall_ipc_receive_impl(uint64_t port_name, uint64_t user_buffer, uint64_t capacity,
 												 uint64_t user_out_xfer_name, uint64_t user_out_xfer_type, bool wait,
-												 uint64_t user_peer)
+												 uint64_t user_peer, uint64_t timeout_us)
 {
 	if (port_name == 0ULL || port_name > IPC_SPACE_MAX)
 		return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
@@ -1371,6 +1446,8 @@ static syscall_result_t syscall_ipc_receive_impl(uint64_t port_name, uint64_t us
 
 	ipc_kmsg_t kmsg;
 	bool interrupted = false;
+	uint64_t now = timer_get_microseconds();
+	uint64_t deadline = timeout_us > UINT64_MAX - now ? UINT64_MAX : now + timeout_us;
 
 	for (;;) {
 		/*
@@ -1378,14 +1455,21 @@ static syscall_result_t syscall_ipc_receive_impl(uint64_t port_name, uint64_t us
 		 * another CPU that enqueues between the examination and the sleep moves
 		 * it, and the sleep then returns at once (see ipc_port_wait_prepare).
 		 */
+		uint32_t kicks = sched_kick_sequence();
 		uint32_t seq = ipc_port_wait_prepare(port);
 
 		status = ipc_port_dequeue(port, &kmsg);
 		if (status != IPC_QUEUE_EMPTY || !wait)
 			break;
 
-		/* Never sleep through a signal that is already waiting. */
-		if (signal_pending_for(proc, current_thread()) || !ipc_port_wait_seq(port, seq)) {
+		now = timer_get_microseconds();
+		if (timeout_us && now >= deadline)
+			break;
+
+		/* A timed receiver waits on kicks from enqueue and timer ticks. */
+		if (signal_pending_for(proc, current_thread()) ||
+			!(timeout_us ? sched_sleep_until_kicked_seq(deadline - now, kicks, true)
+			             : ipc_port_wait_seq(port, seq))) {
 			interrupted = true;
 			break;
 		}
@@ -1477,13 +1561,13 @@ static syscall_result_t syscall_process_identity(uint64_t pid, uint64_t output)
 static syscall_result_t syscall_ipc_receive(uint64_t port_name, uint64_t user_buffer, uint64_t capacity,
 											uint64_t user_out_xfer_name, uint64_t user_out_xfer_type)
 {
-	return syscall_ipc_receive_impl(port_name, user_buffer, capacity, user_out_xfer_name, user_out_xfer_type, false, 0);
+	return syscall_ipc_receive_impl(port_name, user_buffer, capacity, user_out_xfer_name, user_out_xfer_type, false, 0, 0);
 }
 
 static syscall_result_t syscall_ipc_receive_wait(uint64_t port_name, uint64_t user_buffer, uint64_t capacity,
-												 uint64_t user_out_xfer_name, uint64_t user_out_xfer_type)
+												 uint64_t user_out_xfer_name, uint64_t user_out_xfer_type, uint64_t timeout_us)
 {
-	return syscall_ipc_receive_impl(port_name, user_buffer, capacity, user_out_xfer_name, user_out_xfer_type, true, 0);
+	return syscall_ipc_receive_impl(port_name, user_buffer, capacity, user_out_xfer_name, user_out_xfer_type, true, 0, timeout_us);
 }
 
 /*
@@ -1497,9 +1581,9 @@ static syscall_result_t syscall_wait(uint64_t pid, uint64_t user_status)
 {
 	proc_t self = current_proc();
 	thread_t thread = current_thread();
-	proc_id_t target = pid == NXU_WAIT_ANY ? PROC_PID_INVALID : (proc_id_t)pid;
+	proc_id_t target = pid == (uintptr_t)NXU_WAIT_ANY ? PROC_PID_INVALID : (proc_id_t)pid;
 
-	if (pid != NXU_WAIT_ANY && pid > PROC_PID_MAX)
+	if (pid != (uintptr_t)NXU_WAIT_ANY && pid > PROC_PID_MAX)
 		return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
 	for (;;) {
@@ -2053,6 +2137,7 @@ static bool syscall_is_cpu_agnostic(uint64_t number)
 	case SYSCALL_IPC_RECEIVE_PEER:
 	case SYSCALL_IPC_RECEIVE:
 	case SYSCALL_IPC_RECEIVE_WAIT:
+	case SYSCALL_IPC_RECEIVE_TIMED:
 	case SYSCALL_IPC_REGISTER_BOOTSTRAP:
 	case SYSCALL_GETCPU:
 	case SYSCALL_SETAFFINITY:
@@ -2066,11 +2151,88 @@ static bool syscall_is_cpu_agnostic(uint64_t number)
 	case SYSCALL_UI_SUBMIT:
 	case SYSCALL_STATISTICS:
 	case SYSCALL_SLEEP_US:
+	case SYSCALL_EVENT_WAIT:
 		return true;
 
 	default:
 		return false;
 	}
+}
+
+static syscall_result_t
+syscall_network(uint64_t operation, uint64_t user_argument)
+{
+	union {
+		nxu_net_interface_t interface;
+		nxu_net_ping_t ping;
+	} argument;
+
+	uint64_t size = operation == NXU_NET_INTERFACE ? sizeof(argument.interface) : sizeof(argument.ping);
+
+	if (operation != NXU_NET_INTERFACE && operation != NXU_NET_PING) {
+		return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	}
+
+	if (!vm_copy_from_user(&argument, user_argument, size)) {
+		return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	}
+
+	int64_t result = operation == NXU_NET_INTERFACE ? net_interface_info(&argument.interface) : net_ping(&argument.ping);
+
+	if (result < 0) {
+		return syscall_error((syscall_error_t)-result);
+	}
+
+	if (!vm_copy_to_user(user_argument, &argument, size)) {
+		return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	}
+
+	return syscall_return(0);
+}
+
+static syscall_result_t
+syscall_dup2(uint64_t source, uint64_t destination)
+{
+	if (source >= VFS_FD_MAX || destination >= VFS_FD_MAX) {
+		return syscall_error(SYSCALL_ERROR_BAD_FD);
+	}
+
+	vfs_status_t status = filedesc_dup2(&current_proc()->p_fd, source, destination);
+	return status == VFS_STATUS_OK ? syscall_return(destination) : syscall_error(syscall_vfs_error(status));
+}
+
+static syscall_result_t
+syscall_read_poll(uint64_t descriptor, uint64_t user_buffer, uint64_t length)
+{
+	if (descriptor >= VFS_FD_MAX || length > SYSCALL_MAX_RETURN_VALUE) {
+		return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	}
+
+	file_t file;
+
+	if (filedesc_get(&current_proc()->p_fd, descriptor, &file) != VFS_STATUS_OK) {
+		return syscall_error(SYSCALL_ERROR_BAD_FD);
+	}
+
+	if (file->f_type != FILE_TYPE_SOCKET) {
+		file_rele(file);
+		return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+	}
+
+	char buffer[SYSCALL_IO_BUFFER_SIZE];
+	uint64_t capacity = length < sizeof(buffer) ? length : sizeof(buffer);
+	int64_t count = socket_read_poll(file->f_socket, buffer, capacity);
+	file_rele(file);
+
+	if (count < 0) {
+		return syscall_error(count == -2 ? SYSCALL_ERROR_AGAIN : SYSCALL_ERROR_IO);
+	}
+
+	if (count != 0 && !vm_copy_to_user(user_buffer, buffer, count)) {
+		return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	}
+
+	return syscall_return(count);
 }
 
 static syscall_result_t syscall_dispatch_inner(const syscall_request_t *request);
@@ -2098,10 +2260,22 @@ syscall_result_t syscall_dispatch(const syscall_request_t *request)
 static syscall_result_t syscall_dispatch_inner(const syscall_request_t *request)
 {
 	switch (request->number) {
+	case SYSCALL_NETWORK:
+		return syscall_network(request->arguments[0], request->arguments[1]);
+	case SYSCALL_DUP2:
+		return syscall_dup2(request->arguments[0], request->arguments[1]);
+	case SYSCALL_READ_POLL:
+		return syscall_read_poll(request->arguments[0], request->arguments[1], request->arguments[2]);
 	case SYSCALL_EXIT:
 		return syscall_exit(request->arguments[0]);
 	case SYSCALL_WRITE:
 		return syscall_write(request->arguments[0], request->arguments[1], request->arguments[2]);
+	case SYSCALL_SAP_REMOVE_TREE:
+		return syscall_sap_remove_tree(request->arguments[0]);
+	case SYSCALL_RMDIR:
+		return syscall_rmdir(request->arguments[0]);
+	case SYSCALL_RECOVERY_BLOCK_PARTITION_DELETE:
+		return syscall_recovery_block_partition_delete(request->arguments[0], request->arguments[1]);
 	case SYSCALL_GET_VERSION:
 		return syscall_get_version(request->arguments[0], request->arguments[1]);
 	case SYSCALL_OPEN:
@@ -2185,7 +2359,7 @@ static syscall_result_t syscall_dispatch_inner(const syscall_request_t *request)
 		return syscall_process_identity(request->arguments[0], request->arguments[1]);
 	case SYSCALL_IPC_RECEIVE_PEER:
 		return syscall_ipc_receive_impl(request->arguments[0], request->arguments[1], request->arguments[2],
-										request->arguments[3], request->arguments[4], false, request->arguments[5]);
+										request->arguments[3], request->arguments[4], false, request->arguments[5], 0);
 	case SYSCALL_IPC_RECEIVE:
 		return syscall_ipc_receive(request->arguments[0], request->arguments[1], request->arguments[2],
 								   request->arguments[3], request->arguments[4]);
@@ -2239,9 +2413,20 @@ static syscall_result_t syscall_dispatch_inner(const syscall_request_t *request)
 		return syscall_return(current_proc() != 0 ? current_proc()->p_caps : 0ULL);
 	case SYSCALL_IOCTL:
 		return syscall_ioctl(request->arguments[0], request->arguments[1], request->arguments[2]);
+	case SYSCALL_EVENT_WAIT:
+		if (request->arguments[0] > UINT32_MAX || request->arguments[1] > UINT32_MAX)
+			return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+		if (request->arguments[0] && !sched_sleep_until_kicked_seq(request->arguments[0], request->arguments[1], true))
+			return syscall_error(SYSCALL_ERROR_INTERRUPTED);
+		return syscall_return(sched_kick_sequence());
 	case SYSCALL_IPC_RECEIVE_WAIT:
 		return syscall_ipc_receive_wait(request->arguments[0], request->arguments[1], request->arguments[2],
-										request->arguments[3], request->arguments[4]);
+										request->arguments[3], request->arguments[4], 0);
+	case SYSCALL_IPC_RECEIVE_TIMED:
+		if (request->arguments[5] > UINT32_MAX)
+			return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+		return syscall_ipc_receive_wait(request->arguments[0], request->arguments[1], request->arguments[2],
+										request->arguments[3], request->arguments[4], request->arguments[5]);
 	case SYSCALL_GETCPU:
 		return syscall_getcpu();
 	case SYSCALL_SETAFFINITY:

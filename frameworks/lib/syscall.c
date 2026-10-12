@@ -495,3 +495,47 @@ int64_t nxu_gui_window_handle(void)
 {
 	return nxu_syscall0(NXU_SYS_GUI_WINDOW_HANDLE);
 }
+
+int64_t nxu_event_wait(uint32_t timeout_us, uint32_t sequence)
+{
+	return nxu_syscall2(NXU_SYS_EVENT_WAIT, timeout_us, sequence);
+}
+
+int64_t nxu_ipc_receive_timed(uint32_t port, void *buffer, uint64_t capacity, uint32_t *transfer,
+                              uint32_t *type, uint32_t timeout_us)
+{
+	return nxu_syscall6(NXU_SYS_IPC_RECEIVE_TIMED, port, (uint64_t)buffer, capacity,
+		(uint64_t)transfer, (uint64_t)type, timeout_us);
+}
+
+int64_t nxu_rmdir(const char *path)
+{
+	return nxu_syscall1(NXU_SYS_RMDIR, (uint64_t)path);
+}
+int64_t nxu_recovery_block_partition_delete(uint32_t device, uint32_t partition)
+{
+	return nxu_syscall2(NXU_SYS_RECOVERY_BLOCK_PARTITION_DELETE, device, partition);
+}
+
+int64_t nxu_sap_remove_tree(const char *path)
+{
+	return nxu_syscall1(NXU_SYS_SAP_REMOVE_TREE, (uint64_t)path);
+}
+
+int64_t
+nxu_network(uint32_t operation, void *argument)
+{
+	return nxu_syscall2(NXU_SYS_NETWORK, operation, (uint64_t)(uintptr_t)argument);
+}
+
+int64_t
+nxu_dup2(uint32_t source, uint32_t destination)
+{
+	return nxu_syscall2(NXU_SYS_DUP2, source, destination);
+}
+
+int64_t
+nxu_read_poll(uint32_t descriptor, void *buffer, uint32_t length)
+{
+	return nxu_syscall3(NXU_SYS_READ_POLL, descriptor, (uint64_t)(uintptr_t)buffer, length);
+}
