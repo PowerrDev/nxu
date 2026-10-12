@@ -17,6 +17,10 @@
 			<key>path</key>
 			<string>/Applications/Activity Monitor.app</string>
 		</dict>
+		<dict>
+			<key>path</key>
+			<string>/Applications/Terminal.app</string>
+		</dict>
 	</array>
 
 	<!-- Icon size, in points. -->

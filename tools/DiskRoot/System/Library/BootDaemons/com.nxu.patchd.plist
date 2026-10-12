@@ -17,6 +17,9 @@
 	<key>KeepAlive</key>
 	<true/>
 
+	<key>AllowReset</key>
+	<true/>
+
 	<key>AllowFilesystemWrite</key>
 	<true/>
 
