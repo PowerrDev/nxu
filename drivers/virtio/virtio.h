@@ -12,6 +12,7 @@ typedef struct {
 	bool block;
 	bool gpu;
 	bool sound;
+	bool network;
 	/*
 	 * Optional: invoked the instant a GPU attaches, mid-scan, before the
 	 * remaining MMIO slots (input, block) are probed. Lets a caller paint

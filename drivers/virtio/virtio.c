@@ -6,6 +6,7 @@
 #include <drivers/virtio/virtio_input.h>
 #include <drivers/virtio/virtio_mmio.h>
 #include <drivers/virtio/virtio_sound.h>
+#include <drivers/virtio/virtio_net.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -15,6 +16,7 @@ static uint32_t g_virtio_input_count;
 static uint32_t g_virtio_block_count;
 static uint32_t g_virtio_gpu_count;
 static uint32_t g_virtio_sound_count;
+static uint32_t g_virtio_network_count;
 static bool g_virtio_initialized;
 
 #define VIRTIO_MAX_BUS_SCANNERS 4U
@@ -50,6 +52,18 @@ bool virtio_bind_device(const virtio_device_t *device, const virtio_probe_policy
 		return false;
 
 	g_virtio_device_count++;
+
+	if (device->device_id == VIRTIO_DEVICE_ID_NET) {
+		if (policy->network) {
+			if (virtio_net_attach(device)) {
+				g_virtio_network_count++;
+			} else {
+				kputln("VirtIOFamily: network device failed to attach");
+			}
+		}
+
+		return true;
+	}
 
 	if (device->device_id == VIRTIO_DEVICE_ID_GPU) {
 		if (!policy->gpu)
@@ -146,8 +160,8 @@ bool virtio_init(const platform_t *platform, const virtio_probe_policy_t *policy
 
 	g_virtio_initialized = true;
 	virtio_snd_probe();
-	kprintf("VirtIOFamily: %u device(s): %u input, %u block, %u GPU, %u sound\n", g_virtio_device_count,
-			g_virtio_input_count, g_virtio_block_count, g_virtio_gpu_count, g_virtio_sound_count);
+	kprintf("VirtIOFamily: %u device(s): %u input, %u block, %u GPU, %u sound, %u network\n", g_virtio_device_count,
+			g_virtio_input_count, g_virtio_block_count, g_virtio_gpu_count, g_virtio_sound_count, g_virtio_network_count);
 	return true;
 }
 
@@ -179,8 +193,8 @@ uint32_t virtio_sound_count(void)
 void virtio_dump(void)
 {
 	/* virtio_init() already printed the device count line. */
-	kverbosef("VirtIOFamily: %u device(s): %u input, %u block, %u GPU, %u sound\n", g_virtio_device_count,
-			  g_virtio_input_count, g_virtio_block_count, g_virtio_gpu_count, g_virtio_sound_count);
+	kverbosef("VirtIOFamily: %u device(s): %u input, %u block, %u GPU, %u sound, %u network\n", g_virtio_device_count,
+			  g_virtio_input_count, g_virtio_block_count, g_virtio_gpu_count, g_virtio_sound_count, g_virtio_network_count);
 	virtio_input_dump();
 	virtio_block_dump();
 	virtio_gpu_dump();
