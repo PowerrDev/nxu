@@ -118,6 +118,11 @@ run_kernel_test() {
 		return
 	fi
 
+	local network_args=()
+	if [ "$id" = "network" ]; then
+		network_args=(-netdev user,id=nxunet,ipv4=on,ipv6=on -device virtio-net-device,netdev=nxunet -append net.test=1)
+	fi
+
 	: >"$serial"
 	qemu-system-aarch64 \
 		-machine virt,gic-version=3 -cpu cortex-a72 -smp "$cpus" -m 512M \
@@ -127,6 +132,7 @@ run_kernel_test() {
 		-device virtio-blk-device,drive=nxudisk \
 		-device virtio-gpu-device -device virtio-keyboard-device -device virtio-mouse-device \
 		$audio -device virtio-sound-device,audiodev=snd0 \
+		"${network_args[@]}" \
 		-serial file:"$serial" -monitor none -no-reboot >/dev/null 2>&1 </dev/null &
 	qpid=$!
 

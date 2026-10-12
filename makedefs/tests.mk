@@ -60,7 +60,7 @@ TEST_IDS := \
     fault-process \
     process-control \
     socket-process \
-    xamethyst-process \
+    network \
     windowserver-process \
     about-sevos-process \
     smp \
@@ -89,7 +89,6 @@ TEST_IDS := \
 #   windowserver-process a second display server: the userland WindowServer
 #                        claims the one display the UI session already owns
 #   about-sevos-process  needs that userland WindowServer to draw into
-#   xamethyst-process    XAmethyst claims the display too (it replaces WindowServer)
 #
 # `make check` runs it headless: the same kernel with -display none (the UI
 # session still runs, on the virtio-gpu framebuffer) and every pass line below
@@ -195,14 +194,15 @@ TEST_process-control_DESC := fork, exec, signals, copy-on-write, demand paging
 TEST_process-control_PASS := process_control_test: passed
 TEST_process-control_CFLAGS := -DNXU_PROCESS_CONTROL_TEST
 
+TEST_network_GROUP := Networking
+TEST_network_DESC := IPv4 and IPv6 loopback and VirtIO gateway ping
+TEST_network_BOOT_ARGS := net.test=1
+TEST_network_PASS := net_test: IPv4/IPv6 loopback and VirtIO gateway echo passed
+
 TEST_socket-process_GROUP := Userland processes
 TEST_socket-process_DESC := Socket server and client stream a payload
 TEST_socket-process_PASS := socket_process_test: passed
 TEST_socket-process_CFLAGS := -DNXU_SOCKET_PROCESS_TEST
-
-TEST_xamethyst-process_GROUP := Userland processes
-TEST_xamethyst-process_DESC := XAmethyst X11 handshake and input
-TEST_xamethyst-process_CFLAGS := -DNXU_XAMETHYST_PROCESS_TEST
 
 TEST_windowserver-process_GROUP := Userland processes
 TEST_windowserver-process_DESC := WindowServer as a process (monitor :45455)
@@ -313,7 +313,8 @@ CHECK_I386_TARGETS := \
 
 # The host tests `make check` runs first, one make target each.
 CHECK_HOST_TARGETS := \
-    test-audio-host
+    test-audio-host \
+    test-network-host
 
 
 # -- Rules ---------------------------------------------------------------------
@@ -383,8 +384,20 @@ test: $(DISK) $(DISK_FORMAT_STAMP)
 		-device virtio-gpu-device$(TEST_$(TEST)_GPU) \
 		-device virtio-keyboard-device \
 		-device virtio-mouse-device \
+		$(QEMU_NETWORK) \
 		$(or $(TEST_$(TEST)_AUDIODEV),$(QEMU_AUDIODEV)) \
 		$(QEMU_SOUND_DEVICE) \
 		-serial stdio \
 		$(TEST_$(TEST)_SERIAL1) \
 		-monitor $(or $(TEST_$(TEST)_MONITOR),none)
+
+.PHONY: test-network-host test-network-vm test-network-session
+
+test-network-host:
+	$(Q)python3 tools/check_network.py
+
+test-network-vm:
+	$(Q)python3 tools/check_network_vm.py
+
+test-network-session: test-network-vm
+	$(Q)python3 tools/check_network_session.py

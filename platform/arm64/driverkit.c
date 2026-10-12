@@ -146,6 +146,7 @@ bool driverkit_init(driverkit_config_t *config)
 		.input = config->input_enabled,
 		.block = config->block_enabled,
 		.gpu = config->gpu_enabled,
+		.network = true,
 		.sound = config->sound_enabled,
 		.on_gpu_ready = config->gpu_enabled ? driverkit_show_splash_if_needed : 0
 	};

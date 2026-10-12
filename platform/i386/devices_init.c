@@ -28,6 +28,7 @@
  */
 
 #include <kern/i386/boot_info.h>
+#include <kern/boot/splash.h>
 #include <platform/i386/pci.h>
 #include <platform/platform.h>
 #include <platform/rtc.h>
@@ -42,6 +43,7 @@
 #include <drivers/virtio/virtio.h>
 #include <drivers/virtio/virtio_block.h>
 #include <drivers/virtio/virtio_gpu.h>
+#include <drivers/video/firmware.h>
 #include <drivers/virtio/virtio_input.h>
 #include <drivers/virtio/virtio_pci.h>
 
@@ -140,6 +142,7 @@ bool i386_init_platform(const i386_boot_info_t *boot)
 
 	kputln("i386_init_platform: discovering hardware");
 
+	kputln("i386_init_platform: discovering RAM, PCI functions and RTC");
 	if (!platform_bootstrap(0)) {
 		kputln("i386_init_platform: platform_bootstrap failed");
 		return false;
@@ -245,6 +248,13 @@ bool i386_init_platform_selftest(const i386_boot_info_t *boot)
 
 /* ---- drivers phase ---------------------------------------------------- */
 
+/* Present as soon as the GPU is ready, before the remaining drivers attach. */
+static void devices_show_boot_splash(void)
+{
+	if (!boot_splash_show(display_primary()))
+		kputln("i386_init_drivers: boot splash unavailable");
+}
+
 bool i386_init_drivers(const i386_boot_info_t *boot)
 {
 	(void)boot;
@@ -282,8 +292,9 @@ bool i386_init_drivers(const i386_boot_info_t *boot)
 		.input = true,
 		.block = true,
 		.gpu = true,
+		.network = true,
 		.sound = true,
-		.on_gpu_ready = 0
+		.on_gpu_ready = devices_show_boot_splash
 	};
 
 	if (!virtio_pci_register()) {
@@ -295,6 +306,9 @@ bool i386_init_drivers(const i386_boot_info_t *boot)
 		kputln("i386_init_drivers: virtio_init failed");
 		return false;
 	}
+
+	if (!display_primary() && firmware_display_init(boot))
+		devices_show_boot_splash();
 
 	kprintf(
 		"i386_init_drivers: %u block device(s), %u input device(s), keyboard %s, mouse %s, %u display(s)\n",
@@ -309,6 +323,10 @@ bool i386_init_drivers(const i386_boot_info_t *boot)
 	 * The Trusted Enclave link (COM2 when QEMU has a second -serial). Absent, tepOS requests fail closed.
 	 * With it, tepOS checks bootd against its signed manifest: reported, never waited for or enforced.
 	 */
+	virtio_dump();
+	block_device_dump();
+	display_dump();
+
 	if (tep_mailbox_start()) (void)tep_boot_check_start();
 
 	return true;

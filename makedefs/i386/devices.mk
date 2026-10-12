@@ -24,7 +24,24 @@ I386_C_SOURCES += \
     drivers/tep/tep_mailbox.c \
     drivers/tep/tep_uart_16550.c \
     drivers/video/display.c \
+    kern/boot/splash.c \
+    kern/boot/splash_asset.c \
+    kern/console/font8x16.c \
     drivers/virtio/virtio.c \
+    drivers/virtio/virtio_net.c \
+    kern/net/net.c \
+    kern/tests/net_test.c \
+    kern/net/netbuf.c \
+    kern/net/netif.c \
+    kern/net/checksum.c \
+    kern/net/ethernet.c \
+    kern/net/arp.c \
+    kern/net/route.c \
+    kern/netinet/ip.c \
+    kern/netinet/icmp.c \
+    kern/netinet6/ip6.c \
+    kern/netinet6/icmp6.c \
+    kern/netinet6/nd6.c \
     drivers/virtio/virtio_block.c \
     drivers/virtio/virtio_gpu.c \
     drivers/virtio/virtio_input.c \

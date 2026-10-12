@@ -24,3 +24,6 @@ __pycache__/
 
 # Persistent local development image; too large for GitHub.
 /tools/disk.img
+
+# Compiler cache survives make clean.
+/.build-cache/

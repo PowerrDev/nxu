@@ -39,6 +39,8 @@ I386_USER_CFLAGS := \
     -MMD \
     -MP \
     -Iframeworks/include \
+    -Iframeworks/Recovery.framework/include \
+    -Iframeworks/Recovery.framework/StartupOptionsUI \
     -I.
 
 I386_USER_ASFLAGS := --target=i386-none-elf
@@ -63,6 +65,7 @@ I386_USER_COMMON_OBJECTS := \
     $(I386_USER_BUILD)/frameworks/crt0_i386.o \
     $(I386_USER_BUILD)/frameworks/lib/syscall_i386.o \
     $(I386_USER_BUILD)/frameworks/lib/string.o \
+    $(I386_USER_BUILD)/frameworks/lib/spawn_io_i386.o \
     $(I386_USER_BUILD)/frameworks/lib/thread_i386.o
 
 # User code is freestanding and the compiler lowers 64-bit / and % on i386 to
@@ -98,11 +101,25 @@ I386_USER_PROGRAMS := \
     top \
     sockettest_server \
     sockettest_client \
-    playsound
+    playsound \
+    nzh \
+    ping \
+    ifconfig \
+    terminaltest
 
 I386_USER_BINARIES := $(addprefix $(I386_USER_BUILD)/,$(I386_USER_PROGRAMS))
 
-I386_USER_OBJECTS := \
+I386_RECOVERY_SOURCES := frameworks/Recovery.framework/lib/RecoveryServices.c \
+    frameworks/Recovery.framework/StartupOptionsUI/drawing.c \
+    $(RECOVERY_SANS_SOURCE) $(RECOVERY_MONO_SOURCE) \
+    frameworks/Recovery.framework/StartupOptionsUI/font_ttf.c \
+    frameworks/Recovery.framework/triageOS/shell.c \
+    frameworks/Recovery.framework/triageOS/ui.c \
+    frameworks/Recovery.framework/triageOS/main.c
+I386_RECOVERY_OBJECTS := $(addprefix $(I386_USER_BUILD)/,$(I386_RECOVERY_SOURCES:.c=.o))
+I386_USER_BINARIES += $(I386_USER_BUILD)/triageOS
+
+I386_USER_OBJECTS := $(I386_RECOVERY_OBJECTS) \
     $(I386_USER_COMMON_OBJECTS) \
     $(I386_USER_BUILD)/libk/udivmoddi4.o \
     $(I386_USER_BUILD)/libk/wav.o \
@@ -153,6 +170,11 @@ $(I386_USER_BUILD)/%.o: %.c
 
 	$(Q)$(I386_USER_CC) $(I386_USER_CFLAGS) -c $< -o $@
 
+$(I386_USER_BUILD)/frameworks/crt0_i386.o: frameworks/crt0_i386.S makedefs/i386/userland.mk
+	@mkdir -p $(dir $@)
+	$(QUIET_PRINT) "AS" "$<"
+	$(Q)$(I386_USER_CC) $(I386_USER_ASFLAGS) -DNXU_SPAWN_IO_ENTRY -c $< -o $@
+
 $(I386_USER_BUILD)/%.o: %.S
 
 	@mkdir -p $(dir $@)
@@ -181,7 +203,7 @@ $(I386_USER_BUILD)/bootd: $(I386_USER_COMMON_OBJECTS) $(I386_USER_COREFOUNDATION
 
 	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
 
-$(I386_USER_BUILD)/logd $(I386_USER_BUILD)/patchd $(I386_USER_BUILD)/threadtest $(I386_USER_BUILD)/top $(I386_USER_BUILD)/sockettest_server $(I386_USER_BUILD)/sockettest_client: $(I386_USER_BUILD)/%: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/$(I386_USER_DAEMON_DIR)/%.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
+$(I386_USER_BUILD)/logd $(I386_USER_BUILD)/threadtest $(I386_USER_BUILD)/top $(I386_USER_BUILD)/sockettest_server $(I386_USER_BUILD)/sockettest_client: $(I386_USER_BUILD)/%: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/$(I386_USER_DAEMON_DIR)/%.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
 
 	@mkdir -p $(dir $@)
 
@@ -206,6 +228,28 @@ $(I386_USER_BUILD)/ipctest_a $(I386_USER_BUILD)/ipctest_b: $(I386_USER_BUILD)/%:
 
 	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
 
+$(I386_USER_BUILD)/ping $(I386_USER_BUILD)/ifconfig $(I386_USER_BUILD)/terminaltest: $(I386_USER_BUILD)/%: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/frameworks/Terminal.framework/%.o $(I386_USER_BUILD)/frameworks/Terminal.framework/netutil.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
+	$(QUIET_PRINT) "LD" "$@"
+	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
+
+$(I386_USER_BUILD)/nzh: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/frameworks/Terminal.framework/nzh.o $(I386_USER_BUILD)/frameworks/Terminal.framework/shell_parse.o $(I386_USER_BUILD)/frameworks/Terminal.framework/netutil.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
+	$(QUIET_PRINT) "LD" "$@"
+	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
+
+$(I386_USER_BUILD)/terminal: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/frameworks/Terminal.framework/terminal.o $(I386_USER_BUILD)/kern/console/font8x16.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
+	$(QUIET_PRINT) "LD" "$@"
+	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
+
+$(I386_USER_BUILD)/libk/sha256.o: I386_USER_CFLAGS += -Ilibk
+
+$(I386_USER_BUILD)/patchd: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/frameworks/BootDaemons.framework/patchd.o $(I386_USER_BUILD)/frameworks/SoftwareUpdate.framework/lib/nsw.o $(I386_USER_BUILD)/frameworks/SoftwareUpdate.framework/lib/manifest.o $(I386_USER_BUILD)/frameworks/CoreFoundation.framework/lib/plist/plist.o $(I386_USER_BUILD)/libk/sha256.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
+	$(QUIET_PRINT) "LD" "$@"
+	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
+
+$(I386_USER_BUILD)/triageOS: $(I386_USER_BUILD)/frameworks/SoftwareUpdate.framework/lib/nsw.o $(I386_USER_BUILD)/frameworks/SoftwareUpdate.framework/lib/manifest.o $(I386_USER_BUILD)/frameworks/CoreFoundation.framework/lib/plist/plist.o $(I386_USER_BUILD)/libk/sha256.o $(I386_USER_COMMON_OBJECTS) $(I386_RECOVERY_OBJECTS) $(I386_USER_RUNTIME) makedefs/user-i386.ld
+	$(QUIET_PRINT) "LD" "$@"
+	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
+
 i386-userland: $(I386_USER_BINARIES)
 
 # -----------------------------------------------------------------------------
@@ -219,6 +263,8 @@ $(I386_USER_STAMP): $(I386_USER_BINARIES) $(I386_USER_PLISTS) $(I386_DISK_STATIC
 	$(Q)rm -rf $(I386_DISKROOT)
 
 	$(Q)mkdir -p $(I386_DISKROOT)/System/Library/CoreServices $(I386_DISKROOT)/System/Library/BootDaemons $(I386_DISKROOT)/System/Recovery $(I386_DISKROOT)/System/Library/Resources/Audio $(I386_DISKROOT)/var/log $(I386_DISKROOT)/var/db/patchd
+
+	$(Q)cp $(I386_USER_BUILD)/triageOS $(I386_DISKROOT)/System/Recovery/triageOS
 
 	$(Q)cp tools/DiskRoot/hello.txt $(I386_DISKROOT)/hello.txt
 
@@ -241,6 +287,8 @@ $(I386_USER_STAMP): $(I386_USER_BINARIES) $(I386_USER_PLISTS) $(I386_DISK_STATIC
 	$(Q)cp $(I386_USER_BUILD)/patchd $(I386_DISKROOT)/System/Library/CoreServices/patchd.recovery
 
 	$(Q)cp $(I386_USER_BUILD)/ipctest_a $(I386_USER_BUILD)/ipctest_b $(I386_USER_BUILD)/threadtest $(I386_USER_BUILD)/top $(I386_USER_BUILD)/sockettest_server $(I386_USER_BUILD)/sockettest_client $(I386_USER_BUILD)/playsound $(I386_DISKROOT)/System/Library/CoreServices/
+
+	$(Q)cp $(I386_USER_BUILD)/nzh $(I386_USER_BUILD)/ping $(I386_USER_BUILD)/ifconfig $(I386_USER_BUILD)/terminaltest $(I386_DISKROOT)/System/Library/CoreServices/
 
 	$(Q)cp $(I386_USER_PLISTS) $(I386_DISKROOT)/System/Library/BootDaemons/
 
@@ -298,3 +346,8 @@ test-i386-userland: $(I386_KERNEL) i386-userland i386-loader-check i386-disk-che
 	tools/check_i386_user.sh $(I386_USER_BUILD)
 
 	tools/test_i386_userland.sh $(I386_KERNEL)
+
+# Track the shared shell and diagnostic headers for incremental builds.
+-include $(wildcard $(I386_USER_BUILD)/frameworks/Terminal.framework/*.d)
+
+-include $(I386_USER_BUILD)/frameworks/SoftwareUpdate.framework/lib/nsw.d $(I386_USER_BUILD)/frameworks/SoftwareUpdate.framework/lib/manifest.d $(I386_USER_BUILD)/libk/sha256.d

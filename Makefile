@@ -115,13 +115,19 @@ MKFS_EXT4 ?= mkfs.ext4
 
 E2FSCK ?= e2fsck
 
-CC := clang
+# Keep compiler results across clean builds. Override CACHE=0 to bypass it.
+CACHE ?= 1
+CCACHE := $(if $(filter 1,$(CACHE)),$(shell command -v ccache 2>/dev/null))
+CCACHE_DIR ?= $(CURDIR)/.build-cache/ccache
+export CCACHE_DIR
+
+CC := $(if $(CCACHE),$(CCACHE) )clang
 
 LD := ld.lld
 
 OBJCOPY := llvm-objcopy
 
-USER_CC := ccache clang
+USER_CC := $(CC)
 
 USER_LD := ld.lld
 
@@ -291,6 +297,10 @@ LDFLAGS := \
 # Kernel sources
 # =============================================================================
 
+# Static addresses match QEMU's user network; NET=0 omits the NIC.
+NET ?= 1
+QEMU_NETWORK = $(if $(filter 0,$(NET)),,-netdev user,id=nxunet,ipv4=on,ipv6=on -device virtio-net-device,netdev=nxunet)
+
 C_SOURCES := \
     kern/arm64/cache.c \
     kern/arm64/exception.c \
@@ -318,6 +328,20 @@ C_SOURCES := \
     drivers/video/ui_service_bridge.c \
     kern/aqua/window_server.c \
     drivers/virtio/virtio.c \
+    drivers/virtio/virtio_net.c \
+    kern/net/net.c \
+    kern/tests/net_test.c \
+    kern/net/netbuf.c \
+    kern/net/netif.c \
+    kern/net/checksum.c \
+    kern/net/ethernet.c \
+    kern/net/arp.c \
+    kern/net/route.c \
+    kern/netinet/ip.c \
+    kern/netinet/icmp.c \
+    kern/netinet6/ip6.c \
+    kern/netinet6/icmp6.c \
+    kern/netinet6/nd6.c \
     drivers/virtio/virtio_block.c \
     drivers/virtio/virtio_gpu.c \
     drivers/virtio/virtio_input.c \
@@ -328,6 +352,11 @@ C_SOURCES := \
     drivers/virtio/virtio_sound_pcm.c \
     drivers/virtio/virtqueue.c \
     kern/boot/boot_args.c \
+    kern/boot/recovery_volume.c \
+    kern/update/update.c \
+    drivers/block/file_image.c \
+    frameworks/SoftwareUpdate.framework/lib/manifest.c \
+    frameworks/CoreFoundation.framework/lib/plist/plist.c \
     kern/boot/boot_chime.c \
     kern/boot/boot_mode.c \
     kern/boot/nvram.c \
@@ -371,7 +400,6 @@ C_SOURCES := \
     kern/tests/smp_user_test.c \
     kern/tests/sound_test.c \
     kern/tests/tep_mailbox_test.c \
-    kern/tests/xamethyst_process_test.c \
     kern/tests/windowserver_process_test.c \
     kern/tests/about_sevos_process_test.c \
     kern/tests/unified_boot.c \
@@ -455,6 +483,13 @@ DEPENDENCIES := \
 # =============================================================================
 
 USER_C_SOURCES := \
+    frameworks/Terminal.framework/terminal.c \
+    frameworks/Terminal.framework/terminaltest.c \
+    frameworks/Terminal.framework/nzh.c \
+    frameworks/Terminal.framework/shell_parse.c \
+    frameworks/Terminal.framework/netutil.c \
+    frameworks/Terminal.framework/ping.c \
+    frameworks/Terminal.framework/ifconfig.c \
     frameworks/lib/syscall.c \
     frameworks/lib/string.c \
     frameworks/lib/thread.c \
@@ -472,6 +507,8 @@ USER_C_SOURCES := \
     frameworks/BootDaemons.framework/problemreporter.c \
     frameworks/BootDaemons.framework/crashtest.c \
     frameworks/BootDaemons.framework/patchd.c \
+    frameworks/SoftwareUpdate.framework/lib/nsw.c \
+    frameworks/SoftwareUpdate.framework/lib/manifest.c \
     frameworks/BootDaemons.framework/ipctest_a.c \
     frameworks/BootDaemons.framework/ipctest_b.c \
     frameworks/BootDaemons.framework/threadtest.c \
@@ -485,9 +522,6 @@ USER_C_SOURCES := \
     libk/wav.c \
     frameworks/BootDaemons.framework/sockettest_server.c \
     frameworks/BootDaemons.framework/sockettest_client.c \
-    frameworks/BootDaemons.framework/xamethyst.c \
-    frameworks/BootDaemons.framework/x11test_handshake.c \
-    frameworks/BootDaemons.framework/x11test_input.c \
     frameworks/BootDaemons.framework/windowserver_service.c \
     frameworks/BootDaemons.framework/wstest_client.c \
     frameworks/BootDaemons.framework/about_sevos_service.c \
@@ -553,6 +587,11 @@ USER_DAEMONS := \
     $(USER_BUILD)/threadtest \
     $(USER_BUILD)/smptest \
     $(USER_BUILD)/top \
+    $(USER_BUILD)/ping \
+    $(USER_BUILD)/ifconfig \
+    $(USER_BUILD)/nzh \
+    $(USER_BUILD)/terminal \
+    $(USER_BUILD)/terminaltest \
     $(USER_BUILD)/faulttest \
     $(USER_BUILD)/proctest \
     $(USER_BUILD)/execchild \
@@ -560,9 +599,6 @@ USER_DAEMONS := \
     $(USER_BUILD)/playsound \
     $(USER_BUILD)/sockettest_server \
     $(USER_BUILD)/sockettest_client \
-    $(USER_BUILD)/xamethyst \
-    $(USER_BUILD)/x11test_handshake \
-    $(USER_BUILD)/x11test_input \
     $(USER_BUILD)/windowserver_service \
     $(USER_BUILD)/desktop_service \
     $(USER_BUILD)/CoreGraphics.so \
@@ -722,6 +758,18 @@ $(USER_BUILD)/%.o: %.S
 # Userland binaries
 # =============================================================================
 
+$(USER_BUILD)/ping $(USER_BUILD)/ifconfig $(USER_BUILD)/terminaltest: $(USER_BUILD)/%: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/Terminal.framework/%.o $(USER_BUILD)/frameworks/Terminal.framework/netutil.o
+	$(QUIET_PRINT) "LD" "$@"
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+$(USER_BUILD)/nzh: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/Terminal.framework/nzh.o $(USER_BUILD)/frameworks/Terminal.framework/shell_parse.o $(USER_BUILD)/frameworks/Terminal.framework/netutil.o
+	$(QUIET_PRINT) "LD" "$@"
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+$(USER_BUILD)/terminal: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/Terminal.framework/terminal.o $(USER_BUILD)/kern/console/font8x16.o
+	$(QUIET_PRINT) "LD" "$@"
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
 $(USER_BUILD)/bootd: $(USER_COMMON_OBJECTS) $(USER_COREFOUNDATION_OBJECTS) $(USER_BOOTD_OBJECTS)
 
 	$(QUIET_PRINT) "LD" "$@"
@@ -775,7 +823,7 @@ $(USER_BUILD)/CoreGraphics.so: $(COREGRAPHICS_PIC_SOURCES) $(COREGRAPHICS_PIC_AS
 $(USER_BUILD)/DesktopService.so: $(USER_BUILD)/CoreGraphics.so
 	$(Q)cp "$(COREGRAPHICS_PIC_DIR)/audit/DesktopService.so" $@
 
-$(DYRLD_PIC)/frameworks/BootDaemons.framework/desktop_service.o: $(USER_BUILD)/DesktopService.so
+$(DYRLD_PIC)/frameworks/BootDaemons.framework/desktop_service.o: frameworks/BootDaemons.framework/desktop_service.c $(USER_BUILD)/DesktopService.so
 	@mkdir -p $(dir $@)
 	$(Q)$(USER_CC) $(DYRLD_FRAMEWORK_FLAGS) -I"$(COREGRAPHICS_PIC_DIR)/include" \
 		-c frameworks/BootDaemons.framework/desktop_service.c -o $@
@@ -828,14 +876,20 @@ $(USER_BUILD)/logd: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 
-$(USER_BUILD)/patchd: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/patchd.o
+$(USER_BUILD)/patchd: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/patchd.o \
+	$(USER_BUILD)/frameworks/SoftwareUpdate.framework/lib/nsw.o \
+	$(USER_BUILD)/frameworks/SoftwareUpdate.framework/lib/manifest.o \
+	$(USER_BUILD)/frameworks/CoreFoundation.framework/lib/plist/plist.o $(USER_BUILD)/libk/sha256.o
 
 	$(QUIET_PRINT) "LD" "$@"
 
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 
-$(USER_BUILD)/triageOS: $(USER_COMMON_OBJECTS) $(USER_RECOVERY_OBJECTS)
+$(USER_BUILD)/triageOS: $(USER_COMMON_OBJECTS) $(USER_RECOVERY_OBJECTS) \
+	$(USER_BUILD)/frameworks/SoftwareUpdate.framework/lib/nsw.o \
+	$(USER_BUILD)/frameworks/SoftwareUpdate.framework/lib/manifest.o \
+	$(USER_BUILD)/frameworks/CoreFoundation.framework/lib/plist/plist.o $(USER_BUILD)/libk/sha256.o
 
 	$(QUIET_PRINT) "LD" "$@"
 
@@ -926,27 +980,6 @@ $(USER_BUILD)/sockettest_client: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 
-$(USER_BUILD)/xamethyst: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/xamethyst.o
-
-	$(QUIET_PRINT) "LD" "$@"
-
-	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
-
-
-$(USER_BUILD)/x11test_handshake: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/x11test_handshake.o
-
-	$(QUIET_PRINT) "LD" "$@"
-
-	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
-
-
-$(USER_BUILD)/x11test_input: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/x11test_input.o
-
-	$(QUIET_PRINT) "LD" "$@"
-
-	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
-
-
 $(USER_BUILD)/windowserver_service: $(DYRLD_PIC)/frameworks/crt0.o \
 	$(DYRLD_PIC)/frameworks/BootDaemons.framework/windowserver_service.o $(USER_BUILD)/WindowServer.so \
 	$(USER_BUILD)/CoreFoundation.so $(USER_BUILD)/Runtime.so
@@ -987,7 +1020,7 @@ $(USER_BUILD)/apps/%: $(USER_COMMON_OBJECTS) $(USER_APPKIT_OBJECTS) $(UISERVICE_
 userland: $(USER_DAEMONS) $(USER_APPS)
 
 
-$(USER_STAGE_STAMP): $(USER_DAEMONS) $(USER_APPS) $(USER_SERVICE_PLISTS) $(USER_SYSTEM_FONTS) tools/crash_symbols.py
+$(USER_STAGE_STAMP): frameworks/Terminal.framework/Info.plist $(USER_DAEMONS) $(USER_APPS) $(USER_SERVICE_PLISTS) $(USER_SYSTEM_FONTS) tools/crash_symbols.py
 
 	@mkdir -p $(DISK_ROOT)/System/Library/CoreServices $(DISK_ROOT)/System/Library/BootDaemons \
 		$(DISK_ROOT)/System/Library/Fonts $(DISK_ROOT)/System/Recovery $(DISK_ROOT)/var/log \
@@ -1028,6 +1061,10 @@ $(USER_STAGE_STAMP): $(USER_DAEMONS) $(USER_APPS) $(USER_SERVICE_PLISTS) $(USER_
 
 	$(Q)cp $(USER_BUILD)/smptest $(DISK_ROOT)/System/Library/CoreServices/smptest
 	$(Q)cp $(USER_BUILD)/top $(DISK_ROOT)/System/Library/CoreServices/top
+	$(Q)cp $(USER_BUILD)/ping $(USER_BUILD)/ifconfig $(USER_BUILD)/nzh $(USER_BUILD)/terminaltest $(DISK_ROOT)/System/Library/CoreServices/
+	$(Q)mkdir -p "$(DISK_ROOT)/Applications/Terminal.app/Contents/SevOS"
+	$(Q)cp $(USER_BUILD)/terminal "$(DISK_ROOT)/Applications/Terminal.app/Contents/SevOS/Terminal"
+	$(Q)cp frameworks/Terminal.framework/Info.plist "$(DISK_ROOT)/Applications/Terminal.app/Contents/Info.plist"
 
 	$(Q)cp $(USER_BUILD)/faulttest $(DISK_ROOT)/System/Library/CoreServices/faulttest
 
@@ -1042,12 +1079,6 @@ $(USER_STAGE_STAMP): $(USER_DAEMONS) $(USER_APPS) $(USER_SERVICE_PLISTS) $(USER_
 	$(Q)cp $(USER_BUILD)/sockettest_server $(DISK_ROOT)/System/Library/CoreServices/sockettest_server
 
 	$(Q)cp $(USER_BUILD)/sockettest_client $(DISK_ROOT)/System/Library/CoreServices/sockettest_client
-
-	$(Q)cp $(USER_BUILD)/xamethyst $(DISK_ROOT)/System/Library/CoreServices/xamethyst
-
-	$(Q)cp $(USER_BUILD)/x11test_handshake $(DISK_ROOT)/System/Library/CoreServices/x11test_handshake
-
-	$(Q)cp $(USER_BUILD)/x11test_input $(DISK_ROOT)/System/Library/CoreServices/x11test_input
 
 	$(Q)cp $(USER_BUILD)/windowserver_service $(DISK_ROOT)/System/Library/CoreServices/windowserver_service
 	$(Q)cp $(USER_BUILD)/desktop_service $(DISK_ROOT)/System/Library/CoreServices/desktop_service
@@ -1258,6 +1289,7 @@ run-console: $(KERNEL_IMAGE) $(DISK) $(DISK_FORMAT_STAMP)
 		$(QEMU_RAMFB_DEVICE) \
 		-device virtio-blk-device,drive=nxudisk \
 		$(QEMU_GPU_DEVICE) \
+		$(QEMU_NETWORK) \
 		-device virtio-keyboard-device \
 		-device virtio-mouse-device \
 		$(QEMU_AUDIODEV) \

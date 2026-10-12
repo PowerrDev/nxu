@@ -56,6 +56,7 @@ deviates from that rule in two places; both are recorded in
 - [Build system](build-system.md) — toolchain, flags, outputs, QEMU invocation.
 - [Roadmap to userland](roadmap-to-userland.md) — planned work, not implemented
   functionality.
+- [Software updates](software-update.md) — NSW packages and verified recovery preparation.
 - [Root services](root-services.md) — PID 1, logd, patchd and recovery behavior.
 - [Testing](testing.md) — `make check`, the test registry, and how to add a test.
 - [Service property lists](service-plists.md) — declarative bootd job schema and plist parser limits.

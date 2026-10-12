@@ -14,9 +14,15 @@ I386_THREADS_STANDINS := 0
 I386_C_SOURCES += \
     kern/i386/fs_test.c \
     kern/i386/kernel_init.c \
+    kern/i386/startup.c \
     kern/i386/mmio_map.c \
     kern/i386/userland_init.c \
     kern/boot/boot_args.c \
+    kern/boot/recovery_volume.c \
+    kern/update/update.c \
+    drivers/block/file_image.c \
+    frameworks/SoftwareUpdate.framework/lib/manifest.c \
+    frameworks/CoreFoundation.framework/lib/plist/plist.c \
     kern/boot/boot_chime.c \
     kern/boot/boot_mode.c \
     drivers/video/display.c \

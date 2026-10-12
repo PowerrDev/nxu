@@ -19,6 +19,7 @@ I386_CC := clang
 
 I386_CFLAGS := \
     --target=i386-none-elf \
+    -march=i686 \
     -ffreestanding \
     -fno-stack-protector \
     -fno-pic \
@@ -72,6 +73,8 @@ I386_QEMU_FLAGS ?= -display none -serial stdio -monitor none -device isa-debug-e
 
 # run-i386 has a sound device on the host's speakers (the VirtIO Sound driver's
 # /dev/audio0, see doc/drivers/virtio-sound.md); the tests use the wav backend.
+I386_QEMU_NETWORK = $(if $(filter 0,$(NET)),,-netdev user,id=nxunet,ipv4=on,ipv6=on -device virtio-net-pci,netdev=nxunet,disable-modern=on)
+
 I386_QEMU_AUDIO ?= -audiodev coreaudio,id=snd0 -device virtio-sound-pci,audiodev=snd0
 
 .PHONY: i386 run-i386 test-i386
@@ -127,10 +130,11 @@ I386_TEP_WRAPPER = $(if $(filter 0,$(TEP)),,tools/with_tepos.sh)
 
 run-i386: $(I386_KERNEL)
 
-	$(I386_TEP_WRAPPER) qemu-system-i386 \
+	$(I386_TEP_WRAPPER) qemu-system-i386 -cpu qemu32,+nx \
 		-kernel $(I386_KERNEL) \
 		-m 128M \
 		$(I386_QEMU_AUDIO) \
+		$(I386_QEMU_NETWORK) \
 		$(I386_QEMU_FLAGS)
 
 

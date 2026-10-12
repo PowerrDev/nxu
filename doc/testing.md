@@ -84,8 +84,8 @@ i386, in both interrupt and polling mode, and boots with no sound device. See
 [VirtIO Sound](drivers/virtio-sound.md).
 
 The graphical tests (`ui-*`, `windowserver-*`, `about-sevos-process`) and
-`journal-crash` need a display or a person, and `xamethyst-process` has no pass
-line yet, so none of them are in `make check`. `everything` is the exception: the
+`journal-crash` need a display or a person, so none of them are in `make check`.
+`everything` is the exception: the
 UI session draws into the virtio-gpu framebuffer, so it runs headless too.
 
 ### The Trusted Enclave mailbox
@@ -153,7 +153,6 @@ unified_boot_summary: all 5 test(s) passed
 | `ui-about`, `windowserver-about` | no | the same desktop as `ui-voyager`; there is one desktop per boot |
 | `windowserver-process` | no | a second display server: the userland WindowServer claims the display (`nxu_display_claim`, one owner) that the UI session already draws to |
 | `about-sevos-process` | no | needs that userland WindowServer to draw into |
-| `xamethyst-process` | no | XAmethyst claims the display too (it replaces WindowServer) |
 | `fault-process` | no | exists to fault user processes on purpose |
 | `journal-crash` | no | halts the kernel after crashing mid-transaction on purpose |
 
@@ -198,3 +197,18 @@ make check CHECK_ONLY=ipc-process "TEST_ipc-process_PASS=never appears" CHECK_TI
 ```
 
 This reports `FAIL ipc-process`, keeps the logs and exits non-zero.
+
+Networking checks are described in [Networking and Terminal](networking.md). `make test-network-host` runs the sanitizer harness, `make test-network-vm` checks ARM64 VirtIO gateway echo, and `make test-network-session` runs the installed shell and executable tests on a private disk. The VM runner also accepts `--arch i386` for both PCI transports.
+
+NSW package validation: `python3 tools/check_nsw.py` runs host sanitizers with real ISO containers and fault injection. `python3 tools/check_nsw_vm.py` and `python3 tools/check_nsw_vm.py --arch i386` exercise extraction and synced publication through each kernel's VFS on private disks.
+
+Automatic installation: `python3 tools/check_update_vm.py --arch arm64 --case success`
+checks scheduling, automatic reset, offline copying and confirmation. Repeat for
+i386 and cases `failure`, `unconfirmed`, `tamper` and `recovery` to exercise
+rollback and recovery fallback. Tests verify per-path patchd logs and that
+`Users` and `var` survive payloads containing replacement data for those trees.
+
+Add `--partitioned` to `tools/check_update_vm.py` to test automatic system/recovery
+discovery and installation on one GPT disk. Case `partition-recovery` checks
+recovery boot with an unmountable system partition; `--damage-primary-gpt` tests
+backup GPT discovery.

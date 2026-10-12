@@ -47,7 +47,7 @@ $(I386_USER_BUILD)/CoreGraphics.so: $(COREGRAPHICS_PIC_SOURCES) $(COREGRAPHICS_P
 $(I386_USER_BUILD)/DesktopService.so: $(I386_USER_BUILD)/CoreGraphics.so
 	$(Q)cp "$(I386_COREGRAPHICS_PIC)/audit/DesktopService.so" $@
 
-$(I386_FRAMEWORK_PIC)/frameworks/BootDaemons.framework/desktop_service.o: $(I386_USER_BUILD)/DesktopService.so
+$(I386_FRAMEWORK_PIC)/frameworks/BootDaemons.framework/desktop_service.o: frameworks/BootDaemons.framework/desktop_service.c $(I386_USER_BUILD)/DesktopService.so
 	@mkdir -p $(dir $@)
 	$(Q)$(I386_USER_CC) $(I386_FRAMEWORK_CFLAGS) -I"$(I386_COREGRAPHICS_PIC)/include" \
 		-c frameworks/BootDaemons.framework/desktop_service.c -o $@

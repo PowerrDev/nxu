@@ -29,11 +29,53 @@ def execute(command, log, env=None):
     for name in ('MAKEFLAGS', 'MFLAGS', 'CARGO_MAKEFLAGS'):
         child_env.pop(name, None)
 
+    print(f'Building {log.stem}; log: {log}', flush=True)
     with log.open('w') as stream:
-        return subprocess.run(command, env=child_env, stdout=stream, stderr=subprocess.STDOUT).returncode
+        with subprocess.Popen(command, env=child_env, stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, text=True, bufsize=1) as process:
+            for line in process.stdout:
+                stream.write(line)
+                stream.flush()
+                print(line, end='', flush=True)
+            return process.wait()
+
+
+def sync_tree(source, destination):
+    """Keep Cargo input mtimes stable, including adapted files and deletions."""
+    destination.mkdir(parents=True, exist_ok=True)
+    for path in destination.iterdir():
+        if not (source / path.name).exists():
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+
+    for path in source.iterdir():
+        target = destination / path.name
+        if path.is_dir():
+            if target.exists() and not target.is_dir():
+                target.unlink()
+            sync_tree(path, target)
+        else:
+            if target.is_dir():
+                shutil.rmtree(target)
+            if not target.exists() or path.read_bytes() != target.read_bytes():
+                shutil.copy2(path, target)
 
 
 def userland_sources(output, frameworks):
+    # Adapt a scratch copy first: copying original files over their adapted
+    # versions would invalidate Cargo on every invocation.
+    with tempfile.TemporaryDirectory(prefix='sources-', dir=output) as temporary:
+        prepared = Path(temporary)
+        prepare_userland_sources(prepared, frameworks)
+        sync_tree(prepared / 'sources', output / 'sources')
+        if (prepared / 'include').exists():
+            sync_tree(prepared / 'include', output / 'include')
+    return output / 'sources'
+
+
+def prepare_userland_sources(output, frameworks):
     sources = output / 'sources'
     for name in ('WindowServer.framework', 'UIService.framework'):
         if name == 'UIService.framework' and 'CoreGraphics' not in frameworks:
@@ -81,8 +123,8 @@ def userland_sources(output, frameworks):
 
         desktop = crate / 'src/desktop.rs'
         desktop.write_text(desktop.read_text().replace(
-            'core::hint::spin_loop();', 'unsafe { nxu_desktop_sleep(5_000); }'
-        ) + '\nunsafe extern "C" { #[link_name = "nxu_sleep_us"] fn nxu_desktop_sleep(us: u64) -> i64; }\n')
+            'core::hint::spin_loop();', 'unsafe { nxu_desktop_yield(); }'
+        ) + '\nunsafe extern "C" { #[link_name = "nxu_yield"] fn nxu_desktop_yield() -> i64; }\n')
 
         bridge = crate / 'src/bridge.rs'
         bridge.write_text(
@@ -149,9 +191,11 @@ def freestanding_sysroot(output):
     installed = Path(subprocess.check_output(['rustc', '+nightly', '--print', 'sysroot'], text=True).strip())
     library = installed / 'lib/rustlib/src/rust/library'
     copied = output / 'rust-library'
-    shutil.copytree(library, copied, dirs_exist_ok=True)
-    (copied / 'Cargo.toml').write_text(
-        """[workspace]
+    with tempfile.TemporaryDirectory(prefix='sysroot-', dir=output) as temporary:
+        prepared = Path(temporary) / 'library'
+        shutil.copytree(library, prepared)
+        (prepared / 'Cargo.toml').write_text(
+            """[workspace]
 resolver="2"
 members=["core","alloc","compiler-builtins/compiler-builtins"]
 [profile.release]
@@ -159,15 +203,16 @@ panic="abort"
 [profile.release.package.compiler_builtins]
 codegen-units=10000
 """,
-    )
-    # This build deliberately excludes compiler-rt C support. Cargo otherwise
-    # resolves the optional cc registry dependency even though it is disabled.
-    manifest = copied / 'compiler-builtins/compiler-builtins/Cargo.toml'
-    text = manifest.read_text()
-    dependency = '[build-dependencies]\ncc = { version = "1.2", optional = true }'
-    if dependency not in text or 'c = ["dep:cc"]' not in text:
-        raise RuntimeError('compiler_builtins manifest changed; review freestanding configuration')
-    manifest.write_text(text.replace(dependency, '').replace('c = ["dep:cc"]', 'c = []'))
+        )
+        # This build deliberately excludes compiler-rt C support. Cargo otherwise
+        # resolves the optional cc registry dependency even though it is disabled.
+        manifest = prepared / 'compiler-builtins/compiler-builtins/Cargo.toml'
+        text = manifest.read_text()
+        dependency = '[build-dependencies]\ncc = { version = "1.2", optional = true }'
+        if dependency not in text or 'c = ["dep:cc"]' not in text:
+            raise RuntimeError('compiler_builtins manifest changed; review freestanding configuration')
+        manifest.write_text(text.replace(dependency, '').replace('c = ["dep:cc"]', 'c = []'))
+        sync_tree(prepared, copied)
     target = output / 'sysroot-target'
     env = dict(
         os.environ,
@@ -211,7 +256,9 @@ codegen-units=10000
     # New nightly uses build/<crate>/<hash>/out, older Cargo uses deps/.
     artifacts = [p for p in release.rglob('*') if p.suffix in ('.rlib', '.rmeta') and '-' in p.stem]
     for path in artifacts:
-        shutil.copy2(path, libs / path.name)
+        destination = libs / path.name
+        if not destination.exists() or path.read_bytes() != destination.read_bytes():
+            shutil.copy2(path, destination)
     for name in ('core', 'alloc', 'compiler_builtins'):
         if not list(libs.glob(f'lib{name}-*.rlib')):
             raise RuntimeError(f'PIC sysroot missing {name}')
@@ -239,7 +286,9 @@ def main():
         specification['relocation-model'] = 'pic'
         specification['position-independent-executables'] = True
         target_file = output / (TARGET + '.json')
-        target_file.write_text(json.dumps(specification, indent=2) + '\n')
+        contents = json.dumps(specification, indent=2) + '\n'
+        if not target_file.exists() or target_file.read_text() != contents:
+            target_file.write_text(contents)
         TARGET_ARGUMENT = str(target_file)
     try:
         frameworks = ['WindowServer', 'CoreGraphics'] if args.framework == 'all' else [args.framework]
