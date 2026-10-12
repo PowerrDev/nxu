@@ -14,6 +14,7 @@
 #include <kern/machine/machine_routines.h>
 #include <kern/memory/heap.h>
 #include <kern/sched_prism/waitq.h>
+#include <kern/sched_prism/sched.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -210,6 +211,7 @@ ipc_return_t ipc_port_enqueue(ipc_port_t port, ipc_kmsg_t kmsg)
 
 	/* A receiver may be asleep waiting for exactly this. */
 	waitq_wake_one(&port->ip_waiters);
+	sched_kick_sleepers();
 
 	return IPC_SUCCESS;
 }
@@ -343,6 +345,7 @@ void ipc_port_deactivate(ipc_port_t port)
 	ipc_port_unlock(port, state);
 
 	waitq_wake_all(&port->ip_waiters);
+	sched_kick_sleepers();
 	while (messages) {
 		ipc_kmsg_t next = messages->ikm_next;
 		messages->ikm_next = IPC_KMSG_NULL;

@@ -163,13 +163,24 @@ bool sched_sleep_us(uint64_t microseconds)
 	return true;
 }
 
+uint32_t sched_kick_sequence(void)
+{
+	return __atomic_load_n(&g_sched_kicks, __ATOMIC_ACQUIRE);
+}
+
 bool sched_sleep_until_kicked(uint64_t microseconds)
+{
+	return sched_sleep_until_kicked_seq(microseconds, sched_kick_sequence(), false);
+}
+
+bool sched_sleep_until_kicked_seq(uint64_t microseconds, uint32_t kicks, bool interruptible)
 {
 	if (!g_sched.initialized || current_thread() == 0 || thread_is_idle(current_thread()))
 		return false;
 
-	uint64_t deadline = timer_get_microseconds() + microseconds;
-	uint32_t kicks = __atomic_load_n(&g_sched_kicks, __ATOMIC_ACQUIRE);
+	uint64_t now = timer_get_microseconds();
+	uint64_t deadline = microseconds > UINT64_MAX - now ? UINT64_MAX : now + microseconds;
+	bool completed = true;
 
 	if (!__atomic_load_n(&g_sched_ticking, __ATOMIC_ACQUIRE))
 		return sched_sleep_yield_until(deadline);
@@ -181,12 +192,14 @@ bool sched_sleep_until_kicked(uint64_t microseconds)
 
 		if (__atomic_load_n(&g_sched_kicks, __ATOMIC_ACQUIRE) != kicks || timer_get_microseconds() >= deadline)
 			break;
-		if (!waitq_block_seq(&g_sched_kick_queue, seq, false))
+		if (!waitq_block_seq(&g_sched_kick_queue, seq, interruptible)) {
+			completed = false;
 			break;
+		}
 	}
 
 	(void)__atomic_sub_fetch(&g_sched_kick_sleepers, 1U, __ATOMIC_ACQ_REL);
-	return true;
+	return completed;
 }
 
 void sched_kick_sleepers(void)

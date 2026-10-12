@@ -190,6 +190,8 @@ bool sched_sleep_us(uint64_t microseconds);
  * interrupt, a frame from an app) but otherwise sleeps. Returns false if it
  * could not sleep. Kicking is safe from interrupt handlers.
  */
+uint32_t sched_kick_sequence(void);
+bool sched_sleep_until_kicked_seq(uint64_t microseconds, uint32_t kicks, bool interruptible);
 bool sched_sleep_until_kicked(uint64_t microseconds);
 void sched_kick_sleepers(void);
 
