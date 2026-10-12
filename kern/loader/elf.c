@@ -826,6 +826,11 @@ loader_status_t loader_exec_internal(proc_t proc, const char *path, const loader
 	}
 	signal_reset_for_exec(proc);
 
+	/* A fork from PID 1 may predate its own bootstrap send right. */
+	if (proc->p_ipc_bootstrap_name == IPC_SPACE_NAME_INVALID) {
+		loader_handoff_bootstrap_port(proc);
+	}
+
 	const char *name = path;
 	for (const char *cursor = path; *cursor != '\0'; cursor++) {
 		if (*cursor == '/' && cursor[1] != '\0')
