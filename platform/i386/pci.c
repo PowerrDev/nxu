@@ -43,49 +43,50 @@ static uint32_t g_pci_bus_count;
 static bool g_pci_present;
 static bool g_pci_initialized;
 
-static void pci_select(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset)
+static void
+pci_select(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset)
 {
-	outl(
-		PCI_CONFIG_ADDRESS_PORT,
-		PCI_CONFIG_ENABLE |
-			((uint32_t)bus << 16U) |
-			((uint32_t)(slot & 0x1FU) << 11U) |
-			((uint32_t)(function & 0x07U) << 8U) |
-			((uint32_t)offset & 0xFCU)
-	);
+	outl(PCI_CONFIG_ADDRESS_PORT, PCI_CONFIG_ENABLE | ((uint32_t)bus << 16U) | ((uint32_t)(slot & 0x1FU) << 11U) |
+									  ((uint32_t)(function & 0x07U) << 8U) | ((uint32_t)offset & 0xFCU));
 }
 
-uint32_t pci_config_read32(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset)
+uint32_t
+pci_config_read32(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset)
 {
 	pci_select(bus, slot, function, offset);
 	return inl(PCI_CONFIG_DATA_PORT);
 }
 
-uint16_t pci_config_read16(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset)
+uint16_t
+pci_config_read16(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset)
 {
 	pci_select(bus, slot, function, offset);
 	return inw((uint16_t)(PCI_CONFIG_DATA_PORT + (offset & 2U)));
 }
 
-uint8_t pci_config_read8(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset)
+uint8_t
+pci_config_read8(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset)
 {
 	pci_select(bus, slot, function, offset);
 	return inb((uint16_t)(PCI_CONFIG_DATA_PORT + (offset & 3U)));
 }
 
-void pci_config_write32(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset, uint32_t value)
+void
+pci_config_write32(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset, uint32_t value)
 {
 	pci_select(bus, slot, function, offset);
 	outl(PCI_CONFIG_DATA_PORT, value);
 }
 
-void pci_config_write16(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset, uint16_t value)
+void
+pci_config_write16(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset, uint16_t value)
 {
 	pci_select(bus, slot, function, offset);
 	outw((uint16_t)(PCI_CONFIG_DATA_PORT + (offset & 2U)), value);
 }
 
-void pci_config_write8(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset, uint8_t value)
+void
+pci_config_write8(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset, uint8_t value)
 {
 	pci_select(bus, slot, function, offset);
 	outb((uint16_t)(PCI_CONFIG_DATA_PORT + (offset & 3U)), value);
@@ -97,7 +98,8 @@ void pci_config_write8(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offs
  * Configuration mechanism 1 is present when the address register latches what
  * was written to it. Restores the register afterwards.
  */
-static bool pci_detect(void)
+static bool
+pci_detect(void)
 {
 	uint32_t saved = inl(PCI_CONFIG_ADDRESS_PORT);
 
@@ -122,19 +124,23 @@ static bool pci_detect(void)
  * assigned) and the command register are restored. A 64-bit BAR consumes the
  * following register as its upper half.
  */
-static void pci_size_bars(pci_device_t *device)
+static void
+pci_size_bars(pci_device_t *device)
 {
 	uint32_t count = 0U;
 
-	if (device->header_type == PCI_HEADER_TYPE_NORMAL) count = PCI_MAX_BARS;
-	else if (device->header_type == PCI_HEADER_TYPE_BRIDGE) count = 2U;
+	if (device->header_type == PCI_HEADER_TYPE_NORMAL)
+		count = PCI_MAX_BARS;
+	else if (device->header_type == PCI_HEADER_TYPE_BRIDGE)
+		count = 2U;
 
 	uint8_t bus = device->bus;
 	uint8_t slot = device->slot;
 	uint8_t function = device->function;
 	uint16_t command = pci_config_read16(bus, slot, function, PCI_CONFIG_COMMAND);
 
-	pci_config_write16(bus, slot, function, PCI_CONFIG_COMMAND, (uint16_t)(command & ~(PCI_COMMAND_IO | PCI_COMMAND_MEMORY)));
+	pci_config_write16(bus, slot, function, PCI_CONFIG_COMMAND,
+					   (uint16_t)(command & ~(PCI_COMMAND_IO | PCI_COMMAND_MEMORY)));
 
 	for (uint32_t index = 0U; index < count; index++) {
 		uint8_t offset = (uint8_t)(PCI_CONFIG_BAR0 + index * 4U);
@@ -191,7 +197,8 @@ static void pci_size_bars(pci_device_t *device)
 
 static void pci_scan_bus(uint8_t bus, uint32_t depth);
 
-static void pci_probe_function(uint8_t bus, uint8_t slot, uint8_t function, uint32_t depth)
+static void
+pci_probe_function(uint8_t bus, uint8_t slot, uint8_t function, uint32_t depth)
 {
 	if (g_pci_device_count >= PCI_MAX_DEVICES) return;
 
@@ -202,7 +209,7 @@ static void pci_probe_function(uint8_t bus, uint8_t slot, uint8_t function, uint
 	pci_device_t *device = &g_pci_devices[g_pci_device_count];
 	uint32_t class_word = pci_config_read32(bus, slot, function, PCI_CONFIG_REVISION);
 
-	*device = (pci_device_t){ 0 };
+	*device = (pci_device_t){0};
 	device->bus = bus;
 	device->slot = slot;
 	device->function = function;
@@ -212,7 +219,8 @@ static void pci_probe_function(uint8_t bus, uint8_t slot, uint8_t function, uint
 	device->prog_if = (uint8_t)(class_word >> 8U);
 	device->subclass = (uint8_t)(class_word >> 16U);
 	device->class_code = (uint8_t)(class_word >> 24U);
-	device->header_type = (uint8_t)(pci_config_read8(bus, slot, function, PCI_CONFIG_HEADER_TYPE) & PCI_HEADER_TYPE_MASK);
+	device->header_type =
+		(uint8_t)(pci_config_read8(bus, slot, function, PCI_CONFIG_HEADER_TYPE) & PCI_HEADER_TYPE_MASK);
 
 	if (device->header_type == PCI_HEADER_TYPE_NORMAL) {
 		device->subsystem_vendor_id = pci_config_read16(bus, slot, function, PCI_CONFIG_SUBSYSTEM_VENDOR);
@@ -224,7 +232,8 @@ static void pci_probe_function(uint8_t bus, uint8_t slot, uint8_t function, uint
 		device->interrupt_pin = pci_config_read8(bus, slot, function, PCI_CONFIG_INTERRUPT_PIN);
 
 		if ((pci_config_read16(bus, slot, function, PCI_CONFIG_STATUS) & PCI_STATUS_CAPABILITIES) != 0U) {
-			device->capabilities_pointer = (uint8_t)(pci_config_read8(bus, slot, function, PCI_CONFIG_CAPABILITIES) & 0xFCU);
+			device->capabilities_pointer =
+				(uint8_t)(pci_config_read8(bus, slot, function, PCI_CONFIG_CAPABILITIES) & 0xFCU);
 		}
 	}
 
@@ -240,7 +249,8 @@ static void pci_probe_function(uint8_t bus, uint8_t slot, uint8_t function, uint
 	}
 }
 
-static void pci_scan_bus(uint8_t bus, uint32_t depth)
+static void
+pci_scan_bus(uint8_t bus, uint32_t depth)
 {
 	g_pci_bus_count++;
 
@@ -256,7 +266,8 @@ static void pci_scan_bus(uint8_t bus, uint32_t depth)
 	}
 }
 
-bool pci_init(void)
+bool
+pci_init(void)
 {
 	if (g_pci_initialized) return g_pci_present;
 
@@ -272,27 +283,32 @@ bool pci_init(void)
 	return true;
 }
 
-bool pci_present(void)
+bool
+pci_present(void)
 {
 	return g_pci_present;
 }
 
-uint32_t pci_bus_count(void)
+uint32_t
+pci_bus_count(void)
 {
 	return g_pci_bus_count;
 }
 
-uint32_t pci_device_count(void)
+uint32_t
+pci_device_count(void)
 {
 	return g_pci_device_count;
 }
 
-const pci_device_t *pci_device_at(uint32_t index)
+const pci_device_t *
+pci_device_at(uint32_t index)
 {
 	return index < g_pci_device_count ? &g_pci_devices[index] : 0;
 }
 
-const pci_device_t *pci_find(uint16_t vendor_id, uint16_t device_id, uint32_t index)
+const pci_device_t *
+pci_find(uint16_t vendor_id, uint16_t device_id, uint32_t index)
 {
 	for (uint32_t position = 0U; position < g_pci_device_count; position++) {
 		const pci_device_t *device = &g_pci_devices[position];
@@ -304,7 +320,8 @@ const pci_device_t *pci_find(uint16_t vendor_id, uint16_t device_id, uint32_t in
 	return 0;
 }
 
-const pci_device_t *pci_find_class(uint8_t class_code, uint8_t subclass, uint32_t index)
+const pci_device_t *
+pci_find_class(uint8_t class_code, uint8_t subclass, uint32_t index)
 {
 	for (uint32_t position = 0U; position < g_pci_device_count; position++) {
 		const pci_device_t *device = &g_pci_devices[position];
@@ -316,7 +333,8 @@ const pci_device_t *pci_find_class(uint8_t class_code, uint8_t subclass, uint32_
 	return 0;
 }
 
-bool pci_capability_next(const pci_device_t *device, uint8_t previous, uint8_t *id, uint8_t *offset)
+bool
+pci_capability_next(const pci_device_t *device, uint8_t previous, uint8_t *id, uint8_t *offset)
 {
 	if (device == 0 || id == 0 || offset == 0 || device->capabilities_pointer == 0U) return false;
 
@@ -325,7 +343,8 @@ bool pci_capability_next(const pci_device_t *device, uint8_t previous, uint8_t *
 	if (previous == 0U) {
 		position = device->capabilities_pointer;
 	} else {
-		position = (uint8_t)(pci_config_read8(device->bus, device->slot, device->function, (uint8_t)(previous + 1U)) & 0xFCU);
+		position =
+			(uint8_t)(pci_config_read8(device->bus, device->slot, device->function, (uint8_t)(previous + 1U)) & 0xFCU);
 	}
 
 	/* A well-formed list is shorter than the 192 dwords of capability space. */
@@ -336,7 +355,8 @@ bool pci_capability_next(const pci_device_t *device, uint8_t previous, uint8_t *
 	return true;
 }
 
-void pci_command_update(const pci_device_t *device, uint16_t bits, bool set)
+void
+pci_command_update(const pci_device_t *device, uint16_t bits, bool set)
 {
 	if (device == 0) return;
 
@@ -346,29 +366,47 @@ void pci_command_update(const pci_device_t *device, uint16_t bits, bool set)
 	pci_config_write16(device->bus, device->slot, device->function, PCI_CONFIG_COMMAND, command);
 }
 
-const char *pci_class_name(uint8_t class_code, uint8_t subclass)
+const char *
+pci_class_name(uint8_t class_code, uint8_t subclass)
 {
 	switch (((uint32_t)class_code << 8U) | subclass) {
-	case 0x0000U: return "unclassified";
-	case 0x0100U: return "SCSI storage";
-	case 0x0101U: return "IDE controller";
-	case 0x0106U: return "SATA controller";
-	case 0x0180U: return "mass storage";
-	case 0x0200U: return "Ethernet controller";
-	case 0x0300U: return "VGA controller";
-	case 0x0380U: return "display controller";
-	case 0x0600U: return "host bridge";
-	case 0x0601U: return "ISA bridge";
-	case 0x0604U: return "PCI bridge";
-	case 0x0680U: return "bridge";
-	case 0x0900U: return "keyboard";
-	case 0x0902U: return "mouse";
-	case 0x0980U: return "input device";
-	default: return "other";
+	case 0x0000U:
+		return "unclassified";
+	case 0x0100U:
+		return "SCSI storage";
+	case 0x0101U:
+		return "IDE controller";
+	case 0x0106U:
+		return "SATA controller";
+	case 0x0180U:
+		return "mass storage";
+	case 0x0200U:
+		return "Ethernet controller";
+	case 0x0300U:
+		return "VGA controller";
+	case 0x0380U:
+		return "display controller";
+	case 0x0600U:
+		return "host bridge";
+	case 0x0601U:
+		return "ISA bridge";
+	case 0x0604U:
+		return "PCI bridge";
+	case 0x0680U:
+		return "bridge";
+	case 0x0900U:
+		return "keyboard";
+	case 0x0902U:
+		return "mouse";
+	case 0x0980U:
+		return "input device";
+	default:
+		return "other";
 	}
 }
 
-volatile void *pci_map_bar(const pci_device_t *device, uint32_t bar, uint64_t offset, uint64_t length)
+volatile void *
+pci_map_bar(const pci_device_t *device, uint32_t bar, uint64_t offset, uint64_t length)
 {
 	if (device == 0 || bar >= PCI_MAX_BARS || !device->bars[bar].valid || device->bars[bar].io) return 0;
 
@@ -392,7 +430,8 @@ volatile void *pci_map_bar(const pci_device_t *device, uint32_t bar, uint64_t of
 	return 0;
 }
 
-void pci_print_location(const pci_device_t *device)
+void
+pci_print_location(const pci_device_t *device)
 {
 	kputhex_byte(device->bus);
 	kputc(':');
@@ -401,7 +440,8 @@ void pci_print_location(const pci_device_t *device)
 	kputhex_digit(device->function);
 }
 
-void pci_dump(void)
+void
+pci_dump(void)
 {
 	kprintf("pci_dump: %u function(s) on %u bus(es)\n", g_pci_device_count, g_pci_bus_count);
 
@@ -410,16 +450,10 @@ void pci_dump(void)
 
 		kputs("pci_dump: ");
 		pci_print_location(device);
-		kprintf(
-			" %x:%x class %x:%x (%s) irq %u pin %c\n",
-			(unsigned int)device->vendor_id,
-			(unsigned int)device->device_id,
-			(unsigned int)device->class_code,
-			(unsigned int)device->subclass,
-			pci_class_name(device->class_code, device->subclass),
-			(unsigned int)device->interrupt_line,
-			device->interrupt_pin == 0U ? '-' : (char)('A' + device->interrupt_pin - 1U)
-		);
+		kprintf(" %x:%x class %x:%x (%s) irq %u pin %c\n", (unsigned int)device->vendor_id,
+				(unsigned int)device->device_id, (unsigned int)device->class_code, (unsigned int)device->subclass,
+				pci_class_name(device->class_code, device->subclass), (unsigned int)device->interrupt_line,
+				device->interrupt_pin == 0U ? '-' : (char)('A' + device->interrupt_pin - 1U));
 
 		for (uint32_t bar = 0U; bar < PCI_MAX_BARS; bar++) {
 			const pci_bar_t *region = &device->bars[bar];
@@ -428,14 +462,8 @@ void pci_dump(void)
 
 			kputs("pci_dump: ");
 			pci_print_location(device);
-			kprintf(
-				" BAR%u %s%s base 0x%llx size 0x%llx\n",
-				bar,
-				region->io ? "io" : "mem",
-				region->is64 ? "64" : "",
-				(unsigned long long)region->base,
-				(unsigned long long)region->size
-			);
+			kprintf(" BAR%u %s%s base 0x%llx size 0x%llx\n", bar, region->io ? "io" : "mem", region->is64 ? "64" : "",
+					(unsigned long long)region->base, (unsigned long long)region->size);
 		}
 	}
 }

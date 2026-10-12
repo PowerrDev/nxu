@@ -53,10 +53,10 @@ struct processor {
 	 */
 	struct vm_address_space *active_space;
 
-	thread_t active_thread;			/* (own) the thread running on this CPU */
-	thread_t idle_thread;			/* never migrates, never on a run queue */
+	thread_t active_thread; /* (own) the thread running on this CPU */
+	thread_t idle_thread;	/* never migrates, never on a run queue */
 	thread_t next_thread;
-	thread_t previous_thread;		/* (own) handed to sched_finish_switch */
+	thread_t previous_thread; /* (own) handed to sched_finish_switch */
 
 	/*
 	 * What sched_finish_switch does with previous_thread once its stack is no
@@ -65,7 +65,7 @@ struct processor {
 	 */
 	bool previous_requeue;
 
-	run_queue_t runq;			/* (rq) */
+	run_queue_t runq; /* (rq) */
 	nxu_spinlock_t runq_lock;
 
 	uint64_t dispatch_count;
@@ -85,17 +85,18 @@ struct processor {
 	uint64_t sched_ticks;
 	uint64_t busy_ticks;
 
-	/* Measured: microseconds this CPU ran something other than its idle thread, and since when it has been (0: idle now). */
+	/* Measured: microseconds this CPU ran something other than its idle thread, and since when it has been (0: idle
+	 * now). */
 	uint64_t busy_us;
 	uint64_t busy_since_us;
 
 	/* (own) ticks since this CPU's run queue was last boosted. */
 	uint32_t boost_ticks;
 
-	uint64_t user_dispatch_count;		/* times this CPU switched to a thread of a user process */
-	uint64_t ipi_reschedule_count;		/* reschedule IPIs taken */
-	uint64_t migrate_in_count;		/* threads placed or moved here by another CPU */
-	uint64_t migrate_out_count;		/* threads this CPU's balancer moved elsewhere */
+	uint64_t user_dispatch_count;  /* times this CPU switched to a thread of a user process */
+	uint64_t ipi_reschedule_count; /* reschedule IPIs taken */
+	uint64_t migrate_in_count;	   /* threads placed or moved here by another CPU */
+	uint64_t migrate_out_count;	   /* threads this CPU's balancer moved elsewhere */
 
 	/*
 	 * Set by the timer tick, by another CPU's reschedule IPI, or when a

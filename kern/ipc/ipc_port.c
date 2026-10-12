@@ -48,12 +48,14 @@ static uint64_t g_port_outstanding_count;
  * messages are freed after it is dropped, and wakeups are made after it is
  * dropped too, so it is never held together with a scheduler lock).
  */
-static uint64_t ipc_port_lock(ipc_port_t port)
+static uint64_t
+ipc_port_lock(ipc_port_t port)
 {
 	return nxu_spin_lock_irqsave(&port->ip_lock);
 }
 
-static void ipc_port_unlock(ipc_port_t port, uint64_t state)
+static void
+ipc_port_unlock(ipc_port_t port, uint64_t state)
 {
 	nxu_spin_unlock_irqrestore(&port->ip_lock, state);
 }
@@ -65,7 +67,8 @@ static void ipc_port_unlock(ipc_port_t port, uint64_t state)
  *              diagnostics only; userspace will later receive per-task names
  *              through ipc_space rather than these global identifiers.
  */
-void ipc_port_init(void)
+void
+ipc_port_init(void)
 {
 	g_next_port_object_id = 1ULL;
 	g_port_outstanding_count = 0ULL;
@@ -76,14 +79,13 @@ void ipc_port_init(void)
  * Purpose:
  *              Create one active receive endpoint with an initial reference.
  */
-ipc_return_t ipc_port_alloc(ipc_port_t *portp)
+ipc_return_t
+ipc_port_alloc(ipc_port_t *portp)
 {
-	if (portp == 0)
-		return IPC_INVALID_ARGUMENT;
+	if (portp == 0) return IPC_INVALID_ARGUMENT;
 
 	ipc_port_t port = kcalloc(1U, sizeof(struct ipc_port));
-	if (port == IPC_PORT_NULL)
-		return IPC_NO_MEMORY;
+	if (port == IPC_PORT_NULL) return IPC_NO_MEMORY;
 
 	ipc_object_id_t object_id = __atomic_fetch_add(&g_next_port_object_id, 1U, __ATOMIC_RELAXED);
 
@@ -112,10 +114,10 @@ ipc_return_t ipc_port_alloc(ipc_port_t *portp)
  *              Acquire another lifetime reference while the port remains
  *              active. Callers must hold a reference across queue operations.
  */
-bool ipc_port_reference(ipc_port_t port)
+bool
+ipc_port_reference(ipc_port_t port)
 {
-	if (port == IPC_PORT_NULL)
-		return false;
+	if (port == IPC_PORT_NULL) return false;
 
 	uint64_t state = ipc_port_lock(port);
 
@@ -136,10 +138,10 @@ bool ipc_port_reference(ipc_port_t port)
  *              endpoint, detaches its FIFO atomically, then destroys queued
  *              messages outside the IRQ-masked section.
  */
-void ipc_port_release(ipc_port_t port)
+void
+ipc_port_release(ipc_port_t port)
 {
-	if (port == IPC_PORT_NULL)
-		return;
+	if (port == IPC_PORT_NULL) return;
 
 	ipc_kmsg_t messages = IPC_KMSG_NULL;
 	bool destroy = false;
@@ -161,8 +163,7 @@ void ipc_port_release(ipc_port_t port)
 
 	ipc_port_unlock(port, state);
 
-	if (!destroy)
-		return;
+	if (!destroy) return;
 
 	while (messages != IPC_KMSG_NULL) {
 		ipc_kmsg_t next = messages->ikm_next;
@@ -180,10 +181,10 @@ void ipc_port_release(ipc_port_t port)
  *              Append one kernel-owned message to the FIFO. Ownership moves
  *              to the port only when IPC_SUCCESS is returned.
  */
-ipc_return_t ipc_port_enqueue(ipc_port_t port, ipc_kmsg_t kmsg)
+ipc_return_t
+ipc_port_enqueue(ipc_port_t port, ipc_kmsg_t kmsg)
 {
-	if (port == IPC_PORT_NULL || kmsg == IPC_KMSG_NULL)
-		return IPC_INVALID_ARGUMENT;
+	if (port == IPC_PORT_NULL || kmsg == IPC_KMSG_NULL) return IPC_INVALID_ARGUMENT;
 
 	uint64_t state = ipc_port_lock(port);
 
@@ -224,10 +225,10 @@ ipc_return_t ipc_port_enqueue(ipc_port_t port, ipc_kmsg_t kmsg)
  *              sleeper) and retries ipc_port_dequeue afterwards. Returns
  *              false when a signal interrupted the wait.
  */
-bool ipc_port_wait(ipc_port_t port)
+bool
+ipc_port_wait(ipc_port_t port)
 {
-	if (port == IPC_PORT_NULL)
-		return false;
+	if (port == IPC_PORT_NULL) return false;
 
 	return waitq_block(&port->ip_waiters, true);
 }
@@ -242,15 +243,16 @@ bool ipc_port_wait(ipc_port_t port)
  *              the sequence move (ipc_port_enqueue wakes the waiters) and the
  *              sleep returns at once instead of missing it.
  */
-uint32_t ipc_port_wait_prepare(ipc_port_t port)
+uint32_t
+ipc_port_wait_prepare(ipc_port_t port)
 {
 	return port == IPC_PORT_NULL ? 0U : waitq_seq(&port->ip_waiters);
 }
 
-bool ipc_port_wait_seq(ipc_port_t port, uint32_t seq)
+bool
+ipc_port_wait_seq(ipc_port_t port, uint32_t seq)
 {
-	if (port == IPC_PORT_NULL)
-		return false;
+	if (port == IPC_PORT_NULL) return false;
 
 	return waitq_block_seq(&port->ip_waiters, seq, true);
 }
@@ -261,10 +263,10 @@ bool ipc_port_wait_seq(ipc_port_t port, uint32_t seq)
  *              Remove the oldest message from the FIFO. The caller owns the
  *              returned kernel message and must eventually free or forward it.
  */
-ipc_return_t ipc_port_dequeue(ipc_port_t port, ipc_kmsg_t *kmsgp)
+ipc_return_t
+ipc_port_dequeue(ipc_port_t port, ipc_kmsg_t *kmsgp)
 {
-	if (port == IPC_PORT_NULL || kmsgp == 0)
-		return IPC_INVALID_ARGUMENT;
+	if (port == IPC_PORT_NULL || kmsgp == 0) return IPC_INVALID_ARGUMENT;
 
 	uint64_t state = ipc_port_lock(port);
 
@@ -293,17 +295,17 @@ ipc_return_t ipc_port_dequeue(ipc_port_t port, ipc_kmsg_t *kmsgp)
 	return IPC_SUCCESS;
 }
 
-ipc_object_id_t ipc_port_object_id(ipc_port_t port)
+ipc_object_id_t
+ipc_port_object_id(ipc_port_t port)
 {
-	if (port == IPC_PORT_NULL)
-		return IPC_OBJECT_ID_NULL;
+	if (port == IPC_PORT_NULL) return IPC_OBJECT_ID_NULL;
 	return port->ip_object_id;
 }
 
-uint32_t ipc_port_qlen(ipc_port_t port)
+uint32_t
+ipc_port_qlen(ipc_port_t port)
 {
-	if (port == IPC_PORT_NULL)
-		return 0U;
+	if (port == IPC_PORT_NULL) return 0U;
 
 	uint64_t state = ipc_port_lock(port);
 	uint32_t qlen = port->ip_qlen;
@@ -311,17 +313,17 @@ uint32_t ipc_port_qlen(ipc_port_t port)
 	return qlen;
 }
 
-uint32_t ipc_port_qlimit(ipc_port_t port)
+uint32_t
+ipc_port_qlimit(ipc_port_t port)
 {
-	if (port == IPC_PORT_NULL)
-		return 0U;
+	if (port == IPC_PORT_NULL) return 0U;
 	return port->ip_qlimit;
 }
 
-bool ipc_port_active(ipc_port_t port)
+bool
+ipc_port_active(ipc_port_t port)
 {
-	if (port == IPC_PORT_NULL)
-		return false;
+	if (port == IPC_PORT_NULL) return false;
 
 	uint64_t state = ipc_port_lock(port);
 	bool active = port->ip_active;
@@ -329,13 +331,15 @@ bool ipc_port_active(ipc_port_t port)
 	return active;
 }
 
-uint64_t ipc_port_outstanding_count(void)
+uint64_t
+ipc_port_outstanding_count(void)
 {
 	return __atomic_load_n(&g_port_outstanding_count, __ATOMIC_RELAXED);
 }
 
 /* Receive-right destruction revokes every outstanding send reference. */
-void ipc_port_deactivate(ipc_port_t port)
+void
+ipc_port_deactivate(ipc_port_t port)
 {
 	uint64_t state = ipc_port_lock(port);
 	port->ip_active = false;

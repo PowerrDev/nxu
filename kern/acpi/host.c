@@ -301,8 +301,7 @@ uacpi_kernel_io_unmap(uacpi_handle h)
 	uacpi_status uacpi_kernel_io_read##bits(uacpi_handle h, uacpi_size off, uacpi_u##bits *v)                          \
 	{                                                                                                                  \
 		io_range *r = h;                                                                                               \
-		if (off > r->length || bits / 8 > r->length - off)                                                             \
-			return UACPI_STATUS_INVALID_ARGUMENT;                                                                      \
+		if (off > r->length || bits / 8 > r->length - off) return UACPI_STATUS_INVALID_ARGUMENT;                       \
 		uint16_t port = r->base + off;                                                                                 \
 		__asm__ volatile("in" suffix " %1,%0" : "=a"(*v) : "Nd"(port) : "memory");                                     \
 		return UACPI_STATUS_OK;                                                                                        \
@@ -310,8 +309,7 @@ uacpi_kernel_io_unmap(uacpi_handle h)
 	uacpi_status uacpi_kernel_io_write##bits(uacpi_handle h, uacpi_size off, uacpi_u##bits v)                          \
 	{                                                                                                                  \
 		io_range *r = h;                                                                                               \
-		if (off > r->length || bits / 8 > r->length - off)                                                             \
-			return UACPI_STATUS_INVALID_ARGUMENT;                                                                      \
+		if (off > r->length || bits / 8 > r->length - off) return UACPI_STATUS_INVALID_ARGUMENT;                       \
 		uint16_t port = r->base + off;                                                                                 \
 		__asm__ volatile("out" suffix " %0,%1" ::"a"(v), "Nd"(port) : "memory");                                       \
 		return UACPI_STATUS_OK;                                                                                        \
@@ -346,8 +344,7 @@ uacpi_kernel_pci_device_close(uacpi_handle h)
 #define PCI_ACCESS(bits, suffix)                                                                                       \
 	uacpi_status uacpi_kernel_pci_read##bits(uacpi_handle h, uacpi_size off, uacpi_u##bits *v)                         \
 	{                                                                                                                  \
-		if (off > 256 - bits / 8 || (off & (bits / 8 - 1)))                                                            \
-			return UACPI_STATUS_INVALID_ARGUMENT;                                                                      \
+		if (off > 256 - bits / 8 || (off & (bits / 8 - 1))) return UACPI_STATUS_INVALID_ARGUMENT;                      \
 		uint64_t flags = nxu_spin_lock_irqsave(&pci_lock);                                                             \
 		uint32_t address = *(uint32_t *)h | (off & ~3U);                                                               \
 		uint16_t port = 0xcf8;                                                                                         \
@@ -359,8 +356,7 @@ uacpi_kernel_pci_device_close(uacpi_handle h)
 	}                                                                                                                  \
 	uacpi_status uacpi_kernel_pci_write##bits(uacpi_handle h, uacpi_size off, uacpi_u##bits v)                         \
 	{                                                                                                                  \
-		if (off > 256 - bits / 8 || (off & (bits / 8 - 1)))                                                            \
-			return UACPI_STATUS_INVALID_ARGUMENT;                                                                      \
+		if (off > 256 - bits / 8 || (off & (bits / 8 - 1))) return UACPI_STATUS_INVALID_ARGUMENT;                      \
 		uint64_t flags = nxu_spin_lock_irqsave(&pci_lock);                                                             \
 		uint32_t address = *(uint32_t *)h | (off & ~3U);                                                               \
 		uint16_t port = 0xcf8;                                                                                         \

@@ -27,15 +27,9 @@
  * getting the pixels to the device is Skylight's and its backend's.
  */
 static bool
-ws_display_present(
-	void *context,
-	uint32_t x,
-	uint32_t y,
-	uint32_t width,
-	uint32_t height
-)
+ws_display_present(void *context, uint32_t x, uint32_t y, uint32_t width, uint32_t height)
 {
-	return sl_present((sl_display_t *)context, (sl_rect_t) { (int32_t)x, (int32_t)y, width, height });
+	return sl_present((sl_display_t *)context, (sl_rect_t){(int32_t)x, (int32_t)y, width, height});
 }
 
 bool
@@ -68,4 +62,3 @@ windowserver_bootstrap(void)
 	return false;
 }
 #endif
-

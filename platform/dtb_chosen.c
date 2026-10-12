@@ -49,12 +49,7 @@ dtb_chosen_property_get(const dtb_t *dtb, const char *name, const void **value, 
 	if (dtb == 0 || name == 0 || value == 0 || length == 0) return false;
 
 	dtb_chosen_context_t context = {
-		.property_name = name,
-		.value = 0,
-		.length = 0U,
-		.in_chosen = false,
-		.found = false
-	};
+		.property_name = name, .value = 0, .length = 0U, .in_chosen = false, .found = false};
 
 	/*
 	 * NVRAM is imported before the permanent TTBR1 transition. Build the

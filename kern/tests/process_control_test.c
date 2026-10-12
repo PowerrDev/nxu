@@ -51,7 +51,8 @@ static bool
 process_control_test_privileges(void)
 {
 	proc_t proc = 0;
-	loader_status_t loaded = loader_spawn_caps(proc_kernel(), "/disk/System/Library/CoreServices/privtest", "privtest", NXU_CAP_FS_WRITE | NXU_CAP_DISPLAY, &proc);
+	loader_status_t loaded = loader_spawn_caps(proc_kernel(), "/disk/System/Library/CoreServices/privtest", "privtest",
+											   NXU_CAP_FS_WRITE | NXU_CAP_DISPLAY, &proc);
 	if (loaded != LOADER_STATUS_OK) {
 		kputs("process_control_test: spawning privtest failed: ");
 		kputln(loader_status_name(loaded));
@@ -65,7 +66,8 @@ process_control_test_privileges(void)
 	}
 
 	if (exit_status != 0ULL) {
-		kprintf("process_control_test: privtest failed with status 0x%llx (check number, or a kill)\n", (unsigned long long)exit_status);
+		kprintf("process_control_test: privtest failed with status 0x%llx (check number, or a kill)\n",
+				(unsigned long long)exit_status);
 		return false;
 	}
 
@@ -78,7 +80,8 @@ process_control_test_run(bool exclusive)
 	uint64_t used_before = pmm_get_used_page_count();
 
 	proc_t proc = 0;
-	loader_status_t loaded = loader_spawn_caps(proc_kernel(), "/disk/System/Library/CoreServices/proctest", "proctest", 0U, &proc);
+	loader_status_t loaded =
+		loader_spawn_caps(proc_kernel(), "/disk/System/Library/CoreServices/proctest", "proctest", 0U, &proc);
 	if (loaded != LOADER_STATUS_OK) {
 		kputs("process_control_test: spawning proctest failed: ");
 		kputln(loader_status_name(loaded));
@@ -92,7 +95,8 @@ process_control_test_run(bool exclusive)
 	}
 
 	if (exit_status != 0ULL) {
-		kprintf("process_control_test: proctest failed with status 0x%llx (check number, or a kill)\n", (unsigned long long)exit_status);
+		kprintf("process_control_test: proctest failed with status 0x%llx (check number, or a kill)\n",
+				(unsigned long long)exit_status);
 		return false;
 	}
 
@@ -101,7 +105,8 @@ process_control_test_run(bool exclusive)
 	uint64_t used_after = pmm_get_used_page_count();
 	uint64_t leaked = used_after > used_before ? used_after - used_before : 0ULL;
 
-	kprintf("process_control_test: pages in use before %llu, after %llu\n", (unsigned long long)used_before, (unsigned long long)used_after);
+	kprintf("process_control_test: pages in use before %llu, after %llu\n", (unsigned long long)used_before,
+			(unsigned long long)used_after);
 
 	/*
 	 * With other work running (the unified boot) the page count moves for
@@ -119,7 +124,8 @@ process_control_test_run(bool exclusive)
 		return false;
 	}
 
-	kputln("process_control_test: fork, exec, signals, copy-on-write, demand paging and capabilities all worked and every page was reclaimed");
+	kputln("process_control_test: fork, exec, signals, copy-on-write, demand paging and capabilities all worked and "
+		   "every page was reclaimed");
 	return true;
 }
 

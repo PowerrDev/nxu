@@ -13,17 +13,20 @@
 #ifndef NXU_KERN_I386_CPU_H
 #define NXU_KERN_I386_CPU_H
 
-static inline void cpu_relax(void)
+static inline void
+cpu_relax(void)
 {
 	__asm__ volatile("pause" : : : "memory");
 }
 
-static inline void cpu_wait_for_interrupt(void)
+static inline void
+cpu_wait_for_interrupt(void)
 {
 	__asm__ volatile("hlt" : : : "memory");
 }
 
-static inline void cpu_wait_for_event(void)
+static inline void
+cpu_wait_for_event(void)
 {
 	__asm__ volatile("hlt" : : : "memory");
 }

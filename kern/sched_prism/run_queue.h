@@ -21,10 +21,7 @@ typedef struct run_queue {
 	uint16_t highq;
 } run_queue_t;
 
-typedef enum {
-	RUN_QUEUE_HEAD,
-	RUN_QUEUE_TAIL
-} run_queue_placement_t;
+typedef enum { RUN_QUEUE_HEAD, RUN_QUEUE_TAIL } run_queue_placement_t;
 
 /*
  * run_queue_init
@@ -43,11 +40,7 @@ void run_queue_init(run_queue_t *runq);
  * Insert a runnable thread at the head or tail of its scheduling-priority
  * bucket. Higher numeric priorities are selected before lower priorities.
  */
-bool run_queue_enqueue(
-	run_queue_t *runq,
-	thread_t thread,
-	run_queue_placement_t placement
-);
+bool run_queue_enqueue(run_queue_t *runq, thread_t thread, run_queue_placement_t placement);
 
 /*
  * run_queue_dequeue

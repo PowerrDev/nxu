@@ -45,123 +45,94 @@ typedef struct {
 
 static cache_state_t g_cache;
 
-static uint64_t cache_read_sctlr(void)
+static uint64_t
+cache_read_sctlr(void)
 {
 	uint64_t value;
 
-	__asm__ volatile(
-		"mrs %0, SCTLR_EL1"
-		: "=r"(value)
-	);
+	__asm__ volatile("mrs %0, SCTLR_EL1" : "=r"(value));
 
 	return value;
 }
 
-static uint64_t cache_read_clidr(void)
+static uint64_t
+cache_read_clidr(void)
 {
 	uint64_t value;
 
-	__asm__ volatile(
-		"mrs %0, CLIDR_EL1"
-		: "=r"(value)
-	);
+	__asm__ volatile("mrs %0, CLIDR_EL1" : "=r"(value));
 
 	return value;
 }
 
-static uint64_t cache_read_ctr(void)
+static uint64_t
+cache_read_ctr(void)
 {
 	uint64_t value;
 
-	__asm__ volatile(
-		"mrs %0, CTR_EL0"
-		: "=r"(value)
-	);
+	__asm__ volatile("mrs %0, CTR_EL0" : "=r"(value));
 
 	return value;
 }
 
-static uint64_t cache_read_mmfr2(void)
+static uint64_t
+cache_read_mmfr2(void)
 {
 	uint64_t value;
 
-	__asm__ volatile(
-		"mrs %0, ID_AA64MMFR2_EL1"
-		: "=r"(value)
-	);
+	__asm__ volatile("mrs %0, ID_AA64MMFR2_EL1" : "=r"(value));
 
 	return value;
 }
 
-static void cache_write_csselr(uint64_t value)
+static void
+cache_write_csselr(uint64_t value)
 {
-	__asm__ volatile(
-		"msr CSSELR_EL1, %0\n"
-		"isb\n"
-		:
-		: "r"(value)
-		: "memory"
-	);
+	__asm__ volatile("msr CSSELR_EL1, %0\n"
+					 "isb\n"
+					 :
+					 : "r"(value)
+					 : "memory");
 }
 
-static uint64_t cache_read_ccsidr(void)
+static uint64_t
+cache_read_ccsidr(void)
 {
 	uint64_t value;
 
-	__asm__ volatile(
-		"mrs %0, CCSIDR_EL1"
-		: "=r"(value)
-	);
+	__asm__ volatile("mrs %0, CCSIDR_EL1" : "=r"(value));
 
 	return value;
 }
 
-static uint32_t cache_count_leading_zeros(
-	uint32_t value
-)
+static uint32_t
+cache_count_leading_zeros(uint32_t value)
 {
 	uint32_t result;
 
-	__asm__ volatile(
-		"clz %w0, %w1"
-		: "=r"(result)
-		: "r"(value)
-	);
+	__asm__ volatile("clz %w0, %w1" : "=r"(result) : "r"(value));
 
 	return result;
 }
 
-static void cache_invalidate_set_way(
-	uint64_t operand
-)
+static void
+cache_invalidate_set_way(uint64_t operand)
 {
-	__asm__ volatile(
-		"dc isw, %0"
-		:
-		: "r"(operand)
-		: "memory"
-	);
+	__asm__ volatile("dc isw, %0" : : "r"(operand) : "memory");
 }
 
-static bool cache_type_has_data(
-	uint32_t type
-)
+static bool
+cache_type_has_data(uint32_t type)
 {
-	return
-		type == CACHE_TYPE_DATA ||
-		type == CACHE_TYPE_SEPARATE ||
-		type == CACHE_TYPE_UNIFIED;
+	return type == CACHE_TYPE_DATA || type == CACHE_TYPE_SEPARATE || type == CACHE_TYPE_UNIFIED;
 }
 
-static bool cache_uses_legacy_ccsidr(void)
+static bool
+cache_uses_legacy_ccsidr(void)
 {
 	uint64_t mmfr2 = cache_read_mmfr2();
 
-	uint32_t ccidx =
-		(uint32_t)(
-			(mmfr2 >> CACHE_MMFR2_CCIDX_SHIFT) &
-			CACHE_MMFR2_CCIDX_MASK
-		);
+	uint32_t ccidx = (uint32_t)((mmfr2 >> CACHE_MMFR2_CCIDX_SHIFT) & CACHE_MMFR2_CCIDX_MASK);
 
 	/*
 	 * CCIDX == 0 means the original 32-bit CCSIDR_EL1 layout.
@@ -171,12 +142,10 @@ static bool cache_uses_legacy_ccsidr(void)
 	return ccidx == 0U;
 }
 
-static bool cache_invalidate_data_all(void)
+static bool
+cache_invalidate_data_all(void)
 {
-	if (
-		(cache_read_sctlr() & CACHE_SCTLR_C) !=
-		0ULL
-	) {
+	if ((cache_read_sctlr() & CACHE_SCTLR_C) != 0ULL) {
 		/*
 		 * Invalidating an active data cache could discard dirty
 		 * data. This initialization routine is only valid while
@@ -195,26 +164,10 @@ static bool cache_invalidate_data_all(void)
 	 * Ensure all earlier uncached stores have completed before
 	 * cache maintenance begins.
 	 */
-	__asm__ volatile(
-		"dsb sy"
-		:
-		:
-		: "memory"
-	);
+	__asm__ volatile("dsb sy" : : : "memory");
 
-	for (
-		uint32_t level = 0U;
-		level < CACHE_MAX_LEVELS;
-		level++
-	) {
-		uint32_t type =
-			(uint32_t)(
-				(
-					clidr >>
-					(level * 3U)
-				) &
-				CACHE_CLIDR_CTYPE_MASK
-			);
+	for (uint32_t level = 0U; level < CACHE_MAX_LEVELS; level++) {
+		uint32_t type = (uint32_t)((clidr >> (level * 3U)) & CACHE_CLIDR_CTYPE_MASK);
 
 		if (!cache_type_has_data(type)) {
 			continue;
@@ -240,29 +193,12 @@ static bool cache_invalidate_data_all(void)
 		 * For set/way operands, the set field begins at
 		 * LineSize + 4.
 		 */
-		uint32_t line_shift =
-			(uint32_t)(
-				ccsidr &
-				CACHE_CCSIDR_LINE_SIZE_MASK
-			) + 4U;
+		uint32_t line_shift = (uint32_t)(ccsidr & CACHE_CCSIDR_LINE_SIZE_MASK) + 4U;
 
 		uint32_t ways_minus_one =
-			(uint32_t)(
-				(
-					ccsidr >>
-					CACHE_CCSIDR_ASSOCIATIVITY_SHIFT
-				) &
-				CACHE_CCSIDR_ASSOCIATIVITY_MASK
-			);
+			(uint32_t)((ccsidr >> CACHE_CCSIDR_ASSOCIATIVITY_SHIFT) & CACHE_CCSIDR_ASSOCIATIVITY_MASK);
 
-		uint32_t sets_minus_one =
-			(uint32_t)(
-				(
-					ccsidr >>
-					CACHE_CCSIDR_NUM_SETS_SHIFT
-				) &
-				CACHE_CCSIDR_NUM_SETS_MASK
-			);
+		uint32_t sets_minus_one = (uint32_t)((ccsidr >> CACHE_CCSIDR_NUM_SETS_SHIFT) & CACHE_CCSIDR_NUM_SETS_MASK);
 
 		/*
 		 * The way field is placed at the top of the 32-bit
@@ -270,10 +206,7 @@ static bool cache_invalidate_data_all(void)
 		 *
 		 * CLZ(ways - 1) gives the required shift.
 		 */
-		uint32_t way_shift =
-			cache_count_leading_zeros(
-				ways_minus_one
-			);
+		uint32_t way_shift = cache_count_leading_zeros(ways_minus_one);
 
 		uint32_t way = ways_minus_one;
 
@@ -282,13 +215,9 @@ static bool cache_invalidate_data_all(void)
 
 			for (;;) {
 				uint64_t operand =
-					((uint64_t)level << 1U) |
-					((uint64_t)set << line_shift) |
-					((uint64_t)way << way_shift);
+					((uint64_t)level << 1U) | ((uint64_t)set << line_shift) | ((uint64_t)way << way_shift);
 
-				cache_invalidate_set_way(
-					operand
-				);
+				cache_invalidate_set_way(operand);
 
 				if (set == 0U) {
 					break;
@@ -313,36 +242,32 @@ static bool cache_invalidate_data_all(void)
 	/*
 	 * Wait for every DC ISW operation to complete.
 	 */
-	__asm__ volatile(
-		"dsb sy\n"
-		"isb\n"
-		:
-		:
-		: "memory"
-	);
+	__asm__ volatile("dsb sy\n"
+					 "isb\n"
+					 :
+					 :
+					 : "memory");
 
 	return true;
 }
 
-static void cache_invalidate_instruction_all(void)
+static void
+cache_invalidate_instruction_all(void)
 {
 	/*
 	 * Invalidate all instruction cache entries to the Point of
 	 * Unification, then synchronize the pipeline.
 	 */
-	__asm__ volatile(
-		"ic iallu\n"
-		"dsb sy\n"
-		"isb\n"
-		:
-		:
-		: "memory"
-	);
+	__asm__ volatile("ic iallu\n"
+					 "dsb sy\n"
+					 "isb\n"
+					 :
+					 :
+					 : "memory");
 }
 
-static uint32_t cache_line_size_from_encoding(
-	uint32_t encoding
-)
+static uint32_t
+cache_line_size_from_encoding(uint32_t encoding)
 {
 	/*
 	 * CTR_EL0 line-size fields encode log2(words per line).
@@ -352,7 +277,8 @@ static uint32_t cache_line_size_from_encoding(
 	return 4U << encoding;
 }
 
-bool cache_init(void)
+bool
+cache_init(void)
 {
 	uint64_t sctlr = cache_read_sctlr();
 
@@ -368,18 +294,12 @@ bool cache_init(void)
 
 	bool instruction_enabled = (sctlr & CACHE_SCTLR_I) != 0ULL;
 
-	if (
-		data_enabled ||
-		instruction_enabled
-	) {
+	if (data_enabled || instruction_enabled) {
 		/*
 		 * Accept an already-complete initialization, but reject
 		 * a partially enabled state.
 		 */
-		if (
-			!data_enabled ||
-			!instruction_enabled
-		) {
+		if (!data_enabled || !instruction_enabled) {
 			return false;
 		}
 
@@ -388,23 +308,10 @@ bool cache_init(void)
 		g_cache.ctr = cache_read_ctr();
 
 		g_cache.instruction_line_size =
-			cache_line_size_from_encoding(
-				(uint32_t)(
-					g_cache.ctr &
-					CACHE_CTR_IMINLINE_MASK
-				)
-			);
+			cache_line_size_from_encoding((uint32_t)(g_cache.ctr & CACHE_CTR_IMINLINE_MASK));
 
-		g_cache.data_line_size =
-			cache_line_size_from_encoding(
-				(uint32_t)(
-					(
-						g_cache.ctr >>
-						CACHE_CTR_DMINLINE_SHIFT
-					) &
-					CACHE_CTR_DMINLINE_MASK
-				)
-			);
+		g_cache.data_line_size = cache_line_size_from_encoding(
+			(uint32_t)((g_cache.ctr >> CACHE_CTR_DMINLINE_SHIFT) & CACHE_CTR_DMINLINE_MASK));
 
 		g_cache.initialized = true;
 
@@ -415,24 +322,10 @@ bool cache_init(void)
 
 	g_cache.ctr = cache_read_ctr();
 
-	g_cache.instruction_line_size =
-		cache_line_size_from_encoding(
-			(uint32_t)(
-				g_cache.ctr &
-				CACHE_CTR_IMINLINE_MASK
-			)
-		);
+	g_cache.instruction_line_size = cache_line_size_from_encoding((uint32_t)(g_cache.ctr & CACHE_CTR_IMINLINE_MASK));
 
 	g_cache.data_line_size =
-		cache_line_size_from_encoding(
-			(uint32_t)(
-				(
-					g_cache.ctr >>
-					CACHE_CTR_DMINLINE_SHIFT
-				) &
-				CACHE_CTR_DMINLINE_MASK
-			)
-		);
+		cache_line_size_from_encoding((uint32_t)((g_cache.ctr >> CACHE_CTR_DMINLINE_SHIFT) & CACHE_CTR_DMINLINE_MASK));
 
 	if (!cache_invalidate_data_all()) {
 		return false;
@@ -440,10 +333,7 @@ bool cache_init(void)
 
 	cache_invalidate_instruction_all();
 
-	sctlr =
-		cache_read_sctlr() |
-		CACHE_SCTLR_C |
-		CACHE_SCTLR_I;
+	sctlr = cache_read_sctlr() | CACHE_SCTLR_C | CACHE_SCTLR_I;
 
 	/*
 	 * The DSB completes earlier maintenance.
@@ -451,21 +341,16 @@ bool cache_init(void)
 	 * The ISB after writing SCTLR_EL1 ensures subsequent
 	 * instructions execute using the new cache configuration.
 	 */
-	__asm__ volatile(
-		"dsb sy\n"
-		"msr SCTLR_EL1, %0\n"
-		"isb\n"
-		:
-		: "r"(sctlr)
-		: "memory"
-	);
+	__asm__ volatile("dsb sy\n"
+					 "msr SCTLR_EL1, %0\n"
+					 "isb\n"
+					 :
+					 : "r"(sctlr)
+					 : "memory");
 
 	sctlr = cache_read_sctlr();
 
-	if (
-		(sctlr & CACHE_SCTLR_C) == 0ULL ||
-		(sctlr & CACHE_SCTLR_I) == 0ULL
-	) {
+	if ((sctlr & CACHE_SCTLR_C) == 0ULL || (sctlr & CACHE_SCTLR_I) == 0ULL) {
 		return false;
 	}
 
@@ -474,23 +359,20 @@ bool cache_init(void)
 	return true;
 }
 
-bool cache_instruction_enabled(void)
+bool
+cache_instruction_enabled(void)
 {
-	return (
-		cache_read_sctlr() &
-		CACHE_SCTLR_I
-	) != 0ULL;
+	return (cache_read_sctlr() & CACHE_SCTLR_I) != 0ULL;
 }
 
-bool cache_data_enabled(void)
+bool
+cache_data_enabled(void)
 {
-	return (
-		cache_read_sctlr() &
-		CACHE_SCTLR_C
-	) != 0ULL;
+	return (cache_read_sctlr() & CACHE_SCTLR_C) != 0ULL;
 }
 
-uint32_t cache_instruction_line_size(void)
+uint32_t
+cache_instruction_line_size(void)
 {
 	if (!g_cache.initialized) {
 		return 0U;
@@ -499,7 +381,8 @@ uint32_t cache_instruction_line_size(void)
 	return g_cache.instruction_line_size;
 }
 
-uint32_t cache_data_line_size(void)
+uint32_t
+cache_data_line_size(void)
 {
 	if (!g_cache.initialized) {
 		return 0U;
@@ -508,7 +391,8 @@ uint32_t cache_data_line_size(void)
 	return g_cache.data_line_size;
 }
 
-void cache_dump(void)
+void
+cache_dump(void)
 {
 	kprintf("cache: instruction cache: %s\n", cache_instruction_enabled() ? "enabled" : "disabled");
 	kprintf("cache: data cache: %s\n", cache_data_enabled() ? "enabled" : "disabled");

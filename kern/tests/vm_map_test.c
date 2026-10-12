@@ -43,10 +43,11 @@
 #define VM_MAP_TEST_PATTERN_MIDDLE 0x22222222U
 #define VM_MAP_TEST_PATTERN_SUFFIX 0x33333333U
 
-bool vm_map_self_test(void)
+bool
+vm_map_self_test(void)
 {
 	/* vm_address_space_create() requires a zeroed struct as a precondition. */
-	vm_address_space_t space = { 0 };
+	vm_address_space_t space = {0};
 	bool activated = false;
 	bool passed = false;
 

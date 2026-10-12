@@ -91,21 +91,24 @@ static __attribute__((noreturn, noinline)) void kern_init_higher_half(void);
 
 /* Fatal boot handling. */
 
-static __attribute__((noreturn)) void kern_halt(void)
+static __attribute__((noreturn)) void
+kern_halt(void)
 {
 	for (;;) {
 		__asm__ volatile("wfe");
 	}
 }
 
-static __attribute__((noreturn)) void kern_fail(const char *message)
+static __attribute__((noreturn)) void
+kern_fail(const char *message)
 {
 	kputln(message);
 	kern_halt();
 }
 
 /* Early boot diagnostics and physical-memory validation. */
-static void kern_dump_boot_dtb(const dtb_t *device_tree)
+static void
+kern_dump_boot_dtb(const dtb_t *device_tree)
 {
 	kputln("dtb: valid flattened Device Tree");
 
@@ -117,8 +120,7 @@ static void kern_dump_boot_dtb(const dtb_t *device_tree)
 	kputu64(device_tree->total_size);
 	kputln(" bytes");
 
-	if (!kconsole_verbose())
-		return;
+	if (!kconsole_verbose()) return;
 
 	kprintf("dtb: address: %p\n", (void *)device_tree->base);
 
@@ -129,7 +131,8 @@ static void kern_dump_boot_dtb(const dtb_t *device_tree)
 	kprintf("dtb: strings size: %llu bytes\n", (unsigned long long)device_tree->strings_size);
 }
 
-static bool kern_test_pmm(void)
+static bool
+kern_test_pmm(void)
 {
 	uint64_t test_pages[3];
 
@@ -151,7 +154,8 @@ static bool kern_test_pmm(void)
 }
 
 /* Virtual-memory self-test. */
-static bool kern_validate_identity_mappings(const platform_t *platform)
+static bool
+kern_validate_identity_mappings(const platform_t *platform)
 {
 	uint64_t translated_address;
 	uint64_t stack_probe = (uint64_t)&translated_address;
@@ -167,7 +171,8 @@ static bool kern_validate_identity_mappings(const platform_t *platform)
 	return true;
 }
 
-static bool kern_test_live_vmm(void)
+static bool
+kern_test_live_vmm(void)
 {
 	uint64_t physical_address;
 
@@ -271,12 +276,14 @@ cleanup:
 	return passed;
 }
 
-static __attribute__((noinline)) uint64_t kern_higher_half_probe(uint64_t left, uint64_t right)
+static __attribute__((noinline)) uint64_t
+kern_higher_half_probe(uint64_t left, uint64_t right)
 {
 	return (left ^ 0x41524D4F53000000ULL) + (right << 7U);
 }
 
-static bool kern_test_higher_half_alias(void)
+static bool
+kern_test_higher_half_alias(void)
 {
 	uint64_t physical_address;
 
@@ -312,7 +319,8 @@ static bool kern_test_higher_half_alias(void)
 	return actual == expected;
 }
 
-static bool kern_test_linked_kernel_pointers(void)
+static bool
+kern_test_linked_kernel_pointers(void)
 {
 	const char *string_pointer = g_kernel_link_string_table[0];
 	kern_higher_half_probe_t function_pointer = g_kernel_link_function_table[0];
@@ -333,7 +341,8 @@ static bool kern_test_linked_kernel_pointers(void)
 	return function_pointer(left, right) == kern_higher_half_probe(left, right);
 }
 
-static bool kern_test_higher_half_ram_alias(void)
+static bool
+kern_test_higher_half_ram_alias(void)
 {
 	uint64_t physical_address;
 
@@ -373,7 +382,8 @@ static bool kern_test_higher_half_ram_alias(void)
 
 /* Higher-half transition validation and entry. */
 
-static bool kern_validate_higher_half_state(void)
+static bool
+kern_validate_higher_half_state(void)
 {
 	uint64_t pc = arm64_read_program_counter();
 	uint64_t sp = arm64_read_stack_pointer();
@@ -419,10 +429,10 @@ static bool kern_validate_higher_half_state(void)
 	return true;
 }
 
-static void kern_dump_higher_half_state(void)
+static void
+kern_dump_higher_half_state(void)
 {
-	if (!kconsole_verbose())
-		return;
+	if (!kconsole_verbose()) return;
 
 	kprintf("kern_init: higher-half PC: %p\n", (void *)arm64_read_program_counter());
 	kprintf("kern_init: higher-half SP: %p\n", (void *)arm64_read_stack_pointer());
@@ -433,7 +443,8 @@ static void kern_dump_higher_half_state(void)
 
 /* Rebase every long-lived kernel pointer before TTBR0 is removed. */
 
-static bool kern_prepare_higher_half_runtime(void)
+static bool
+kern_prepare_higher_half_runtime(void)
 {
 	if (!vmm_rebase_kernel_pointers()) {
 		return false;
@@ -459,7 +470,8 @@ static bool kern_prepare_higher_half_runtime(void)
 	return true;
 }
 
-static bool kern_validate_ttbr0_shutdown(void)
+static bool
+kern_validate_ttbr0_shutdown(void)
 {
 	if (!vmm_ttbr0_disabled() || !pmm_higher_half_enabled() || !dtb_higher_half_enabled() ||
 		!gic_higher_half_enabled() || !uart_higher_half_enabled()) {
@@ -496,7 +508,8 @@ static bool kern_validate_ttbr0_shutdown(void)
 	return true;
 }
 
-static __attribute__((noreturn)) void kern_enter_higher_half(void)
+static __attribute__((noreturn)) void
+kern_enter_higher_half(void)
 {
 	uint64_t lower_vbar = arm64_read_vector_base();
 
@@ -550,7 +563,8 @@ static __attribute__((noreturn)) void kern_enter_higher_half(void)
  * Validate the TTBR1 state the transition left behind, rebase the kernel's
  * pointers onto it and shut TTBR0 off for userspace.
  */
-static void kern_finish_higher_half_transition(void)
+static void
+kern_finish_higher_half_transition(void)
 {
 	if (!kern_validate_higher_half_state()) {
 		kern_fail("kern_init: higher-half state validation failed");
@@ -599,7 +613,8 @@ static void kern_finish_higher_half_transition(void)
  * Kernel virtual arena, then the heap, then the allocator self-tests while
  * both are still untouched (they assert exact address reuse).
  */
-static void kern_init_memory(void)
+static void
+kern_init_memory(void)
 {
 	kputln("vm_kern_init: initializing kernel virtual arena");
 
@@ -632,7 +647,8 @@ static void kern_init_memory(void)
  * Returns the primary display (or 0 when there is none) for the later
  * stages that hand the framebuffer over.
  */
-static display_device_t *kern_hold_boot_splash(const driverkit_config_t *drivers)
+static display_device_t *
+kern_hold_boot_splash(const driverkit_config_t *drivers)
 {
 	display_device_t *boot_display = display_primary();
 
@@ -652,7 +668,8 @@ static display_device_t *kern_hold_boot_splash(const driverkit_config_t *drivers
  *
  * NXPC transport and the process manager, with the kernel process up.
  */
-static void kern_init_processes(void)
+static void
+kern_init_processes(void)
 {
 	ipc_init();
 
@@ -683,27 +700,22 @@ static void kern_init_processes(void)
  * VFS with the ramfs root and the /disk mountpoint. The system volume
  * itself is mounted later, once the block device is known to exist.
  */
-static void kern_init_filesystem(void)
+static void
+kern_init_filesystem(void)
 {
 	kputln("IOVirtualFSDriver initializing virtual filesystem");
 
-	if (!vfs_init())
-		kern_fail("IOVirtualFSDriver initialization failed");
-	if (!ramfs_register())
-		kern_fail("IOVirtualFSDriver ramfs registration failed");
-	if (!ext4_register())
-		kern_fail("IOVirtualFSDriver ext4 registration failed");
-	if (!devfs_register())
-		kern_fail("IOVirtualFSDriver devfs registration failed");
+	if (!vfs_init()) kern_fail("IOVirtualFSDriver initialization failed");
+	if (!ramfs_register()) kern_fail("IOVirtualFSDriver ramfs registration failed");
+	if (!ext4_register()) kern_fail("IOVirtualFSDriver ext4 registration failed");
+	if (!devfs_register()) kern_fail("IOVirtualFSDriver devfs registration failed");
 
 	vfs_status_t mount_status = vfs_mount("ramfs", 0, "/");
-	if (mount_status != VFS_STATUS_OK)
-		kern_fail("IOVirtualFSDriver root ramfs mount failed");
+	if (mount_status != VFS_STATUS_OK) kern_fail("IOVirtualFSDriver root ramfs mount failed");
 
 	kputln("IOVirtualFSDriver mounted ramfs at /");
 
-	if (vfs_mkdir("/disk") != VFS_STATUS_OK)
-		kern_fail("IOVirtualFSDriver: /disk mountpoint creation failed");
+	if (vfs_mkdir("/disk") != VFS_STATUS_OK) kern_fail("IOVirtualFSDriver: /disk mountpoint creation failed");
 
 	if (vfs_mkdir("/dev") != VFS_STATUS_OK || vfs_mount("devfs", 0, "/dev") != VFS_STATUS_OK)
 		kern_fail("IOVirtualFSDriver: devfs mount at /dev failed");
@@ -717,7 +729,8 @@ static void kern_init_filesystem(void)
  * Thread subsystem and the processor scheduler, with the bootstrap thread
  * running. The scheduler and context-switch tests run in POST.
  */
-static void kern_init_scheduler(void)
+static void
+kern_init_scheduler(void)
 {
 	kputln("thread_bootstrap: initializing thread subsystem");
 
@@ -739,7 +752,8 @@ static void kern_init_scheduler(void)
  *
  * Mount the ext4 system volume from disk0 at /disk.
  */
-static void kern_mount_system_volume(void)
+static void
+kern_mount_system_volume(void)
 {
 	kputln("IOFilesystemFamily: mounting disk0 at /disk");
 
@@ -770,12 +784,12 @@ static void kern_mount_system_volume(void)
  * Pick PID 1 for this boot (bootd, its recovery image, or triageOS), hand
  * the framebuffer over and spawn it.
  */
-static void kern_launch_init_process(display_device_t *boot_display)
+static void
+kern_launch_init_process(display_device_t *boot_display)
 {
 	bool recovery_boot = boot_mode_is_triage_os();
 	const char *bootd_recovery_path = "/disk/System/Library/CoreServices/bootd.recovery";
-	const char *init_path =
-		recovery_boot ? boot_update_recovery_program() : "/disk/System/Library/CoreServices/bootd";
+	const char *init_path = recovery_boot ? boot_update_recovery_program() : "/disk/System/Library/CoreServices/bootd";
 	const char *init_name = recovery_boot ? "triageOS" : "bootd";
 	bool init_uses_fallback = false;
 
@@ -790,8 +804,7 @@ static void kern_launch_init_process(display_device_t *boot_display)
 	}
 
 	kprintf("boot: selected environment: %s\n", boot_mode_name());
-	if (boot_display != 0 && !boot_splash_finish())
-		kern_fail("boot_splash_finish: completion failed");
+	if (boot_display != 0 && !boot_splash_finish()) kern_fail("boot_splash_finish: completion failed");
 	kputs("loader_spawn: loading ");
 	kputs(init_path);
 	kputln(" as PID 1");
@@ -810,8 +823,7 @@ static void kern_launch_init_process(display_device_t *boot_display)
 		kern_fail("loader_spawn: PID 1 launch failed");
 	}
 
-	if (g_boot_process->p_ident.pid != 1U)
-		kern_fail("loader_spawn: selected environment did not receive PID 1");
+	if (g_boot_process->p_ident.pid != 1U) kern_fail("loader_spawn: selected environment did not receive PID 1");
 	kprintf("%s: PID %u ready for scheduler dispatch\n", init_name, g_boot_process->p_ident.pid);
 	kputln("VirtIOBlockFamily: VirtIO block device initialized");
 }
@@ -822,10 +834,10 @@ static void kern_launch_init_process(display_device_t *boot_display)
  * Start the periodic timer, enable IRQs and hand the CPU to userspace. Only
  * returns control to the idle loop when no PID 1 was launched.
  */
-static __attribute__((noreturn)) void kern_start_scheduler(const driverkit_config_t *drivers)
+static __attribute__((noreturn)) void
+kern_start_scheduler(const driverkit_config_t *drivers)
 {
-	if (drivers->input_enabled)
-		kputln("input: VirtIO keyboard and mouse initialized");
+	if (drivers->input_enabled) kputln("input: VirtIO keyboard and mouse initialized");
 
 	gic_enable_ppi(PHYSICAL_TIMER_INTID, 0x80U);
 	kputln("kern_init: physical timer PPI enabled");
@@ -843,8 +855,7 @@ static __attribute__((noreturn)) void kern_start_scheduler(const driverkit_confi
 
 #if defined(NXU_SMP_USER_TEST)
 	/* Real user processes and threads on every CPU: the boot thread supervises. */
-	if (!smp_user_test_run())
-		kern_fail("smp_user_test: failed");
+	if (!smp_user_test_run()) kern_fail("smp_user_test: failed");
 	kputln("smp_user_test: passed");
 	kputln("smp_user_test: halting (test build)");
 	for (;;)
@@ -853,8 +864,7 @@ static __attribute__((noreturn)) void kern_start_scheduler(const driverkit_confi
 
 #if defined(NXU_SMP_TEST)
 	/* The secondary CPUs are up and the boot CPU takes interrupts: the SMP suite runs on the boot thread. */
-	if (!smp_test_run())
-		kern_fail("smp_test: failed");
+	if (!smp_test_run()) kern_fail("smp_test: failed");
 	kputln("smp_test: passed");
 	kputln("smp_test: halting (test build)");
 	for (;;)
@@ -901,7 +911,8 @@ static __attribute__((noreturn)) void kern_start_scheduler(const driverkit_confi
  *
  * The boot sequence after the TTBR1 transition, top to bottom.
  */
-static __attribute__((noreturn, noinline)) void kern_init_higher_half(void)
+static __attribute__((noreturn, noinline)) void
+kern_init_higher_half(void)
 {
 	kern_finish_higher_half_transition();
 	kern_init_memory();
@@ -940,8 +951,7 @@ static __attribute__((noreturn, noinline)) void kern_init_higher_half(void)
 	 * The Trusted Enclave link; its monitor thread runs once the scheduler does. Absent, tepOS requests fail closed.
 	 * With it, tepOS checks bootd against its signed manifest: reported, never waited for or enforced.
 	 */
-	if (tep_mailbox_start())
-		(void)tep_boot_check_start();
+	if (tep_mailbox_start()) (void)tep_boot_check_start();
 
 	if (!boot_mode_is_triage_os() && boot_arg_bool("ui.userland", false) && !ui_service_trusted_prepare())
 		kern_fail("trusted-login: unable to establish login boundary");
@@ -988,7 +998,8 @@ static __attribute__((noreturn, noinline)) void kern_init_higher_half(void)
  * The lower-half phase builds and validates both translation regimes.
  * It never initializes long-lived kernel services after the transition.
  */
-void kern_init(const void *dtb_address)
+void
+kern_init(const void *dtb_address)
 {
 	uint64_t current_el_raw = arm_read_current_el_raw();
 	uint32_t current_el = arm_read_current_el();
@@ -1029,13 +1040,11 @@ void kern_init(const void *dtb_address)
 	}
 
 	kputln("nvram_bootstrap: bootstrap begin");
-	if (!nvram_bootstrap(device_tree))
-		kern_fail("nvram_bootstrap: bootstrap failed");
+	if (!nvram_bootstrap(device_tree)) kern_fail("nvram_bootstrap: bootstrap failed");
 	kputln("nvram_bootstrap: bootstrap complete");
 
 	kputln("boot_args: initialization begin");
-	if (!boot_args_init())
-		kern_fail("boot_args_init: initialization failed");
+	if (!boot_args_init()) kern_fail("boot_args_init: initialization failed");
 	kputln("boot_args_init: initialization complete");
 	boot_args_dump();
 
@@ -1174,8 +1183,7 @@ void kern_init(const void *dtb_address)
 
 	kputln("vmm_init_higher_half_alias: TTBR1 higher-half alias installed");
 
-	if (kconsole_verbose())
-		vmm_dump_higher_half();
+	if (kconsole_verbose()) vmm_dump_higher_half();
 
 	/* The live mapping test now targets a TTBR1 virtual address */
 	kputln("kern_test_live_vmm: testing live page mappings");

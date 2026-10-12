@@ -34,7 +34,8 @@ ipc_init(void)
 	ipc_port_init();
 	g_ipc_initialized = true;
 
-	kprintf(NXPC_LOG_PREFIX "transport online, inline limit %u bytes, queue limit %u\n", IPC_KMSG_MAX_INLINE_SIZE, IPC_PORT_QUEUE_LIMIT);
+	kprintf(NXPC_LOG_PREFIX "transport online, inline limit %u bytes, queue limit %u\n", IPC_KMSG_MAX_INLINE_SIZE,
+			IPC_PORT_QUEUE_LIMIT);
 }
 
 bool

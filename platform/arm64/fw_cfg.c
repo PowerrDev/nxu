@@ -30,27 +30,29 @@
  * fw_cfg MMIO control registers and DMA descriptors are big-endian even on
  * QEMU's little-endian AArch64 virt machine.
  */
-static uint16_t fw_cfg_to_be16(uint16_t value)
+static uint16_t
+fw_cfg_to_be16(uint16_t value)
 {
 	return (uint16_t)((value >> 8U) | (value << 8U));
 }
 
-static uint32_t fw_cfg_to_be32(uint32_t value)
+static uint32_t
+fw_cfg_to_be32(uint32_t value)
 {
-	return ((value & 0x000000FFU) << 24U)
-		| ((value & 0x0000FF00U) << 8U)
-		| ((value & 0x00FF0000U) >> 8U)
-		| ((value & 0xFF000000U) >> 24U);
+	return ((value & 0x000000FFU) << 24U) | ((value & 0x0000FF00U) << 8U) | ((value & 0x00FF0000U) >> 8U) |
+		   ((value & 0xFF000000U) >> 24U);
 }
 
-static uint64_t fw_cfg_to_be64(uint64_t value)
+static uint64_t
+fw_cfg_to_be64(uint64_t value)
 {
 	uint64_t low = fw_cfg_to_be32((uint32_t)value);
 	uint64_t high = fw_cfg_to_be32((uint32_t)(value >> 32U));
 	return (low << 32U) | high;
 }
 
-static uint32_t fw_cfg_from_be32(uint32_t value)
+static uint32_t
+fw_cfg_from_be32(uint32_t value)
 {
 	return fw_cfg_to_be32(value);
 }
@@ -61,53 +63,52 @@ typedef struct {
 	uint64_t address;
 } fw_cfg_dma_access_t;
 
-static bool fw_cfg_mmio_base(
-	const platform_region_t *region,
-	uint64_t *base
-)
+static bool
+fw_cfg_mmio_base(const platform_region_t *region, uint64_t *base)
 {
-	if (
-		region == 0 ||
-		base == 0 ||
-		region->size < FW_CFG_MIN_SIZE ||
-		!vmm_higher_half_direct_map_enabled()
-	) {
+	if (region == 0 || base == 0 || region->size < FW_CFG_MIN_SIZE || !vmm_higher_half_direct_map_enabled()) {
 		return false;
 	}
 
 	return vmm_physical_to_higher_half(region->base, base);
 }
 
-static inline void fw_cfg_barrier(void)
+static inline void
+fw_cfg_barrier(void)
 {
 	__asm__ volatile("dmb osh" : : : "memory");
 }
 
-static inline uint8_t fw_cfg_read8(uint64_t base)
+static inline uint8_t
+fw_cfg_read8(uint64_t base)
 {
 	return *(volatile uint8_t *)(base + FW_CFG_DATA_OFFSET);
 }
 
-static inline void fw_cfg_select(uint64_t base, uint16_t selector)
+static inline void
+fw_cfg_select(uint64_t base, uint16_t selector)
 {
 	*(volatile uint16_t *)(base + FW_CFG_SELECTOR_OFFSET) = fw_cfg_to_be16(selector);
 	fw_cfg_barrier();
 }
 
-static inline void fw_cfg_dma_trigger(uint64_t base, uint64_t physical)
+static inline void
+fw_cfg_dma_trigger(uint64_t base, uint64_t physical)
 {
 	*(volatile uint64_t *)(base + FW_CFG_DMA_OFFSET) = fw_cfg_to_be64(physical);
 	fw_cfg_barrier();
 }
 
-static uint16_t fw_cfg_read_be16_data(uint64_t base)
+static uint16_t
+fw_cfg_read_be16_data(uint64_t base)
 {
 	uint16_t value = (uint16_t)fw_cfg_read8(base) << 8U;
 	value |= fw_cfg_read8(base);
 	return value;
 }
 
-static uint32_t fw_cfg_read_be32_data(uint64_t base)
+static uint32_t
+fw_cfg_read_be32_data(uint64_t base)
 {
 	uint32_t value = (uint32_t)fw_cfg_read8(base) << 24U;
 	value |= (uint32_t)fw_cfg_read8(base) << 16U;
@@ -116,7 +117,8 @@ static uint32_t fw_cfg_read_be32_data(uint64_t base)
 	return value;
 }
 
-static bool fw_cfg_string_equals(const char *left, const char *right)
+static bool
+fw_cfg_string_equals(const char *left, const char *right)
 {
 	if (left == 0 || right == 0) return false;
 
@@ -129,7 +131,8 @@ static bool fw_cfg_string_equals(const char *left, const char *right)
 	return *left == '\0' && *right == '\0';
 }
 
-static bool fw_cfg_validate(uint64_t base)
+static bool
+fw_cfg_validate(uint64_t base)
 {
 	fw_cfg_select(base, FW_CFG_SIGNATURE);
 
@@ -150,11 +153,8 @@ static bool fw_cfg_validate(uint64_t base)
 	return (id & FW_CFG_ID_DMA) != 0U;
 }
 
-bool fw_cfg_find_file(
-	const platform_region_t *region,
-	const char *name,
-	fw_cfg_file_t *file
-)
+bool
+fw_cfg_find_file(const platform_region_t *region, const char *name, fw_cfg_file_t *file)
 {
 	if (name == 0 || file == 0) return false;
 
@@ -191,18 +191,10 @@ bool fw_cfg_find_file(
 	return false;
 }
 
-bool fw_cfg_dma_write(
-	const platform_region_t *region,
-	uint16_t selector,
-	const void *data,
-	uint32_t size
-)
+bool
+fw_cfg_dma_write(const platform_region_t *region, uint16_t selector, const void *data, uint32_t size)
 {
-	if (
-		data == 0 ||
-		size == 0U ||
-		size > PMM_PAGE_SIZE - FW_CFG_DMA_BOUNCE_OFFSET
-	) {
+	if (data == 0 || size == 0U || size > PMM_PAGE_SIZE - FW_CFG_DMA_BOUNCE_OFFSET) {
 		return false;
 	}
 
@@ -228,9 +220,7 @@ bool fw_cfg_dma_write(
 
 	memcpy(bounce, data, size);
 
-	uint32_t control = ((uint32_t)selector << 16U)
-		| FW_CFG_DMA_CTL_SELECT
-		| FW_CFG_DMA_CTL_WRITE;
+	uint32_t control = ((uint32_t)selector << 16U) | FW_CFG_DMA_CTL_SELECT | FW_CFG_DMA_CTL_WRITE;
 
 	access->control = fw_cfg_to_be32(control);
 	access->length = fw_cfg_to_be32(size);

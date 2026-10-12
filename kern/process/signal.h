@@ -51,10 +51,7 @@ typedef enum {
 	SIGNAL_SEND_NOT_SUPPORTED
 } signal_send_result_t;
 
-typedef enum {
-	SIGNAL_DEFAULT_TERMINATE,
-	SIGNAL_DEFAULT_IGNORE
-} signal_default_t;
+typedef enum { SIGNAL_DEFAULT_TERMINATE, SIGNAL_DEFAULT_IGNORE } signal_default_t;
 
 /* True for 1 <= signal < NXU_NSIG. */
 bool signal_valid(uint32_t signal);

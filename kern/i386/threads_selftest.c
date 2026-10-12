@@ -81,41 +81,42 @@ static volatile uint32_t g_thread_failures;
 static uint8_t g_user_stacks[SELFTEST_USER_STACKS][SELFTEST_USER_STACK_SIZE] __attribute__((aligned(16)));
 static uint32_t g_user_stack_next;
 
-static void log_reset(void)
+static void
+log_reset(void)
 {
 	g_log_length = 0U;
 	g_log[0] = '\0';
 }
 
-static void log_put(char value)
+static void
+log_put(char value)
 {
 	uint32_t index = g_log_length;
 
-	if (index + 1U >= SELFTEST_LOG_SIZE)
-		return;
+	if (index + 1U >= SELFTEST_LOG_SIZE) return;
 
 	g_log[index] = value;
 	g_log[index + 1U] = '\0';
 	g_log_length = index + 1U;
 }
 
-static bool log_equals(const char *expected)
+static bool
+log_equals(const char *expected)
 {
 	uint32_t index = 0U;
 
 	while (expected[index] != '\0') {
-		if (index >= g_log_length || g_log[index] != expected[index])
-			return false;
+		if (index >= g_log_length || g_log[index] != expected[index]) return false;
 		index++;
 	}
 
 	return index == g_log_length;
 }
 
-static void thread_check(bool condition, const char *what)
+static void
+thread_check(bool condition, const char *what)
 {
-	if (condition)
-		return;
+	if (condition) return;
 
 	kprintf("i386_init_threads_selftest: FAIL (in thread) %s\n", what);
 	g_thread_failures++;
@@ -131,7 +132,8 @@ static void thread_check(bool condition, const char *what)
 static uint8_t g_saved_pic_master;
 static uint8_t g_saved_pic_slave;
 
-static void selftest_mask_pic(void)
+static void
+selftest_mask_pic(void)
 {
 	g_saved_pic_master = inb(PIC_MASTER_DATA);
 	g_saved_pic_slave = inb(PIC_SLAVE_DATA);
@@ -139,20 +141,21 @@ static void selftest_mask_pic(void)
 	outb(PIC_SLAVE_DATA, 0xFFU);
 }
 
-static void selftest_restore_pic(void)
+static void
+selftest_restore_pic(void)
 {
 	outb(PIC_MASTER_DATA, g_saved_pic_master);
 	outb(PIC_SLAVE_DATA, g_saved_pic_slave);
 }
 
 /* Charge ticks to the running thread until it sits at exactly `level`. */
-static bool selftest_tick_to_level(uint8_t level)
+static bool
+selftest_tick_to_level(uint8_t level)
 {
 	thread_t self = current_thread();
 
 	for (uint32_t ticks = 0U; ticks < 2U * SCHED_MLFQ_BOOST_INTERVAL_TICKS; ticks++) {
-		if (self->mlfq_level == level)
-			return true;
+		if (self->mlfq_level == level) return true;
 		sched_tick();
 	}
 
@@ -160,7 +163,8 @@ static bool selftest_tick_to_level(uint8_t level)
 }
 
 /* The equalizer boost returns the running thread to level 0. */
-static bool selftest_boost_self(void)
+static bool
+selftest_boost_self(void)
 {
 	thread_t self = current_thread();
 
@@ -186,7 +190,8 @@ static bool selftest_boost_self(void)
  * stages below run kernel-image code with flat segments and so only work
  * with paging off, as in a threads-only bring-up.
  */
-static bool selftest_paging_enabled(void)
+static bool
+selftest_paging_enabled(void)
 {
 	uint32_t cr0;
 
@@ -196,7 +201,8 @@ static bool selftest_paging_enabled(void)
 
 /* ---- 1: shared scheduler self-tests ------------------------------------- */
 
-static bool test_shared_scheduler(void)
+static bool
+test_shared_scheduler(void)
 {
 	SELFTEST_CHECK(sched_run_queue_self_test(), "sched_run_queue_self_test");
 	SELFTEST_CHECK(sched_mlfq_self_test(), "sched_mlfq_self_test");
@@ -210,7 +216,8 @@ static bool test_shared_scheduler(void)
 
 static uint8_t g_context_buffer[256] __attribute__((aligned(16)));
 
-static bool test_machine_thread(void)
+static bool
+test_machine_thread(void)
 {
 	machine_thread_t machine;
 
@@ -257,7 +264,8 @@ static bool test_machine_thread(void)
 
 static volatile uint32_t g_pingpong_done;
 
-static void pingpong_thread(void *parameter)
+static void
+pingpong_thread(void *parameter)
 {
 	uint32_t id = (uint32_t)(uintptr_t)parameter;
 	thread_t self = current_thread();
@@ -275,7 +283,8 @@ static void pingpong_thread(void *parameter)
 	g_pingpong_done++;
 }
 
-static bool test_kernel_threads(void)
+static bool
+test_kernel_threads(void)
 {
 	thread_t threads[SELFTEST_PINGPONG_THREADS];
 	uint32_t baseline = thread_count();
@@ -315,12 +324,14 @@ static bool test_kernel_threads(void)
 
 /* ---- 4: MLFQ ticks and preempt-on-return --------------------------------- */
 
-static void log_once_thread(void *parameter)
+static void
+log_once_thread(void *parameter)
 {
 	log_put((char)(uintptr_t)parameter);
 }
 
-static bool test_tick_and_preempt(void)
+static bool
+test_tick_and_preempt(void)
 {
 	thread_t self = current_thread();
 
@@ -399,7 +410,8 @@ static bool test_tick_and_preempt(void)
 
 /* ---- 5: the system-call request path from a kernel frame ----------------- */
 
-static bool test_syscall_frame(void)
+static bool
+test_syscall_frame(void)
 {
 	x86_saved_state_t frame;
 	syscall_request_t request;
@@ -570,12 +582,14 @@ __asm__(".text\n"
 		"	movl $0x1238, %eax\n"
 		"	movw %ax, %ds\n");
 
-void i386_selftest_user_log(uint32_t value)
+void
+i386_selftest_user_log(uint32_t value)
 {
 	log_put((char)value);
 }
 
-static inline uint32_t user_syscall(uint32_t number, uint32_t a, uint32_t b, uint32_t c)
+static inline uint32_t
+user_syscall(uint32_t number, uint32_t a, uint32_t b, uint32_t c)
 {
 	uint32_t result;
 
@@ -586,7 +600,8 @@ static inline uint32_t user_syscall(uint32_t number, uint32_t a, uint32_t b, uin
 static const char g_user_message[] = "i386_init_threads_selftest: hello from ring 3\n";
 
 /* The basic user program, running in ring 3. */
-void i386_selftest_user_main(void)
+void
+i386_selftest_user_main(void)
 {
 	volatile selftest_user_report_t *report = &i386_selftest_user_report;
 
@@ -655,16 +670,15 @@ static uint8_t g_tick_levels[16];
 static uint32_t g_tick_count;
 
 /* Software timer: an `int $22` from ring 3 charges one scheduler tick. */
-static bool selftest_tick_hook(x86_saved_state_t *state)
+static bool
+selftest_tick_hook(x86_saved_state_t *state)
 {
-	if (state->trapno != SELFTEST_TICK_VECTOR)
-		return false;
+	if (state->trapno != SELFTEST_TICK_VECTOR) return false;
 
 	g_tick_hook_ran = true;
 	sched_tick();
 
-	if (g_tick_count < sizeof(g_tick_levels))
-		g_tick_levels[g_tick_count] = current_thread()->mlfq_level;
+	if (g_tick_count < sizeof(g_tick_levels)) g_tick_levels[g_tick_count] = current_thread()->mlfq_level;
 	g_tick_count++;
 	return true;
 }
@@ -675,42 +689,37 @@ typedef struct {
 	thread_t thread;
 } selftest_process_t;
 
-static bool selftest_spawn(const char *name, void (*entry)(void), uint32_t argument, selftest_process_t *process)
+static bool
+selftest_spawn(const char *name, void (*entry)(void), uint32_t argument, selftest_process_t *process)
 {
-	if (g_user_stack_next >= SELFTEST_USER_STACKS)
-		return false;
+	if (g_user_stack_next >= SELFTEST_USER_STACKS) return false;
 
 	uint8_t *stack = g_user_stacks[g_user_stack_next++];
 	uint64_t stack_top = (uint64_t)(uintptr_t)stack + SELFTEST_USER_STACK_SIZE;
 	uint64_t entry_address = (uint64_t)(uintptr_t)entry;
 
-	if (!proc_create_user(proc_kernel(), name, entry_address, stack_top, &process->proc))
-		return false;
+	if (!proc_create_user(proc_kernel(), name, entry_address, stack_top, &process->proc)) return false;
 
 	process->pid = process->proc->p_ident.pid;
 	process->thread = task_first_thread_ref(proc_task(process->proc));
 
-	if (process->thread == 0)
-		return false;
+	if (process->thread == 0) return false;
 
 	/* The process's own first thread starts with argument 0; give this one a value. */
-	if (argument != 0U && !thread_set_user_state(process->thread, entry_address, stack_top, argument))
-		return false;
+	if (argument != 0U && !thread_set_user_state(process->thread, entry_address, stack_top, argument)) return false;
 
-	if (!thread_stack_alloc(process->thread))
-		return false;
-	if (!proc_make_runnable(process->proc) || !proc_mark_running(process->proc))
-		return false;
+	if (!thread_stack_alloc(process->thread)) return false;
+	if (!proc_make_runnable(process->proc) || !proc_mark_running(process->proc)) return false;
 
 	return sched_thread_start(process->thread);
 }
 
-static bool selftest_reap(selftest_process_t *process, uint64_t *status)
+static bool
+selftest_reap(selftest_process_t *process, uint64_t *status)
 {
 	SELFTEST_YIELD_UNTIL(proc_state(process->proc) == PROC_STATE_ZOMBIE);
 
-	if (proc_state(process->proc) != PROC_STATE_ZOMBIE)
-		return false;
+	if (proc_state(process->proc) != PROC_STATE_ZOMBIE) return false;
 
 	/* Let the terminated thread finish unwinding and be reaped by its successor. */
 	(void)sched_yield();
@@ -719,7 +728,8 @@ static bool selftest_reap(selftest_process_t *process, uint64_t *status)
 	return proc_reap(proc_kernel(), process->pid, status);
 }
 
-static bool test_ring3_syscalls(void)
+static bool
+test_ring3_syscalls(void)
 {
 	SELFTEST_CHECK(statistics_self_test(), "VirtIO statistics and queue cleanup");
 	selftest_process_t process;
@@ -788,7 +798,8 @@ typedef struct {
 	uint32_t vector;
 } selftest_fault_t;
 
-static bool test_ring3_faults(void)
+static bool
+test_ring3_faults(void)
 {
 	static const selftest_fault_t faults[] = {
 		{"ring3-cli", i386_selftest_user_fault_cli, T_GENERAL_PROTECTION},
@@ -816,7 +827,8 @@ static bool test_ring3_faults(void)
 	return true;
 }
 
-static bool test_ring3_preemption(void)
+static bool
+test_ring3_preemption(void)
 {
 	thread_t self = current_thread();
 	selftest_process_t process;
@@ -876,7 +888,8 @@ static bool test_ring3_preemption(void)
 	return true;
 }
 
-static bool test_ring3(void)
+static bool
+test_ring3(void)
 {
 	if (selftest_paging_enabled()) {
 		kputln("i386_init_threads_selftest: paging is on, ring 3 stages skipped (need mapped user pages)");
@@ -888,7 +901,8 @@ static bool test_ring3(void)
 
 /* ---- the phase hook ------------------------------------------------------- */
 
-bool i386_init_threads_selftest(const i386_boot_info_t *boot)
+bool
+i386_init_threads_selftest(const i386_boot_info_t *boot)
 {
 	(void)boot;
 

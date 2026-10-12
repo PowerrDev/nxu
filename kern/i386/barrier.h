@@ -14,17 +14,20 @@
 #ifndef NXU_KERN_I386_BARRIER_H
 #define NXU_KERN_I386_BARRIER_H
 
-static inline void ml_dma_wmb(void)
+static inline void
+ml_dma_wmb(void)
 {
 	__asm__ volatile("" : : : "memory");
 }
 
-static inline void ml_dma_rmb(void)
+static inline void
+ml_dma_rmb(void)
 {
 	__asm__ volatile("" : : : "memory");
 }
 
-static inline void ml_dma_mb(void)
+static inline void
+ml_dma_mb(void)
 {
 #if defined(__x86_64__)
 	__asm__ volatile("lock; addl $0, (%%rsp)" : : : "memory", "cc");
@@ -33,7 +36,8 @@ static inline void ml_dma_mb(void)
 #endif
 }
 
-static inline void ml_cpu_relax(void)
+static inline void
+ml_cpu_relax(void)
 {
 	__asm__ volatile("pause" : : : "memory");
 }

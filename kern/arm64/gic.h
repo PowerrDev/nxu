@@ -99,11 +99,7 @@ void gic_enable_ppi(uint32_t intid, uint8_t priority);
  *
  * Return: true when the INTID was valid and configured.
  */
-bool gic_enable_spi(
-	uint32_t intid,
-	uint8_t priority,
-	bool edge_triggered
-);
+bool gic_enable_spi(uint32_t intid, uint8_t priority, bool edge_triggered);
 
 /**
  * gic_acknowledge_interrupt - Acknowledge the highest-priority pending IRQ.

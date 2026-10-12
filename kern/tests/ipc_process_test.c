@@ -63,7 +63,8 @@ ipc_process_test(void)
 
 	/* A boot that already runs bootd (the unified boot) has the registry: a second bootd would replace it. */
 	if (ipc_bootstrap_registry_port() == IPC_PORT_NULL) {
-		loader_status_t status_bootd = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/bootd", "bootd", &proc_bootd);
+		loader_status_t status_bootd =
+			loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/bootd", "bootd", &proc_bootd);
 		if (status_bootd != LOADER_STATUS_OK) {
 			kputs("ipc_process_test: spawning bootd failed: ");
 			kputln(loader_status_name(status_bootd));
@@ -78,14 +79,16 @@ ipc_process_test(void)
 
 	kputln("ipc_process_test: bootstrap registry ready, spawning ipctest_a and ipctest_b");
 
-	loader_status_t status_a = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/ipctest_a", "ipctest_a", &proc_a);
+	loader_status_t status_a =
+		loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/ipctest_a", "ipctest_a", &proc_a);
 	if (status_a != LOADER_STATUS_OK) {
 		kputs("ipc_process_test: spawning ipctest_a failed: ");
 		kputln(loader_status_name(status_a));
 		goto cleanup;
 	}
 
-	loader_status_t status_b = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/ipctest_b", "ipctest_b", &proc_b);
+	loader_status_t status_b =
+		loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/ipctest_b", "ipctest_b", &proc_b);
 	if (status_b != LOADER_STATUS_OK) {
 		kputs("ipc_process_test: spawning ipctest_b failed: ");
 		kputln(loader_status_name(status_b));
@@ -104,7 +107,8 @@ ipc_process_test(void)
 	}
 
 	if (exit_a != 0ULL || exit_b != 0ULL) {
-		kprintf("ipc_process_test: nonzero exit status (a=%llu b=%llu)\n", (unsigned long long)exit_a, (unsigned long long)exit_b);
+		kprintf("ipc_process_test: nonzero exit status (a=%llu b=%llu)\n", (unsigned long long)exit_a,
+				(unsigned long long)exit_b);
 		goto cleanup;
 	}
 
@@ -119,6 +123,7 @@ cleanup:
 	 */
 	if (!passed) return false;
 
-	kputln("ipc_process_test: two-process bootstrap register/lookup round trip passed (spawn, discover by name, port transfer, reply, reap)");
+	kputln("ipc_process_test: two-process bootstrap register/lookup round trip passed (spawn, discover by name, port "
+		   "transfer, reply, reap)");
 	return true;
 }

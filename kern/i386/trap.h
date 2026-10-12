@@ -130,7 +130,8 @@ _Static_assert(offsetof(x86_saved_state32_t, eip) == 56U, "eip offset changed");
 typedef x86_saved_state32_t x86_saved_state_t;
 
 /* True if the trap interrupted ring 3, i.e. the frame carries uesp and ss. */
-static inline bool x86_saved_state_is_user(const x86_saved_state_t *state)
+static inline bool
+x86_saved_state_is_user(const x86_saved_state_t *state)
 {
 	return (state->cs & 3U) == 3U;
 }

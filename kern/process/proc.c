@@ -43,19 +43,22 @@ static uint32_t g_zombie_count;
 
 static bool g_proc_initialized;
 
-static void proc_lock(proc_lock_t *lock)
+static void
+proc_lock(proc_lock_t *lock)
 {
 	while (__atomic_exchange_n(&lock->value, 1U, __ATOMIC_ACQUIRE) != 0U) {
 		cpu_relax();
 	}
 }
 
-static void proc_unlock(proc_lock_t *lock)
+static void
+proc_unlock(proc_lock_t *lock)
 {
 	__atomic_store_n(&lock->value, 0U, __ATOMIC_RELEASE);
 }
 
-static void proc_copy_name(char destination[PROC_NAME_MAX], const char *source)
+static void
+proc_copy_name(char destination[PROC_NAME_MAX], const char *source)
 {
 	uint32_t index = 0U;
 
@@ -75,11 +78,11 @@ static void proc_copy_name(char destination[PROC_NAME_MAX], const char *source)
 	}
 }
 
-static proc_t proc_allocate_slot_locked(void)
+static proc_t
+proc_allocate_slot_locked(void)
 {
 	for (uint32_t index = 0U; index < PROC_MAX; index++) {
-		if (g_proc_slot_used[index])
-			continue;
+		if (g_proc_slot_used[index]) continue;
 
 		g_proc_slot_used[index] = true;
 
@@ -100,25 +103,24 @@ static proc_t proc_allocate_slot_locked(void)
 	return 0;
 }
 
-static void proc_release_slot_locked(proc_t proc)
+static void
+proc_release_slot_locked(proc_t proc)
 {
-	if (proc == 0 || proc->p_slot >= PROC_MAX)
-		return;
+	if (proc == 0 || proc->p_slot >= PROC_MAX) return;
 
 	uint32_t slot = proc->p_slot;
 
-	if (&g_proc_slots[slot] != proc)
-		return;
+	if (&g_proc_slots[slot] != proc) return;
 
 	g_proc_slot_used[slot] = false;
 	memset(&g_proc_slots[slot], 0, sizeof(g_proc_slots[slot]));
 }
 
-static bool proc_pid_in_use_locked(proc_id_t pid)
+static bool
+proc_pid_in_use_locked(proc_id_t pid)
 {
 	for (uint32_t index = 0U; index < PROC_MAX; index++) {
-		if (!g_proc_slot_used[index])
-			continue;
+		if (!g_proc_slot_used[index]) continue;
 
 		if (g_proc_slots[index].p_ident.pid == pid) {
 			return true;
@@ -128,7 +130,8 @@ static bool proc_pid_in_use_locked(proc_id_t pid)
 	return false;
 }
 
-static proc_id_t proc_allocate_pid_locked(void)
+static proc_id_t
+proc_allocate_pid_locked(void)
 {
 	for (uint32_t attempt = 0U; attempt < PROC_PID_MAX; attempt++) {
 		if (g_next_pid == PROC_PID_KERNEL || g_next_pid > PROC_PID_MAX) {
@@ -146,7 +149,8 @@ static proc_id_t proc_allocate_pid_locked(void)
 	return PROC_PID_INVALID;
 }
 
-static proc_uniqueid_t proc_allocate_uniqueid_locked(void)
+static proc_uniqueid_t
+proc_allocate_uniqueid_locked(void)
 {
 	proc_uniqueid_t uniqueid = g_next_uniqueid++;
 
@@ -157,7 +161,8 @@ static proc_uniqueid_t proc_allocate_uniqueid_locked(void)
 	return uniqueid;
 }
 
-static proc_idversion_t proc_allocate_idversion_locked(void)
+static proc_idversion_t
+proc_allocate_idversion_locked(void)
 {
 	proc_idversion_t version = g_next_idversion++;
 
@@ -168,7 +173,8 @@ static proc_idversion_t proc_allocate_idversion_locked(void)
 	return version;
 }
 
-static void proc_all_insert_locked(proc_t proc)
+static void
+proc_all_insert_locked(proc_t proc)
 {
 	proc->p_list_prev = g_allproc_tail;
 	proc->p_list_next = 0;
@@ -182,7 +188,8 @@ static void proc_all_insert_locked(proc_t proc)
 	g_allproc_tail = proc;
 }
 
-static void proc_all_remove_locked(proc_t proc)
+static void
+proc_all_remove_locked(proc_t proc)
 {
 	if (proc->p_list_prev != 0) {
 		proc->p_list_prev->p_list_next = proc->p_list_next;
@@ -200,7 +207,8 @@ static void proc_all_remove_locked(proc_t proc)
 	proc->p_list_next = 0;
 }
 
-static void proc_zombie_insert_locked(proc_t proc)
+static void
+proc_zombie_insert_locked(proc_t proc)
 {
 	proc->p_list_prev = g_zombproc_tail;
 	proc->p_list_next = 0;
@@ -214,7 +222,8 @@ static void proc_zombie_insert_locked(proc_t proc)
 	g_zombproc_tail = proc;
 }
 
-static void proc_zombie_remove_locked(proc_t proc)
+static void
+proc_zombie_remove_locked(proc_t proc)
 {
 	if (proc->p_list_prev != 0) {
 		proc->p_list_prev->p_list_next = proc->p_list_next;
@@ -232,7 +241,8 @@ static void proc_zombie_remove_locked(proc_t proc)
 	proc->p_list_next = 0;
 }
 
-static void proc_child_insert_locked(proc_t parent, proc_t child)
+static void
+proc_child_insert_locked(proc_t parent, proc_t child)
 {
 	child->p_pptr = parent;
 
@@ -247,12 +257,12 @@ static void proc_child_insert_locked(proc_t parent, proc_t child)
 	parent->p_childrencnt++;
 }
 
-static void proc_child_remove_locked(proc_t child)
+static void
+proc_child_remove_locked(proc_t child)
 {
 	proc_t parent = child->p_pptr;
 
-	if (parent == 0)
-		return;
+	if (parent == 0) return;
 
 	if (child->p_sibling_prev != 0) {
 		child->p_sibling_prev->p_sibling_next = child->p_sibling_next;
@@ -273,7 +283,8 @@ static void proc_child_remove_locked(proc_t child)
 	child->p_sibling_next = 0;
 }
 
-static proc_t proc_find_live_locked(proc_id_t pid)
+static proc_t
+proc_find_live_locked(proc_id_t pid)
 {
 	for (proc_t proc = g_allproc_head; proc != 0; proc = proc->p_list_next) {
 		if (proc->p_ident.pid == pid) {
@@ -284,7 +295,8 @@ static proc_t proc_find_live_locked(proc_id_t pid)
 	return 0;
 }
 
-static proc_t proc_find_zombie_locked(proc_id_t pid)
+static proc_t
+proc_find_zombie_locked(proc_id_t pid)
 {
 	for (proc_t proc = g_zombproc_head; proc != 0; proc = proc->p_list_next) {
 		if (proc->p_ident.pid == pid) {
@@ -295,7 +307,8 @@ static proc_t proc_find_zombie_locked(proc_id_t pid)
 	return 0;
 }
 
-static bool proc_reference_locked(proc_t proc)
+static bool
+proc_reference_locked(proc_t proc)
 {
 	if (proc == 0 || proc->p_refcount == UINT32_MAX) {
 		return false;
@@ -305,7 +318,8 @@ static bool proc_reference_locked(proc_t proc)
 	return true;
 }
 
-static void proc_reparent_children_locked(proc_t proc)
+static void
+proc_reparent_children_locked(proc_t proc)
 {
 	proc_t new_parent = g_initproc;
 
@@ -322,7 +336,8 @@ static void proc_reparent_children_locked(proc_t proc)
 	}
 }
 
-bool proc_bootstrap(void)
+bool
+proc_bootstrap(void)
 {
 	proc_lock(&g_proc_lock);
 
@@ -372,17 +387,20 @@ bool proc_bootstrap(void)
 	return true;
 }
 
-proc_t proc_kernel(void)
+proc_t
+proc_kernel(void)
 {
 	return g_kernproc;
 }
 
-proc_t proc_initproc(void)
+proc_t
+proc_initproc(void)
 {
 	return g_initproc;
 }
 
-bool proc_create_user(proc_t parent, const char *name, uint64_t entry, uint64_t stack, proc_t *result)
+bool
+proc_create_user(proc_t parent, const char *name, uint64_t entry, uint64_t stack, proc_t *result)
 {
 	if (parent == 0 || result == 0 || entry == 0ULL || stack == 0ULL) {
 		return false;
@@ -454,10 +472,10 @@ bool proc_create_user(proc_t parent, const char *name, uint64_t entry, uint64_t 
 	return true;
 }
 
-bool proc_fork(proc_t parent, proc_t *result)
+bool
+proc_fork(proc_t parent, proc_t *result)
 {
-	if (parent == 0 || result == 0)
-		return false;
+	if (parent == 0 || result == 0) return false;
 
 	*result = 0;
 
@@ -555,7 +573,8 @@ bool proc_fork(proc_t parent, proc_t *result)
 	return true;
 }
 
-proc_t proc_find(proc_id_t pid)
+proc_t
+proc_find(proc_id_t pid)
 {
 	proc_lock(&g_proc_lock);
 
@@ -569,7 +588,8 @@ proc_t proc_find(proc_id_t pid)
 	return proc;
 }
 
-proc_t proc_find_zombie(proc_id_t pid)
+proc_t
+proc_find_zombie(proc_id_t pid)
 {
 	proc_lock(&g_proc_lock);
 
@@ -583,10 +603,10 @@ proc_t proc_find_zombie(proc_id_t pid)
 	return proc;
 }
 
-proc_t proc_find_ident(const proc_ident_t *ident)
+proc_t
+proc_find_ident(const proc_ident_t *ident)
 {
-	if (ident == 0)
-		return 0;
+	if (ident == 0) return 0;
 
 	proc_lock(&g_proc_lock);
 
@@ -605,10 +625,10 @@ proc_t proc_find_ident(const proc_ident_t *ident)
 	return proc;
 }
 
-bool proc_reference(proc_t proc)
+bool
+proc_reference(proc_t proc)
 {
-	if (proc == 0)
-		return false;
+	if (proc == 0) return false;
 
 	proc_lock(&g_proc_lock);
 
@@ -618,10 +638,10 @@ bool proc_reference(proc_t proc)
 	return result;
 }
 
-void proc_rele(proc_t proc)
+void
+proc_rele(proc_t proc)
 {
-	if (proc == 0)
-		return;
+	if (proc == 0) return;
 
 	proc_lock(&g_proc_lock);
 
@@ -636,10 +656,10 @@ void proc_rele(proc_t proc)
 	proc_unlock(&g_proc_lock);
 }
 
-bool proc_make_runnable(proc_t proc)
+bool
+proc_make_runnable(proc_t proc)
 {
-	if (proc == 0)
-		return false;
+	if (proc == 0) return false;
 
 	proc_lock(&g_proc_lock);
 
@@ -653,10 +673,10 @@ bool proc_make_runnable(proc_t proc)
 	return valid;
 }
 
-bool proc_mark_running(proc_t proc)
+bool
+proc_mark_running(proc_t proc)
 {
-	if (proc == 0)
-		return false;
+	if (proc == 0) return false;
 
 	proc_lock(&g_proc_lock);
 
@@ -670,10 +690,10 @@ bool proc_mark_running(proc_t proc)
 	return valid;
 }
 
-bool proc_stop(proc_t proc)
+bool
+proc_stop(proc_t proc)
 {
-	if (proc == 0)
-		return false;
+	if (proc == 0) return false;
 
 	proc_lock(&g_proc_lock);
 
@@ -687,10 +707,10 @@ bool proc_stop(proc_t proc)
 	return valid;
 }
 
-bool proc_continue(proc_t proc)
+bool
+proc_continue(proc_t proc)
 {
-	if (proc == 0)
-		return false;
+	if (proc == 0) return false;
 
 	proc_lock(&g_proc_lock);
 
@@ -731,10 +751,10 @@ bool proc_continue(proc_t proc)
  *      parent. The parent is woken after the lock is released (waking takes the
  *      scheduler's locks).
  */
-bool proc_exit(proc_t proc, uint64_t status)
+bool
+proc_exit(proc_t proc, uint64_t status)
 {
-	if (proc == 0)
-		return false;
+	if (proc == 0) return false;
 
 	sched_bind_boot_cpu();
 
@@ -798,14 +818,14 @@ bool proc_exit(proc_t proc, uint64_t status)
 
 	/* A parent sleeping in wait() has something to look at now. Woken
 	 * outside the process lock: waking takes the scheduler's. */
-	if (parent != 0)
-		waitq_wake_all(&parent->p_waitq);
+	if (parent != 0) waitq_wake_all(&parent->p_waitq);
 
 	sched_unbind_boot_cpu();
 	return true;
 }
 
-bool proc_exit_current(uint64_t status)
+bool
+proc_exit_current(uint64_t status)
 {
 	proc_t proc = current_proc();
 
@@ -816,10 +836,10 @@ bool proc_exit_current(uint64_t status)
 	return proc_exit(proc, status);
 }
 
-proc_wait_result_t proc_wait_child(proc_t parent, proc_id_t pid, proc_id_t *reaped_pid, uint64_t *status)
+proc_wait_result_t
+proc_wait_child(proc_t parent, proc_id_t pid, proc_id_t *reaped_pid, uint64_t *status)
 {
-	if (parent == 0 || reaped_pid == 0)
-		return PROC_WAIT_NO_CHILD;
+	if (parent == 0 || reaped_pid == 0) return PROC_WAIT_NO_CHILD;
 
 	bool any = pid == PROC_PID_INVALID;
 	bool has_child = false;
@@ -847,24 +867,21 @@ proc_wait_result_t proc_wait_child(proc_t parent, proc_id_t pid, proc_id_t *reap
 
 	proc_unlock(&g_proc_lock);
 
-	if (!has_child)
-		return PROC_WAIT_NO_CHILD;
-	if (zombie == 0)
-		return PROC_WAIT_NOT_YET;
+	if (!has_child) return PROC_WAIT_NO_CHILD;
+	if (zombie == 0) return PROC_WAIT_NOT_YET;
 
 	proc_id_t zombie_pid = zombie->p_ident.pid;
 
-	if (!proc_reap(parent, zombie_pid, status))
-		return PROC_WAIT_NOT_YET;
+	if (!proc_reap(parent, zombie_pid, status)) return PROC_WAIT_NOT_YET;
 
 	*reaped_pid = zombie_pid;
 	return PROC_WAIT_REAPED;
 }
 
-bool proc_reap(proc_t parent, proc_id_t pid, uint64_t *status)
+bool
+proc_reap(proc_t parent, proc_id_t pid, uint64_t *status)
 {
-	if (parent == 0)
-		return false;
+	if (parent == 0) return false;
 
 	proc_lock(&g_proc_lock);
 
@@ -906,10 +923,10 @@ bool proc_reap(proc_t parent, proc_id_t pid, uint64_t *status)
 	return true;
 }
 
-bool proc_set_current(proc_t proc)
+bool
+proc_set_current(proc_t proc)
 {
-	if (proc == 0)
-		return false;
+	if (proc == 0) return false;
 
 	/*
 	 * There is no "current process" variable to set any more: it is the
@@ -937,7 +954,8 @@ bool proc_set_current(proc_t proc)
  * Before the scheduler exists (or on a CPU that has no thread yet) it is the
  * kernel process.
  */
-proc_t current_proc(void)
+proc_t
+current_proc(void)
 {
 	thread_t thread = current_thread();
 
@@ -948,7 +966,8 @@ proc_t current_proc(void)
 	return __atomic_load_n(&g_kernproc, __ATOMIC_ACQUIRE);
 }
 
-proc_id_t proc_selfpid(void)
+proc_id_t
+proc_selfpid(void)
 {
 	proc_t proc = current_proc();
 
@@ -959,18 +978,20 @@ proc_id_t proc_selfpid(void)
 	return proc->p_ident.pid;
 }
 
-bool proc_has_caps(proc_t proc, uint32_t caps)
+bool
+proc_has_caps(proc_t proc, uint32_t caps)
 {
 	return proc != 0 && (proc->p_caps & caps) == caps;
 }
 
-void proc_set_caps(proc_t proc, uint32_t caps)
+void
+proc_set_caps(proc_t proc, uint32_t caps)
 {
-	if (proc != 0)
-		proc->p_caps = caps & NXU_CAP_ALL;
+	if (proc != 0) proc->p_caps = caps & NXU_CAP_ALL;
 }
 
-proc_id_t proc_ppid(proc_t proc)
+proc_id_t
+proc_ppid(proc_t proc)
 {
 	if (proc == 0 || proc->p_pptr == 0) {
 		return PROC_PID_INVALID;
@@ -979,10 +1000,10 @@ proc_id_t proc_ppid(proc_t proc)
 	return proc->p_pptr->p_ident.pid;
 }
 
-proc_t proc_parent_ref(proc_t proc)
+proc_t
+proc_parent_ref(proc_t proc)
 {
-	if (proc == 0)
-		return 0;
+	if (proc == 0) return 0;
 
 	proc_lock(&g_proc_lock);
 
@@ -996,10 +1017,10 @@ proc_t proc_parent_ref(proc_t proc)
 	return parent;
 }
 
-proc_t proc_first_child_ref(proc_t proc)
+proc_t
+proc_first_child_ref(proc_t proc)
 {
-	if (proc == 0)
-		return 0;
+	if (proc == 0) return 0;
 
 	proc_lock(&g_proc_lock);
 
@@ -1013,10 +1034,10 @@ proc_t proc_first_child_ref(proc_t proc)
 	return child;
 }
 
-proc_t proc_next_sibling_ref(proc_t proc)
+proc_t
+proc_next_sibling_ref(proc_t proc)
 {
-	if (proc == 0)
-		return 0;
+	if (proc == 0) return 0;
 
 	proc_lock(&g_proc_lock);
 
@@ -1030,7 +1051,8 @@ proc_t proc_next_sibling_ref(proc_t proc)
 	return sibling;
 }
 
-bool proc_is_inferior(proc_t proc, proc_t ancestor)
+bool
+proc_is_inferior(proc_t proc, proc_t ancestor)
 {
 	if (proc == 0 || ancestor == 0) {
 		return false;
@@ -1054,21 +1076,22 @@ bool proc_is_inferior(proc_t proc, proc_t ancestor)
 	return result;
 }
 
-task_t proc_task(proc_t proc)
+task_t
+proc_task(proc_t proc)
 {
-	if (proc == 0)
-		return 0;
+	if (proc == 0) return 0;
 	return &proc->p_task;
 }
 
-vm_address_space_t *proc_vm_map(proc_t proc)
+vm_address_space_t *
+proc_vm_map(proc_t proc)
 {
-	if (proc == 0)
-		return 0;
+	if (proc == 0) return 0;
 	return task_map(&proc->p_task);
 }
 
-bool proc_get_ident(proc_t proc, proc_ident_t *ident)
+bool
+proc_get_ident(proc_t proc, proc_ident_t *ident)
 {
 	if (proc == 0 || ident == 0) {
 		return false;
@@ -1082,7 +1105,8 @@ bool proc_get_ident(proc_t proc, proc_ident_t *ident)
 	return true;
 }
 
-bool proc_set_name(proc_t proc, const char *name)
+bool
+proc_set_name(proc_t proc, const char *name)
 {
 	if (proc == 0 || name == 0) {
 		return false;
@@ -1096,7 +1120,8 @@ bool proc_set_name(proc_t proc, const char *name)
 	return true;
 }
 
-bool proc_get_name(proc_t proc, char *buffer, uint32_t size)
+bool
+proc_get_name(proc_t proc, char *buffer, uint32_t size)
 {
 	if (proc == 0 || buffer == 0 || size == 0U) {
 		return false;
@@ -1118,7 +1143,8 @@ bool proc_get_name(proc_t proc, char *buffer, uint32_t size)
 	return true;
 }
 
-proc_state_t proc_state(proc_t proc)
+proc_state_t
+proc_state(proc_t proc)
 {
 	if (proc == 0) {
 		return PROC_STATE_UNUSED;
@@ -1127,7 +1153,8 @@ proc_state_t proc_state(proc_t proc)
 	return proc->p_stat;
 }
 
-static __attribute__((noinline, optnone)) void proc_print_state(proc_state_t state)
+static __attribute__((noinline, optnone)) void
+proc_print_state(proc_state_t state)
 {
 	if (state == PROC_STATE_UNUSED) {
 		kputs("unused");
@@ -1167,14 +1194,15 @@ static __attribute__((noinline, optnone)) void proc_print_state(proc_state_t sta
 	kputs("unknown");
 }
 
-uint32_t proc_child_count(proc_t proc)
+uint32_t
+proc_child_count(proc_t proc)
 {
-	if (proc == 0)
-		return 0U;
+	if (proc == 0) return 0U;
 	return proc->p_childrencnt;
 }
 
-uint32_t proc_count(void)
+uint32_t
+proc_count(void)
 {
 	proc_lock(&g_proc_lock);
 
@@ -1184,10 +1212,10 @@ uint32_t proc_count(void)
 	return count;
 }
 
-uint32_t proc_snapshot(proc_snapshot_t *out, uint32_t capacity)
+uint32_t
+proc_snapshot(proc_snapshot_t *out, uint32_t capacity)
 {
-	if (out == 0)
-		return 0U;
+	if (out == 0) return 0U;
 
 	proc_lock(&g_proc_lock);
 
@@ -1211,7 +1239,8 @@ uint32_t proc_snapshot(proc_snapshot_t *out, uint32_t capacity)
 	return count;
 }
 
-uint32_t proc_memory_snapshot(nxu_stats_process_memory_t *out, uint32_t capacity)
+uint32_t
+proc_memory_snapshot(nxu_stats_process_memory_t *out, uint32_t capacity)
 {
 	/* Exec replaces an entire address-space structure, and exit destroys it.
 	 * Both run bound to CPU 0. A proc reference alone would not stop either. */
@@ -1220,8 +1249,7 @@ uint32_t proc_memory_snapshot(nxu_stats_process_memory_t *out, uint32_t capacity
 	uint32_t total = 0U;
 	for (proc_t proc = g_allproc_head; proc != 0; proc = proc->p_list_next) {
 		uint32_t index = total++;
-		if (index >= capacity)
-			continue;
+		if (index >= capacity) continue;
 		nxu_stats_process_memory_t *info = &out[index];
 		*info = (nxu_stats_process_memory_t){.struct_size = sizeof(*info),
 											 .version = NXU_STATS_VERSION,
@@ -1249,7 +1277,8 @@ uint32_t proc_memory_snapshot(nxu_stats_process_memory_t *out, uint32_t capacity
 	return total;
 }
 
-uint32_t proc_zombie_count(void)
+uint32_t
+proc_zombie_count(void)
 {
 	proc_lock(&g_proc_lock);
 
@@ -1259,7 +1288,8 @@ uint32_t proc_zombie_count(void)
 	return count;
 }
 
-bool proc_validate(void)
+bool
+proc_validate(void)
 {
 	proc_lock(&g_proc_lock);
 
@@ -1308,7 +1338,8 @@ bool proc_validate(void)
 	return valid;
 }
 
-void proc_dump(void)
+void
+proc_dump(void)
 {
 	proc_lock(&g_proc_lock);
 

@@ -33,7 +33,8 @@ _Static_assert(LOADER_PAGE_SIZE == PMM_PAGE_SIZE, "loader page size must match t
  * the checks perturbs its code layout.
  */
 
-static loader_status_t loader_vnode_read_exact(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size)
+static loader_status_t
+loader_vnode_read_exact(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size)
 {
 	uint8_t *bytes = buffer;
 	uint64_t complete = 0ULL;
@@ -41,20 +42,18 @@ static loader_status_t loader_vnode_read_exact(vnode_t vnode, uint64_t offset, v
 	while (complete < size) {
 		uint64_t read_size = 0ULL;
 		vfs_status_t status = vnode_read(vnode, offset + complete, bytes + complete, size - complete, &read_size);
-		if (status != VFS_STATUS_OK || read_size == 0ULL)
-			return LOADER_STATUS_IO_ERROR;
+		if (status != VFS_STATUS_OK || read_size == 0ULL) return LOADER_STATUS_IO_ERROR;
 		complete += read_size;
 	}
 
 	return LOADER_STATUS_OK;
 }
 
-static bool loader_segment_protection(const loader_segment_t *segment, vm_user_protection_t *protection)
+static bool
+loader_segment_protection(const loader_segment_t *segment, vm_user_protection_t *protection)
 {
-	if (segment == 0 || protection == 0)
-		return false;
-	if (!loader_segment_flags_valid(segment->flags))
-		return false;
+	if (segment == 0 || protection == 0) return false;
+	if (!loader_segment_flags_valid(segment->flags)) return false;
 
 	if ((segment->flags & ELF_PF_X) != 0U) {
 		*protection = VM_USER_PROTECTION_READ_EXECUTE;
@@ -67,12 +66,11 @@ static bool loader_segment_protection(const loader_segment_t *segment, vm_user_p
 	return true;
 }
 
-static loader_status_t loader_map_zero_page(vm_address_space_t *map, uint64_t virtual_address,
-											vm_user_protection_t protection)
+static loader_status_t
+loader_map_zero_page(vm_address_space_t *map, uint64_t virtual_address, vm_user_protection_t protection)
 {
 	uint64_t physical_address;
-	if (!pmm_allocate_page(&physical_address))
-		return LOADER_STATUS_NO_MEMORY;
+	if (!pmm_allocate_page(&physical_address)) return LOADER_STATUS_NO_MEMORY;
 
 	uint64_t kernel_address;
 	if (!vmm_physical_to_higher_half(physical_address, &kernel_address)) {
@@ -90,18 +88,17 @@ static loader_status_t loader_map_zero_page(vm_address_space_t *map, uint64_t vi
 	return LOADER_STATUS_OK;
 }
 
-static loader_status_t loader_map_segment(vm_address_space_t *map, const loader_segment_t *segment)
+static loader_status_t
+loader_map_segment(vm_address_space_t *map, const loader_segment_t *segment)
 {
 #if LOADER_ELF_WIDEN
-	if (!loader_segment_valid(segment))
-		return LOADER_STATUS_BAD_FORMAT;
+	if (!loader_segment_valid(segment)) return LOADER_STATUS_BAD_FORMAT;
 
 	uint64_t segment_end = segment->virtual_address + segment->memory_size;
 	uint64_t page_start = segment->virtual_address & ~(PMM_PAGE_SIZE - 1ULL);
 	uint64_t page_end = (segment_end + PMM_PAGE_SIZE - 1ULL) & ~(PMM_PAGE_SIZE - 1ULL);
 #else
-	if (segment->memory_size < segment->file_size || segment->memory_size == 0ULL)
-		return LOADER_STATUS_BAD_FORMAT;
+	if (segment->memory_size < segment->file_size || segment->memory_size == 0ULL) return LOADER_STATUS_BAD_FORMAT;
 	if ((segment->virtual_address & (PMM_PAGE_SIZE - 1ULL)) != (segment->offset & (PMM_PAGE_SIZE - 1ULL)))
 		return LOADER_STATUS_BAD_FORMAT;
 
@@ -113,30 +110,26 @@ static loader_status_t loader_map_segment(vm_address_space_t *map, const loader_
 
 	uint64_t page_start = segment->virtual_address & ~(PMM_PAGE_SIZE - 1ULL);
 	uint64_t page_end;
-	if (!loader_align_up(segment_end, PMM_PAGE_SIZE, &page_end))
-		return LOADER_STATUS_BAD_FORMAT;
+	if (!loader_align_up(segment_end, PMM_PAGE_SIZE, &page_end)) return LOADER_STATUS_BAD_FORMAT;
 
 #endif
 
 	vm_user_protection_t protection;
-	if (!loader_segment_protection(segment, &protection))
-		return LOADER_STATUS_BAD_FORMAT;
+	if (!loader_segment_protection(segment, &protection)) return LOADER_STATUS_BAD_FORMAT;
 
 	for (uint64_t address = page_start; address < page_end; address += PMM_PAGE_SIZE) {
 		vm_user_page_mapping_t existing;
-		if (vm_address_space_query_page(map, address, &existing))
-			return LOADER_STATUS_BAD_FORMAT;
+		if (vm_address_space_query_page(map, address, &existing)) return LOADER_STATUS_BAD_FORMAT;
 
 		loader_status_t status = loader_map_zero_page(map, address, protection);
-		if (status != LOADER_STATUS_OK)
-			return status;
+		if (status != LOADER_STATUS_OK) return status;
 	}
 
 	return LOADER_STATUS_OK;
 }
 
-static loader_status_t loader_copy_segment(vnode_t vnode, vm_address_space_t *map, const loader_segment_t *segment,
-										   sha256_context_t *identity)
+static loader_status_t
+loader_copy_segment(vnode_t vnode, vm_address_space_t *map, const loader_segment_t *segment, sha256_context_t *identity)
 {
 	uint64_t copied = 0ULL;
 
@@ -146,21 +139,17 @@ static loader_status_t loader_copy_segment(vnode_t vnode, vm_address_space_t *ma
 		uint64_t page_offset = address & (PMM_PAGE_SIZE - 1ULL);
 		uint64_t chunk = PMM_PAGE_SIZE - page_offset;
 		uint64_t remaining = segment->file_size - copied;
-		if (chunk > remaining)
-			chunk = remaining;
+		if (chunk > remaining) chunk = remaining;
 
 		vm_user_page_mapping_t mapping;
-		if (!vm_address_space_query_page(map, page_address, &mapping))
-			return LOADER_STATUS_PROCESS_ERROR;
+		if (!vm_address_space_query_page(map, page_address, &mapping)) return LOADER_STATUS_PROCESS_ERROR;
 
 		uint64_t kernel_address;
-		if (!vmm_physical_to_higher_half(mapping.physical_address, &kernel_address))
-			return LOADER_STATUS_PROCESS_ERROR;
+		if (!vmm_physical_to_higher_half(mapping.physical_address, &kernel_address)) return LOADER_STATUS_PROCESS_ERROR;
 
 		loader_status_t status =
 			loader_vnode_read_exact(vnode, segment->offset + copied, (void *)(kernel_address + page_offset), chunk);
-		if (status != LOADER_STATUS_OK)
-			return status;
+		if (status != LOADER_STATUS_OK) return status;
 		sha256_update(identity, (const void *)(kernel_address + page_offset), chunk);
 		copied += chunk;
 	}
@@ -168,16 +157,13 @@ static loader_status_t loader_copy_segment(vnode_t vnode, vm_address_space_t *ma
 	if ((segment->flags & ELF_PF_X) != 0U) {
 		uint64_t start_mapping = segment->virtual_address & ~(PMM_PAGE_SIZE - 1ULL);
 		uint64_t end;
-		if (loader_add_overflow(segment->virtual_address, segment->memory_size, &end))
-			return LOADER_STATUS_BAD_FORMAT;
+		if (loader_add_overflow(segment->virtual_address, segment->memory_size, &end)) return LOADER_STATUS_BAD_FORMAT;
 		uint64_t page_end;
-		if (!loader_align_up(end, PMM_PAGE_SIZE, &page_end))
-			return LOADER_STATUS_BAD_FORMAT;
+		if (!loader_align_up(end, PMM_PAGE_SIZE, &page_end)) return LOADER_STATUS_BAD_FORMAT;
 
 		for (uint64_t address = start_mapping; address < page_end; address += PMM_PAGE_SIZE) {
 			vm_user_page_mapping_t mapping;
-			if (!vm_address_space_query_page(map, address, &mapping))
-				return LOADER_STATUS_PROCESS_ERROR;
+			if (!vm_address_space_query_page(map, address, &mapping)) return LOADER_STATUS_PROCESS_ERROR;
 			uint64_t kernel_address;
 			if (!vmm_physical_to_higher_half(mapping.physical_address, &kernel_address))
 				return LOADER_STATUS_PROCESS_ERROR;
@@ -188,7 +174,8 @@ static loader_status_t loader_copy_segment(vnode_t vnode, vm_address_space_t *ma
 	return LOADER_STATUS_OK;
 }
 
-static loader_status_t loader_map_stack(vm_address_space_t *map)
+static loader_status_t
+loader_map_stack(vm_address_space_t *map)
 {
 #if VM_DEMAND_PAGING
 	/* Reserve only: the first push onto each page faults it in. */
@@ -200,20 +187,19 @@ static loader_status_t loader_map_stack(vm_address_space_t *map)
 #else
 	for (uint64_t address = LOADER_USER_STACK_BASE; address < LOADER_USER_STACK_TOP; address += PMM_PAGE_SIZE) {
 		loader_status_t status = loader_map_zero_page(map, address, VM_USER_PROTECTION_READ_WRITE);
-		if (status != LOADER_STATUS_OK)
-			return status;
+		if (status != LOADER_STATUS_OK) return status;
 	}
 
 	return LOADER_STATUS_OK;
 #endif
 }
 
-static loader_status_t loader_start_process(proc_t proc)
+static loader_status_t
+loader_start_process(proc_t proc)
 {
 	task_t task = proc_task(proc);
 	thread_t thread = task_first_thread_ref(task);
-	if (thread == 0)
-		return LOADER_STATUS_PROCESS_ERROR;
+	if (thread == 0) return LOADER_STATUS_PROCESS_ERROR;
 
 	if (!thread_stack_alloc(thread)) {
 		thread_deallocate(thread);
@@ -240,13 +226,12 @@ static loader_status_t loader_start_process(proc_t proc)
  * kernel-side test harness that never registers one), leaving
  * p_ipc_bootstrap_name at its IPC_SPACE_NAME_INVALID default.
  */
-static void loader_handoff_bootstrap_port(proc_t proc)
+static void
+loader_handoff_bootstrap_port(proc_t proc)
 {
 	ipc_port_t bootstrap = ipc_bootstrap_registry_port();
-	if (bootstrap == IPC_PORT_NULL)
-		return;
-	if (!ipc_port_reference(bootstrap))
-		return;
+	if (bootstrap == IPC_PORT_NULL) return;
+	if (!ipc_port_reference(bootstrap)) return;
 
 	uint32_t name;
 	if (ipc_space_insert_port(&proc->p_ipc, bootstrap, &name) != IPC_SUCCESS) {
@@ -257,29 +242,26 @@ static void loader_handoff_bootstrap_port(proc_t proc)
 	proc->p_ipc_bootstrap_name = name;
 }
 
-static void loader_discard_process(proc_t parent, proc_t proc)
+static void
+loader_discard_process(proc_t parent, proc_t proc)
 {
-	if (parent == 0 || proc == 0)
-		return;
+	if (parent == 0 || proc == 0) return;
 	proc_id_t pid = proc->p_ident.pid;
 	(void)proc_exit(proc, 127ULL);
 	uint64_t status;
 	(void)proc_reap(parent, pid, &status);
 }
 
-loader_status_t loader_images_equal(const char *left_path, const char *right_path, bool *equal)
+loader_status_t
+loader_images_equal(const char *left_path, const char *right_path, bool *equal)
 {
-	if (equal != 0)
-		*equal = false;
-	if (left_path == 0 || right_path == 0 || equal == 0)
-		return LOADER_STATUS_INVALID;
+	if (equal != 0) *equal = false;
+	if (left_path == 0 || right_path == 0 || equal == 0) return LOADER_STATUS_INVALID;
 
 	vnode_t left;
 	vfs_status_t left_status = vfs_lookup(left_path, &left);
-	if (left_status == VFS_STATUS_NOT_FOUND)
-		return LOADER_STATUS_NOT_FOUND;
-	if (left_status != VFS_STATUS_OK)
-		return LOADER_STATUS_IO_ERROR;
+	if (left_status == VFS_STATUS_NOT_FOUND) return LOADER_STATUS_NOT_FOUND;
+	if (left_status != VFS_STATUS_OK) return LOADER_STATUS_IO_ERROR;
 
 	vnode_t right;
 	vfs_status_t right_status = vfs_lookup(right_path, &right);
@@ -307,12 +289,10 @@ loader_status_t loader_images_equal(const char *left_path, const char *right_pat
 
 	while (offset < left->v_size) {
 		uint64_t chunk = left->v_size - offset;
-		if (chunk > sizeof(left_buffer))
-			chunk = sizeof(left_buffer);
+		if (chunk > sizeof(left_buffer)) chunk = sizeof(left_buffer);
 
 		loader_status_t status = loader_vnode_read_exact(left, offset, left_buffer, chunk);
-		if (status == LOADER_STATUS_OK)
-			status = loader_vnode_read_exact(right, offset, right_buffer, chunk);
+		if (status == LOADER_STATUS_OK) status = loader_vnode_read_exact(right, offset, right_buffer, chunk);
 		if (status != LOADER_STATUS_OK) {
 			vnode_rele(right);
 			vnode_rele(left);
@@ -335,20 +315,22 @@ loader_status_t loader_images_equal(const char *left_path, const char *right_pat
 	return LOADER_STATUS_OK;
 }
 
-static bool loader_is_pie(const loader_header_t *header)
+static bool
+loader_is_pie(const loader_header_t *header)
 {
 	return header->type == 3U;
 }
 
-static bool loader_executable_header(const loader_header_t *header)
+static bool
+loader_executable_header(const loader_header_t *header)
 {
 	loader_header_t checked = *header;
-	if (loader_is_pie(header))
-		checked.type = ELF_TYPE_EXEC;
+	if (loader_is_pie(header)) checked.type = ELF_TYPE_EXEC;
 	return loader_header_valid(&checked);
 }
 
-static loader_status_t loader_interpreter(vnode_t vnode, const loader_segment_t *programs, uint32_t count, bool pie)
+static loader_status_t
+loader_interpreter(vnode_t vnode, const loader_segment_t *programs, uint32_t count, bool pie)
 {
 	uint32_t found = 0;
 	for (uint32_t i = 0; i < count; i++)
@@ -365,30 +347,29 @@ static loader_status_t loader_interpreter(vnode_t vnode, const loader_segment_t 
 static loader_status_t loader_spawn_internal(proc_t parent, const char *path, const char *name, uint32_t caps,
 											 const char *dynamic_main, proc_t *result);
 
-loader_status_t loader_spawn(proc_t parent, const char *path, const char *name, proc_t *result)
+loader_status_t
+loader_spawn(proc_t parent, const char *path, const char *name, proc_t *result)
 {
 	return loader_spawn_caps(parent, path, name, LOADER_CAPS_DEFAULT, result);
 }
 
-loader_status_t loader_spawn_caps(proc_t parent, const char *path, const char *name, uint32_t caps, proc_t *result)
+loader_status_t
+loader_spawn_caps(proc_t parent, const char *path, const char *name, uint32_t caps, proc_t *result)
 {
 	return loader_spawn_internal(parent, path, name, caps, 0, result);
 }
 
-static loader_status_t loader_spawn_internal(proc_t parent, const char *path, const char *name, uint32_t caps,
-											 const char *dynamic_main, proc_t *result)
+static loader_status_t
+loader_spawn_internal(proc_t parent, const char *path, const char *name, uint32_t caps, const char *dynamic_main,
+					  proc_t *result)
 {
-	if (result != 0)
-		*result = 0;
-	if (parent == 0 || path == 0 || name == 0 || result == 0)
-		return LOADER_STATUS_INVALID;
+	if (result != 0) *result = 0;
+	if (parent == 0 || path == 0 || name == 0 || result == 0) return LOADER_STATUS_INVALID;
 
 	vnode_t vnode;
 	vfs_status_t lookup_status = vfs_lookup(path, &vnode);
-	if (lookup_status == VFS_STATUS_NOT_FOUND)
-		return LOADER_STATUS_NOT_FOUND;
-	if (lookup_status != VFS_STATUS_OK)
-		return LOADER_STATUS_IO_ERROR;
+	if (lookup_status == VFS_STATUS_NOT_FOUND) return LOADER_STATUS_NOT_FOUND;
+	if (lookup_status != VFS_STATUS_OK) return LOADER_STATUS_IO_ERROR;
 	if (vnode->v_type != VNODE_TYPE_REGULAR) {
 		vnode_rele(vnode);
 		return LOADER_STATUS_BAD_FORMAT;
@@ -398,8 +379,7 @@ static loader_status_t loader_spawn_internal(proc_t parent, const char *path, co
 #if LOADER_ELF_WIDEN
 	loader_disk_header_t disk_header;
 	loader_status_t status = loader_vnode_read_exact(vnode, 0ULL, &disk_header, sizeof(disk_header));
-	if (status == LOADER_STATUS_OK)
-		loader_header_widen(&disk_header, &header);
+	if (status == LOADER_STATUS_OK) loader_header_widen(&disk_header, &header);
 #else
 	loader_status_t status = loader_vnode_read_exact(vnode, 0ULL, &header, sizeof(header));
 #endif
@@ -449,8 +429,7 @@ static loader_status_t loader_spawn_internal(proc_t parent, const char *path, co
 	bool loadable = false;
 	for (uint32_t index = 0U; index < header.program_header_count; index++) {
 		loader_segment_t *segment = &programs[index];
-		if (segment->type != ELF_PT_LOAD)
-			continue;
+		if (segment->type != ELF_PT_LOAD) continue;
 		loadable = true;
 #if LOADER_ELF_WIDEN
 		if (!loader_segment_in_file(segment, vnode->v_size)) {
@@ -474,30 +453,25 @@ static loader_status_t loader_spawn_internal(proc_t parent, const char *path, co
 		return LOADER_STATUS_PROCESS_ERROR;
 	}
 
-	if (caps != LOADER_CAPS_DEFAULT)
-		proc_set_caps(proc, caps);
+	if (caps != LOADER_CAPS_DEFAULT) proc_set_caps(proc, caps);
 	loader_handoff_bootstrap_port(proc);
 
 	sha256_context_t identity;
 	sha256_init(&identity);
 	vm_address_space_t *map = proc_vm_map(proc);
-	if (map == 0)
-		status = LOADER_STATUS_PROCESS_ERROR;
+	if (map == 0) status = LOADER_STATUS_PROCESS_ERROR;
 
 	for (uint32_t index = 0U; status == LOADER_STATUS_OK && index < header.program_header_count; index++) {
-		if (programs[index].type != ELF_PT_LOAD)
-			continue;
+		if (programs[index].type != ELF_PT_LOAD) continue;
 		status = loader_map_segment(map, &programs[index]);
 	}
 
 	for (uint32_t index = 0U; status == LOADER_STATUS_OK && index < header.program_header_count; index++) {
-		if (programs[index].type != ELF_PT_LOAD)
-			continue;
+		if (programs[index].type != ELF_PT_LOAD) continue;
 		status = loader_copy_segment(vnode, map, &programs[index], &identity);
 	}
 
-	if (status == LOADER_STATUS_OK)
-		status = loader_map_stack(map);
+	if (status == LOADER_STATUS_OK) status = loader_map_stack(map);
 
 	if (status == LOADER_STATUS_OK) {
 		vm_user_page_mapping_t entry_mapping;
@@ -555,7 +529,8 @@ static loader_status_t loader_spawn_internal(proc_t parent, const char *path, co
  * resolver the program's own first touch would use, then written through
  * the kernel's direct map -- the new space is not the active one.
  */
-static loader_status_t loader_stack_write(vm_address_space_t *map, uint64_t address, const void *data, uint64_t size)
+static loader_status_t
+loader_stack_write(vm_address_space_t *map, uint64_t address, const void *data, uint64_t size)
 {
 	const uint8_t *bytes = data;
 	uint64_t written = 0ULL;
@@ -565,20 +540,16 @@ static loader_status_t loader_stack_write(vm_address_space_t *map, uint64_t addr
 		uint64_t page_address = current & ~(PMM_PAGE_SIZE - 1ULL);
 		uint64_t page_offset = current & (PMM_PAGE_SIZE - 1ULL);
 		uint64_t chunk = PMM_PAGE_SIZE - page_offset;
-		if (chunk > size - written)
-			chunk = size - written;
+		if (chunk > size - written) chunk = size - written;
 
 		vm_user_page_mapping_t mapping;
 		if (!vm_address_space_query_page(map, page_address, &mapping)) {
-			if (!vm_fault_user(map, page_address, VM_FAULT_WRITE))
-				return LOADER_STATUS_NO_MEMORY;
-			if (!vm_address_space_query_page(map, page_address, &mapping))
-				return LOADER_STATUS_PROCESS_ERROR;
+			if (!vm_fault_user(map, page_address, VM_FAULT_WRITE)) return LOADER_STATUS_NO_MEMORY;
+			if (!vm_address_space_query_page(map, page_address, &mapping)) return LOADER_STATUS_PROCESS_ERROR;
 		}
 
 		uint64_t kernel_address;
-		if (!vmm_physical_to_higher_half(mapping.physical_address, &kernel_address))
-			return LOADER_STATUS_PROCESS_ERROR;
+		if (!vmm_physical_to_higher_half(mapping.physical_address, &kernel_address)) return LOADER_STATUS_PROCESS_ERROR;
 
 		memcpy((void *)(kernel_address + page_offset), bytes + written, chunk);
 		written += chunk;
@@ -601,15 +572,14 @@ static loader_status_t loader_stack_write(vm_address_space_t *map, uint64_t addr
  *           | argv[0]               |  <- argv (x1)
  *     sp -> +-----------------------+  (16-byte aligned)
  */
-static loader_status_t loader_build_stack_args(vm_address_space_t *map, const loader_exec_args_t *args,
-											   uint64_t *out_sp, uint64_t *out_argv)
+static loader_status_t
+loader_build_stack_args(vm_address_space_t *map, const loader_exec_args_t *args, uint64_t *out_sp, uint64_t *out_argv)
 {
 	uint64_t strings_base = (LOADER_USER_STACK_TOP - args->length) & ~0xFULL;
 	uint64_t array_size = ((uint64_t)args->argc + 1ULL) * sizeof(uint64_t);
 	uint64_t array_base = (strings_base - array_size) & ~0xFULL;
 
-	if (array_base < LOADER_USER_STACK_BASE)
-		return LOADER_STATUS_BAD_FORMAT;
+	if (array_base < LOADER_USER_STACK_BASE) return LOADER_STATUS_BAD_FORMAT;
 
 	uint64_t pointers[NXU_EXEC_ARGV_MAX + 1U];
 	uint32_t offset = 0U;
@@ -625,47 +595,41 @@ static loader_status_t loader_build_stack_args(vm_address_space_t *map, const lo
 	pointers[args->argc] = 0ULL;
 
 	loader_status_t status = loader_stack_write(map, strings_base, args->strings, args->length);
-	if (status != LOADER_STATUS_OK)
-		return status;
+	if (status != LOADER_STATUS_OK) return status;
 
 	status = loader_stack_write(map, array_base, pointers, array_size);
-	if (status != LOADER_STATUS_OK)
-		return status;
+	if (status != LOADER_STATUS_OK) return status;
 
 	*out_sp = array_base;
 	*out_argv = array_base;
 	return LOADER_STATUS_OK;
 }
 
-static void loader_discard_space(vm_address_space_t *space)
+static void
+loader_discard_space(vm_address_space_t *space)
 {
 	vm_map_destroy_all(space);
 	(void)vm_address_space_release_pages(space);
 	(void)vm_address_space_destroy(space);
 }
 
-loader_status_t loader_exec_internal(proc_t proc, const char *path, const loader_exec_args_t *args,
-									 const char *dynamic_main)
+loader_status_t
+loader_exec_internal(proc_t proc, const char *path, const loader_exec_args_t *args, const char *dynamic_main)
 {
-	if (proc == 0 || path == 0 || args == 0)
-		return LOADER_STATUS_INVALID;
+	if (proc == 0 || path == 0 || args == 0) return LOADER_STATUS_INVALID;
 	if (args->argc == 0U || args->argc > NXU_EXEC_ARGV_MAX || args->length > NXU_EXEC_ARGV_BYTES)
 		return LOADER_STATUS_INVALID;
 
 	task_t task = proc_task(proc);
-	if (task == 0 || task_is_kernel(task) || !task_is_active(task))
-		return LOADER_STATUS_INVALID;
+	if (task == 0 || task_is_kernel(task) || !task_is_active(task)) return LOADER_STATUS_INVALID;
 
 	/* Replacing the image under a sibling thread is not supported. */
-	if (task->thread_count != 1U)
-		return LOADER_STATUS_BUSY;
+	if (task->thread_count != 1U) return LOADER_STATUS_BUSY;
 
 	vnode_t vnode;
 	vfs_status_t lookup_status = vfs_lookup(path, &vnode);
-	if (lookup_status == VFS_STATUS_NOT_FOUND)
-		return LOADER_STATUS_NOT_FOUND;
-	if (lookup_status != VFS_STATUS_OK)
-		return LOADER_STATUS_IO_ERROR;
+	if (lookup_status == VFS_STATUS_NOT_FOUND) return LOADER_STATUS_NOT_FOUND;
+	if (lookup_status != VFS_STATUS_OK) return LOADER_STATUS_IO_ERROR;
 	if (vnode->v_type != VNODE_TYPE_REGULAR) {
 		vnode_rele(vnode);
 		return LOADER_STATUS_BAD_FORMAT;
@@ -705,8 +669,7 @@ loader_status_t loader_exec_internal(proc_t proc, const char *path, const loader
 
 	bool loadable = false;
 	for (uint32_t index = 0U; index < header.program_header_count; index++) {
-		if (programs[index].type != ELF_PT_LOAD)
-			continue;
+		if (programs[index].type != ELF_PT_LOAD) continue;
 		loadable = true;
 
 		uint64_t file_end;
@@ -732,19 +695,16 @@ loader_status_t loader_exec_internal(proc_t proc, const char *path, const loader
 	}
 
 	for (uint32_t index = 0U; status == LOADER_STATUS_OK && index < header.program_header_count; index++) {
-		if (programs[index].type != ELF_PT_LOAD)
-			continue;
+		if (programs[index].type != ELF_PT_LOAD) continue;
 		status = loader_map_segment(&staging, &programs[index]);
 	}
 
 	for (uint32_t index = 0U; status == LOADER_STATUS_OK && index < header.program_header_count; index++) {
-		if (programs[index].type != ELF_PT_LOAD)
-			continue;
+		if (programs[index].type != ELF_PT_LOAD) continue;
 		status = loader_copy_segment(vnode, &staging, &programs[index], &identity);
 	}
 
-	if (status == LOADER_STATUS_OK)
-		status = loader_map_stack(&staging);
+	if (status == LOADER_STATUS_OK) status = loader_map_stack(&staging);
 
 	if (status == LOADER_STATUS_OK) {
 		vm_user_page_mapping_t entry_mapping;
@@ -759,8 +719,7 @@ loader_status_t loader_exec_internal(proc_t proc, const char *path, const loader
 	uint64_t stack_pointer = 0ULL;
 	uint64_t argv_address = 0ULL;
 
-	if (status == LOADER_STATUS_OK)
-		status = loader_build_stack_args(&staging, args, &stack_pointer, &argv_address);
+	if (status == LOADER_STATUS_OK) status = loader_build_stack_args(&staging, args, &stack_pointer, &argv_address);
 
 	/* Last thing that can fail: nothing of the old image has been touched. */
 	if (status == LOADER_STATUS_OK && !machine_user_exec_state(header.entry, stack_pointer, args->argc, argv_address)) {
@@ -833,22 +792,23 @@ loader_status_t loader_exec_internal(proc_t proc, const char *path, const loader
 
 	const char *name = path;
 	for (const char *cursor = path; *cursor != '\0'; cursor++) {
-		if (*cursor == '/' && cursor[1] != '\0')
-			name = cursor + 1;
+		if (*cursor == '/' && cursor[1] != '\0') name = cursor + 1;
 	}
 	(void)proc_set_name(proc, name);
 
 	return LOADER_STATUS_OK;
 }
 
-loader_status_t loader_exec(proc_t proc, const char *path, const loader_exec_args_t *args)
+loader_status_t
+loader_exec(proc_t proc, const char *path, const loader_exec_args_t *args)
 {
 	return loader_exec_internal(proc, path, args, 0);
 }
 
 #endif /* !LOADER_ELF_WIDEN */
 
-const char *loader_status_name(loader_status_t status)
+const char *
+loader_status_name(loader_status_t status)
 {
 	switch (status) {
 	case LOADER_STATUS_OK:
@@ -872,7 +832,8 @@ const char *loader_status_name(loader_status_t status)
 	}
 }
 
-loader_status_t loader_dyrld_map(proc_t proc, nxu_dyrld_image_t *image)
+loader_status_t
+loader_dyrld_map(proc_t proc, nxu_dyrld_image_t *image)
 {
 	if (proc == 0 || image == 0 || proc->p_task.thread_count != 1U || proc->p_dyrld_finalized)
 		return LOADER_STATUS_BUSY;
@@ -898,19 +859,16 @@ loader_status_t loader_dyrld_map(proc_t proc, nxu_dyrld_image_t *image)
 			*image = proc->p_dyrld_images[i];
 			return LOADER_STATUS_OK;
 		}
-	if (proc->p_dyrld_count == NXU_DYRLD_IMAGES)
-		return LOADER_STATUS_NO_MEMORY;
+	if (proc->p_dyrld_count == NXU_DYRLD_IMAGES) return LOADER_STATUS_NO_MEMORY;
 	vnode_t vnode;
-	if (vfs_lookup(image->path, &vnode) != VFS_STATUS_OK)
-		return LOADER_STATUS_NOT_FOUND;
+	if (vfs_lookup(image->path, &vnode) != VFS_STATUS_OK) return LOADER_STATUS_NOT_FOUND;
 	loader_header_t header;
 	loader_segment_t programs[ELF_PROGRAM_HEADER_MAX];
 #if LOADER_ELF_WIDEN
 	loader_disk_header_t disk_header;
 	loader_disk_segment_t disk_programs[ELF_PROGRAM_HEADER_MAX];
 	loader_status_t status = loader_vnode_read_exact(vnode, 0, &disk_header, sizeof(disk_header));
-	if (status == LOADER_STATUS_OK)
-		loader_header_widen(&disk_header, &header);
+	if (status == LOADER_STATUS_OK) loader_header_widen(&disk_header, &header);
 #else
 	loader_status_t status = loader_vnode_read_exact(vnode, 0, &header, sizeof(header));
 #endif
@@ -989,8 +947,7 @@ loader_status_t loader_dyrld_map(proc_t proc, nxu_dyrld_image_t *image)
 			result.dynamic = result.bias + segment->virtual_address;
 			result.dynamic_size = segment->memory_size;
 		}
-		if (segment->type != ELF_PT_LOAD || segment->memory_size == 0)
-			continue;
+		if (segment->type != ELF_PT_LOAD || segment->memory_size == 0) continue;
 		uint64_t end;
 		if (!loader_segment_flags_valid(segment->flags) || !loader_segment_in_file(segment, vnode->v_size) ||
 			segment->memory_size < segment->file_size ||
@@ -1006,16 +963,13 @@ loader_status_t loader_dyrld_map(proc_t proc, nxu_dyrld_image_t *image)
 			nxu_dyrld_segment_t *previous = &result.segments[j];
 			uint64_t previous_start = previous->address & ~4095ULL;
 			uint64_t previous_end = (previous->address + previous->size + 4095) & ~4095ULL;
-			if (start < previous_end && previous_start < page_end)
-				status = LOADER_STATUS_BAD_FORMAT;
+			if (start < previous_end && previous_start < page_end) status = LOADER_STATUS_BAD_FORMAT;
 		}
 		for (uint64_t address = start; status == LOADER_STATUS_OK && address < page_end; address += 4096) {
 			vm_user_page_mapping_t existing;
-			if (vm_address_space_query_page(map, address, &existing))
-				status = LOADER_STATUS_BAD_FORMAT;
+			if (vm_address_space_query_page(map, address, &existing)) status = LOADER_STATUS_BAD_FORMAT;
 		}
-		if (status != LOADER_STATUS_OK)
-			break;
+		if (status != LOADER_STATUS_OK) break;
 		result.segments[result.segment_count++] =
 			(nxu_dyrld_segment_t){result.bias + segment->virtual_address, segment->memory_size, segment->flags, 0};
 	}
@@ -1029,8 +983,7 @@ loader_status_t loader_dyrld_map(proc_t proc, nxu_dyrld_image_t *image)
 			result.entry - segment->address < segment->size)
 			entry_valid = true;
 	}
-	if (!dynamic_valid || !entry_valid || result.segment_count == 0)
-		status = LOADER_STATUS_BAD_FORMAT;
+	if (!dynamic_valid || !entry_valid || result.segment_count == 0) status = LOADER_STATUS_BAD_FORMAT;
 	if (relro_start) {
 		bool contained = false;
 		for (uint32_t i = 0; i < result.segment_count; i++) {
@@ -1039,8 +992,7 @@ loader_status_t loader_dyrld_map(proc_t proc, nxu_dyrld_image_t *image)
 				relro_end <= ((s->address + s->size + 4095) & ~4095ULL))
 				contained = true;
 		}
-		if (!contained)
-			status = LOADER_STATUS_BAD_FORMAT;
+		if (!contained) status = LOADER_STATUS_BAD_FORMAT;
 	}
 	/* No mappings changed until every segment and address range passed validation. */
 	bool mapping_started = status == LOADER_STATUS_OK;
@@ -1048,12 +1000,10 @@ loader_status_t loader_dyrld_map(proc_t proc, nxu_dyrld_image_t *image)
 	sha256_init(&identity);
 	for (uint32_t i = 0; status == LOADER_STATUS_OK && i < header.program_header_count; i++) {
 		loader_segment_t segment = programs[i];
-		if (segment.type != ELF_PT_LOAD || segment.memory_size == 0)
-			continue;
+		if (segment.type != ELF_PT_LOAD || segment.memory_size == 0) continue;
 		segment.virtual_address += result.bias;
 		status = loader_map_segment(map, &segment);
-		if (status == LOADER_STATUS_OK)
-			status = loader_copy_segment(vnode, map, &segment, &identity);
+		if (status == LOADER_STATUS_OK) status = loader_copy_segment(vnode, map, &segment, &identity);
 	}
 	vnode_rele(vnode);
 	if (status != LOADER_STATUS_OK) {
@@ -1081,14 +1031,12 @@ loader_status_t loader_dyrld_map(proc_t proc, nxu_dyrld_image_t *image)
 	return LOADER_STATUS_OK;
 }
 
-loader_status_t loader_dyrld_finalize(proc_t proc)
+loader_status_t
+loader_dyrld_finalize(proc_t proc)
 {
-	if (!proc || proc->p_task.thread_count != 1U)
-		return LOADER_STATUS_BUSY;
-	if (!proc->p_dyrld_count)
-		return LOADER_STATUS_INVALID;
-	if (proc->p_dyrld_finalized)
-		return LOADER_STATUS_OK;
+	if (!proc || proc->p_task.thread_count != 1U) return LOADER_STATUS_BUSY;
+	if (!proc->p_dyrld_count) return LOADER_STATUS_INVALID;
+	if (proc->p_dyrld_finalized) return LOADER_STATUS_OK;
 	vm_address_space_t *map = proc_vm_map(proc);
 	for (uint32_t i = 0; i < proc->p_dyrld_count; i++) {
 		for (uint64_t address = proc->p_dyrld_relro_start[i]; address < proc->p_dyrld_relro_end[i]; address += 4096) {
@@ -1102,8 +1050,7 @@ loader_status_t loader_dyrld_finalize(proc_t proc)
 	proc->p_dyrld_finalized = true;
 	for (uint32_t i = 0; i < proc->p_dyrld_count; i++) {
 		for (uint64_t address = proc->p_dyrld_relro_start[i]; address < proc->p_dyrld_relro_end[i]; address += 4096)
-			if (!vm_address_space_restrict_page(map, address))
-				return LOADER_STATUS_PROCESS_ERROR;
+			if (!vm_address_space_restrict_page(map, address)) return LOADER_STATUS_PROCESS_ERROR;
 	}
 	return LOADER_STATUS_OK;
 }

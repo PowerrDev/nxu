@@ -16,20 +16,21 @@ typedef struct {
 
 static cpu_events_t g_cpu_events[NXU_MAX_CPUS];
 
-void statistics_note_interrupt(void)
+void
+statistics_note_interrupt(void)
 {
 	processor_t cpu = current_processor();
 	/* Before processor bootstrap only the boot CPU can take interrupts. */
 	uint32_t id = cpu != 0 ? cpu->cpu_id : 0U;
-	if (id >= NXU_MAX_CPUS)
-		return;
+	if (id >= NXU_MAX_CPUS) return;
 	cpu_events_t *events = &g_cpu_events[id];
 	uint64_t irq = nxu_spin_lock_irqsave(&events->lock);
 	events->interrupts++;
 	nxu_spin_unlock_irqrestore(&events->lock, irq);
 }
 
-void statistics_note_page_fault(bool user)
+void
+statistics_note_page_fault(bool user)
 {
 	processor_t cpu = current_processor();
 	uint32_t id = cpu != 0 ? cpu->cpu_id : 0U;
@@ -39,11 +40,9 @@ void statistics_note_page_fault(bool user)
 		events->page_faults++;
 		nxu_spin_unlock_irqrestore(&events->lock, irq);
 	}
-	if (!user)
-		return;
+	if (!user) return;
 	thread_t thread = current_thread();
-	if (thread == 0)
-		return;
+	if (thread == 0) return;
 	uint64_t irq = nxu_spin_lock_irqsave(&thread->accounting_lock);
 	thread->page_faults++;
 	nxu_spin_unlock_irqrestore(&thread->accounting_lock, irq);
@@ -66,7 +65,8 @@ _Static_assert(PROC_FLAG_SYSTEM == NXU_STATS_PROCESS_SYSTEM && PROC_FLAG_EXITING
 				   PROC_FLAG_TRACED == NXU_STATS_PROCESS_TRACED,
 			   "process flags ABI");
 
-uint32_t statistics_record_size(uint32_t kind)
+uint32_t
+statistics_record_size(uint32_t kind)
 {
 	switch (kind) {
 	case NXU_STATS_SYSTEM:
@@ -90,7 +90,8 @@ uint32_t statistics_record_size(uint32_t kind)
 	}
 }
 
-uint32_t statistics_capacity(uint32_t kind)
+uint32_t
+statistics_capacity(uint32_t kind)
 {
 	switch (kind) {
 	case NXU_STATS_SYSTEM:
@@ -114,12 +115,12 @@ uint32_t statistics_capacity(uint32_t kind)
 	}
 }
 
-void statistics_cpu_snapshot(uint32_t cpu, nxu_stats_cpu_t *out)
+void
+statistics_cpu_snapshot(uint32_t cpu, nxu_stats_cpu_t *out)
 {
 	*out = (nxu_stats_cpu_t){.struct_size = sizeof(*out), .version = NXU_STATS_VERSION, .cpu_id = cpu};
 	processor_t processor = processor_by_id(cpu);
-	if (processor == 0)
-		return;
+	if (processor == 0) return;
 	/* These accounting writers hold runq_lock. Mask local IRQs before taking
 	 * a remote queue lock; release before any user copy or allocation. */
 	uint64_t irq = nxu_spin_lock_irqsave(&processor->runq_lock);
@@ -136,14 +137,14 @@ void statistics_cpu_snapshot(uint32_t cpu, nxu_stats_cpu_t *out)
 	nxu_spin_unlock_irqrestore(&processor->runq_lock, irq);
 }
 
-int64_t statistics_snapshot(uint32_t kind, void *records, uint32_t capacity, uint32_t *total)
+int64_t
+statistics_snapshot(uint32_t kind, void *records, uint32_t capacity, uint32_t *total)
 {
 	if (total == 0 || statistics_record_size(kind) == 0U || (capacity != 0U && records == 0))
 		return -NXU_SYS_E_INVALID_ARGUMENT;
 	if (kind == NXU_STATS_SYSTEM) {
 		*total = 1U;
-		if (capacity == 0U)
-			return 0;
+		if (capacity == 0U) return 0;
 		nxu_stats_system_t *out = records;
 		*out = (nxu_stats_system_t){.struct_size = sizeof(*out),
 									.version = NXU_STATS_VERSION,
@@ -185,16 +186,14 @@ int64_t statistics_snapshot(uint32_t kind, void *records, uint32_t capacity, uin
 	}
 	if (kind == NXU_STATS_VIRTIO) {
 		*total = 1U;
-		if (capacity == 0U)
-			return 0;
+		if (capacity == 0U) return 0;
 		virtqueue_statistics(records);
 		return 1;
 	}
 	/* Caller-local storage makes simultaneous observers independent. Table
 	 * locks are taken separately, so process/thread joins are best effort. */
 	thread_snapshot_t *threads = kmalloc(THREAD_MAX * sizeof(*threads));
-	if (threads == 0)
-		return -NXU_SYS_E_NO_MEMORY;
+	if (threads == 0) return -NXU_SYS_E_NO_MEMORY;
 	uint32_t thread_total = thread_snapshot(threads, THREAD_MAX);
 	int64_t result;
 	if (kind == NXU_STATS_THREAD_EVENTS) {
@@ -248,8 +247,7 @@ int64_t statistics_snapshot(uint32_t kind, void *records, uint32_t capacity, uin
 			memcpy(out[i].name, p->name, sizeof(out[i].name));
 			out[i].name[sizeof(out[i].name) - 1U] = '\0';
 			for (uint32_t j = 0U; j < thread_total; j++) {
-				if (threads[j].task_uniqueid != p->uniqueid || threads[j].idle)
-					continue;
+				if (threads[j].task_uniqueid != p->uniqueid || threads[j].idle) continue;
 				out[i].cpu_us += threads[j].run_us;
 				out[i].threads++;
 			}

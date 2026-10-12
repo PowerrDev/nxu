@@ -32,10 +32,7 @@
 /* ~4 seconds at the 100 Hz kernel timer. */
 #define SCHED_MLFQ_BOOST_INTERVAL_TICKS 400U
 
-typedef enum {
-	SCHED_HEADQ,
-	SCHED_TAILQ
-} sched_queue_placement_t;
+typedef enum { SCHED_HEADQ, SCHED_TAILQ } sched_queue_placement_t;
 
 /*
  * sched_bootstrap
@@ -71,8 +68,7 @@ thread_t sched_idle_thread(void);
  * scheduling and idles on the boot stack until work is queued on it.
  */
 bool sched_cpu_prepare(uint32_t cpu);
-__attribute__((noreturn))
-void sched_cpu_idle(void);
+__attribute__((noreturn)) void sched_cpu_idle(void);
 
 /*
  * sched_bind_boot_cpu / sched_unbind_boot_cpu
@@ -201,8 +197,7 @@ void sched_kick_sleepers(void);
  * Switch away from a thread which has already entered TH_TERMINATE. This
  * routine never returns on the terminating thread's stack.
  */
-__attribute__((noreturn))
-void sched_exit_current(void);
+__attribute__((noreturn)) void sched_exit_current(void);
 
 /*
  * sched_tick

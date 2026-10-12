@@ -51,10 +51,8 @@ typedef struct {
 	bool failed;
 } platform_discovery_context_t;
 
-static bool platform_string_equals(
-	const char *left,
-	const char *right
-)
+static bool
+platform_string_equals(const char *left, const char *right)
 {
 	if (left == 0 || right == 0) {
 		return false;
@@ -72,10 +70,8 @@ static bool platform_string_equals(
 	return *left == '\0' && *right == '\0';
 }
 
-static bool platform_string_starts_with(
-	const char *string,
-	const char *prefix
-)
+static bool
+platform_string_starts_with(const char *string, const char *prefix)
 {
 	if (string == 0 || prefix == 0) {
 		return false;
@@ -93,21 +89,16 @@ static bool platform_string_starts_with(
 	return true;
 }
 
-static uint32_t platform_read_be32(const void *address)
+static uint32_t
+platform_read_be32(const void *address)
 {
 	const uint8_t *bytes = address;
 
-	return ((uint32_t)bytes[0] << 24U)
-		| ((uint32_t)bytes[1] << 16U)
-		| ((uint32_t)bytes[2] << 8U)
-		| (uint32_t)bytes[3];
+	return ((uint32_t)bytes[0] << 24U) | ((uint32_t)bytes[1] << 16U) | ((uint32_t)bytes[2] << 8U) | (uint32_t)bytes[3];
 }
 
-static bool platform_read_cells(
-	const uint8_t *value,
-	uint32_t cell_count,
-	uint64_t *result
-)
+static bool
+platform_read_cells(const uint8_t *value, uint32_t cell_count, uint64_t *result)
 {
 	if (value == 0 || result == 0 || cell_count > 2U) {
 		return false;
@@ -117,9 +108,7 @@ static bool platform_read_cells(
 
 	for (uint32_t index = 0; index < cell_count; index++) {
 		number <<= 32U;
-		number |= platform_read_be32(
-			value + index * 4U
-		);
+		number |= platform_read_be32(value + index * 4U);
 	}
 
 	*result = number;
@@ -127,11 +116,8 @@ static bool platform_read_cells(
 	return true;
 }
 
-static bool platform_value_string_equals(
-	const void *value,
-	uint32_t length,
-	const char *expected
-)
+static bool
+platform_value_string_equals(const void *value, uint32_t length, const char *expected)
 {
 	if (value == 0 || expected == 0 || length == 0U) {
 		return false;
@@ -141,10 +127,7 @@ static bool platform_value_string_equals(
 	uint32_t index = 0;
 
 	while (expected[index] != '\0') {
-		if (
-			index >= length ||
-			bytes[index] != (uint8_t)expected[index]
-		) {
+		if (index >= length || bytes[index] != (uint8_t)expected[index]) {
 			return false;
 		}
 
@@ -154,11 +137,8 @@ static bool platform_value_string_equals(
 	return index < length && bytes[index] == '\0';
 }
 
-static bool platform_compatible_contains(
-	const void *value,
-	uint32_t length,
-	const char *compatible
-)
+static bool
+platform_compatible_contains(const void *value, uint32_t length, const char *compatible)
 {
 	if (value == 0 || compatible == 0) {
 		return false;
@@ -170,10 +150,7 @@ static bool platform_compatible_contains(
 	while (offset < length) {
 		uint32_t item_length = 0;
 
-		while (
-			offset + item_length < length &&
-			bytes[offset + item_length] != '\0'
-		) {
+		while (offset + item_length < length && bytes[offset + item_length] != '\0') {
 			item_length++;
 		}
 
@@ -190,15 +167,8 @@ static bool platform_compatible_contains(
 		if (item_length == compatible_length) {
 			bool matches = true;
 
-			for (
-				uint32_t index = 0;
-				index < item_length;
-				index++
-			) {
-				if (
-					bytes[offset + index] !=
-					(uint8_t)compatible[index]
-				) {
+			for (uint32_t index = 0; index < item_length; index++) {
+				if (bytes[offset + index] != (uint8_t)compatible[index]) {
 					matches = false;
 					break;
 				}
@@ -215,26 +185,15 @@ static bool platform_compatible_contains(
 	return false;
 }
 
-static bool platform_read_reg(
-	const platform_node_t *node,
-	uint32_t entry_index,
-	platform_region_t *region
-)
+static bool
+platform_read_reg(const platform_node_t *node, uint32_t entry_index, platform_region_t *region)
 {
-	if (
-		node == 0 ||
-		region == 0 ||
-		node->reg == 0 ||
-		node->register_address_cells == 0U ||
-		node->register_address_cells > 2U ||
-		node->register_size_cells > 2U
-	) {
+	if (node == 0 || region == 0 || node->reg == 0 || node->register_address_cells == 0U ||
+		node->register_address_cells > 2U || node->register_size_cells > 2U) {
 		return false;
 	}
 
-	uint32_t entry_cells =
-		node->register_address_cells +
-		node->register_size_cells;
+	uint32_t entry_cells = node->register_address_cells + node->register_size_cells;
 
 	if (entry_cells == 0U) {
 		return false;
@@ -242,19 +201,13 @@ static bool platform_read_reg(
 
 	uint32_t entry_size = entry_cells * 4U;
 
-	if (
-		entry_index >
-		0xFFFFFFFFU / entry_size
-	) {
+	if (entry_index > 0xFFFFFFFFU / entry_size) {
 		return false;
 	}
 
 	uint32_t offset = entry_index * entry_size;
 
-	if (
-		offset > node->reg_length ||
-		entry_size > node->reg_length - offset
-	) {
+	if (offset > node->reg_length || entry_size > node->reg_length - offset) {
 		return false;
 	}
 
@@ -262,21 +215,13 @@ static bool platform_read_reg(
 
 	uint64_t base;
 
-	if (!platform_read_cells(
-		entry,
-		node->register_address_cells,
-		&base
-	)) {
+	if (!platform_read_cells(entry, node->register_address_cells, &base)) {
 		return false;
 	}
 
 	uint64_t size;
 
-	if (!platform_read_cells(
-		entry + node->register_address_cells * 4U,
-		node->register_size_cells,
-		&size
-	)) {
+	if (!platform_read_cells(entry + node->register_address_cells * 4U, node->register_size_cells, &size)) {
 		return false;
 	}
 
@@ -286,18 +231,12 @@ static bool platform_read_reg(
 	return true;
 }
 
-static void platform_begin_node(
-	const char *name,
-	uint32_t depth,
-	void *context
-)
+static void
+platform_begin_node(const char *name, uint32_t depth, void *context)
 {
 	platform_discovery_context_t *discovery = context;
 
-	if (
-		discovery == 0 ||
-		depth >= PLATFORM_MAX_DTB_DEPTH
-	) {
+	if (discovery == 0 || depth >= PLATFORM_MAX_DTB_DEPTH) {
 		if (discovery != 0) {
 			discovery->failed = true;
 		}
@@ -307,16 +246,14 @@ static void platform_begin_node(
 
 	platform_node_t *node = &discovery->nodes[depth];
 
-	*node = (platform_node_t){
-		.name = name,
+	*node = (platform_node_t){.name = name,
 
-		/*
-		 * Device Tree defaults for a node that does not provide
-		 * these properties.
-		 */
-		.child_address_cells = 2U,
-		.child_size_cells = 1U
-	};
+							  /*
+							   * Device Tree defaults for a node that does not provide
+							   * these properties.
+							   */
+							  .child_address_cells = 2U,
+							  .child_size_cells = 1U};
 
 	if (depth != 0U) {
 		const platform_node_t *parent = &discovery->nodes[depth - 1U];
@@ -327,45 +264,24 @@ static void platform_begin_node(
 	}
 }
 
-static void platform_property(
-	const char *name,
-	const void *value,
-	uint32_t length,
-	uint32_t depth,
-	void *context
-)
+static void
+platform_property(const char *name, const void *value, uint32_t length, uint32_t depth, void *context)
 {
 	platform_discovery_context_t *discovery = context;
 
-	if (
-		discovery == 0 ||
-		discovery->failed ||
-		depth >= PLATFORM_MAX_DTB_DEPTH
-	) {
+	if (discovery == 0 || discovery->failed || depth >= PLATFORM_MAX_DTB_DEPTH) {
 		return;
 	}
 
 	platform_node_t *node = &discovery->nodes[depth];
 
-	if (
-		platform_string_equals(
-			name,
-			"#address-cells"
-		) &&
-		length == 4U
-	) {
+	if (platform_string_equals(name, "#address-cells") && length == 4U) {
 		node->child_address_cells = platform_read_be32(value);
 
 		return;
 	}
 
-	if (
-		platform_string_equals(
-			name,
-			"#size-cells"
-		) &&
-		length == 4U
-	) {
+	if (platform_string_equals(name, "#size-cells") && length == 4U) {
 		node->child_size_cells = platform_read_be32(value);
 
 		return;
@@ -390,11 +306,7 @@ static void platform_property(
 	}
 
 	if (platform_string_equals(name, "device_type")) {
-		if (platform_value_string_equals(
-			value,
-			length,
-			"memory"
-		)) {
+		if (platform_value_string_equals(value, length, "memory")) {
 			node->is_memory = true;
 		}
 
@@ -414,10 +326,8 @@ static void platform_property(
 
 	/* A CPU the firmware lists but says must not be used. */
 	if (platform_string_equals(name, "status")) {
-		if (
-			platform_value_string_equals(value, length, "disabled") ||
-			platform_value_string_equals(value, length, "fail")
-		) {
+		if (platform_value_string_equals(value, length, "disabled") ||
+			platform_value_string_equals(value, length, "fail")) {
 			node->cpu_disabled = true;
 		}
 
@@ -428,67 +338,33 @@ static void platform_property(
 		return;
 	}
 
-	if (platform_compatible_contains(
-		value,
-		length,
-		"arm,psci"
-	) || platform_compatible_contains(
-		value,
-		length,
-		"arm,psci-0.2"
-	) || platform_compatible_contains(
-		value,
-		length,
-		"arm,psci-1.0"
-	)) {
+	if (platform_compatible_contains(value, length, "arm,psci") ||
+		platform_compatible_contains(value, length, "arm,psci-0.2") ||
+		platform_compatible_contains(value, length, "arm,psci-1.0")) {
 		node->is_psci = true;
 	}
 
-	if (platform_compatible_contains(
-		value,
-		length,
-		"arm,pl011"
-	)) {
+	if (platform_compatible_contains(value, length, "arm,pl011")) {
 		node->is_uart = true;
 	}
 
-	if (platform_compatible_contains(
-		value,
-		length,
-		"qemu,fw-cfg-mmio"
-	)) {
+	if (platform_compatible_contains(value, length, "qemu,fw-cfg-mmio")) {
 		node->is_fw_cfg = true;
 	}
 
-	if (platform_compatible_contains(
-		value,
-		length,
-		"arm,gic-v3"
-	)) {
+	if (platform_compatible_contains(value, length, "arm,gic-v3")) {
 		node->is_gic = true;
 	}
 
-	if (platform_compatible_contains(
-		value,
-		length,
-		"arm,pl031"
-	)) {
+	if (platform_compatible_contains(value, length, "arm,pl031")) {
 		node->is_rtc = true;
 	}
 
-	if (platform_compatible_contains(
-		value,
-		length,
-		"pci-host-ecam-generic"
-	)) {
+	if (platform_compatible_contains(value, length, "pci-host-ecam-generic")) {
 		node->is_pcie = true;
 	}
 
-	if (platform_compatible_contains(
-		value,
-		length,
-		"virtio,mmio"
-	)) {
+	if (platform_compatible_contains(value, length, "virtio,mmio")) {
 		node->is_virtio_mmio = true;
 	}
 }
@@ -504,19 +380,10 @@ static void platform_property(
  * assumption: drivers receive a normal architectural INTID and never need
  * to know how Device Tree numbers GIC SPIs and PPIs.
  */
-static bool platform_read_gic_interrupt(
-	const platform_node_t *node,
-	uint32_t *intid,
-	uint32_t *flags
-)
+static bool
+platform_read_gic_interrupt(const platform_node_t *node, uint32_t *intid, uint32_t *flags)
 {
-	if (
-		node == 0 ||
-		intid == 0 ||
-		flags == 0 ||
-		node->interrupts == 0 ||
-		node->interrupts_length < 12U
-	) {
+	if (node == 0 || intid == 0 || flags == 0 || node->interrupts == 0 || node->interrupts_length < 12U) {
 		return false;
 	}
 
@@ -538,18 +405,12 @@ static bool platform_read_gic_interrupt(
 	return true;
 }
 
-static void platform_end_node(
-	uint32_t depth,
-	void *context
-)
+static void
+platform_end_node(uint32_t depth, void *context)
 {
 	platform_discovery_context_t *discovery = context;
 
-	if (
-		discovery == 0 ||
-		discovery->failed ||
-		depth >= PLATFORM_MAX_DTB_DEPTH
-	) {
+	if (discovery == 0 || discovery->failed || depth >= PLATFORM_MAX_DTB_DEPTH) {
 		return;
 	}
 
@@ -563,48 +424,27 @@ static void platform_end_node(
 	 * kept: the other MPIDR bits (MT, U, RES1) are not part of the identity
 	 * PSCI and the GIC match on.
 	 */
-	if (
-		platform_string_starts_with(node->name, "cpu@") &&
-		!node->cpu_disabled
-	) {
+	if (platform_string_starts_with(node->name, "cpu@") && !node->cpu_disabled) {
 		platform_region_t affinity;
 
-		if (
-			platform_read_reg(node, 0U, &affinity) &&
-			platform->cpu_count < PLATFORM_MAX_CPUS
-		) {
-			platform->cpu_mpidr[platform->cpu_count++] =
-				affinity.base & 0xFF00FFFFFFULL;
+		if (platform_read_reg(node, 0U, &affinity) && platform->cpu_count < PLATFORM_MAX_CPUS) {
+			platform->cpu_mpidr[platform->cpu_count++] = affinity.base & 0xFF00FFFFFFULL;
 		}
 
 		return;
 	}
 
 	if (node->is_psci) {
-		platform->psci_method = node->psci_method_hvc
-			? PLATFORM_PSCI_HVC
-			: node->psci_method_smc
-				? PLATFORM_PSCI_SMC
-				: PLATFORM_PSCI_NONE;
+		platform->psci_method = node->psci_method_hvc	? PLATFORM_PSCI_HVC
+								: node->psci_method_smc ? PLATFORM_PSCI_SMC
+														: PLATFORM_PSCI_NONE;
 
 		return;
 	}
 
-	if (
-		node->is_memory ||
-		platform_string_starts_with(
-			node->name,
-			"memory@"
-		)
-	) {
-		if (
-			platform->memory_region_count <
-			PLATFORM_MAX_MEMORY_REGIONS
-		) {
-			platform_region_t *region =
-				&platform->memory_regions[
-					platform->memory_region_count
-				];
+	if (node->is_memory || platform_string_starts_with(node->name, "memory@")) {
+		if (platform->memory_region_count < PLATFORM_MAX_MEMORY_REGIONS) {
+			platform_region_t *region = &platform->memory_regions[platform->memory_region_count];
 
 			if (platform_read_reg(node, 0U, region)) {
 				platform->memory_region_count++;
@@ -616,62 +456,35 @@ static void platform_end_node(
 
 	if (node->is_uart) {
 		/* The first PL011 is the console; a second one is the tepOS mailbox link. */
-		(void)platform_read_reg(
-			node,
-			0U,
-			platform->uart.size == 0U ? &platform->uart : &platform->mailbox_uart
-		);
+		(void)platform_read_reg(node, 0U, platform->uart.size == 0U ? &platform->uart : &platform->mailbox_uart);
 
 		return;
 	}
 
 	if (node->is_fw_cfg) {
-		(void)platform_read_reg(
-			node,
-			0U,
-			&platform->fw_cfg
-		);
+		(void)platform_read_reg(node, 0U, &platform->fw_cfg);
 
 		return;
 	}
 
 	if (node->is_rtc) {
-		(void)platform_read_reg(
-			node,
-			0U,
-			&platform->rtc
-		);
+		(void)platform_read_reg(node, 0U, &platform->rtc);
 
 		return;
 	}
 
 	if (node->is_gic) {
-		(void)platform_read_reg(
-			node,
-			0U,
-			&platform->gic_distributor
-		);
+		(void)platform_read_reg(node, 0U, &platform->gic_distributor);
 
-		(void)platform_read_reg(
-			node,
-			1U,
-			&platform->gic_redistributor
-		);
+		(void)platform_read_reg(node, 1U, &platform->gic_redistributor);
 
 		return;
 	}
 
 	if (node->is_pcie) {
-		(void)platform_read_reg(
-			node,
-			0U,
-			&platform->pcie_ecam
-		);
+		(void)platform_read_reg(node, 0U, &platform->pcie_ecam);
 
-		if (
-			node->bus_range != 0 &&
-			node->bus_range_length >= 8U
-		) {
+		if (node->bus_range != 0 && node->bus_range_length >= 8U) {
 			const uint8_t *range = node->bus_range;
 
 			platform->pcie_bus_start = platform_read_be32(range);
@@ -682,20 +495,13 @@ static void platform_end_node(
 		return;
 	}
 
-	if (
-		node->is_virtio_mmio &&
-		platform->virtio_mmio_count <
-		PLATFORM_MAX_VIRTIO_MMIO_DEVICES
-	) {
+	if (node->is_virtio_mmio && platform->virtio_mmio_count < PLATFORM_MAX_VIRTIO_MMIO_DEVICES) {
 		uint32_t index = platform->virtio_mmio_count;
 		platform_region_t *region = &platform->virtio_mmio[index];
 		uint32_t intid;
 		uint32_t flags;
 
-		if (
-			platform_read_reg(node, 0U, region) &&
-			platform_read_gic_interrupt(node, &intid, &flags)
-		) {
+		if (platform_read_reg(node, 0U, region) && platform_read_gic_interrupt(node, &intid, &flags)) {
 			platform->virtio_mmio_intid[index] = intid;
 			platform->virtio_mmio_irq_flags[index] = flags;
 			platform->virtio_mmio_count++;
@@ -703,10 +509,8 @@ static void platform_end_node(
 	}
 }
 
-bool platform_discover(
-	const dtb_t *dtb,
-	platform_t *platform
-)
+bool
+platform_discover(const dtb_t *dtb, platform_t *platform)
 {
 	if (dtb == 0 || platform == 0) {
 		return false;
@@ -714,10 +518,7 @@ bool platform_discover(
 
 	*platform = (platform_t){0};
 
-	platform_discovery_context_t context = {
-		.platform = platform,
-		.failed = false
-	};
+	platform_discovery_context_t context = {.platform = platform, .failed = false};
 
 	/*
 	 * Hardware discovery also runs before the permanent TTBR1 transition.
@@ -736,13 +537,12 @@ bool platform_discover(
 		return false;
 	}
 
-	return platform->memory_region_count != 0U
-		&& platform->uart.size != 0U
-		&& platform->gic_distributor.size != 0U
-		&& platform->gic_redistributor.size != 0U;
+	return platform->memory_region_count != 0U && platform->uart.size != 0U && platform->gic_distributor.size != 0U &&
+		   platform->gic_redistributor.size != 0U;
 }
 
-bool platform_bootstrap(const dtb_t *dtb)
+bool
+platform_bootstrap(const dtb_t *dtb)
 {
 	if (g_platform_ready || dtb == 0) {
 		return false;
@@ -759,21 +559,21 @@ bool platform_bootstrap(const dtb_t *dtb)
 	return true;
 }
 
-const platform_t *platform_get(void)
+const platform_t *
+platform_get(void)
 {
 	return g_platform_ready ? &g_platform : 0;
 }
 
-static void platform_dump_region(
-	const char *name,
-	const platform_region_t *region
-)
+static void
+platform_dump_region(const char *name, const platform_region_t *region)
 {
 	kprintf("platform: %s base: %p\n", name, (void *)region->base);
 	kverbosef("platform: %s size: %llu bytes\n", name, (unsigned long long)region->size);
 }
 
-void platform_dump(const platform_t *platform)
+void
+platform_dump(const platform_t *platform)
 {
 	if (platform == 0) {
 		return;
@@ -781,13 +581,10 @@ void platform_dump(const platform_t *platform)
 
 	kprintf("platform: memory regions: %u\n", platform->memory_region_count);
 
-	for (
-		uint32_t index = 0;
-		index < platform->memory_region_count;
-		index++
-	) {
+	for (uint32_t index = 0; index < platform->memory_region_count; index++) {
 		kprintf("platform: RAM[%u] base: %p\n", index, (void *)platform->memory_regions[index].base);
-		kverbosef("platform: RAM[%u] size: %llu bytes\n", index, (unsigned long long)platform->memory_regions[index].size);
+		kverbosef("platform: RAM[%u] size: %llu bytes\n", index,
+				  (unsigned long long)platform->memory_regions[index].size);
 	}
 
 	platform_dump_region("UART", &platform->uart);
@@ -797,42 +594,26 @@ void platform_dump(const platform_t *platform)
 		platform_dump_region("fw_cfg", &platform->fw_cfg);
 	}
 
-	platform_dump_region(
-		"GIC distributor",
-		&platform->gic_distributor
-	);
+	platform_dump_region("GIC distributor", &platform->gic_distributor);
 
-	platform_dump_region(
-		"GIC redistributor",
-		&platform->gic_redistributor
-	);
+	platform_dump_region("GIC redistributor", &platform->gic_redistributor);
 
 	if (platform->rtc.size != 0ULL) {
 		platform_dump_region("RTC", &platform->rtc);
 	}
 
 	if (platform->pcie_ecam.size != 0U) {
-		platform_dump_region(
-			"PCI ECAM",
-			&platform->pcie_ecam
-		);
+		platform_dump_region("PCI ECAM", &platform->pcie_ecam);
 
-		kprintf("platform: PCI bus range: %u-%u\n", (unsigned)platform->pcie_bus_start, (unsigned)platform->pcie_bus_end);
+		kprintf("platform: PCI bus range: %u-%u\n", (unsigned)platform->pcie_bus_start,
+				(unsigned)platform->pcie_bus_end);
 	}
 
 	kprintf("platform: VirtIO MMIO transports: %u\n", platform->virtio_mmio_count);
 
 	/* One line per transport slot: a table for `-v`, noise otherwise. */
-	for (
-		uint32_t index = 0;
-		index < platform->virtio_mmio_count;
-		index++
-	) {
-		kverbosef(
-			"platform: VirtIO[%u] base: %p, INTID: %u\n",
-			index,
-			(void *)platform->virtio_mmio[index].base,
-			(unsigned)platform->virtio_mmio_intid[index]
-		);
+	for (uint32_t index = 0; index < platform->virtio_mmio_count; index++) {
+		kverbosef("platform: VirtIO[%u] base: %p, INTID: %u\n", index, (void *)platform->virtio_mmio[index].base,
+				  (unsigned)platform->virtio_mmio_intid[index]);
 	}
 }

@@ -10,7 +10,8 @@
 static volatile uint32_t *g_rtc_dr;
 static bool g_rtc_ready;
 
-bool rtc_init(void)
+bool
+rtc_init(void)
 {
 	if (g_rtc_ready) return true;
 
@@ -34,7 +35,8 @@ bool rtc_init(void)
 	return true;
 }
 
-uint64_t rtc_unix_time(void)
+uint64_t
+rtc_unix_time(void)
 {
 	if (!g_rtc_ready) return 0ULL;
 

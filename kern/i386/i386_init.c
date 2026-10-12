@@ -31,12 +31,14 @@
 extern uint8_t __kernel_start[];
 extern uint8_t __kernel_end[];
 
-static void i386_cpuid(uint32_t leaf, uint32_t *eax, uint32_t *ebx, uint32_t *ecx, uint32_t *edx)
+static void
+i386_cpuid(uint32_t leaf, uint32_t *eax, uint32_t *ebx, uint32_t *ecx, uint32_t *edx)
 {
 	__asm__ volatile("cpuid" : "=a"(*eax), "=b"(*ebx), "=c"(*ecx), "=d"(*edx) : "a"(leaf), "c"(0U));
 }
 
-static void i386_print_cpu(void)
+static void
+i386_print_cpu(void)
 {
 	uint32_t eax;
 	uint32_t ebx;
@@ -66,14 +68,14 @@ static void i386_print_cpu(void)
 	kprintf("i386_init: cpu family %u\n", family);
 	kprintf("i386_init: cpu model %u\n", model);
 	kprintf("i386_init: cpu stepping %u\n", eax & 0xFU);
-	kprintf("i386_init: CPU features PAE=%s PSE=%s APIC=%s\n",
-		(edx & (1U << 6U)) ? "yes" : "no", (edx & (1U << 3U)) ? "yes" : "no",
-		(edx & (1U << 9U)) ? "yes" : "no");
+	kprintf("i386_init: CPU features PAE=%s PSE=%s APIC=%s\n", (edx & (1U << 6U)) ? "yes" : "no",
+			(edx & (1U << 3U)) ? "yes" : "no", (edx & (1U << 9U)) ? "yes" : "no");
 }
 
 static i386_boot_info_t g_boot_info;
 
-const i386_boot_info_t *i386_boot_info(void)
+const i386_boot_info_t *
+i386_boot_info(void)
 {
 	return &g_boot_info;
 }
@@ -82,12 +84,12 @@ const i386_boot_info_t *i386_boot_info(void)
  * QEMU prefixes the command line with the kernel's own path, so scan token
  * by token rather than assuming the arguments start at the beginning.
  */
-bool i386_boot_arg(const char *name, char *value, uint32_t capacity)
+bool
+i386_boot_arg(const char *name, char *value, uint32_t capacity)
 {
 	const char *cmdline = g_boot_info.cmdline;
 
-	if (cmdline == 0 || capacity == 0U)
-		return false;
+	if (cmdline == 0 || capacity == 0U) return false;
 
 	uint32_t name_length = 0U;
 
@@ -105,20 +107,17 @@ bool i386_boot_arg(const char *name, char *value, uint32_t capacity)
 
 		uint32_t token_length = (uint32_t)(cmdline - token);
 
-		if (token_length <= name_length || token[name_length] != '=')
-			continue;
+		if (token_length <= name_length || token[name_length] != '=') continue;
 
 		uint32_t index = 0U;
 
 		while (index < name_length && token[index] == name[index])
 			index++;
-		if (index != name_length)
-			continue;
+		if (index != name_length) continue;
 
 		uint32_t length = token_length - name_length - 1U;
 
-		if (length >= capacity)
-			length = capacity - 1U;
+		if (length >= capacity) length = capacity - 1U;
 
 		for (index = 0U; index < length; index++)
 			value[index] = token[name_length + 1U + index];
@@ -129,12 +128,12 @@ bool i386_boot_arg(const char *name, char *value, uint32_t capacity)
 	return false;
 }
 
-bool i386_boot_test_requested(const char *name)
+bool
+i386_boot_test_requested(const char *name)
 {
 	char value[I386_CMDLINE_VALUE_MAX];
 
-	if (!i386_boot_arg("test", value, sizeof(value)))
-		return false;
+	if (!i386_boot_arg("test", value, sizeof(value))) return false;
 
 	uint32_t index = 0U;
 
@@ -143,7 +142,8 @@ bool i386_boot_test_requested(const char *name)
 	return value[index] == '\0' && name[index] == '\0';
 }
 
-void i386_shutdown(uint8_t code)
+void
+i386_shutdown(uint8_t code)
 {
 	/* QEMU's isa-debug-exit exits with (code << 1) | 1; harmless when absent. */
 	outb(0xF4U, code);
@@ -195,13 +195,15 @@ static const i386_phase_t g_phases[] = {{"platform", i386_init_platform, i386_in
 										{"drivers", i386_init_drivers, i386_init_drivers_selftest},
 										{"userland", i386_init_userland, i386_init_userland_selftest}};
 
-static void i386_fail(const char *phase, const char *what)
+static void
+i386_fail(const char *phase, const char *what)
 {
 	kprintf("i386_init: %s %s failed\n", phase, what);
 	i386_shutdown(0x01U);
 }
 
-void i386_init(uint32_t magic, const multiboot_info_t *info)
+void
+i386_init(uint32_t magic, const multiboot_info_t *info)
 {
 	g_boot_info.magic = magic;
 	g_boot_info.multiboot = info;
@@ -269,20 +271,17 @@ void i386_init(uint32_t magic, const multiboot_info_t *info)
 	{
 		char test[I386_CMDLINE_VALUE_MAX];
 
-		if (i386_boot_arg("trap-test", test, sizeof(test)))
-			i386_trap_test(test);
+		if (i386_boot_arg("trap-test", test, sizeof(test))) i386_trap_test(test);
 	}
 
 	for (uint32_t index = 0U; index < sizeof(g_phases) / sizeof(g_phases[0]); index++) {
 		const i386_phase_t *phase = &g_phases[index];
 
-		if (!phase->run(&g_boot_info))
-			i386_fail(phase->name, "phase");
+		if (!phase->run(&g_boot_info)) i386_fail(phase->name, "phase");
 
-		if (i386_startup_tests_enabled() &&
-			(strcmp(phase->name, "platform") == 0 || strcmp(phase->name, "vm") == 0 ||
-			 strcmp(phase->name, "kernel") == 0 || strcmp(phase->name, "threads") == 0 ||
-			 strcmp(phase->name, "smp") == 0)) {
+		if (i386_startup_tests_enabled() && (strcmp(phase->name, "platform") == 0 || strcmp(phase->name, "vm") == 0 ||
+											 strcmp(phase->name, "kernel") == 0 ||
+											 strcmp(phase->name, "threads") == 0 || strcmp(phase->name, "smp") == 0)) {
 			kprintf("i386_startup: running %s power-on self-tests\n", phase->name);
 			if (!phase->selftest(&g_boot_info)) i386_fail(phase->name, "power-on self-test");
 			if (strcmp(phase->name, "threads") == 0 && !i386_startup_core_test())
@@ -293,8 +292,7 @@ void i386_init(uint32_t magic, const multiboot_info_t *info)
 		if (i386_boot_test_requested(phase->name)) {
 			kprintf("i386_init: running %s self-test\n", phase->name);
 
-			if (!phase->selftest(&g_boot_info))
-				i386_fail(phase->name, "self-test");
+			if (!phase->selftest(&g_boot_info)) i386_fail(phase->name, "self-test");
 
 			kprintf("i386_init: %s self-test passed\n", phase->name);
 		}
@@ -309,8 +307,7 @@ void i386_init(uint32_t magic, const multiboot_info_t *info)
 	{
 		char exit_value[I386_CMDLINE_VALUE_MAX];
 
-		if (i386_boot_arg("qemu-exit", exit_value, sizeof(exit_value)))
-			i386_shutdown(0x00U);
+		if (i386_boot_arg("qemu-exit", exit_value, sizeof(exit_value))) i386_shutdown(0x00U);
 	}
 
 	for (;;) {

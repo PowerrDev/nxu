@@ -75,14 +75,8 @@ static uint8_t g_secondary_double_fault_stack[NXU_MAX_CPUS][SECONDARY_DF_STACK_S
 
 extern uint8_t i386_boot_stack_top[];
 
-static void gdt_set_entry(
-	uint32_t cpu_id,
-	uint32_t index,
-	uint32_t base,
-	uint32_t limit,
-	uint8_t access,
-	uint8_t flags
-)
+static void
+gdt_set_entry(uint32_t cpu_id, uint32_t index, uint32_t base, uint32_t limit, uint8_t access, uint8_t flags)
 {
 	g_gdt[cpu_id][index].limit_low = (uint16_t)(limit & 0xFFFFU);
 	g_gdt[cpu_id][index].base_low = (uint16_t)(base & 0xFFFFU);
@@ -92,16 +86,11 @@ static void gdt_set_entry(
 	g_gdt[cpu_id][index].base_high = (uint8_t)((base >> 24U) & 0xFFU);
 }
 
-static void gdt_set_tss(uint32_t cpu_id, uint32_t index, const i386_tss_t *tss)
+static void
+gdt_set_tss(uint32_t cpu_id, uint32_t index, const i386_tss_t *tss)
 {
-	gdt_set_entry(
-		cpu_id,
-		index,
-		(uint32_t)(uintptr_t)tss,
-		(uint32_t)sizeof(i386_tss_t) - 1U,
-		GDT_ACCESS_TSS,
-		GDT_FLAGS_BYTE
-	);
+	gdt_set_entry(cpu_id, index, (uint32_t)(uintptr_t)tss, (uint32_t)sizeof(i386_tss_t) - 1U, GDT_ACCESS_TSS,
+				  GDT_FLAGS_BYTE);
 }
 
 /*
@@ -113,7 +102,9 @@ static void gdt_set_tss(uint32_t cpu_id, uint32_t index, const i386_tss_t *tss)
  * or segment register; the caller does that once both TSSes are ready to be
  * pointed at.
  */
-static void gdt_build_common(uint32_t cpu_id, const i386_tss_t *main_tss, i386_tss_t *df_tss, uint32_t df_stack_top, uint32_t df_entry)
+static void
+gdt_build_common(uint32_t cpu_id, const i386_tss_t *main_tss, i386_tss_t *df_tss, uint32_t df_stack_top,
+				 uint32_t df_entry)
 {
 	gdt_set_entry(cpu_id, 1U, 0U, 0xFFFFFU, GDT_ACCESS_KERNEL_CODE, GDT_FLAGS_FLAT);
 	gdt_set_entry(cpu_id, 2U, 0U, 0xFFFFFU, GDT_ACCESS_KERNEL_DATA, GDT_FLAGS_FLAT);
@@ -128,7 +119,8 @@ static void gdt_build_common(uint32_t cpu_id, const i386_tss_t *main_tss, i386_t
 	gdt_set_entry(cpu_id, 7U, 0U, 0xFFFFFU, GDT_ACCESS_NOT_PRESENT, GDT_FLAGS_FLAT);
 
 	/* Slot 8: this CPU's one-word percpu cell, see GDT_PERCPU_SEL's doc comment. */
-	gdt_set_entry(cpu_id, 8U, (uint32_t)(uintptr_t)&g_percpu_cell[cpu_id], (uint32_t)sizeof(void *) - 1U, GDT_ACCESS_KERNEL_DATA, GDT_FLAGS_BYTE);
+	gdt_set_entry(cpu_id, 8U, (uint32_t)(uintptr_t)&g_percpu_cell[cpu_id], (uint32_t)sizeof(void *) - 1U,
+				  GDT_ACCESS_KERNEL_DATA, GDT_FLAGS_BYTE);
 
 	g_percpu_cell[cpu_id] = 0;
 
@@ -155,7 +147,8 @@ static void gdt_build_common(uint32_t cpu_id, const i386_tss_t *main_tss, i386_t
 	g_gdt_pointer[cpu_id].base = (uint32_t)(uintptr_t)g_gdt[cpu_id];
 }
 
-void i386_gdt_init(void)
+void
+i386_gdt_init(void)
 {
 	g_main_tss[0].ss0 = GDT_KERNEL_DATA_SEL;
 	g_main_tss[0].esp0 = (uint32_t)(uintptr_t)i386_boot_stack_top;
@@ -176,43 +169,38 @@ void i386_gdt_init(void)
 		g_double_fault_tss[0].cr3 = cr3;
 	}
 
-	gdt_build_common(
-		0U,
-		&g_main_tss[0],
-		&g_double_fault_tss[0],
-		(uint32_t)(uintptr_t)&g_boot_double_fault_stack[BOOT_DOUBLE_FAULT_STACK_SIZE],
-		(uint32_t)(uintptr_t)i386_double_fault_task
-	);
+	gdt_build_common(0U, &g_main_tss[0], &g_double_fault_tss[0],
+					 (uint32_t)(uintptr_t)&g_boot_double_fault_stack[BOOT_DOUBLE_FAULT_STACK_SIZE],
+					 (uint32_t)(uintptr_t)i386_double_fault_task);
 
 	__asm__ volatile(
 		"lgdt %0\n\t"
 		"ljmp $" STR(GDT_KERNEL_CODE_SEL) ", $1f\n"
-		"1:\n\t"
-		"movw $" STR(GDT_KERNEL_DATA_SEL) ", %%ax\n\t"
-		"movw %%ax, %%ds\n\t"
-		"movw %%ax, %%es\n\t"
-		"movw %%ax, %%gs\n\t"
-		"movw %%ax, %%ss\n\t"
-		"movw $" STR(GDT_PERCPU_SEL) ", %%ax\n\t"
-		"movw %%ax, %%fs\n\t"
-		"movw $" STR(GDT_TSS_SEL) ", %%ax\n\t"
-		"ltr %%ax"
+										  "1:\n\t"
+										  "movw $" STR(
+											  GDT_KERNEL_DATA_SEL) ", %%ax\n\t"
+																   "movw %%ax, %%ds\n\t"
+																   "movw %%ax, %%es\n\t"
+																   "movw %%ax, %%gs\n\t"
+																   "movw %%ax, %%ss\n\t"
+																   "movw $" STR(
+																	   GDT_PERCPU_SEL) ", %%ax\n\t"
+																					   "movw %%ax, %%fs\n\t"
+																					   "movw $" STR(
+																						   GDT_TSS_SEL) ", %%ax\n\t"
+																										"ltr %%ax"
 		:
 		: "m"(g_gdt_pointer[0])
-		: "eax", "memory"
-	);
+		: "eax", "memory");
 
-	kprintf(
-		"i386_gdt_init: found %u descriptors at address %p.\n",
-		GDT_ENTRY_COUNT,
-		(void *)g_gdt[0]
-	);
+	kprintf("i386_gdt_init: found %u descriptors at address %p.\n", GDT_ENTRY_COUNT, (void *)g_gdt[0]);
 
 	kprintf("i386_gdt_init: main tss at address %p\n", (void *)&g_main_tss[0]);
 	kprintf("i386_gdt_init: double fault tss %p\n", (void *)&g_double_fault_tss[0]);
 }
 
-void i386_gdt_init_secondary(uint32_t cpu_id, uint32_t boot_stack_top)
+void
+i386_gdt_init_secondary(uint32_t cpu_id, uint32_t boot_stack_top)
 {
 	if (cpu_id == 0U || cpu_id >= NXU_MAX_CPUS) return;
 
@@ -222,44 +210,46 @@ void i386_gdt_init_secondary(uint32_t cpu_id, uint32_t boot_stack_top)
 
 	g_double_fault_tss[cpu_id].cr3 = pmap_kernel_directory_physical();
 
-	gdt_build_common(
-		cpu_id,
-		&g_main_tss[cpu_id],
-		&g_double_fault_tss[cpu_id],
-		(uint32_t)(uintptr_t)&g_secondary_double_fault_stack[cpu_id][SECONDARY_DF_STACK_SIZE],
-		(uint32_t)(uintptr_t)i386_double_fault_task
-	);
+	gdt_build_common(cpu_id, &g_main_tss[cpu_id], &g_double_fault_tss[cpu_id],
+					 (uint32_t)(uintptr_t)&g_secondary_double_fault_stack[cpu_id][SECONDARY_DF_STACK_SIZE],
+					 (uint32_t)(uintptr_t)i386_double_fault_task);
 
 	__asm__ volatile(
 		"lgdt %0\n\t"
 		"ljmp $" STR(GDT_KERNEL_CODE_SEL) ", $1f\n"
-		"1:\n\t"
-		"movw $" STR(GDT_KERNEL_DATA_SEL) ", %%ax\n\t"
-		"movw %%ax, %%ds\n\t"
-		"movw %%ax, %%es\n\t"
-		"movw %%ax, %%gs\n\t"
-		"movw %%ax, %%ss\n\t"
-		"movw $" STR(GDT_PERCPU_SEL) ", %%ax\n\t"
-		"movw %%ax, %%fs\n\t"
-		"movw $" STR(GDT_TSS_SEL) ", %%ax\n\t"
-		"ltr %%ax"
+										  "1:\n\t"
+										  "movw $" STR(
+											  GDT_KERNEL_DATA_SEL) ", %%ax\n\t"
+																   "movw %%ax, %%ds\n\t"
+																   "movw %%ax, %%es\n\t"
+																   "movw %%ax, %%gs\n\t"
+																   "movw %%ax, %%ss\n\t"
+																   "movw $" STR(
+																	   GDT_PERCPU_SEL) ", %%ax\n\t"
+																					   "movw %%ax, %%fs\n\t"
+																					   "movw $" STR(
+																						   GDT_TSS_SEL) ", %%ax\n\t"
+																										"ltr %%ax"
 		:
 		: "m"(g_gdt_pointer[cpu_id])
-		: "eax", "memory"
-	);
+		: "eax", "memory");
 }
 
-void i386_gdt_set_kernel_stack(uint32_t esp0)
+void
+i386_gdt_set_kernel_stack(uint32_t esp0)
 {
 	g_main_tss[machine_cpu_id()].esp0 = esp0;
 }
 
-void i386_gdt_set_double_fault_cr3(uint32_t cr3)
+void
+i386_gdt_set_double_fault_cr3(uint32_t cr3)
 {
-	for (uint32_t cpu_id = 0U; cpu_id < NXU_MAX_CPUS; cpu_id++) g_double_fault_tss[cpu_id].cr3 = cr3;
+	for (uint32_t cpu_id = 0U; cpu_id < NXU_MAX_CPUS; cpu_id++)
+		g_double_fault_tss[cpu_id].cr3 = cr3;
 }
 
-const i386_tss_t *i386_gdt_main_tss(void)
+const i386_tss_t *
+i386_gdt_main_tss(void)
 {
 	return &g_main_tss[machine_cpu_id()];
 }

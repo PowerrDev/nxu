@@ -21,43 +21,42 @@
 #include <stdint.h>
 #include <string.h>
 
-static void ipc_space_lock(ipc_space_t space)
+static void
+ipc_space_lock(ipc_space_t space)
 {
 	while (__atomic_exchange_n(&space->is_lock, 1U, __ATOMIC_ACQUIRE) != 0U) {
 		cpu_relax();
 	}
 }
 
-static void ipc_space_unlock(ipc_space_t space)
+static void
+ipc_space_unlock(ipc_space_t space)
 {
 	__atomic_store_n(&space->is_lock, 0U, __ATOMIC_RELEASE);
 }
 
-void ipc_space_init(ipc_space_t space)
+void
+ipc_space_init(ipc_space_t space)
 {
-	if (space == 0)
-		return;
+	if (space == 0) return;
 
 	memset(space, 0, sizeof(*space));
 	space->is_freename = 1U;
 }
 
-static ipc_return_t ipc_space_insert(ipc_space_t space, ipc_port_t port, uint32_t *name, bool receive)
+static ipc_return_t
+ipc_space_insert(ipc_space_t space, ipc_port_t port, uint32_t *name, bool receive)
 {
-	if (name != 0)
-		*name = IPC_SPACE_NAME_INVALID;
-	if (space == 0 || port == IPC_PORT_NULL || name == 0 || !ipc_port_active(port))
-		return IPC_INVALID_ARGUMENT;
+	if (name != 0) *name = IPC_SPACE_NAME_INVALID;
+	if (space == 0 || port == IPC_PORT_NULL || name == 0 || !ipc_port_active(port)) return IPC_INVALID_ARGUMENT;
 
 	ipc_space_lock(space);
 
 	uint32_t start = space->is_freename;
-	if (start < 1U || start > IPC_SPACE_MAX)
-		start = 1U;
+	if (start < 1U || start > IPC_SPACE_MAX) start = 1U;
 
 	for (uint32_t slot = start; slot <= IPC_SPACE_MAX; slot++) {
-		if (space->is_entries[slot - 1U].type != IPC_SPACE_ENTRY_FREE)
-			continue;
+		if (space->is_entries[slot - 1U].type != IPC_SPACE_ENTRY_FREE) continue;
 
 		space->is_entries[slot - 1U].type = IPC_SPACE_ENTRY_PORT;
 		space->is_entries[slot - 1U].port = port;
@@ -78,10 +77,10 @@ static ipc_return_t ipc_space_insert(ipc_space_t space, ipc_port_t port, uint32_
 	return IPC_SPACE_FULL;
 }
 
-bool ipc_space_fork(ipc_space_t child, ipc_space_t parent)
+bool
+ipc_space_fork(ipc_space_t child, ipc_space_t parent)
 {
-	if (child == 0 || parent == 0 || child->is_open_count != 0U)
-		return false;
+	if (child == 0 || parent == 0 || child->is_open_count != 0U) return false;
 
 	bool ok = true;
 
@@ -91,8 +90,7 @@ bool ipc_space_fork(ipc_space_t child, ipc_space_t parent)
 
 	for (uint32_t index = 0U; index < IPC_SPACE_MAX; index++) {
 		const ipc_space_entry_t *entry = &parent->is_entries[index];
-		if (entry->type != IPC_SPACE_ENTRY_PORT)
-			continue;
+		if (entry->type != IPC_SPACE_ENTRY_PORT) continue;
 
 		if (!ipc_port_reference(entry->port)) {
 			ok = false;
@@ -106,18 +104,16 @@ bool ipc_space_fork(ipc_space_t child, ipc_space_t parent)
 
 	ipc_space_unlock(parent);
 
-	if (!ok)
-		ipc_space_close_all(child);
+	if (!ok) ipc_space_close_all(child);
 
 	return ok;
 }
 
-static ipc_return_t ipc_space_lookup(ipc_space_t space, uint32_t name, ipc_port_t *result, bool receive)
+static ipc_return_t
+ipc_space_lookup(ipc_space_t space, uint32_t name, ipc_port_t *result, bool receive)
 {
-	if (result != 0)
-		*result = IPC_PORT_NULL;
-	if (space == 0 || result == 0 || name < 1U || name > IPC_SPACE_MAX)
-		return IPC_NAME_INVALID;
+	if (result != 0) *result = IPC_PORT_NULL;
+	if (space == 0 || result == 0 || name < 1U || name > IPC_SPACE_MAX) return IPC_NAME_INVALID;
 
 	ipc_space_lock(space);
 
@@ -141,12 +137,11 @@ static ipc_return_t ipc_space_lookup(ipc_space_t space, uint32_t name, ipc_port_
 	return IPC_SUCCESS;
 }
 
-ipc_return_t ipc_space_remove(ipc_space_t space, uint32_t name, ipc_port_t *result)
+ipc_return_t
+ipc_space_remove(ipc_space_t space, uint32_t name, ipc_port_t *result)
 {
-	if (result != 0)
-		*result = IPC_PORT_NULL;
-	if (space == 0 || result == 0 || name < 1U || name > IPC_SPACE_MAX)
-		return IPC_NAME_INVALID;
+	if (result != 0) *result = IPC_PORT_NULL;
+	if (space == 0 || result == 0 || name < 1U || name > IPC_SPACE_MAX) return IPC_NAME_INVALID;
 
 	ipc_space_lock(space);
 
@@ -161,58 +156,58 @@ ipc_return_t ipc_space_remove(ipc_space_t space, uint32_t name, ipc_port_t *resu
 	entry->receive = false;
 	entry->type = IPC_SPACE_ENTRY_FREE;
 	entry->port = IPC_PORT_NULL;
-	if (space->is_open_count != 0U)
-		space->is_open_count--;
-	if (name < space->is_freename)
-		space->is_freename = name;
+	if (space->is_open_count != 0U) space->is_open_count--;
+	if (name < space->is_freename) space->is_freename = name;
 
 	ipc_space_unlock(space);
 
-	if (receive)
-		ipc_port_deactivate(port);
+	if (receive) ipc_port_deactivate(port);
 	*result = port;
 	return IPC_SUCCESS;
 }
 
-void ipc_space_close_all(ipc_space_t space)
+void
+ipc_space_close_all(ipc_space_t space)
 {
-	if (space == 0)
-		return;
+	if (space == 0) return;
 
 	for (uint32_t name = 1U; name <= IPC_SPACE_MAX; name++) {
 		ipc_port_t port;
-		if (ipc_space_remove(space, name, &port) == IPC_SUCCESS)
-			ipc_port_release(port);
+		if (ipc_space_remove(space, name, &port) == IPC_SUCCESS) ipc_port_release(port);
 	}
 }
 
 /* Rights are table properties: transferring a port never transfers receive ownership. */
-bool ipc_space_can_receive(ipc_space_t space, uint32_t name)
+bool
+ipc_space_can_receive(ipc_space_t space, uint32_t name)
 {
-	if (!space || !name || name > IPC_SPACE_MAX)
-		return false;
+	if (!space || !name || name > IPC_SPACE_MAX) return false;
 	ipc_space_lock(space);
 	bool allowed = space->is_entries[name - 1].type == IPC_SPACE_ENTRY_PORT && space->is_entries[name - 1].receive;
 	ipc_space_unlock(space);
 	return allowed;
 }
 
-ipc_return_t ipc_space_insert_port(ipc_space_t space, ipc_port_t port, uint32_t *name)
+ipc_return_t
+ipc_space_insert_port(ipc_space_t space, ipc_port_t port, uint32_t *name)
 {
 	return ipc_space_insert(space, port, name, false);
 }
 
-ipc_return_t ipc_space_insert_receive(ipc_space_t space, ipc_port_t port, uint32_t *name)
+ipc_return_t
+ipc_space_insert_receive(ipc_space_t space, ipc_port_t port, uint32_t *name)
 {
 	return ipc_space_insert(space, port, name, true);
 }
 
-ipc_return_t ipc_space_lookup_port(ipc_space_t space, uint32_t name, ipc_port_t *result)
+ipc_return_t
+ipc_space_lookup_port(ipc_space_t space, uint32_t name, ipc_port_t *result)
 {
 	return ipc_space_lookup(space, name, result, false);
 }
 
-ipc_return_t ipc_space_lookup_receive(ipc_space_t space, uint32_t name, ipc_port_t *result)
+ipc_return_t
+ipc_space_lookup_receive(ipc_space_t space, uint32_t name, ipc_port_t *result)
 {
 	return ipc_space_lookup(space, name, result, true);
 }

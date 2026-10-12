@@ -35,20 +35,18 @@
 
 #include <stdint.h>
 
-typedef enum {
-	IPI_RESCHEDULE = 0,
-	IPI_CPU_STOP = 1,
-	IPI_TYPE_COUNT
-} ipi_type_t;
+typedef enum { IPI_RESCHEDULE = 0, IPI_CPU_STOP = 1, IPI_TYPE_COUNT } ipi_type_t;
 
 /* Interrupt CPU `cpu` (a logical id) with `type`. Never call it for the calling CPU. */
-static inline void ipi_send(uint32_t cpu, ipi_type_t type)
+static inline void
+ipi_send(uint32_t cpu, ipi_type_t type)
 {
 	machine_ipi_raise(cpu, (uint32_t)type);
 }
 
 /* Interrupt every CPU but the caller. */
-static inline void ipi_send_others(ipi_type_t type)
+static inline void
+ipi_send_others(ipi_type_t type)
 {
 	machine_ipi_raise_others((uint32_t)type);
 }

@@ -69,7 +69,8 @@ static unified_test_t g_unified_tests[] = {
 
 static volatile bool g_unified_ui_failed;
 
-static const char *unified_state_name(unified_state_t state)
+static const char *
+unified_state_name(unified_state_t state)
 {
 	switch (state) {
 	case UNIFIED_PENDING:
@@ -85,7 +86,8 @@ static const char *unified_state_name(unified_state_t state)
 	return "unknown";
 }
 
-static const char *unified_chime_name(void)
+static const char *
+unified_chime_name(void)
 {
 	switch (boot_chime_state()) {
 	case BOOT_CHIME_IDLE:
@@ -102,17 +104,16 @@ static const char *unified_chime_name(void)
 }
 
 /* True when the UI loop's poll count moves while this thread waits: the session is alive, not just started. */
-static bool unified_ui_alive(void)
+static bool
+unified_ui_alive(void)
 {
-	if (!ui_service_running())
-		return false;
+	if (!ui_service_running()) return false;
 
 	uint64_t polls = ui_service_poll_count();
 	uint64_t deadline = timer_get_microseconds() + UNIFIED_BOOT_UI_WATCH_US;
 
 	while (timer_get_microseconds() < deadline) {
-		if (!sched_yield())
-			break;
+		if (!sched_yield()) break;
 	}
 
 	return ui_service_running() && ui_service_poll_count() > polls;
@@ -124,7 +125,8 @@ static bool unified_ui_alive(void)
  * One block, one fact per line: every test, then what else is running.
  * Returns whether everything passed and is alive.
  */
-static bool unified_boot_summary(void)
+static bool
+unified_boot_summary(void)
 {
 	unsigned int passed = 0U;
 
@@ -134,8 +136,7 @@ static bool unified_boot_summary(void)
 		unified_test_t *test = &g_unified_tests[index];
 
 		kprintf("unified_boot_summary: %s %s\n", test->name, unified_state_name(test->state));
-		if (test->state == UNIFIED_PASSED)
-			passed++;
+		if (test->state == UNIFIED_PASSED) passed++;
 	}
 
 	kprintf("unified_boot_summary: boot_chime %s\n", unified_chime_name());
@@ -154,14 +155,12 @@ static bool unified_boot_summary(void)
 	for (proc_id_t pid = 1U; pid <= UNIFIED_BOOT_PID_SCAN_MAX; pid++) {
 		proc_t proc = proc_find(pid);
 
-		if (proc != 0)
-			kprintf("unified_boot_summary: process %u (%s) running\n", (unsigned int)pid, proc->p_comm);
+		if (proc != 0) kprintf("unified_boot_summary: process %u (%s) running\n", (unsigned int)pid, proc->p_comm);
 	}
 
 	bool bootd_alive = proc_find(1U) != 0;
 
-	if (!bootd_alive)
-		kputln("unified_boot_summary: bootd FAILED: PID 1 is gone");
+	if (!bootd_alive) kputln("unified_boot_summary: bootd FAILED: PID 1 is gone");
 
 	bool all = passed == UNIFIED_TEST_COUNT && ui_alive && bootd_alive;
 
@@ -181,7 +180,8 @@ static bool unified_boot_summary(void)
  * the tests wait for the registry, which is the one thing they need from the
  * boot; the chime, the other services and the UI do not hold them up.
  */
-static void unified_boot_wait_for_registry(void)
+static void
+unified_boot_wait_for_registry(void)
 {
 	uint64_t deadline = timer_get_microseconds() + UNIFIED_BOOT_REGISTRY_WAIT_US;
 
@@ -191,12 +191,12 @@ static void unified_boot_wait_for_registry(void)
 			return;
 		}
 
-		if (!sched_yield())
-			return;
+		if (!sched_yield()) return;
 	}
 }
 
-static void unified_boot_thread(void *parameter)
+static void
+unified_boot_thread(void *parameter)
 {
 	(void)parameter;
 
@@ -228,7 +228,8 @@ static void unified_boot_thread(void *parameter)
 	(void)unified_boot_summary();
 }
 
-void unified_boot_prepare(void)
+void
+unified_boot_prepare(void)
 {
 	if (boot_arg_bool("ui.userland", false)) {
 		UNIFIED_BOOT_LOG("bootd owns the dynamic desktop services\n");
@@ -243,7 +244,8 @@ void unified_boot_prepare(void)
 	UNIFIED_BOOT_LOG("the UI session owns the display: bootd starts without windowserver and about-sevos\n");
 }
 
-void unified_boot_run(void)
+void
+unified_boot_run(void)
 {
 	thread_t thread;
 
@@ -270,7 +272,8 @@ void unified_boot_run(void)
 	}
 }
 
-void unified_boot_run_ui_only(void)
+void
+unified_boot_run_ui_only(void)
 {
 	/* The session below never returns while it works, so it has to share the CPU or nothing else would run. */
 	ui_service_set_cooperative(true);

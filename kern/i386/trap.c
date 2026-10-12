@@ -71,7 +71,8 @@ static volatile uint32_t g_syscall_count;
 
 static bool g_in_panic;
 
-static inline uint32_t trap_read_cr0(void)
+static inline uint32_t
+trap_read_cr0(void)
 {
 	uint32_t value;
 
@@ -79,7 +80,8 @@ static inline uint32_t trap_read_cr0(void)
 	return value;
 }
 
-static inline uint32_t trap_read_cr3(void)
+static inline uint32_t
+trap_read_cr3(void)
 {
 	uint32_t value;
 
@@ -87,7 +89,8 @@ static inline uint32_t trap_read_cr3(void)
 	return value;
 }
 
-static inline uint32_t trap_read_cr4(void)
+static inline uint32_t
+trap_read_cr4(void)
 {
 	uint32_t value;
 
@@ -97,7 +100,8 @@ static inline uint32_t trap_read_cr4(void)
 
 static void trap_halt(void) __attribute__((noreturn));
 
-static void trap_halt(void)
+static void
+trap_halt(void)
 {
 	/* Ends a QEMU run started with isa-debug-exit; harmless if absent. */
 	outb(QEMU_DEBUG_EXIT_PORT, 0x01U);
@@ -107,24 +111,24 @@ static void trap_halt(void)
 	}
 }
 
-static const char *trap_exception_name(uint32_t vector)
+static const char *
+trap_exception_name(uint32_t vector)
 {
-	if (vector < T_EXCEPTION_COUNT)
-		return g_exception_names[vector];
-	if (vector >= T_IRQ_BASE && vector < T_IRQ_BASE + T_IRQ_COUNT)
-		return "hardware interrupt";
-	if (vector == T_SYSCALL)
-		return "system call";
+	if (vector < T_EXCEPTION_COUNT) return g_exception_names[vector];
+	if (vector >= T_IRQ_BASE && vector < T_IRQ_BASE + T_IRQ_COUNT) return "hardware interrupt";
+	if (vector == T_SYSCALL) return "system call";
 	return "unknown vector";
 }
 
-static bool trap_has_error_code(uint32_t vector)
+static bool
+trap_has_error_code(uint32_t vector)
 {
 	return vector == T_DOUBLE_FAULT || (vector >= T_INVALID_TSS && vector <= T_PAGE_FAULT) ||
 		   vector == T_ALIGNMENT_CHECK;
 }
 
-static void trap_print_flags(uint32_t efl)
+static void
+trap_print_flags(uint32_t efl)
 {
 	static const struct {
 		uint32_t bit;
@@ -138,11 +142,9 @@ static void trap_print_flags(uint32_t efl)
 	bool first = true;
 
 	for (uint32_t index = 0U; index < sizeof(flags) / sizeof(flags[0]); index++) {
-		if ((efl & flags[index].bit) == 0U)
-			continue;
+		if ((efl & flags[index].bit) == 0U) continue;
 
-		if (!first)
-			kputc(' ');
+		if (!first) kputc(' ');
 		kputs(flags[index].name);
 		first = false;
 	}
@@ -151,7 +153,8 @@ static void trap_print_flags(uint32_t efl)
 }
 
 /* Decode the selector-style error code #TS/#NP/#SS/#GP push. */
-static void trap_print_selector_error(uint32_t err)
+static void
+trap_print_selector_error(uint32_t err)
 {
 	if (err == 0U) {
 		kputln("  cause: not selector-related (error code 0)");
@@ -163,7 +166,8 @@ static void trap_print_selector_error(uint32_t err)
 			(err & 1U) != 0U ? ", raised by an external event" : "");
 }
 
-static void trap_print_page_fault(uint32_t err, uint32_t address)
+static void
+trap_print_page_fault(uint32_t err, uint32_t address)
 {
 	kprintf("  cause: %s of 0x%x by %s: %s%s\n",
 			(err & PF_FETCH) != 0U ? "instruction fetch" : ((err & PF_WRITE) != 0U ? "write" : "read"), address,
@@ -172,7 +176,8 @@ static void trap_print_page_fault(uint32_t err, uint32_t address)
 			(err & PF_RESERVED) != 0U ? ", reserved bit set in a paging structure" : "");
 }
 
-static void trap_print_backtrace(uint32_t eip, uint32_t ebp)
+static void
+trap_print_backtrace(uint32_t eip, uint32_t ebp)
 {
 	uintptr_t low = (uintptr_t)i386_boot_stack_bottom;
 	uintptr_t high = (uintptr_t)i386_boot_stack_top;
@@ -183,17 +188,14 @@ static void trap_print_backtrace(uint32_t eip, uint32_t ebp)
 
 	for (uint32_t depth = 1U; depth < TRAP_BACKTRACE_DEPTH; depth++) {
 		/* Only walk frames that provably lie inside the boot stack. */
-		if (frame < low || frame + 8U > high || (frame & 3U) != 0U)
-			break;
+		if (frame < low || frame + 8U > high || (frame & 3U) != 0U) break;
 
 		const uint32_t *words = (const uint32_t *)frame;
 
-		if (words[1] == 0U)
-			break;
+		if (words[1] == 0U) break;
 		kprintf(" #%u 0x%x", depth, words[1]);
 
-		if (words[0] <= frame)
-			break;
+		if (words[0] <= frame) break;
 		frame = words[0];
 	}
 
@@ -207,10 +209,10 @@ static void trap_print_backtrace(uint32_t eip, uint32_t ebp)
  */
 static void trap_panic(const x86_saved_state_t *state, uint32_t esp, const char *how) __attribute__((noreturn));
 
-static void trap_panic(const x86_saved_state_t *state, uint32_t esp, const char *how)
+static void
+trap_panic(const x86_saved_state_t *state, uint32_t esp, const char *how)
 {
-	if (g_in_panic)
-		trap_halt();
+	if (g_in_panic) trap_halt();
 	g_in_panic = true;
 
 	uint32_t vector = state->trapno;
@@ -283,7 +285,8 @@ static void trap_panic(const x86_saved_state_t *state, uint32_t esp, const char 
 	trap_halt();
 }
 
-__attribute__((weak)) bool i386_trap_irq(x86_saved_state_t *state)
+__attribute__((weak)) bool
+i386_trap_irq(x86_saved_state_t *state)
 {
 	(void)state;
 	return false;
@@ -294,7 +297,8 @@ __attribute__((weak)) bool i386_trap_irq(x86_saved_state_t *state)
  * this file builds and every non-SMP i386 test still passes without smp.c
  * linked; on a uniprocessor build these vectors are simply never raised.
  */
-__attribute__((weak)) void i386_trap_ipi(x86_saved_state_t *state)
+__attribute__((weak)) void
+i386_trap_ipi(x86_saved_state_t *state)
 {
 	(void)state;
 }
@@ -310,18 +314,21 @@ __attribute__((weak)) void i386_trap_ipi(x86_saved_state_t *state)
  * that is not the caller itself when only one CPU is actually online, so a
  * no-op default is correct either way, not just link-safe.
  */
-__attribute__((weak)) void machine_ipi_raise(uint32_t cpu, uint32_t vector)
+__attribute__((weak)) void
+machine_ipi_raise(uint32_t cpu, uint32_t vector)
 {
 	(void)cpu;
 	(void)vector;
 }
 
-__attribute__((weak)) void machine_ipi_raise_others(uint32_t vector)
+__attribute__((weak)) void
+machine_ipi_raise_others(uint32_t vector)
 {
 	(void)vector;
 }
 
-__attribute__((weak)) void i386_trap_syscall(x86_saved_state_t *state)
+__attribute__((weak)) void
+i386_trap_syscall(x86_saved_state_t *state)
 {
 	/*
 	 * No dispatcher yet. Returning a recognisable error through the frame
@@ -331,28 +338,31 @@ __attribute__((weak)) void i386_trap_syscall(x86_saved_state_t *state)
 	state->eax = I386_SYSCALL_UNIMPLEMENTED;
 }
 
-__attribute__((weak)) bool i386_trap_user_exception(x86_saved_state_t *state)
+__attribute__((weak)) bool
+i386_trap_user_exception(x86_saved_state_t *state)
 {
 	(void)state;
 	return false;
 }
 
-__attribute__((weak)) bool i386_trap_page_fault(x86_saved_state_t *state)
+__attribute__((weak)) bool
+i386_trap_page_fault(x86_saved_state_t *state)
 {
 	(void)state;
 	return false;
 }
 
-__attribute__((weak)) void i386_trap_exit(x86_saved_state_t *state)
+__attribute__((weak)) void
+i386_trap_exit(x86_saved_state_t *state)
 {
 	(void)state;
 }
 
-void i386_trap_handler(x86_saved_state_t *state)
+void
+i386_trap_handler(x86_saved_state_t *state)
 {
 	uint32_t vector = state->trapno;
-	if (vector == T_PAGE_FAULT)
-		statistics_note_page_fault(x86_saved_state_is_user(state));
+	if (vector == T_PAGE_FAULT) statistics_note_page_fault(x86_saved_state_is_user(state));
 	if ((vector >= T_IRQ_BASE && vector < T_IRQ_BASE + T_IRQ_COUNT) || vector == T_IPI_RESCHEDULE ||
 		vector == T_IPI_CPU_STOP || vector == T_IPI_TICK)
 		statistics_note_interrupt();
@@ -406,7 +416,8 @@ void i386_trap_handler(x86_saved_state_t *state)
 	trap_panic(state, esp, vector < T_EXCEPTION_COUNT ? "unhandled exception" : "unexpected interrupt vector");
 }
 
-void i386_double_fault_task(void)
+void
+i386_double_fault_task(void)
 {
 	/*
 	 * The task switch stored the context that faulted in the main TSS. Recast
@@ -439,7 +450,8 @@ void i386_double_fault_task(void)
 	trap_panic(&state, saved->esp, "unhandled exception");
 }
 
-bool i386_trap_self_test(void)
+bool
+i386_trap_self_test(void)
 {
 	/*
 	 * int3 is the one exception that resumes, so it exercises the whole
@@ -456,12 +468,9 @@ bool i386_trap_self_test(void)
 					 :
 					 : "memory");
 
-	if (g_breakpoint_count != before_count + 1U)
-		return false;
-	if (g_last_breakpoint_eip != after)
-		return false;
-	if (g_last_breakpoint_cs != GDT_KERNEL_CODE_SEL)
-		return false;
+	if (g_breakpoint_count != before_count + 1U) return false;
+	if (g_last_breakpoint_eip != after) return false;
+	if (g_last_breakpoint_cs != GDT_KERNEL_CODE_SEL) return false;
 
 	/*
 	 * A system call through the DPL 3 gate: eax must come back rewritten by
@@ -476,17 +485,15 @@ bool i386_trap_self_test(void)
 
 	__asm__ volatile("int $0x80" : "+a"(eax), "+c"(ecx), "+d"(edx), "+S"(esi), "+D"(edi) : : "memory");
 
-	if (eax != I386_SYSCALL_UNIMPLEMENTED)
-		return false;
-	if (ecx != 0xC0DEC0DEU || edx != 0xD00DD00DU)
-		return false;
-	if (esi != 0x51515151U || edi != 0xD1D1D1D1U)
-		return false;
+	if (eax != I386_SYSCALL_UNIMPLEMENTED) return false;
+	if (ecx != 0xC0DEC0DEU || edx != 0xD00DD00DU) return false;
+	if (esi != 0x51515151U || edi != 0xD1D1D1D1U) return false;
 
 	return true;
 }
 
-void i386_trap_test(const char *name)
+void
+i386_trap_test(const char *name)
 {
 	kprintf("i386_trap_test: raising %s\n", name);
 

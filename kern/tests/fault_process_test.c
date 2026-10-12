@@ -34,15 +34,14 @@ typedef struct {
 } fault_process_case_t;
 
 static const fault_process_case_t g_cases[] = {
-	{ '0', NXU_EXIT_KILLED_SIGNAL(NXU_SIGSEGV), "null pointer read" },
-	{ '1', NXU_EXIT_KILLED_SIGNAL(NXU_SIGSEGV), "write to read-only text" },
-	{ '2', NXU_EXIT_KILLED_SIGNAL(NXU_SIGSEGV), "jump into non-executable data" },
-	{ '3', NXU_EXIT_KILLED_SIGNAL(NXU_SIGILL), "undefined instruction" },
-	{ '4', NXU_EXIT_KILLED_SIGNAL(NXU_SIGTRAP), "breakpoint" },
-	{ '5', NXU_EXIT_KILLED_SIGNAL(NXU_SIGSEGV), "kernel address from EL0" },
-	{ '6', NXU_EXIT_KILLED_SIGNAL(NXU_SIGSEGV), "fault on a secondary thread" },
-	{ '7', FAULT_PROCESS_TEST_CONTROL_STATUS, "control: clean exit" }
-};
+	{'0', NXU_EXIT_KILLED_SIGNAL(NXU_SIGSEGV), "null pointer read"},
+	{'1', NXU_EXIT_KILLED_SIGNAL(NXU_SIGSEGV), "write to read-only text"},
+	{'2', NXU_EXIT_KILLED_SIGNAL(NXU_SIGSEGV), "jump into non-executable data"},
+	{'3', NXU_EXIT_KILLED_SIGNAL(NXU_SIGILL), "undefined instruction"},
+	{'4', NXU_EXIT_KILLED_SIGNAL(NXU_SIGTRAP), "breakpoint"},
+	{'5', NXU_EXIT_KILLED_SIGNAL(NXU_SIGSEGV), "kernel address from EL0"},
+	{'6', NXU_EXIT_KILLED_SIGNAL(NXU_SIGSEGV), "fault on a secondary thread"},
+	{'7', FAULT_PROCESS_TEST_CONTROL_STATUS, "control: clean exit"}};
 
 static bool
 fault_process_test_set_mode(char mode)
@@ -50,12 +49,8 @@ fault_process_test_set_mode(char mode)
 	filedesc_t filedesc = &proc_kernel()->p_fd;
 	uint32_t descriptor;
 
-	vfs_status_t status = vfs_open(
-		filedesc,
-		FAULT_PROCESS_TEST_MODE_PATH,
-		VFS_OPEN_READ | VFS_OPEN_WRITE | VFS_OPEN_CREATE | VFS_OPEN_TRUNCATE,
-		&descriptor
-	);
+	vfs_status_t status = vfs_open(filedesc, FAULT_PROCESS_TEST_MODE_PATH,
+								   VFS_OPEN_READ | VFS_OPEN_WRITE | VFS_OPEN_CREATE | VFS_OPEN_TRUNCATE, &descriptor);
 	if (status != VFS_STATUS_OK) return false;
 
 	uint64_t written;
@@ -87,7 +82,8 @@ fault_process_test(void)
 		}
 
 		proc_t proc = 0;
-		loader_status_t loaded = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/faulttest", "faulttest", &proc);
+		loader_status_t loaded =
+			loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/faulttest", "faulttest", &proc);
 		if (loaded != LOADER_STATUS_OK) {
 			kputs("fault_process_test: spawning faulttest failed: ");
 			kputln(loader_status_name(loaded));
@@ -101,16 +97,13 @@ fault_process_test(void)
 		}
 
 		if (exit_status != test_case->expected_status) {
-			kprintf(
-				"fault_process_test: %s: exit status 0x%llx, expected 0x%llx\n",
-				test_case->description,
-				(unsigned long long)exit_status,
-				(unsigned long long)test_case->expected_status
-			);
+			kprintf("fault_process_test: %s: exit status 0x%llx, expected 0x%llx\n", test_case->description,
+					(unsigned long long)exit_status, (unsigned long long)test_case->expected_status);
 			return false;
 		}
 
-		kprintf("fault_process_test: %s: exit status 0x%llx as expected\n", test_case->description, (unsigned long long)exit_status);
+		kprintf("fault_process_test: %s: exit status 0x%llx as expected\n", test_case->description,
+				(unsigned long long)exit_status);
 	}
 
 	(void)vfs_unlink(FAULT_PROCESS_TEST_MODE_PATH);

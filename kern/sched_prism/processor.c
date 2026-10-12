@@ -17,7 +17,8 @@ static bool g_processor_initialized;
  * Initialise one slot. The state stays OFFLINE until the CPU reports in
  * (boot CPU: immediately).
  */
-static void processor_init_slot(processor_t processor, uint32_t cpu_id, uint64_t mpidr)
+static void
+processor_init_slot(processor_t processor, uint32_t cpu_id, uint64_t mpidr)
 {
 	memset(processor, 0, sizeof(*processor));
 	processor->cpu_id = cpu_id;
@@ -29,7 +30,8 @@ static void processor_init_slot(processor_t processor, uint32_t cpu_id, uint64_t
 /*
  * processor_bootstrap
  */
-bool processor_bootstrap(void)
+bool
+processor_bootstrap(void)
 {
 	if (g_processor_initialized) return true;
 
@@ -48,7 +50,8 @@ bool processor_bootstrap(void)
 /*
  * current_processor
  */
-processor_t current_processor(void)
+processor_t
+current_processor(void)
 {
 	void *local = machine_cpu_local();
 
@@ -59,7 +62,8 @@ processor_t current_processor(void)
 /*
  * processor_register
  */
-processor_t processor_register(uint32_t cpu_id, uint64_t mpidr)
+processor_t
+processor_register(uint32_t cpu_id, uint64_t mpidr)
 {
 	if (!g_processor_initialized || cpu_id == 0U || cpu_id >= NXU_MAX_CPUS) return 0;
 	if (cpu_id < g_processor_count && g_processors[cpu_id].mpidr != 0ULL) return 0;
@@ -73,7 +77,8 @@ processor_t processor_register(uint32_t cpu_id, uint64_t mpidr)
 /*
  * processor_by_id
  */
-processor_t processor_by_id(uint32_t cpu_id)
+processor_t
+processor_by_id(uint32_t cpu_id)
 {
 	if (!g_processor_initialized || cpu_id >= g_processor_count) return 0;
 	return &g_processors[cpu_id];
@@ -82,7 +87,8 @@ processor_t processor_by_id(uint32_t cpu_id)
 /*
  * processor_count
  */
-uint32_t processor_count(void)
+uint32_t
+processor_count(void)
 {
 	return g_processor_count;
 }
@@ -90,7 +96,8 @@ uint32_t processor_count(void)
 /*
  * processor_online_set
  */
-void processor_online_set(nxu_cpuset_t *set)
+void
+processor_online_set(nxu_cpuset_t *set)
 {
 	cpuset_clear(set);
 
@@ -106,14 +113,16 @@ void processor_online_set(nxu_cpuset_t *set)
  * it concerns exist, read by every thread creation: plain reads of a word-sized
  * set are enough.
  */
-static nxu_cpuset_t g_default_affinity = { { 1ULL } };
+static nxu_cpuset_t g_default_affinity = {{1ULL}};
 
-void processor_default_affinity(nxu_cpuset_t *affinity)
+void
+processor_default_affinity(nxu_cpuset_t *affinity)
 {
 	*affinity = g_default_affinity;
 }
 
-void processor_set_default_affinity(const nxu_cpuset_t *affinity)
+void
+processor_set_default_affinity(const nxu_cpuset_t *affinity)
 {
 	if (affinity != 0 && !cpuset_empty(affinity)) g_default_affinity = *affinity;
 }
@@ -129,14 +138,16 @@ void processor_set_default_affinity(const nxu_cpuset_t *affinity)
  */
 _Static_assert(NXU_CPUSET_WORDS == 1U, "the static initialiser below assumes one word");
 
-static nxu_cpuset_t g_default_user_affinity = { { (1ULL << NXU_MAX_CPUS) - 1ULL } };
+static nxu_cpuset_t g_default_user_affinity = {{(1ULL << NXU_MAX_CPUS) - 1ULL}};
 
-void processor_default_user_affinity(nxu_cpuset_t *affinity)
+void
+processor_default_user_affinity(nxu_cpuset_t *affinity)
 {
 	*affinity = g_default_user_affinity;
 }
 
-void processor_set_default_user_affinity(const nxu_cpuset_t *affinity)
+void
+processor_set_default_user_affinity(const nxu_cpuset_t *affinity)
 {
 	if (affinity != 0 && !cpuset_empty(affinity)) g_default_user_affinity = *affinity;
 }
@@ -144,7 +155,8 @@ void processor_set_default_user_affinity(const nxu_cpuset_t *affinity)
 /*
  * processor_is_online
  */
-bool processor_is_online(const struct processor *processor)
+bool
+processor_is_online(const struct processor *processor)
 {
 	if (processor == 0) return false;
 
@@ -156,7 +168,8 @@ bool processor_is_online(const struct processor *processor)
 /*
  * processor_load
  */
-uint32_t processor_load(const struct processor *processor)
+uint32_t
+processor_load(const struct processor *processor)
 {
 	if (processor == 0) return 0U;
 
@@ -169,33 +182,22 @@ uint32_t processor_load(const struct processor *processor)
 /*
  * processor_validate
  */
-bool processor_validate(processor_t processor)
+bool
+processor_validate(processor_t processor)
 {
-	if (
-		processor == 0 ||
-		processor->cpu_id >= NXU_MAX_CPUS ||
-		processor->state == PROCESSOR_OFFLINE ||
-		processor->state == PROCESSOR_SHUTDOWN ||
-		!run_queue_validate(&processor->runq)
-	) {
+	if (processor == 0 || processor->cpu_id >= NXU_MAX_CPUS || processor->state == PROCESSOR_OFFLINE ||
+		processor->state == PROCESSOR_SHUTDOWN || !run_queue_validate(&processor->runq)) {
 		return false;
 	}
 
-	if (
-		processor->idle_thread != 0 &&
-		(!thread_is_active(processor->idle_thread) ||
-		!thread_is_idle(processor->idle_thread) ||
-		!thread_is_started(processor->idle_thread) ||
-		processor->idle_thread->runq != 0)
-	) {
+	if (processor->idle_thread != 0 &&
+		(!thread_is_active(processor->idle_thread) || !thread_is_idle(processor->idle_thread) ||
+		 !thread_is_started(processor->idle_thread) || processor->idle_thread->runq != 0)) {
 		return false;
 	}
 
-	if (
-		processor->active_thread != 0 &&
-		(!thread_is_active(processor->active_thread) ||
-		processor->active_thread->runq != 0)
-	) {
+	if (processor->active_thread != 0 &&
+		(!thread_is_active(processor->active_thread) || processor->active_thread->runq != 0)) {
 		return false;
 	}
 

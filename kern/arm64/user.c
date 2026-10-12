@@ -33,19 +33,18 @@ typedef struct {
 	uint64_t mask;
 } arm64_sigframe_t;
 
-_Static_assert(
-	sizeof(arm64_sigframe_t) % 16U == 0U,
-	"signal frame must keep the user stack 16-byte aligned"
-);
+_Static_assert(sizeof(arm64_sigframe_t) % 16U == 0U, "signal frame must keep the user stack 16-byte aligned");
 
-static arm64_exception_frame_t *machine_user_frame(void)
+static arm64_exception_frame_t *
+machine_user_frame(void)
 {
 	thread_t thread = current_thread();
 
 	return thread == 0 ? 0 : thread->machine.user_frame;
 }
 
-bool machine_user_fork_state(machine_thread_t *child)
+bool
+machine_user_fork_state(machine_thread_t *child)
 {
 	arm64_exception_frame_t *frame = machine_user_frame();
 
@@ -66,7 +65,8 @@ bool machine_user_fork_state(machine_thread_t *child)
 	return true;
 }
 
-bool machine_user_exec_state(uint64_t entry, uint64_t stack, uint64_t argc, uint64_t argv)
+bool
+machine_user_exec_state(uint64_t entry, uint64_t stack, uint64_t argc, uint64_t argv)
 {
 	arm64_exception_frame_t *frame = machine_user_frame();
 	thread_t thread = current_thread();
@@ -91,7 +91,8 @@ bool machine_user_exec_state(uint64_t entry, uint64_t stack, uint64_t argc, uint
 	return true;
 }
 
-bool machine_user_signal_push(uint64_t handler, uint64_t restorer, uint32_t signal, uint32_t saved_mask)
+bool
+machine_user_signal_push(uint64_t handler, uint64_t restorer, uint32_t signal, uint32_t saved_mask)
 {
 	arm64_exception_frame_t *frame = machine_user_frame();
 
@@ -127,7 +128,8 @@ bool machine_user_signal_push(uint64_t handler, uint64_t restorer, uint32_t sign
 	return true;
 }
 
-bool machine_user_signal_pop(uint32_t *saved_mask)
+bool
+machine_user_signal_pop(uint32_t *saved_mask)
 {
 	arm64_exception_frame_t *frame = machine_user_frame();
 

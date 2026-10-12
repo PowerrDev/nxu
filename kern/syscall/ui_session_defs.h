@@ -29,14 +29,14 @@
 #define NXU_UI_LABEL_MAX 48U
 
 /* nxu_ui_connect_t.kind */
-#define NXU_UI_KIND_APP 1U  /* a titled window with chrome, in the menu bar */
+#define NXU_UI_KIND_APP 1U	/* a titled window with chrome, in the menu bar */
 #define NXU_UI_KIND_DOCK 2U /* the Dock: borderless, along the bottom, always in front */
 
 /* nxu_ui_menu_item_t.command for a divider line. */
 #define NXU_UI_MENU_SEPARATOR 0xFFFFFFFFU
 
 typedef struct {
-	uint32_t menu;    /* index into nxu_ui_connect_t.menu_titles */
+	uint32_t menu;	  /* index into nxu_ui_connect_t.menu_titles */
 	uint32_t command; /* passed back in NXU_UI_MSG_MENU_COMMAND, or NXU_UI_MENU_SEPARATOR */
 	char title[NXU_UI_MENU_ITEM_TITLE_MAX];
 } nxu_ui_menu_item_t;
@@ -69,13 +69,13 @@ typedef struct {
 } nxu_ui_connect_t;
 
 /* nxu_ui_message_t.type */
-#define NXU_UI_MSG_EVENT 1U        /* event, x, y, button, delta, character */
-#define NXU_UI_MSG_REDRAW 2U       /* draw everything: first show, or the content was resized */
+#define NXU_UI_MSG_EVENT 1U		   /* event, x, y, button, delta, character */
+#define NXU_UI_MSG_REDRAW 2U	   /* draw everything: first show, or the content was resized */
 #define NXU_UI_MSG_MENU_COMMAND 3U /* command */
-#define NXU_UI_MSG_QUIT 4U         /* the user quit the app: exit */
-#define NXU_UI_MSG_FRAME 5U        /* the next animation frame (the app submitted NXU_UI_SUBMIT_ANIMATING) */
-#define NXU_UI_MSG_LAUNCH 6U       /* Dock only: open the bundle at path */
-#define NXU_UI_MSG_ACTIVE 7U       /* flags: the app became (NXU_UI_FLAG_ACTIVE) or stopped being frontmost */
+#define NXU_UI_MSG_QUIT 4U		   /* the user quit the app: exit */
+#define NXU_UI_MSG_FRAME 5U		   /* the next animation frame (the app submitted NXU_UI_SUBMIT_ANIMATING) */
+#define NXU_UI_MSG_LAUNCH 6U	   /* Dock only: open the bundle at path */
+#define NXU_UI_MSG_ACTIVE 7U	   /* flags: the app became (NXU_UI_FLAG_ACTIVE) or stopped being frontmost */
 
 /* nxu_ui_message_t.event, for NXU_UI_MSG_EVENT */
 #define NXU_UI_EVENT_POINTER_MOVED 1U
@@ -103,7 +103,7 @@ typedef struct {
 	int32_t x;
 	int32_t y;
 	int32_t delta;
-	uint32_t button;    /* pointer button, or the evdev key code for KEY_DOWN */
+	uint32_t button;	/* pointer button, or the evdev key code for KEY_DOWN */
 	uint32_t character; /* the Unicode scalar a key types, 0 for none */
 	uint32_t command;
 	uint32_t width;
@@ -130,7 +130,7 @@ typedef struct {
 #define NXU_UI_CURSOR_NOT_ALLOWED 2U
 
 /* nxu_ui_submit_t.flags */
-#define NXU_UI_SUBMIT_ANIMATING (1U << 0U)  /* send NXU_UI_MSG_FRAME on the next frame */
+#define NXU_UI_SUBMIT_ANIMATING (1U << 0U)	/* send NXU_UI_MSG_FRAME on the next frame */
 #define NXU_UI_SUBMIT_MENU_STATE (1U << 1U) /* menu_state is current */
 
 /* menu_state bits, per nxu_ui_connect_t.items index */

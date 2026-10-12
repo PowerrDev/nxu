@@ -6,7 +6,8 @@
 /*
  * run_queue_priority_valid
  */
-static bool run_queue_priority_valid(uint16_t priority)
+static bool
+run_queue_priority_valid(uint16_t priority)
 {
 	return priority < RUN_QUEUE_COUNT;
 }
@@ -14,7 +15,8 @@ static bool run_queue_priority_valid(uint16_t priority)
 /*
  * run_queue_priority_mask
  */
-static uint64_t run_queue_priority_mask(uint16_t priority)
+static uint64_t
+run_queue_priority_mask(uint16_t priority)
 {
 	return 1ULL << priority;
 }
@@ -25,7 +27,8 @@ static uint64_t run_queue_priority_mask(uint16_t priority)
  * Recompute the highest non-empty priority from the bitmap. RUN_QUEUE_COUNT
  * is 64, so the bitmap is one machine word on AArch64.
  */
-static uint16_t run_queue_find_highq(uint64_t bitmap)
+static uint16_t
+run_queue_find_highq(uint64_t bitmap)
 {
 	if (bitmap == 0ULL) return RUN_QUEUE_NONE;
 
@@ -35,7 +38,8 @@ static uint16_t run_queue_find_highq(uint64_t bitmap)
 /*
  * run_queue_init
  */
-void run_queue_init(run_queue_t *runq)
+void
+run_queue_init(run_queue_t *runq)
 {
 	if (runq == 0) return;
 
@@ -46,21 +50,11 @@ void run_queue_init(run_queue_t *runq)
 /*
  * run_queue_enqueue
  */
-bool run_queue_enqueue(
-	run_queue_t *runq,
-	thread_t thread,
-	run_queue_placement_t placement
-)
+bool
+run_queue_enqueue(run_queue_t *runq, thread_t thread, run_queue_placement_t placement)
 {
-	if (
-		runq == 0 ||
-		thread == 0 ||
-		!thread_is_runnable(thread) ||
-		thread_is_idle(thread) ||
-		thread->runq != 0 ||
-		!run_queue_priority_valid(thread->sched_pri) ||
-		(placement != RUN_QUEUE_HEAD && placement != RUN_QUEUE_TAIL)
-	) {
+	if (runq == 0 || thread == 0 || !thread_is_runnable(thread) || thread_is_idle(thread) || thread->runq != 0 ||
+		!run_queue_priority_valid(thread->sched_pri) || (placement != RUN_QUEUE_HEAD && placement != RUN_QUEUE_TAIL)) {
 		return false;
 	}
 
@@ -95,14 +89,10 @@ bool run_queue_enqueue(
 /*
  * run_queue_remove
  */
-bool run_queue_remove(run_queue_t *runq, thread_t thread)
+bool
+run_queue_remove(run_queue_t *runq, thread_t thread)
 {
-	if (
-		runq == 0 ||
-		thread == 0 ||
-		thread->runq != runq ||
-		!run_queue_priority_valid(thread->sched_pri)
-	) {
+	if (runq == 0 || thread == 0 || thread->runq != runq || !run_queue_priority_valid(thread->sched_pri)) {
 		return false;
 	}
 
@@ -149,14 +139,10 @@ bool run_queue_remove(run_queue_t *runq, thread_t thread)
 /*
  * run_queue_dequeue
  */
-thread_t run_queue_dequeue(run_queue_t *runq)
+thread_t
+run_queue_dequeue(run_queue_t *runq)
 {
-	if (
-		runq == 0 ||
-		runq->count == 0U ||
-		runq->highq == RUN_QUEUE_NONE ||
-		runq->highq >= RUN_QUEUE_COUNT
-	) {
+	if (runq == 0 || runq->count == 0U || runq->highq == RUN_QUEUE_NONE || runq->highq >= RUN_QUEUE_COUNT) {
 		return 0;
 	}
 
@@ -169,14 +155,10 @@ thread_t run_queue_dequeue(run_queue_t *runq)
 /*
  * run_queue_peek
  */
-thread_t run_queue_peek(const run_queue_t *runq)
+thread_t
+run_queue_peek(const run_queue_t *runq)
 {
-	if (
-		runq == 0 ||
-		runq->count == 0U ||
-		runq->highq == RUN_QUEUE_NONE ||
-		runq->highq >= RUN_QUEUE_COUNT
-	) {
+	if (runq == 0 || runq->count == 0U || runq->highq == RUN_QUEUE_NONE || runq->highq >= RUN_QUEUE_COUNT) {
 		return 0;
 	}
 
@@ -186,7 +168,8 @@ thread_t run_queue_peek(const run_queue_t *runq)
 /*
  * run_queue_dequeue_priority
  */
-thread_t run_queue_dequeue_priority(run_queue_t *runq, uint16_t priority)
+thread_t
+run_queue_dequeue_priority(run_queue_t *runq, uint16_t priority)
 {
 	if (runq == 0 || !run_queue_priority_valid(priority)) return 0;
 
@@ -199,7 +182,8 @@ thread_t run_queue_dequeue_priority(run_queue_t *runq, uint16_t priority)
 /*
  * run_queue_validate
  */
-bool run_queue_validate(const run_queue_t *runq)
+bool
+run_queue_validate(const run_queue_t *runq)
 {
 	if (runq == 0) return false;
 
@@ -214,18 +198,9 @@ bool run_queue_validate(const run_queue_t *runq)
 		thread_t previous = 0;
 		uint32_t bucket_count = 0U;
 
-		for (
-			thread_t thread = bucket->head;
-			thread != 0;
-			thread = thread->sched_links.runq.next
-		) {
-			if (
-				thread->runq != runq ||
-				thread->sched_pri != priority ||
-				thread->sched_links.runq.prev != previous ||
-				!thread_is_runnable(thread) ||
-				thread_is_idle(thread)
-			) {
+		for (thread_t thread = bucket->head; thread != 0; thread = thread->sched_links.runq.next) {
+			if (thread->runq != runq || thread->sched_pri != priority || thread->sched_links.runq.prev != previous ||
+				!thread_is_runnable(thread) || thread_is_idle(thread)) {
 				return false;
 			}
 
@@ -237,7 +212,6 @@ bool run_queue_validate(const run_queue_t *runq)
 		}
 
 		if (previous != bucket->tail) return false;
-
 
 		if (bucket_count != 0U) bitmap |= run_queue_priority_mask(priority);
 	}

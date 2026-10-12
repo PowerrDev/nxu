@@ -56,7 +56,8 @@ static nxu_spinlock_t g_sl_lock = NXU_SPINLOCK_INIT;
 
 /* --- Rectangles ----------------------------------------------------------- */
 
-sl_rect_t sl_rect_intersection(sl_rect_t a, sl_rect_t b)
+sl_rect_t
+sl_rect_intersection(sl_rect_t a, sl_rect_t b)
 {
 	int64_t left = a.x > b.x ? a.x : b.x;
 	int64_t top = a.y > b.y ? a.y : b.y;
@@ -67,11 +68,12 @@ sl_rect_t sl_rect_intersection(sl_rect_t a, sl_rect_t b)
 	int64_t right = right_a < right_b ? right_a : right_b;
 	int64_t bottom = bottom_a < bottom_b ? bottom_a : bottom_b;
 
-	if (right <= left || bottom <= top) return (sl_rect_t) { 0 };
-	return (sl_rect_t) { (int32_t)left, (int32_t)top, (uint32_t)(right - left), (uint32_t)(bottom - top) };
+	if (right <= left || bottom <= top) return (sl_rect_t){0};
+	return (sl_rect_t){(int32_t)left, (int32_t)top, (uint32_t)(right - left), (uint32_t)(bottom - top)};
 }
 
-sl_rect_t sl_rect_union(sl_rect_t a, sl_rect_t b)
+sl_rect_t
+sl_rect_union(sl_rect_t a, sl_rect_t b)
 {
 	if (sl_rect_empty(a)) return b;
 	if (sl_rect_empty(b)) return a;
@@ -85,17 +87,19 @@ sl_rect_t sl_rect_union(sl_rect_t a, sl_rect_t b)
 	int64_t right = right_a > right_b ? right_a : right_b;
 	int64_t bottom = bottom_a > bottom_b ? bottom_a : bottom_b;
 
-	return (sl_rect_t) { (int32_t)left, (int32_t)top, (uint32_t)(right - left), (uint32_t)(bottom - top) };
+	return (sl_rect_t){(int32_t)left, (int32_t)top, (uint32_t)(right - left), (uint32_t)(bottom - top)};
 }
 
-static sl_rect_t sl_surface_bounds(const sl_surface_t *surface)
+static sl_rect_t
+sl_surface_bounds(const sl_surface_t *surface)
 {
-	return (sl_rect_t) { 0, 0, surface->width, surface->height };
+	return (sl_rect_t){0, 0, surface->width, surface->height};
 }
 
 /* --- Backends -------------------------------------------------------------- */
 
-bool sl_device_register(const char *name, const sl_backend_ops_t *ops, void *context, sl_device_t **device_out)
+bool
+sl_device_register(const char *name, const sl_backend_ops_t *ops, void *context, sl_device_t **device_out)
 {
 	if (name == 0 || ops == 0 || ops->present == 0 || device_out == 0) return false;
 
@@ -105,7 +109,7 @@ bool sl_device_register(const char *name, const sl_backend_ops_t *ops, void *con
 	for (uint32_t index = 0U; index < SL_DEVICE_MAX; index++) {
 		if (g_sl_devices[index].used) continue;
 		device = &g_sl_devices[index];
-		*device = (sl_device_t) { .ops = ops, .context = context, .used = true };
+		*device = (sl_device_t){.ops = ops, .context = context, .used = true};
 		size_t length = strlen(name);
 		if (length >= SL_NAME_MAX) length = SL_NAME_MAX - 1U;
 		memcpy(device->name, name, length);
@@ -119,15 +123,9 @@ bool sl_device_register(const char *name, const sl_backend_ops_t *ops, void *con
 	return true;
 }
 
-bool sl_display_register(
-	sl_device_t *device,
-	uint32_t index,
-	uint32_t *pixels,
-	uint32_t width,
-	uint32_t height,
-	uint32_t stride,
-	sl_display_t **display_out
-)
+bool
+sl_display_register(sl_device_t *device, uint32_t index, uint32_t *pixels, uint32_t width, uint32_t height,
+					uint32_t stride, sl_display_t **display_out)
 {
 	if (device == 0 || pixels == 0 || width == 0U || height == 0U || stride < width || display_out == 0) return false;
 
@@ -137,20 +135,16 @@ bool sl_display_register(
 	for (uint32_t slot = 0U; slot < SL_DISPLAY_MAX; slot++) {
 		if (g_sl_displays[slot].used) continue;
 		display = &g_sl_displays[slot];
-		*display = (sl_display_t) {
-			.device = device,
-			.index = index,
-			.surface = {
-				.pixels = pixels,
-				.width = width,
-				.height = height,
-				.stride = stride,
-				.format = SL_FORMAT_XRGB8888,
-				.owned = false,
-				.lock = NXU_SPINLOCK_INIT
-			},
-			.used = true
-		};
+		*display = (sl_display_t){.device = device,
+								  .index = index,
+								  .surface = {.pixels = pixels,
+											  .width = width,
+											  .height = height,
+											  .stride = stride,
+											  .format = SL_FORMAT_XRGB8888,
+											  .owned = false,
+											  .lock = NXU_SPINLOCK_INIT},
+								  .used = true};
 		break;
 	}
 	nxu_spin_unlock(&g_sl_lock);
@@ -163,7 +157,8 @@ bool sl_display_register(
 
 /* --- Displays --------------------------------------------------------------- */
 
-sl_display_t *sl_display_primary(void)
+sl_display_t *
+sl_display_primary(void)
 {
 	for (uint32_t slot = 0U; slot < SL_DISPLAY_MAX; slot++) {
 		if (g_sl_displays[slot].used) return &g_sl_displays[slot];
@@ -171,22 +166,26 @@ sl_display_t *sl_display_primary(void)
 	return 0;
 }
 
-uint32_t sl_display_width(const sl_display_t *display)
+uint32_t
+sl_display_width(const sl_display_t *display)
 {
 	return display != 0 ? display->surface.width : 0U;
 }
 
-uint32_t sl_display_height(const sl_display_t *display)
+uint32_t
+sl_display_height(const sl_display_t *display)
 {
 	return display != 0 ? display->surface.height : 0U;
 }
 
-sl_surface_t *sl_display_surface(sl_display_t *display)
+sl_surface_t *
+sl_display_surface(sl_display_t *display)
 {
 	return display != 0 ? &display->surface : 0;
 }
 
-bool sl_present(sl_display_t *display, sl_rect_t rect)
+bool
+sl_present(sl_display_t *display, sl_rect_t rect)
 {
 	if (display == 0) return false;
 
@@ -206,7 +205,8 @@ bool sl_present(sl_display_t *display, sl_rect_t rect)
 
 /* --- Surfaces ----------------------------------------------------------------- */
 
-bool sl_surface_create(uint32_t width, uint32_t height, sl_format_t format, sl_surface_t **surface_out)
+bool
+sl_surface_create(uint32_t width, uint32_t height, sl_format_t format, sl_surface_t **surface_out)
 {
 	if (width == 0U || height == 0U || width > 16384U || height > 16384U || surface_out == 0) return false;
 	if (format != SL_FORMAT_XRGB8888 && format != SL_FORMAT_ARGB8888) return false;
@@ -220,44 +220,48 @@ bool sl_surface_create(uint32_t width, uint32_t height, sl_format_t format, sl_s
 		return false;
 	}
 
-	*surface = (sl_surface_t) {
-		.pixels = pixels,
-		.width = width,
-		.height = height,
-		.stride = width,
-		.format = format,
-		.owned = true,
-		.lock = NXU_SPINLOCK_INIT
-	};
+	*surface = (sl_surface_t){.pixels = pixels,
+							  .width = width,
+							  .height = height,
+							  .stride = width,
+							  .format = format,
+							  .owned = true,
+							  .lock = NXU_SPINLOCK_INIT};
 	*surface_out = surface;
 	return true;
 }
 
-void sl_surface_destroy(sl_surface_t *surface)
+void
+sl_surface_destroy(sl_surface_t *surface)
 {
 	if (surface == 0 || !surface->owned) return;
 
-	while (__atomic_load_n(&surface->busy, __ATOMIC_ACQUIRE) != 0U) (void)sched_yield();
+	while (__atomic_load_n(&surface->busy, __ATOMIC_ACQUIRE) != 0U)
+		(void)sched_yield();
 	(void)kfree(surface->pixels);
 	(void)kfree(surface);
 }
 
-uint32_t sl_surface_width(const sl_surface_t *surface)
+uint32_t
+sl_surface_width(const sl_surface_t *surface)
 {
 	return surface != 0 ? surface->width : 0U;
 }
 
-uint32_t sl_surface_height(const sl_surface_t *surface)
+uint32_t
+sl_surface_height(const sl_surface_t *surface)
 {
 	return surface != 0 ? surface->height : 0U;
 }
 
-sl_format_t sl_surface_format(const sl_surface_t *surface)
+sl_format_t
+sl_surface_format(const sl_surface_t *surface)
 {
 	return surface != 0 ? surface->format : SL_FORMAT_XRGB8888;
 }
 
-uint32_t *sl_surface_map(sl_surface_t *surface, uint32_t *stride_out)
+uint32_t *
+sl_surface_map(sl_surface_t *surface, uint32_t *stride_out)
 {
 	if (surface == 0) return 0;
 
@@ -270,12 +274,14 @@ uint32_t *sl_surface_map(sl_surface_t *surface, uint32_t *stride_out)
 	return surface->pixels;
 }
 
-void sl_surface_unmap(sl_surface_t *surface)
+void
+sl_surface_unmap(sl_surface_t *surface)
 {
 	(void)surface;
 }
 
-void sl_damage(sl_surface_t *surface, sl_rect_t rect)
+void
+sl_damage(sl_surface_t *surface, sl_rect_t rect)
 {
 	if (surface == 0) return;
 
@@ -287,13 +293,14 @@ void sl_damage(sl_surface_t *surface, sl_rect_t rect)
 	nxu_spin_unlock(&surface->lock);
 }
 
-sl_rect_t sl_take_damage(sl_surface_t *surface)
+sl_rect_t
+sl_take_damage(sl_surface_t *surface)
 {
-	if (surface == 0) return (sl_rect_t) { 0 };
+	if (surface == 0) return (sl_rect_t){0};
 
 	nxu_spin_lock(&surface->lock);
 	sl_rect_t damage = surface->damage;
-	surface->damage = (sl_rect_t) { 0 };
+	surface->damage = (sl_rect_t){0};
 	nxu_spin_unlock(&surface->lock);
 	return damage;
 }
@@ -301,7 +308,8 @@ sl_rect_t sl_take_damage(sl_surface_t *surface)
 /* --- Drawing ----------------------------------------------------------------- */
 
 /* `over` (ARGB, straight alpha) over the opaque `under`. */
-static uint32_t sl_blend_pixel(uint32_t under, uint32_t over)
+static uint32_t
+sl_blend_pixel(uint32_t under, uint32_t over)
 {
 	uint32_t alpha = over >> 24;
 
@@ -316,7 +324,8 @@ static uint32_t sl_blend_pixel(uint32_t under, uint32_t over)
 	return 0xFF000000U | (red << 16) | (green << 8) | blue;
 }
 
-void sl_fill_rect(sl_surface_t *surface, sl_rect_t rect, uint32_t color, sl_blend_t blend)
+void
+sl_fill_rect(sl_surface_t *surface, sl_rect_t rect, uint32_t color, sl_blend_t blend)
 {
 	if (surface == 0) return;
 
@@ -338,7 +347,8 @@ void sl_fill_rect(sl_surface_t *surface, sl_rect_t rect, uint32_t color, sl_blen
 	sl_damage(surface, area);
 }
 
-void sl_copy(sl_surface_t *destination, int32_t x, int32_t y, sl_surface_t *source, sl_rect_t source_rect, sl_blend_t blend)
+void
+sl_copy(sl_surface_t *destination, int32_t x, int32_t y, sl_surface_t *source, sl_rect_t source_rect, sl_blend_t blend)
 {
 	if (destination == 0 || source == 0) return;
 
@@ -346,7 +356,7 @@ void sl_copy(sl_surface_t *destination, int32_t x, int32_t y, sl_surface_t *sour
 	if (sl_rect_empty(from)) return;
 
 	/* Where `from` lands, clipped to the destination, and back. */
-	sl_rect_t landed = { x + (from.x - source_rect.x), y + (from.y - source_rect.y), from.width, from.height };
+	sl_rect_t landed = {x + (from.x - source_rect.x), y + (from.y - source_rect.y), from.width, from.height};
 	sl_rect_t to = sl_rect_intersection(landed, sl_surface_bounds(destination));
 	if (sl_rect_empty(to)) return;
 
@@ -364,7 +374,8 @@ void sl_copy(sl_surface_t *destination, int32_t x, int32_t y, sl_surface_t *sour
 			memmove(out, in, (size_t)to.width * sizeof(uint32_t));
 			continue;
 		}
-		for (uint32_t column = 0U; column < to.width; column++) out[column] = sl_blend_pixel(out[column], in[column]);
+		for (uint32_t column = 0U; column < to.width; column++)
+			out[column] = sl_blend_pixel(out[column], in[column]);
 	}
 
 	sl_surface_unmap(destination);
@@ -372,11 +383,13 @@ void sl_copy(sl_surface_t *destination, int32_t x, int32_t y, sl_surface_t *sour
 	sl_damage(destination, to);
 }
 
-void sl_upload(sl_surface_t *destination, int32_t x, int32_t y, const uint32_t *pixels, uint32_t width, uint32_t height, uint32_t stride)
+void
+sl_upload(sl_surface_t *destination, int32_t x, int32_t y, const uint32_t *pixels, uint32_t width, uint32_t height,
+		  uint32_t stride)
 {
 	if (destination == 0 || pixels == 0 || stride < width) return;
 
-	sl_rect_t landed = { x, y, width, height };
+	sl_rect_t landed = {x, y, width, height};
 	sl_rect_t to = sl_rect_intersection(landed, sl_surface_bounds(destination));
 	if (sl_rect_empty(to)) return;
 
@@ -384,19 +397,21 @@ void sl_upload(sl_surface_t *destination, int32_t x, int32_t y, const uint32_t *
 
 	for (uint32_t row = 0U; row < to.height; row++) {
 		const uint32_t *in = pixels + (size_t)(to.y - y + (int32_t)row) * stride + (to.x - x);
-		memcpy(destination_pixels + (size_t)(to.y + (int32_t)row) * destination->stride + to.x, in, (size_t)to.width * sizeof(uint32_t));
+		memcpy(destination_pixels + (size_t)(to.y + (int32_t)row) * destination->stride + to.x, in,
+			   (size_t)to.width * sizeof(uint32_t));
 	}
 
 	sl_surface_unmap(destination);
 	sl_damage(destination, to);
 }
 
-void sl_dump(void)
+void
+sl_dump(void)
 {
 	for (uint32_t slot = 0U; slot < SL_DISPLAY_MAX; slot++) {
 		const sl_display_t *display = &g_sl_displays[slot];
 		if (!display->used) continue;
 		kprintf("sl_dump: %s scanout %u %ux%u, %llu present(s)\n", display->device->name, display->index,
-			display->surface.width, display->surface.height, (unsigned long long)display->presents);
+				display->surface.width, display->surface.height, (unsigned long long)display->presents);
 	}
 }

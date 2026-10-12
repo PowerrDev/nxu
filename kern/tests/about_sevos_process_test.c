@@ -58,7 +58,8 @@ about_sevos_process_test(void)
 	proc_t proc_windowserver = 0;
 	proc_t proc_about = 0;
 
-	loader_status_t status_bootd = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/bootd", "bootd", &proc_bootd);
+	loader_status_t status_bootd =
+		loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/bootd", "bootd", &proc_bootd);
 	if (status_bootd != LOADER_STATUS_OK) {
 		kputs("about_sevos_process_test: spawning bootd failed: ");
 		kputln(loader_status_name(status_bootd));
@@ -70,7 +71,9 @@ about_sevos_process_test(void)
 		return false;
 	}
 
-	loader_status_t status_windowserver = loader_spawn_caps(proc_kernel(), "/disk/System/Library/CoreServices/windowserver_service", "windowserver_service", NXU_CAP_DISPLAY, &proc_windowserver);
+	loader_status_t status_windowserver =
+		loader_spawn_caps(proc_kernel(), "/disk/System/Library/CoreServices/windowserver_service",
+						  "windowserver_service", NXU_CAP_DISPLAY, &proc_windowserver);
 	if (status_windowserver != LOADER_STATUS_OK) {
 		kputs("about_sevos_process_test: spawning windowserver_service failed: ");
 		kputln(loader_status_name(status_windowserver));
@@ -84,7 +87,8 @@ about_sevos_process_test(void)
 		}
 	}
 
-	loader_status_t status_about = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/about_sevos_service", "about_sevos_service", &proc_about);
+	loader_status_t status_about = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/about_sevos_service",
+												"about_sevos_service", &proc_about);
 	if (status_about != LOADER_STATUS_OK) {
 		kputs("about_sevos_process_test: spawning about_sevos_service failed: ");
 		kputln(loader_status_name(status_about));
@@ -98,7 +102,8 @@ about_sevos_process_test(void)
 	}
 
 	if (exit_about != 0ULL) {
-		kprintf("about_sevos_process_test: about_sevos_service exited with nonzero status %llu\n", (unsigned long long)exit_about);
+		kprintf("about_sevos_process_test: about_sevos_service exited with nonzero status %llu\n",
+				(unsigned long long)exit_about);
 		return false;
 	}
 
@@ -115,6 +120,7 @@ about_sevos_process_test(void)
 		if (!sched_yield()) break;
 	}
 
-	kputln("about_sevos_process_test: About sevOS served as a real process over NXPC (spawn, discover by name, shared-memory render, present)");
+	kputln("about_sevos_process_test: About sevOS served as a real process over NXPC (spawn, discover by name, "
+		   "shared-memory render, present)");
 	return true;
 }

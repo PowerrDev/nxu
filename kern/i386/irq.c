@@ -40,7 +40,8 @@ __attribute__((weak)) void smp_tick_others(void);
 
 static volatile uint32_t g_irq_unhandled_count;
 
-uint32_t i386_irq_unhandled_count(void)
+uint32_t
+i386_irq_unhandled_count(void)
 {
 	return g_irq_unhandled_count;
 }
@@ -49,7 +50,8 @@ uint32_t i386_irq_unhandled_count(void)
  * IRQ0 handler: what arm64's irq_handle() does for the physical timer,
  * count the tick and then charge the scheduler.
  */
-static void i386_timer_irq(uint32_t intid, void *context)
+static void
+i386_timer_irq(uint32_t intid, void *context)
 {
 	(void)intid;
 	(void)context;
@@ -62,7 +64,8 @@ static void i386_timer_irq(uint32_t intid, void *context)
 	if (smp_tick_others != 0) smp_tick_others();
 }
 
-bool i386_trap_irq(x86_saved_state_t *state)
+bool
+i386_trap_irq(x86_saved_state_t *state)
 {
 	if (state->trapno < T_IRQ_BASE || state->trapno >= T_IRQ_BASE + T_IRQ_COUNT) return false;
 
@@ -90,7 +93,8 @@ bool i386_trap_irq(x86_saved_state_t *state)
 	return handled;
 }
 
-bool i386_init_interrupts(const i386_boot_info_t *boot)
+bool
+i386_init_interrupts(const i386_boot_info_t *boot)
 {
 	(void)boot;
 
@@ -108,20 +112,14 @@ bool i386_init_interrupts(const i386_boot_info_t *boot)
 		return false;
 	}
 
-	kprintf(
-		"i386_init_interrupts: pic remapped to vectors %u-%u, all lines masked\n",
-		T_IRQ_BASE,
-		T_IRQ_BASE + T_IRQ_COUNT - 1U
-	);
+	kprintf("i386_init_interrupts: pic remapped to vectors %u-%u, all lines masked\n", T_IRQ_BASE,
+			T_IRQ_BASE + T_IRQ_COUNT - 1U);
 
 	/* Also opens IRQ0 at the PIC. Nothing is delivered until IF is set. */
 	timer_start_periodic(I386_TIMER_HZ);
 
-	kprintf(
-		"i386_init_interrupts: pit channel 0 armed at %u Hz on IRQ %u, interrupts disabled\n",
-		timer_get_interrupt_rate(),
-		I386_TIMER_IRQ
-	);
+	kprintf("i386_init_interrupts: pit channel 0 armed at %u Hz on IRQ %u, interrupts disabled\n",
+			timer_get_interrupt_rate(), I386_TIMER_IRQ);
 
 	return true;
 }

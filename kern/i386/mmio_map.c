@@ -15,7 +15,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-void *i386_mmio_map(uint64_t physical, uint64_t size)
+void *
+i386_mmio_map(uint64_t physical, uint64_t size)
 {
 	void *virtual_address = 0;
 

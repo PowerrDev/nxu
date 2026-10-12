@@ -98,17 +98,20 @@ static uint32_t g_cpu_online = 1U;
 /* Logical id -> MPIDR affinity. Entry 0 is the boot CPU. */
 static uint64_t g_cpu_mpidr[NXU_MAX_CPUS];
 
-uint32_t smp_cpu_count(void)
+uint32_t
+smp_cpu_count(void)
 {
 	return g_cpu_total;
 }
 
-uint32_t smp_online_count(void)
+uint32_t
+smp_online_count(void)
 {
 	return __atomic_load_n(&g_cpu_online, __ATOMIC_ACQUIRE);
 }
 
-uint64_t smp_cpu_mpidr(uint32_t cpu)
+uint64_t
+smp_cpu_mpidr(uint32_t cpu)
 {
 	return cpu < g_cpu_total ? g_cpu_mpidr[cpu] : 0ULL;
 }
@@ -119,7 +122,8 @@ uint64_t smp_cpu_mpidr(uint32_t cpu)
  * One PSCI call. The SMC calling convention lets the callee use x0-x3 for
  * results and clobber x4-x17, so all of them are declared as such.
  */
-static int64_t smp_psci_call(platform_psci_method_t method, uint64_t function, uint64_t arg0, uint64_t arg1, uint64_t arg2)
+static int64_t
+smp_psci_call(platform_psci_method_t method, uint64_t function, uint64_t arg0, uint64_t arg1, uint64_t arg2)
 {
 	register uint64_t x0 __asm__("x0") = function;
 	register uint64_t x1 __asm__("x1") = arg0;
@@ -127,35 +131,42 @@ static int64_t smp_psci_call(platform_psci_method_t method, uint64_t function, u
 	register uint64_t x3 __asm__("x3") = arg2;
 
 	if (method == PLATFORM_PSCI_HVC) {
-		__asm__ volatile(
-			"hvc #0"
-			: "+r"(x0), "+r"(x1), "+r"(x2), "+r"(x3)
-			:
-			: "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15", "x16", "x17", "memory"
-		);
+		__asm__ volatile("hvc #0"
+						 : "+r"(x0), "+r"(x1), "+r"(x2), "+r"(x3)
+						 :
+						 : "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15", "x16", "x17",
+						   "memory");
 	} else {
-		__asm__ volatile(
-			"smc #0"
-			: "+r"(x0), "+r"(x1), "+r"(x2), "+r"(x3)
-			:
-			: "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15", "x16", "x17", "memory"
-		);
+		__asm__ volatile("smc #0"
+						 : "+r"(x0), "+r"(x1), "+r"(x2), "+r"(x3)
+						 :
+						 : "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15", "x16", "x17",
+						   "memory");
 	}
 
 	return (int64_t)x0;
 }
 
-static const char *smp_psci_status_name(int64_t status)
+static const char *
+smp_psci_status_name(int64_t status)
 {
 	switch (status) {
-	case PSCI_SUCCESS: return "success";
-	case PSCI_NOT_SUPPORTED: return "not supported";
-	case PSCI_INVALID_PARAMETERS: return "invalid parameters";
-	case PSCI_DENIED: return "denied";
-	case PSCI_ALREADY_ON: return "already on";
-	case PSCI_ON_PENDING: return "on pending";
-	case PSCI_INTERNAL_FAILURE: return "internal failure";
-	default: return "unknown status";
+	case PSCI_SUCCESS:
+		return "success";
+	case PSCI_NOT_SUPPORTED:
+		return "not supported";
+	case PSCI_INVALID_PARAMETERS:
+		return "invalid parameters";
+	case PSCI_DENIED:
+		return "denied";
+	case PSCI_ALREADY_ON:
+		return "already on";
+	case PSCI_ON_PENDING:
+		return "on pending";
+	case PSCI_INTERNAL_FAILURE:
+		return "internal failure";
+	default:
+		return "unknown status";
 	}
 }
 
@@ -166,7 +177,8 @@ static const char *smp_psci_status_name(int64_t status)
  * The new CPU reads its parameter block with its MMU and caches off, i.e.
  * straight from memory, so the boot CPU's cached copy must reach memory first.
  */
-static void smp_clean_to_poc(const void *address, size_t size)
+static void
+smp_clean_to_poc(const void *address, size_t size)
 {
 	uint64_t line = cache_data_line_size();
 
@@ -182,7 +194,8 @@ static void smp_clean_to_poc(const void *address, size_t size)
 	__asm__ volatile("dsb sy" : : : "memory");
 }
 
-static uint64_t smp_read_mair(void)
+static uint64_t
+smp_read_mair(void)
 {
 	uint64_t value;
 
@@ -190,7 +203,8 @@ static uint64_t smp_read_mair(void)
 	return value;
 }
 
-static uint64_t smp_read_tcr(void)
+static uint64_t
+smp_read_tcr(void)
 {
 	uint64_t value;
 
@@ -198,7 +212,8 @@ static uint64_t smp_read_tcr(void)
 	return value;
 }
 
-static uint64_t smp_read_ttbr1(void)
+static uint64_t
+smp_read_ttbr1(void)
 {
 	uint64_t value;
 
@@ -206,7 +221,8 @@ static uint64_t smp_read_ttbr1(void)
 	return value;
 }
 
-static uint64_t smp_read_sctlr(void)
+static uint64_t
+smp_read_sctlr(void)
 {
 	uint64_t value;
 
@@ -214,7 +230,8 @@ static uint64_t smp_read_sctlr(void)
 	return value;
 }
 
-static uint64_t smp_read_vbar(void)
+static uint64_t
+smp_read_vbar(void)
 {
 	uint64_t value;
 
@@ -231,21 +248,20 @@ static uint64_t smp_read_vbar(void)
  * The TLB invalidate is local (non-shareable): the entries being dropped are
  * this CPU's own, made while it ran the trampoline.
  */
-static void smp_disable_ttbr0_local(void)
+static void
+smp_disable_ttbr0_local(void)
 {
 	uint64_t tcr = smp_read_tcr() | TCR_EL1_EPD0;
 
-	__asm__ volatile(
-		"msr TTBR0_EL1, xzr\n"
-		"msr TCR_EL1, %0\n"
-		"isb\n"
-		"tlbi vmalle1\n"
-		"dsb nsh\n"
-		"isb"
-		:
-		: "r"(tcr)
-		: "memory"
-	);
+	__asm__ volatile("msr TTBR0_EL1, xzr\n"
+					 "msr TCR_EL1, %0\n"
+					 "isb\n"
+					 "tlbi vmalle1\n"
+					 "dsb nsh\n"
+					 "isb"
+					 :
+					 : "r"(tcr)
+					 : "memory");
 }
 
 /* ---- the new CPU -------------------------------------------------------- */
@@ -254,8 +270,8 @@ static void smp_disable_ttbr0_local(void)
  * The first C code a secondary CPU runs: higher-half address, its own stack,
  * MMU on, TTBR0 still the trampoline's identity map, interrupts masked.
  */
-__attribute__((noreturn))
-void smp_secondary_main(processor_t cpu)
+__attribute__((noreturn)) void
+smp_secondary_main(processor_t cpu)
 {
 	/* Before anything asks "which CPU am I?": logging, the GIC and the timer all do. */
 	machine_cpu_local_set(cpu);
@@ -263,10 +279,12 @@ void smp_secondary_main(processor_t cpu)
 	smp_disable_ttbr0_local();
 
 	if (!gic_init_secondary(cpu->cpu_id, cpu->mpidr)) {
-		kprintf("cpu%u: no GIC redistributor for MPIDR 0x%llx, not starting\n", cpu->cpu_id, (unsigned long long)cpu->mpidr);
+		kprintf("cpu%u: no GIC redistributor for MPIDR 0x%llx, not starting\n", cpu->cpu_id,
+				(unsigned long long)cpu->mpidr);
 		__atomic_store_n(&cpu->state, PROCESSOR_SHUTDOWN, __ATOMIC_RELEASE);
 
-		for (;;) cpu_wait_for_interrupt();
+		for (;;)
+			cpu_wait_for_interrupt();
 	}
 
 	/* The physical timer's PPI and the IPI SGIs are per CPU: each CPU enables its own and arms its own timer. */
@@ -295,26 +313,31 @@ void smp_secondary_main(processor_t cpu)
  * enables them in its own redistributor: an SGI is delivered to the target
  * CPU's redistributor, so a CPU that never enabled it never takes it.
  */
-void smp_enable_local_ipis(void)
+void
+smp_enable_local_ipis(void)
 {
-	for (uint32_t vector = 0U; vector < IPI_TYPE_COUNT; vector++) gic_enable_sgi(vector, 0x80U);
+	for (uint32_t vector = 0U; vector < IPI_TYPE_COUNT; vector++)
+		gic_enable_sgi(vector, 0x80U);
 }
 
-void machine_ipi_raise(uint32_t cpu, uint32_t vector)
+void
+machine_ipi_raise(uint32_t cpu, uint32_t vector)
 {
 	if (cpu >= g_cpu_total || cpu == machine_cpu_id()) return;
 
 	gic_send_sgi(g_cpu_mpidr[cpu], vector);
 }
 
-void machine_ipi_raise_others(uint32_t vector)
+void
+machine_ipi_raise_others(uint32_t vector)
 {
 	if (g_cpu_total <= 1U) return;
 
 	gic_send_sgi_others(vector);
 }
 
-void smp_handle_ipi(uint32_t vector)
+void
+smp_handle_ipi(uint32_t vector)
 {
 	processor_t self = current_processor();
 
@@ -335,14 +358,16 @@ void smp_handle_ipi(uint32_t vector)
 		ml_irq_disable();
 		__atomic_store_n(&self->state, PROCESSOR_SHUTDOWN, __ATOMIC_RELEASE);
 
-		for (;;) cpu_wait_for_event();
+		for (;;)
+			cpu_wait_for_event();
 
 	default:
 		break;
 	}
 }
 
-void smp_stop_other_cpus(void)
+void
+smp_stop_other_cpus(void)
 {
 	if (g_cpu_total <= 1U) return;
 
@@ -351,7 +376,8 @@ void smp_stop_other_cpus(void)
 	/* Bounded: a CPU with interrupts masked for ever cannot be stopped, and the panic must go on. */
 	uint64_t deadline = timer_get_microseconds() + 20000ULL;
 
-	while (timer_get_microseconds() < deadline) cpu_relax();
+	while (timer_get_microseconds() < deadline)
+		cpu_relax();
 
 	/* A CPU stopped in the middle of a print still holds the console lock. */
 	kconsole_break_lock();
@@ -362,13 +388,9 @@ void smp_stop_other_cpus(void)
 /*
  * Start one secondary CPU. Returns whether it reported ONLINE.
  */
-static bool smp_start_cpu(
-	uint32_t cpu_id,
-	uint64_t mpidr,
-	platform_psci_method_t method,
-	uint64_t entry_physical,
-	uint64_t trampoline_root
-)
+static bool
+smp_start_cpu(uint32_t cpu_id, uint64_t mpidr, platform_psci_method_t method, uint64_t entry_physical,
+			  uint64_t trampoline_root)
 {
 	processor_t cpu = processor_register(cpu_id, mpidr);
 
@@ -433,7 +455,8 @@ static bool smp_start_cpu(
 
 	/* Online is IDLE, or already RUNNING if the scheduler gave it work first. */
 	while (!processor_is_online(cpu)) {
-		if (__atomic_load_n(&cpu->state, __ATOMIC_ACQUIRE) == PROCESSOR_SHUTDOWN || timer_get_microseconds() > deadline) {
+		if (__atomic_load_n(&cpu->state, __ATOMIC_ACQUIRE) == PROCESSOR_SHUTDOWN ||
+			timer_get_microseconds() > deadline) {
 			kprintf("SMP: CPU%u did not come online\n", cpu_id);
 			return false;
 		}
@@ -444,7 +467,8 @@ static bool smp_start_cpu(
 	return true;
 }
 
-uint32_t smp_boot_secondaries(void)
+uint32_t
+smp_boot_secondaries(void)
 {
 	const platform_t *platform = platform_get();
 
@@ -472,7 +496,8 @@ uint32_t smp_boot_secondaries(void)
 		if (index != boot_index) g_cpu_mpidr[g_cpu_total++] = platform->cpu_mpidr[index];
 	}
 
-	kprintf("SMP: boot CPU0 MPIDR 0x%llx, %u CPU(s) in the Device Tree\n", (unsigned long long)boot_mpidr, platform->cpu_count);
+	kprintf("SMP: boot CPU0 MPIDR 0x%llx, %u CPU(s) in the Device Tree\n", (unsigned long long)boot_mpidr,
+			platform->cpu_count);
 
 	if (platform->psci_method == PLATFORM_PSCI_NONE) {
 		kputln("SMP: firmware offers no PSCI: secondary CPUs stay off");

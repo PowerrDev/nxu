@@ -27,12 +27,8 @@
 /* Weak: a build that does link the real drivers takes theirs. */
 #define STUB_WEAK __attribute__((weak))
 
-STUB_WEAK bool virtio_mmio_probe(
-	const platform_region_t *region,
-	uint32_t intid,
-	uint32_t irq_flags,
-	virtio_mmio_device_t *device
-)
+STUB_WEAK bool
+virtio_mmio_probe(const platform_region_t *region, uint32_t intid, uint32_t irq_flags, virtio_mmio_device_t *device)
 {
 	(void)region;
 	(void)intid;
@@ -41,17 +37,20 @@ STUB_WEAK bool virtio_mmio_probe(
 	return false;
 }
 
-STUB_WEAK bool virtio_gpu_attach(const virtio_device_t *transport)
+STUB_WEAK bool
+virtio_gpu_attach(const virtio_device_t *transport)
 {
 	(void)transport;
 	return false;
 }
 
-STUB_WEAK uint32_t virtio_gpu_device_count(void)
+STUB_WEAK uint32_t
+virtio_gpu_device_count(void)
 {
 	return 0U;
 }
 
-STUB_WEAK void virtio_gpu_dump(void)
+STUB_WEAK void
+virtio_gpu_dump(void)
 {
 }

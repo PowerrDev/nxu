@@ -17,7 +17,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-static inline void *machine_cpu_local(void)
+static inline void *
+machine_cpu_local(void)
 {
 	uint64_t value;
 
@@ -25,7 +26,8 @@ static inline void *machine_cpu_local(void)
 	return (void *)value;
 }
 
-static inline void machine_cpu_local_set(void *local)
+static inline void
+machine_cpu_local_set(void *local)
 {
 	/*
 	 * No barrier needed: the register is only ever read by the CPU that
@@ -36,7 +38,8 @@ static inline void machine_cpu_local_set(void *local)
 	__asm__ volatile("msr TPIDR_EL1, %0\n\tisb" : : "r"((uint64_t)local) : "memory");
 }
 
-static inline uint32_t machine_cpu_id(void)
+static inline uint32_t
+machine_cpu_id(void)
 {
 	const uint32_t *local = (const uint32_t *)machine_cpu_local();
 
@@ -44,7 +47,8 @@ static inline uint32_t machine_cpu_id(void)
 }
 
 /* This CPU's MPIDR affinity fields (Aff3:Aff2:Aff1:Aff0), as PSCI and the GIC name a CPU. */
-static inline uint64_t machine_cpu_mpidr(void)
+static inline uint64_t
+machine_cpu_mpidr(void)
 {
 	uint64_t value;
 

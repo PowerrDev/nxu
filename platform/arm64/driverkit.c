@@ -40,7 +40,8 @@ static bool g_boot_splash_shown;
  *
  * Log which family could not start and report failure to the caller.
  */
-static bool driverkit_fail(const char *message)
+static bool
+driverkit_fail(const char *message)
 {
 	kputln(message);
 	return false;
@@ -51,8 +52,8 @@ static bool driverkit_fail(const char *message)
  *
  * For the callbacks that have no way to report failure: log and stop.
  */
-static __attribute__((noreturn))
-void driverkit_fatal(const char *message)
+static __attribute__((noreturn)) void
+driverkit_fatal(const char *message)
 {
 	kputln(message);
 
@@ -61,13 +62,12 @@ void driverkit_fatal(const char *message)
 	}
 }
 
-void driverkit_service_boot_input(void)
+void
+driverkit_service_boot_input(void)
 {
 	virtio_input_service();
 
-	if (boot_mode_poll() && !boot_splash_set_status("Loading startup options...")) {
-		driverkit_fatal("driverkit_service_boot_input: recovery status update failed");
-	}
+	(void)boot_mode_poll();
 }
 
 /*
@@ -82,7 +82,8 @@ void driverkit_service_boot_input(void)
  * the ramfb-fallback check, in case no GPU was found and the ramfb
  * emergency console registered a display instead.
  */
-static void driverkit_show_splash_if_needed(void)
+static void
+driverkit_show_splash_if_needed(void)
 {
 	if (g_boot_splash_shown) return;
 
@@ -92,17 +93,20 @@ static void driverkit_show_splash_if_needed(void)
 	if (!boot_splash_show(display)) driverkit_fatal("driverkit_show_splash_if_needed: initialization failed");
 	g_boot_splash_shown = true;
 
-	/* The first frame is on its way to the screen: the boot chime is due as soon as the sound device and its file are there. */
+	/* The first frame is on its way to the screen: the boot chime is due as soon as the sound device and its file are
+	 * there. */
 	boot_chime_arm();
 }
 
-bool driverkit_init(driverkit_config_t *config)
+bool
+driverkit_init(driverkit_config_t *config)
 {
 	if (config == 0) return false;
 
 	gic_init();
 	kputln("kern_init: GICv3 initialized");
-	kprintf("IOPlatformCPU: cpu0 MPIDR 0x%llx, GICv3 redistributor 0, enabled\n", (unsigned long long)arm64_read_mpidr_el1());
+	kprintf("IOPlatformCPU: cpu0 MPIDR 0x%llx, GICv3 redistributor 0, enabled\n",
+			(unsigned long long)arm64_read_mpidr_el1());
 	(void)ioreg_add(ioreg_family_platform(), "IOPlatformCPU", "IOPlatformCPU");
 
 	if (!irq_init()) return driverkit_fail("irq: initialization failed");
@@ -142,14 +146,12 @@ bool driverkit_init(driverkit_config_t *config)
 	config->gpu_enabled = !boot_args_component_disabled(BOOT_COMPONENT_GPU);
 	config->sound_enabled = !boot_args_component_disabled(BOOT_COMPONENT_SOUND);
 
-	virtio_probe_policy_t virtio_policy = {
-		.input = config->input_enabled,
-		.block = config->block_enabled,
-		.gpu = config->gpu_enabled,
-		.network = true,
-		.sound = config->sound_enabled,
-		.on_gpu_ready = config->gpu_enabled ? driverkit_show_splash_if_needed : 0
-	};
+	virtio_probe_policy_t virtio_policy = {.input = config->input_enabled,
+										   .block = config->block_enabled,
+										   .gpu = config->gpu_enabled,
+										   .network = true,
+										   .sound = config->sound_enabled,
+										   .on_gpu_ready = config->gpu_enabled ? driverkit_show_splash_if_needed : 0};
 
 	if (runtime_platform == 0 || !virtio_init(runtime_platform, &virtio_policy)) {
 		return driverkit_fail("VirtIOFamily: initialization failed");
@@ -157,7 +159,8 @@ bool driverkit_init(driverkit_config_t *config)
 
 	if (config->input_enabled && !keyboard_is_present()) return driverkit_fail("keyboard: VirtIO keyboard not found");
 	if (config->input_enabled && !mouse_is_present()) return driverkit_fail("mouse: VirtIO mouse not found");
-	if (config->block_enabled && block_device_count() == 0U) return driverkit_fail("VirtIOBlockFamily: VirtIO block device not found");
+	if (config->block_enabled && block_device_count() == 0U)
+		return driverkit_fail("VirtIOBlockFamily: VirtIO block device not found");
 
 	if (!config->input_enabled) kputln("input: disabled by boot-args");
 	if (!config->block_enabled) kputln("VirtIOBlockFamily: disabled by boot-args");

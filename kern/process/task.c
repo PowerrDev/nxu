@@ -19,7 +19,8 @@
  *
  * Reset a task object before initialization.
  */
-static void task_reset(task_t task)
+static void
+task_reset(task_t task)
 {
 	*task = (struct task){.task_uniqueid = 0ULL,
 						  .ref_count = 0U,
@@ -44,10 +45,10 @@ static void task_reset(task_t task)
  * Initialize the kernel task. Kernel threads may later be attached to this
  * task but it does not own a userspace address space.
  */
-bool task_init_kernel(task_t task, uint64_t uniqueid, struct proc *bsd_info)
+bool
+task_init_kernel(task_t task, uint64_t uniqueid, struct proc *bsd_info)
 {
-	if (task == 0 || bsd_info == 0)
-		return false;
+	if (task == 0 || bsd_info == 0) return false;
 
 	task_reset(task);
 
@@ -67,7 +68,8 @@ bool task_init_kernel(task_t task, uint64_t uniqueid, struct proc *bsd_info)
  * Initialize a userspace task and create the first thread which will execute
  * in its address space.
  */
-bool task_init_user(task_t task, uint64_t uniqueid, struct proc *bsd_info, uint64_t entry, uint64_t stack)
+bool
+task_init_user(task_t task, uint64_t uniqueid, struct proc *bsd_info, uint64_t entry, uint64_t stack)
 {
 	if (task == 0 || bsd_info == 0 || entry == 0ULL || stack == 0ULL) {
 		return false;
@@ -75,8 +77,7 @@ bool task_init_user(task_t task, uint64_t uniqueid, struct proc *bsd_info, uint6
 
 	task_reset(task);
 
-	if (!vm_address_space_create(&task->map))
-		return false;
+	if (!vm_address_space_create(&task->map)) return false;
 
 	task->shm_next_va = VM_SHM_BASE;
 	task->task_uniqueid = uniqueid;
@@ -109,7 +110,8 @@ bool task_init_user(task_t task, uint64_t uniqueid, struct proc *bsd_info, uint6
  *
  * Initialize a userspace task as a copy of parent. See task.h.
  */
-bool task_fork(task_t task, task_t parent, uint64_t uniqueid, struct proc *bsd_info)
+bool
+task_fork(task_t task, task_t parent, uint64_t uniqueid, struct proc *bsd_info)
 {
 	if (task == 0 || parent == 0 || bsd_info == 0 || task_is_kernel(parent) || !task_is_active(parent)) {
 		return false;
@@ -117,13 +119,11 @@ bool task_fork(task_t task, task_t parent, uint64_t uniqueid, struct proc *bsd_i
 
 	thread_t caller = current_thread();
 
-	if (caller == 0 || caller->task != parent)
-		return false;
+	if (caller == 0 || caller->task != parent) return false;
 
 	task_reset(task);
 
-	if (!vm_address_space_fork(&parent->map, &task->map))
-		return false;
+	if (!vm_address_space_fork(&parent->map, &task->map)) return false;
 
 	if (!vm_map_fork(&parent->map, &task->map)) {
 		(void)vm_address_space_release_pages(&task->map);
@@ -177,7 +177,8 @@ fail_address_space:
 /*
  * task_reference
  */
-bool task_reference(task_t task)
+bool
+task_reference(task_t task)
 {
 	if (task == 0 || task->ref_count == UINT32_MAX || task->state == TASK_STATE_TERMINATED) {
 		return false;
@@ -190,10 +191,10 @@ bool task_reference(task_t task)
 /*
  * task_deallocate
  */
-bool task_deallocate(task_t task)
+bool
+task_deallocate(task_t task)
 {
-	if (task == 0 || task->ref_count == 0U)
-		return false;
+	if (task == 0 || task->ref_count == 0U) return false;
 
 	task->ref_count--;
 	return true;
@@ -202,7 +203,8 @@ bool task_deallocate(task_t task)
 /*
  * task_activate_address_space
  */
-bool task_activate_address_space(task_t task)
+bool
+task_activate_address_space(task_t task)
 {
 	if (task == 0 || !task->active || task_is_kernel(task)) {
 		return false;
@@ -226,11 +228,11 @@ bool task_activate_address_space(task_t task)
  * still be executing (task_terminate's all_off_cpu): a thread mid-syscall in
  * syscall_shm_map/_unmap touches this same table.
  */
-static void task_release_shm_attachments(task_t task)
+static void
+task_release_shm_attachments(task_t task)
 {
 	for (uint32_t index = 0U; index < TASK_SHM_ATTACH_MAX; index++) {
-		if (task->shm_attachments[index].region == VM_SHM_REGION_NULL)
-			continue;
+		if (task->shm_attachments[index].region == VM_SHM_REGION_NULL) continue;
 
 		vm_shm_release(task->shm_attachments[index].region);
 		task->shm_attachments[index].region = VM_SHM_REGION_NULL;
@@ -247,7 +249,8 @@ static void task_release_shm_attachments(task_t task)
  * Thread resource reclamation is separate from termination because the
  * currently-executing thread cannot free the kernel stack it is using.
  */
-bool task_terminate(task_t task)
+bool
+task_terminate(task_t task)
 {
 	if (task == 0 || !task->active || task->state == TASK_STATE_TERMINATED) {
 		return false;
@@ -264,8 +267,7 @@ bool task_terminate(task_t task)
 	for (;;) {
 		thread_t thread = task_first_thread_ref(task);
 
-		if (thread == 0)
-			break;
+		if (thread == 0) break;
 
 		bool terminated = sched_is_initialized() ? sched_thread_terminate(thread) : thread_terminate(thread);
 
@@ -313,8 +315,7 @@ bool task_terminate(task_t task)
 		else
 			crash_incomplete(task);
 		__atomic_store_n(&thread->crash_collected, true, __ATOMIC_RELEASE);
-		if (all_off_cpu)
-			thread_reap(thread);
+		if (all_off_cpu) thread_reap(thread);
 		thread_deallocate(thread);
 	}
 
@@ -360,7 +361,8 @@ bool task_terminate(task_t task)
 /*
  * task_is_active
  */
-bool task_is_active(task_t task)
+bool
+task_is_active(task_t task)
 {
 	return task != 0 && task->active;
 }
@@ -368,7 +370,8 @@ bool task_is_active(task_t task)
 /*
  * task_is_kernel
  */
-bool task_is_kernel(task_t task)
+bool
+task_is_kernel(task_t task)
 {
 	return (task != 0 && (task->flags & TASK_FLAG_KERNEL) != 0U);
 }
@@ -376,20 +379,20 @@ bool task_is_kernel(task_t task)
 /*
  * task_map
  */
-vm_address_space_t *task_map(task_t task)
+vm_address_space_t *
+task_map(task_t task)
 {
-	if (task == 0)
-		return 0;
+	if (task == 0) return 0;
 	return &task->map;
 }
 
 /*
  * task_get_proc
  */
-struct proc *task_get_proc(task_t task)
+struct proc *
+task_get_proc(task_t task)
 {
-	if (task == 0)
-		return 0;
+	if (task == 0) return 0;
 	return task->bsd_info;
 }
 
@@ -398,15 +401,14 @@ struct proc *task_get_proc(task_t task)
  *
  * Transitional access to the first thread's EL0 entry address.
  */
-uint64_t task_user_entry(task_t task)
+uint64_t
+task_user_entry(task_t task)
 {
-	if (task == 0)
-		return 0ULL;
+	if (task == 0) return 0ULL;
 
 	thread_t thread = task_first_thread_ref(task);
 
-	if (thread == 0)
-		return 0ULL;
+	if (thread == 0) return 0ULL;
 
 	uint64_t entry = thread_user_entry(thread);
 
@@ -419,15 +421,14 @@ uint64_t task_user_entry(task_t task)
  *
  * Transitional access to the first thread's EL0 stack pointer.
  */
-uint64_t task_user_stack(task_t task)
+uint64_t
+task_user_stack(task_t task)
 {
-	if (task == 0)
-		return 0ULL;
+	if (task == 0) return 0ULL;
 
 	thread_t thread = task_first_thread_ref(task);
 
-	if (thread == 0)
-		return 0ULL;
+	if (thread == 0) return 0ULL;
 
 	uint64_t stack = thread_user_stack(thread);
 

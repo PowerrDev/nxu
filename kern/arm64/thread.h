@@ -93,31 +93,19 @@ void machine_thread_init_kernel(machine_thread_t *machine);
  * the thread's initial x0, the pthread-create-style argument a spawned
  * thread's entry function receives.
  */
-bool machine_thread_init_user(
-	machine_thread_t *machine,
-	uint64_t entry,
-	uint64_t stack,
-	uint64_t arg
-);
+bool machine_thread_init_user(machine_thread_t *machine, uint64_t entry, uint64_t stack, uint64_t arg);
 
 /*
  * machine_thread_set_user_state
  *
  * Replace the initial EL0 PC, stack and argument-register state.
  */
-bool machine_thread_set_user_state(
-	machine_thread_t *machine,
-	uint64_t entry,
-	uint64_t stack,
-	uint64_t arg
-);
+bool machine_thread_set_user_state(machine_thread_t *machine, uint64_t entry, uint64_t stack, uint64_t arg);
 
 /*
  * machine_thread_has_user_state
  */
-bool machine_thread_has_user_state(
-	const machine_thread_t *machine
-);
+bool machine_thread_has_user_state(const machine_thread_t *machine);
 
 /*
  * machine_thread_prepare_context
@@ -125,11 +113,7 @@ bool machine_thread_has_user_state(
  * Construct the first kernel context for a never-run thread. The first
  * scheduler restore returns to entry while executing on stack_top.
  */
-bool machine_thread_prepare_context(
-	machine_thread_t *machine,
-	uint64_t stack_top,
-	uint64_t entry
-);
+bool machine_thread_prepare_context(machine_thread_t *machine, uint64_t stack_top, uint64_t entry);
 
 /*
  * arm64_switch_context
@@ -137,10 +121,7 @@ bool machine_thread_prepare_context(
  * Save the current kernel callee-saved context into old_context and restore
  * new_context, including SP_EL1. The function returns in the restored thread.
  */
-void arm64_switch_context(
-	arm64_kernel_context_t *old_context,
-	const arm64_kernel_context_t *new_context
-);
+void arm64_switch_context(arm64_kernel_context_t *old_context, const arm64_kernel_context_t *new_context);
 
 /*
  * The machine-neutral operations behind <kern/machine/thread.h>. They are
@@ -152,12 +133,14 @@ void arm64_switch_context(
  *
  * The initial EL0 program counter and stack pointer.
  */
-static inline uint64_t machine_thread_user_pc(const machine_thread_t *machine)
+static inline uint64_t
+machine_thread_user_pc(const machine_thread_t *machine)
 {
 	return machine->user.pc;
 }
 
-static inline uint64_t machine_thread_user_sp(const machine_thread_t *machine)
+static inline uint64_t
+machine_thread_user_sp(const machine_thread_t *machine)
 {
 	return machine->user.sp;
 }
@@ -168,10 +151,8 @@ static inline uint64_t machine_thread_user_sp(const machine_thread_t *machine)
  * Save the current kernel context into old_machine and restore
  * new_machine's. Returns in the restored thread.
  */
-static inline void machine_thread_switch_context(
-	machine_thread_t *old_machine,
-	machine_thread_t *new_machine
-)
+static inline void
+machine_thread_switch_context(machine_thread_t *old_machine, machine_thread_t *new_machine)
 {
 	arm64_switch_context(&old_machine->context, &new_machine->context);
 }
@@ -182,24 +163,15 @@ static inline void machine_thread_switch_context(
  * Enter EL0 with the thread's initial user state. Returns only when the EL0
  * program has exited through the SYS_exit redirect.
  */
-static inline void machine_thread_enter_user(machine_thread_t *machine)
+static inline void
+machine_thread_enter_user(machine_thread_t *machine)
 {
 	if (machine->user.full) {
-		arm64_enter_el0_regs(
-			machine->user.x,
-			machine->user.pc,
-			machine->user.sp,
-			machine->user.spsr
-		);
+		arm64_enter_el0_regs(machine->user.x, machine->user.pc, machine->user.sp, machine->user.spsr);
 		return;
 	}
 
-	arm64_enter_el0(
-		machine->user.pc,
-		machine->user.sp,
-		machine->user.spsr,
-		machine->user.x0
-	);
+	arm64_enter_el0(machine->user.pc, machine->user.sp, machine->user.spsr, machine->user.x0);
 }
 
 #endif

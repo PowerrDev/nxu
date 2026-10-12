@@ -41,8 +41,8 @@
  *
  * A boot test that fails has nothing to return to: log it and stop.
  */
-static __attribute__((noreturn, unused))
-void boot_test_fail(const char *message)
+static __attribute__((noreturn, unused)) void
+boot_test_fail(const char *message)
 {
 	kputln(message);
 
@@ -50,7 +50,6 @@ void boot_test_fail(const char *message)
 		__asm__ volatile("wfe");
 	}
 }
-
 
 #if defined(NXU_JOURNAL_CRASH_TEST)
 static const char g_jbd2_recovery_message[] = "NXU JBD2 committed metadata survived the crash.\n";
@@ -63,39 +62,25 @@ static const char g_jbd2_recovery_message[] = "NXU JBD2 committed metadata survi
  * checkpointed home. The kernel halts immediately afterward. A normal reboot
  * must replay the transaction and recover the file size/block mapping.
  */
-static void boot_test_run_jbd2_crash(void)
+static void
+boot_test_run_jbd2_crash(void)
 {
 	proc_t kernel_proc = proc_kernel();
 	if (kernel_proc == 0) boot_test_fail("jbd2: crash-test kernel proc missing");
 	filedesc_t filedesc = &kernel_proc->p_fd;
 	uint32_t descriptor;
 
-	vfs_status_t status = vfs_open(
-		filedesc,
-		"/disk/NXU/journal-recovery.txt",
-		VFS_OPEN_WRITE | VFS_OPEN_CREATE | VFS_OPEN_TRUNCATE,
-		&descriptor
-	);
+	vfs_status_t status = vfs_open(filedesc, "/disk/NXU/journal-recovery.txt",
+								   VFS_OPEN_WRITE | VFS_OPEN_CREATE | VFS_OPEN_TRUNCATE, &descriptor);
 	if (status != VFS_STATUS_OK) boot_test_fail("jbd2: crash-test file preparation failed");
 	if (vfs_close(filedesc, descriptor) != VFS_STATUS_OK) boot_test_fail("jbd2: crash-test close failed");
 	if (!ext4_debug_arm_journal_crash()) boot_test_fail("jbd2: failed to arm crash point");
 
-	status = vfs_open(
-		filedesc,
-		"/disk/NXU/journal-recovery.txt",
-		VFS_OPEN_WRITE,
-		&descriptor
-	);
+	status = vfs_open(filedesc, "/disk/NXU/journal-recovery.txt", VFS_OPEN_WRITE, &descriptor);
 	if (status != VFS_STATUS_OK) boot_test_fail("jbd2: crash-test reopen failed");
 
 	uint64_t written = 0ULL;
-	status = vfs_write(
-		filedesc,
-		descriptor,
-		g_jbd2_recovery_message,
-		sizeof(g_jbd2_recovery_message) - 1ULL,
-		&written
-	);
+	status = vfs_write(filedesc, descriptor, g_jbd2_recovery_message, sizeof(g_jbd2_recovery_message) - 1ULL, &written);
 	(void)vfs_close(filedesc, descriptor);
 	if (status != VFS_STATUS_IO_ERROR) boot_test_fail("jbd2: crash point did not stop checkpoint");
 	if (!ext4_debug_journal_crash_reached()) boot_test_fail("jbd2: durable crash point was not reached");
@@ -106,11 +91,13 @@ static void boot_test_run_jbd2_crash(void)
 	kputln("jbd2: halt complete");
 	kputln("jbd2: close QEMU and run make run");
 	ml_irq_disable();
-	for (;;) __asm__ volatile("wfe");
+	for (;;)
+		__asm__ volatile("wfe");
 }
 #endif
 
-void boot_test_graphical(display_device_t *boot_display)
+void
+boot_test_graphical(display_device_t *boot_display)
 {
 	(void)boot_display;
 
@@ -157,11 +144,13 @@ void boot_test_graphical(display_device_t *boot_display)
 #endif
 	if (!ui_service_bootstrap()) boot_test_fail("panic: interactive session failed");
 
-	for (;;) __asm__ volatile("wfe");
+	for (;;)
+		__asm__ volatile("wfe");
 #endif
 }
 
-void boot_test_storage(display_device_t *boot_display)
+void
+boot_test_storage(display_device_t *boot_display)
 {
 	(void)boot_display;
 
@@ -183,7 +172,8 @@ void boot_test_storage(display_device_t *boot_display)
 		register uint64_t function __asm__("x0") = 0x84000008ULL;
 		__asm__ volatile("hvc #0" : "+r"(function) : : "memory");
 
-		for (;;) __asm__ volatile("wfe");
+		for (;;)
+			__asm__ volatile("wfe");
 	}
 
 #if defined(NXU_UNIFIED_BOOT_TEST) || defined(NXU_DESKTOP_BOOT)
@@ -199,49 +189,56 @@ void boot_test_storage(display_device_t *boot_display)
 	if (!ipc_process_test()) boot_test_fail("ipc_process_test: failed");
 	kputln("ipc_process_test: passed");
 	kputln("ipc_process_test: halting (test build, no bootd)");
-	for (;;) __asm__ volatile("wfe");
+	for (;;)
+		__asm__ volatile("wfe");
 #endif
 
 #if defined(NXU_THREAD_PROCESS_TEST)
 	if (!thread_process_test()) boot_test_fail("thread_process_test: failed");
 	kputln("thread_process_test: passed");
 	kputln("thread_process_test: halting (test build, no bootd)");
-	for (;;) __asm__ volatile("wfe");
+	for (;;)
+		__asm__ volatile("wfe");
 #endif
 
 #if defined(NXU_FAULT_PROCESS_TEST)
 	if (!fault_process_test()) boot_test_fail("fault_process_test: failed");
 	kputln("fault_process_test: passed");
 	kputln("fault_process_test: halting (test build, no bootd)");
-	for (;;) __asm__ volatile("wfe");
+	for (;;)
+		__asm__ volatile("wfe");
 #endif
 
 #if defined(NXU_PROCESS_CONTROL_TEST)
 	if (!process_control_test()) boot_test_fail("process_control_test: failed");
 	kputln("process_control_test: passed");
 	kputln("process_control_test: halting (test build, no bootd)");
-	for (;;) __asm__ volatile("wfe");
+	for (;;)
+		__asm__ volatile("wfe");
 #endif
 
 #if defined(NXU_SOUND_TEST)
 	if (!sound_test_run()) boot_test_fail("sound_test: failed");
 	kputln("sound_test: passed");
 	kputln("sound_test: halting (test build, no bootd)");
-	for (;;) __asm__ volatile("wfe");
+	for (;;)
+		__asm__ volatile("wfe");
 #endif
 
 #if defined(NXU_TEP_MAILBOX_TEST)
 	if (!tep_mailbox_test_run()) boot_test_fail("tep_mailbox_test: failed");
 	kputln("tep_mailbox_test: passed");
 	kputln("tep_mailbox_test: halting (test build, no bootd)");
-	for (;;) __asm__ volatile("wfe");
+	for (;;)
+		__asm__ volatile("wfe");
 #endif
 
 #if defined(NXU_SOCKET_PROCESS_TEST)
 	if (!socket_process_test()) boot_test_fail("socket_process_test: failed");
 	kputln("socket_process_test: passed");
 	kputln("socket_process_test: halting (test build, no bootd)");
-	for (;;) __asm__ volatile("wfe");
+	for (;;)
+		__asm__ volatile("wfe");
 #endif
 
 #if defined(NXU_WINDOWSERVER_PROCESS_TEST)
@@ -258,7 +255,8 @@ void boot_test_storage(display_device_t *boot_display)
 	if (!windowserver_process_test()) boot_test_fail("windowserver_process_test: failed");
 	kputln("windowserver_process_test: passed");
 	kputln("windowserver_process_test: halting (test build)");
-	for (;;) __asm__ volatile("wfe");
+	for (;;)
+		__asm__ volatile("wfe");
 #endif
 
 #if defined(NXU_ABOUT_SEVOS_PROCESS_TEST)
@@ -267,11 +265,13 @@ void boot_test_storage(display_device_t *boot_display)
 	if (!about_sevos_process_test()) boot_test_fail("about_sevos_process_test: failed");
 	kputln("about_sevos_process_test: passed");
 	kputln("about_sevos_process_test: halting (test build)");
-	for (;;) __asm__ volatile("wfe");
+	for (;;)
+		__asm__ volatile("wfe");
 #endif
 }
 
-void boot_test_unified(void)
+void
+boot_test_unified(void)
 {
 #if defined(NXU_UNIFIED_BOOT_TEST)
 	unified_boot_run();

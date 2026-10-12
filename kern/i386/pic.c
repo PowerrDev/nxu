@@ -44,7 +44,8 @@
 static uint16_t g_pic_mask = 0xFFFFU;
 static volatile uint32_t g_pic_spurious_count;
 
-static void pic_write_mask(void)
+static void
+pic_write_mask(void)
 {
 	outb(PIC_MASTER_DATA, (uint8_t)(g_pic_mask & 0xFFU));
 	outb(PIC_SLAVE_DATA, (uint8_t)(g_pic_mask >> 8U));
@@ -54,7 +55,8 @@ static void pic_write_mask(void)
  * The cascade input is not a device line: it must be open exactly when some
  * slave line is, and closed otherwise, so it follows the slave's mask.
  */
-static void pic_update_cascade(void)
+static void
+pic_update_cascade(void)
 {
 	if ((g_pic_mask & 0xFF00U) == 0xFF00U) {
 		g_pic_mask |= (uint16_t)(1U << PIC_CASCADE_LINE);
@@ -63,7 +65,8 @@ static void pic_update_cascade(void)
 	}
 }
 
-void pic_init(void)
+void
+pic_init(void)
 {
 	uint64_t state = ml_irq_save();
 
@@ -98,7 +101,8 @@ void pic_init(void)
 	ml_irq_restore(state);
 }
 
-void pic_mask(uint32_t irq)
+void
+pic_mask(uint32_t irq)
 {
 	if (irq >= PIC_LINE_COUNT || irq == PIC_CASCADE_LINE) return;
 
@@ -110,7 +114,8 @@ void pic_mask(uint32_t irq)
 	ml_irq_restore(state);
 }
 
-void pic_unmask(uint32_t irq)
+void
+pic_unmask(uint32_t irq)
 {
 	if (irq >= PIC_LINE_COUNT || irq == PIC_CASCADE_LINE) return;
 
@@ -122,14 +127,16 @@ void pic_unmask(uint32_t irq)
 	ml_irq_restore(state);
 }
 
-bool pic_is_masked(uint32_t irq)
+bool
+pic_is_masked(uint32_t irq)
 {
 	if (irq >= PIC_LINE_COUNT) return true;
 
 	return (g_pic_mask & (1U << irq)) != 0U;
 }
 
-void pic_eoi(uint32_t irq)
+void
+pic_eoi(uint32_t irq)
 {
 	if (irq >= PIC_LINE_COUNT) return;
 
@@ -141,7 +148,8 @@ void pic_eoi(uint32_t irq)
 	}
 }
 
-static uint16_t pic_read_register(uint8_t ocw3)
+static uint16_t
+pic_read_register(uint8_t ocw3)
 {
 	uint64_t state = ml_irq_save();
 
@@ -154,22 +162,26 @@ static uint16_t pic_read_register(uint8_t ocw3)
 	return value;
 }
 
-uint16_t pic_read_isr(void)
+uint16_t
+pic_read_isr(void)
 {
 	return pic_read_register(PIC_OCW3_READ_ISR);
 }
 
-uint16_t pic_read_irr(void)
+uint16_t
+pic_read_irr(void)
 {
 	return pic_read_register(PIC_OCW3_READ_IRR);
 }
 
-uint16_t pic_read_imr(void)
+uint16_t
+pic_read_imr(void)
 {
 	return (uint16_t)(inb(PIC_MASTER_DATA) | ((uint16_t)inb(PIC_SLAVE_DATA) << 8U));
 }
 
-bool pic_irq_is_spurious(uint32_t irq)
+bool
+pic_irq_is_spurious(uint32_t irq)
 {
 	if (irq != 7U && irq != 15U) return false;
 
@@ -187,12 +199,14 @@ bool pic_irq_is_spurious(uint32_t irq)
 	return true;
 }
 
-uint32_t pic_spurious_count(void)
+uint32_t
+pic_spurious_count(void)
 {
 	return g_pic_spurious_count;
 }
 
-bool pic_set_level_triggered(uint32_t irq, bool level)
+bool
+pic_set_level_triggered(uint32_t irq, bool level)
 {
 	if (irq >= PIC_LINE_COUNT || (PIC_ELCR_FIXED_EDGE & (1U << irq)) != 0U) return false;
 

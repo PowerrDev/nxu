@@ -22,40 +22,32 @@ _Static_assert(GDT_USER_DATA_SEL == 0x23, "transition.S user data selector out o
 /* Words in the initial kernel frame: edi, esi, ebx, ebp, return address, dummy caller. */
 #define I386_INITIAL_FRAME_WORDS 6U
 
-static void machine_thread_zero(machine_thread_t *machine)
+static void
+machine_thread_zero(machine_thread_t *machine)
 {
-	*machine = (machine_thread_t) {
-		.context = { .sp = 0U },
-		.user = {
-			.pc = 0U,
-			.sp = 0U,
-			.eflags = I386_THREAD_EFLAGS_USER,
-			.arg = 0U,
-			.valid = false
-		},
-		.esp0 = 0U,
-		.user_kernel_sp = 0U
-	};
+	*machine =
+		(machine_thread_t){.context = {.sp = 0U},
+						   .user = {.pc = 0U, .sp = 0U, .eflags = I386_THREAD_EFLAGS_USER, .arg = 0U, .valid = false},
+						   .esp0 = 0U,
+						   .user_kernel_sp = 0U};
 }
 
 /* The 32-bit port cannot address anything above 4 GiB. */
-static bool machine_thread_fits(uint64_t value)
+static bool
+machine_thread_fits(uint64_t value)
 {
 	return (value >> 32U) == 0ULL;
 }
 
-void machine_thread_init_kernel(machine_thread_t *machine)
+void
+machine_thread_init_kernel(machine_thread_t *machine)
 {
 	if (machine == 0) return;
 	machine_thread_zero(machine);
 }
 
-bool machine_thread_init_user(
-	machine_thread_t *machine,
-	uint64_t entry,
-	uint64_t stack,
-	uint64_t arg
-)
+bool
+machine_thread_init_user(machine_thread_t *machine, uint64_t entry, uint64_t stack, uint64_t arg)
 {
 	if (machine == 0 || entry == 0ULL || stack == 0ULL) return false;
 
@@ -63,12 +55,8 @@ bool machine_thread_init_user(
 	return machine_thread_set_user_state(machine, entry, stack, arg);
 }
 
-bool machine_thread_set_user_state(
-	machine_thread_t *machine,
-	uint64_t entry,
-	uint64_t stack,
-	uint64_t arg
-)
+bool
+machine_thread_set_user_state(machine_thread_t *machine, uint64_t entry, uint64_t stack, uint64_t arg)
 {
 	if (machine == 0 || entry == 0ULL || stack == 0ULL) return false;
 	if (!machine_thread_fits(entry) || !machine_thread_fits(stack) || !machine_thread_fits(arg)) return false;
@@ -82,25 +70,17 @@ bool machine_thread_set_user_state(
 	return true;
 }
 
-bool machine_thread_has_user_state(const machine_thread_t *machine)
+bool
+machine_thread_has_user_state(const machine_thread_t *machine)
 {
 	return machine != 0 && machine->user.valid;
 }
 
-bool machine_thread_prepare_context(
-	machine_thread_t *machine,
-	uint64_t stack_top,
-	uint64_t entry
-)
+bool
+machine_thread_prepare_context(machine_thread_t *machine, uint64_t stack_top, uint64_t entry)
 {
-	if (
-		machine == 0 ||
-		stack_top == 0ULL ||
-		entry == 0ULL ||
-		!machine_thread_fits(stack_top) ||
-		!machine_thread_fits(entry) ||
-		(stack_top & 0xFULL) != 0ULL
-	) {
+	if (machine == 0 || stack_top == 0ULL || entry == 0ULL || !machine_thread_fits(stack_top) ||
+		!machine_thread_fits(entry) || (stack_top & 0xFULL) != 0ULL) {
 		return false;
 	}
 
@@ -134,14 +114,16 @@ bool machine_thread_prepare_context(
 	return true;
 }
 
-machine_thread_t *i386_thread_current_machine(void)
+machine_thread_t *
+i386_thread_current_machine(void)
 {
 	thread_t thread = current_thread();
 
 	return thread == 0 ? 0 : &thread->machine;
 }
 
-void i386_thread_user_entry_prepare(machine_thread_t *machine, uint32_t esp0)
+void
+i386_thread_user_entry_prepare(machine_thread_t *machine, uint32_t esp0)
 {
 	machine->esp0 = esp0;
 	i386_gdt_set_kernel_stack(esp0);

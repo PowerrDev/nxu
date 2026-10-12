@@ -8,10 +8,10 @@
 #include <string.h>
 
 #define FDT_BEGIN_NODE 0x00000001U
-#define FDT_END_NODE   0x00000002U
-#define FDT_PROP       0x00000003U
-#define FDT_NOP        0x00000004U
-#define FDT_END        0x00000009U
+#define FDT_END_NODE 0x00000002U
+#define FDT_PROP 0x00000003U
+#define FDT_NOP 0x00000004U
+#define FDT_END 0x00000009U
 
 #define DTB_HEADER_SIZE 40U
 #define DTB_MAX_DEPTH 64U
@@ -20,31 +20,23 @@ static dtb_t g_boot_dtb;
 static bool g_boot_dtb_ready;
 static bool g_boot_dtb_higher_half;
 
-_Static_assert(
-	sizeof(dtb_header_t) == DTB_HEADER_SIZE,
-	"dtb_header_t must match the DTB header layout"
-);
+_Static_assert(sizeof(dtb_header_t) == DTB_HEADER_SIZE, "dtb_header_t must match the DTB header layout");
 
 typedef struct {
 	uint32_t node_count;
 	uint32_t property_count;
 } dtb_dump_context_t;
 
-static uint32_t dtb_read_be32(const void *address)
+static uint32_t
+dtb_read_be32(const void *address)
 {
 	const uint8_t *bytes = address;
 
-	return ((uint32_t)bytes[0] << 24U)
-		| ((uint32_t)bytes[1] << 16U)
-		| ((uint32_t)bytes[2] << 8U)
-		| (uint32_t)bytes[3];
+	return ((uint32_t)bytes[0] << 24U) | ((uint32_t)bytes[1] << 16U) | ((uint32_t)bytes[2] << 8U) | (uint32_t)bytes[3];
 }
 
-static bool dtb_range_is_valid(
-	uint32_t total_size,
-	uint32_t offset,
-	uint32_t size
-)
+static bool
+dtb_range_is_valid(uint32_t total_size, uint32_t offset, uint32_t size)
 {
 	if (offset > total_size) {
 		return false;
@@ -53,11 +45,8 @@ static bool dtb_range_is_valid(
 	return size <= total_size - offset;
 }
 
-static bool dtb_has_bytes(
-	const uint8_t *cursor,
-	const uint8_t *end,
-	uint32_t byte_count
-)
+static bool
+dtb_has_bytes(const uint8_t *cursor, const uint8_t *end, uint32_t byte_count)
 {
 	if (cursor > end) {
 		return false;
@@ -66,7 +55,8 @@ static bool dtb_has_bytes(
 	return byte_count <= (uint32_t)(end - cursor);
 }
 
-static bool dtb_align4(uint32_t value, uint32_t *aligned)
+static bool
+dtb_align4(uint32_t value, uint32_t *aligned)
 {
 	if (aligned == 0 || value > 0xFFFFFFFCU) {
 		return false;
@@ -77,11 +67,8 @@ static bool dtb_align4(uint32_t value, uint32_t *aligned)
 	return true;
 }
 
-static bool dtb_string_length(
-	const uint8_t *string,
-	const uint8_t *end,
-	uint32_t *length
-)
+static bool
+dtb_string_length(const uint8_t *string, const uint8_t *end, uint32_t *length)
 {
 	if (string == 0 || end == 0 || length == 0 || string >= end) {
 		return false;
@@ -105,7 +92,8 @@ static bool dtb_string_length(
 	return false;
 }
 
-bool dtb_bootstrap(const void *address)
+bool
+dtb_bootstrap(const void *address)
 {
 	if (g_boot_dtb_ready || address == 0) {
 		return false;
@@ -122,18 +110,16 @@ bool dtb_bootstrap(const void *address)
 	return true;
 }
 
-const dtb_t *dtb_get_boot(void)
+const dtb_t *
+dtb_get_boot(void)
 {
 	return g_boot_dtb_ready ? &g_boot_dtb : 0;
 }
 
-bool dtb_enter_higher_half(void)
+bool
+dtb_enter_higher_half(void)
 {
-	if (
-		!g_boot_dtb_ready ||
-		g_boot_dtb_higher_half ||
-		!vmm_higher_half_direct_map_enabled()
-	) {
+	if (!g_boot_dtb_ready || g_boot_dtb_higher_half || !vmm_higher_half_direct_map_enabled()) {
 		return false;
 	}
 
@@ -143,38 +129,23 @@ bool dtb_enter_higher_half(void)
 	uint64_t structure;
 	uint64_t strings;
 
-	if (!vmm_physical_to_higher_half(
-		(uint64_t)g_boot_dtb.base,
-		&base
-	)) {
+	if (!vmm_physical_to_higher_half((uint64_t)g_boot_dtb.base, &base)) {
 		return false;
 	}
 
-	if (!vmm_physical_to_higher_half(
-		(uint64_t)g_boot_dtb.header,
-		&header
-	)) {
+	if (!vmm_physical_to_higher_half((uint64_t)g_boot_dtb.header, &header)) {
 		return false;
 	}
 
-	if (!vmm_physical_to_higher_half(
-		(uint64_t)g_boot_dtb.memory_reservations,
-		&reservations
-	)) {
+	if (!vmm_physical_to_higher_half((uint64_t)g_boot_dtb.memory_reservations, &reservations)) {
 		return false;
 	}
 
-	if (!vmm_physical_to_higher_half(
-		(uint64_t)g_boot_dtb.structure,
-		&structure
-	)) {
+	if (!vmm_physical_to_higher_half((uint64_t)g_boot_dtb.structure, &structure)) {
 		return false;
 	}
 
-	if (!vmm_physical_to_higher_half(
-		(uint64_t)g_boot_dtb.strings,
-		&strings
-	)) {
+	if (!vmm_physical_to_higher_half((uint64_t)g_boot_dtb.strings, &strings)) {
 		return false;
 	}
 
@@ -188,12 +159,14 @@ bool dtb_enter_higher_half(void)
 	return true;
 }
 
-bool dtb_higher_half_enabled(void)
+bool
+dtb_higher_half_enabled(void)
 {
 	return g_boot_dtb_higher_half;
 }
 
-bool dtb_init(dtb_t *dtb, const void *address)
+bool
+dtb_init(dtb_t *dtb, const void *address)
 {
 	if (dtb == 0 || address == 0) {
 		return false;
@@ -237,19 +210,11 @@ bool dtb_init(dtb_t *dtb, const void *address)
 		return false;
 	}
 
-	if (!dtb_range_is_valid(
-		total_size,
-		structure_offset,
-		structure_size
-	)) {
+	if (!dtb_range_is_valid(total_size, structure_offset, structure_size)) {
 		return false;
 	}
 
-	if (!dtb_range_is_valid(
-		total_size,
-		strings_offset,
-		strings_size
-	)) {
+	if (!dtb_range_is_valid(total_size, strings_offset, strings_size)) {
 		return false;
 	}
 
@@ -257,11 +222,7 @@ bool dtb_init(dtb_t *dtb, const void *address)
 	 * The reservation block must contain at least its terminating
 	 * address=0, size=0 pair.
 	 */
-	if (!dtb_range_is_valid(
-		total_size,
-		memory_reservation_offset,
-		16U
-	)) {
+	if (!dtb_range_is_valid(total_size, memory_reservation_offset, 16U)) {
 		return false;
 	}
 
@@ -288,11 +249,8 @@ bool dtb_init(dtb_t *dtb, const void *address)
 	return true;
 }
 
-bool dtb_walk(
-	const dtb_t *dtb,
-	const dtb_visitor_t *visitor,
-	void *context
-)
+bool
+dtb_walk(const dtb_t *dtb, const dtb_visitor_t *visitor, void *context)
 {
 	if (dtb == 0 || dtb->structure == 0 || dtb->strings == 0) {
 		return false;
@@ -317,28 +275,17 @@ bool dtb_walk(
 		case FDT_BEGIN_NODE: {
 			uint32_t name_length;
 
-			if (!dtb_string_length(
-				cursor,
-				end,
-				&name_length
-			)) {
+			if (!dtb_string_length(cursor, end, &name_length)) {
 				return false;
 			}
 
 			uint32_t name_storage_size;
 
-			if (!dtb_align4(
-				name_length + 1U,
-				&name_storage_size
-			)) {
+			if (!dtb_align4(name_length + 1U, &name_storage_size)) {
 				return false;
 			}
 
-			if (!dtb_has_bytes(
-				cursor,
-				end,
-				name_storage_size
-			)) {
+			if (!dtb_has_bytes(cursor, end, name_storage_size)) {
 				return false;
 			}
 
@@ -348,15 +295,8 @@ bool dtb_walk(
 
 			const char *node_name = (const char *)cursor;
 
-			if (
-				visitor != 0 &&
-				visitor->begin_node != 0
-			) {
-				visitor->begin_node(
-					node_name,
-					depth,
-					context
-				);
+			if (visitor != 0 && visitor->begin_node != 0) {
+				visitor->begin_node(node_name, depth, context);
 			}
 
 			cursor += name_storage_size;
@@ -372,14 +312,8 @@ bool dtb_walk(
 
 			depth--;
 
-			if (
-				visitor != 0 &&
-				visitor->end_node != 0
-			) {
-				visitor->end_node(
-					depth,
-					context
-				);
+			if (visitor != 0 && visitor->end_node != 0) {
+				visitor->end_node(depth, context);
 			}
 
 			break;
@@ -409,17 +343,11 @@ bool dtb_walk(
 				return false;
 			}
 
-			const uint8_t *property_name =
-				(const uint8_t *)dtb->strings +
-				name_offset;
+			const uint8_t *property_name = (const uint8_t *)dtb->strings + name_offset;
 
 			uint32_t property_name_length;
 
-			if (!dtb_string_length(
-				property_name,
-				strings_end,
-				&property_name_length
-			)) {
+			if (!dtb_string_length(property_name, strings_end, &property_name_length)) {
 				return false;
 			}
 
@@ -436,27 +364,14 @@ bool dtb_walk(
 				return false;
 			}
 
-			if (!dtb_has_bytes(
-				cursor,
-				end,
-				padded_length
-			)) {
+			if (!dtb_has_bytes(cursor, end, padded_length)) {
 				return false;
 			}
 
 			const void *property_value = cursor;
 
-			if (
-				visitor != 0 &&
-				visitor->property != 0
-			) {
-				visitor->property(
-					(const char *)property_name,
-					property_value,
-					length,
-					depth - 1U,
-					context
-				);
+			if (visitor != 0 && visitor->property != 0) {
+				visitor->property((const char *)property_name, property_value, length, depth - 1U, context);
 			}
 
 			cursor += padded_length;
@@ -497,18 +412,16 @@ bool dtb_walk(
 	return false;
 }
 
-static void dtb_dump_indent(uint32_t depth)
+static void
+dtb_dump_indent(uint32_t depth)
 {
 	for (uint32_t index = 0; index < depth; index++) {
 		kputs("  ");
 	}
 }
 
-static void dtb_dump_begin_node(
-	const char *name,
-	uint32_t depth,
-	void *context
-)
+static void
+dtb_dump_begin_node(const char *name, uint32_t depth, void *context)
 {
 	dtb_dump_context_t *dump_context = context;
 
@@ -529,13 +442,8 @@ static void dtb_dump_begin_node(
 	kputln(name);
 }
 
-static void dtb_dump_property(
-	const char *name,
-	const void *value,
-	uint32_t length,
-	uint32_t depth,
-	void *context
-)
+static void
+dtb_dump_property(const char *name, const void *value, uint32_t length, uint32_t depth, void *context)
 {
 	(void)value;
 
@@ -552,12 +460,10 @@ static void dtb_dump_property(
 	kputln(" bytes)");
 }
 
-bool dtb_dump(const dtb_t *dtb)
+bool
+dtb_dump(const dtb_t *dtb)
 {
-	dtb_dump_context_t context = {
-		.node_count = 0,
-		.property_count = 0
-	};
+	dtb_dump_context_t context = {.node_count = 0, .property_count = 0};
 
 	/*
 	 * This runs before the permanent TTBR1 transition. Materialize callback

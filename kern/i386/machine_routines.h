@@ -18,7 +18,8 @@
 
 #define I386_EFLAGS_IF (1ULL << 9U)
 
-static inline uint64_t i386_read_flags(void)
+static inline uint64_t
+i386_read_flags(void)
 {
 	uintptr_t flags;
 
@@ -31,7 +32,8 @@ static inline uint64_t i386_read_flags(void)
 	return (uint64_t)flags;
 }
 
-static inline uint64_t ml_irq_save(void)
+static inline uint64_t
+ml_irq_save(void)
 {
 	uint64_t flags = i386_read_flags();
 
@@ -39,7 +41,8 @@ static inline uint64_t ml_irq_save(void)
 	return flags;
 }
 
-static inline void ml_irq_restore(uint64_t state)
+static inline void
+ml_irq_restore(uint64_t state)
 {
 	if ((state & I386_EFLAGS_IF) != 0ULL) {
 		__asm__ volatile("sti" : : : "memory");
@@ -48,18 +51,21 @@ static inline void ml_irq_restore(uint64_t state)
 	}
 }
 
-static inline void ml_irq_enable(void)
+static inline void
+ml_irq_enable(void)
 {
 	__asm__ volatile("sti" : : : "memory");
 }
 
-static inline void ml_irq_disable(void)
+static inline void
+ml_irq_disable(void)
 {
 	__asm__ volatile("cli" : : : "memory");
 }
 
 /* Whether IRQs are enabled on this CPU right now (EFLAGS.IF). */
-static inline bool ml_irq_enabled(void)
+static inline bool
+ml_irq_enabled(void)
 {
 	return (i386_read_flags() & I386_EFLAGS_IF) != 0ULL;
 }

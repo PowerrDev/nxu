@@ -47,7 +47,8 @@ static uint64_t g_tsc_frequency;
 static volatile uint64_t g_timer_interrupt_count;
 static uint32_t g_timer_interrupt_rate;
 
-static inline uint64_t timer_rdtsc(void)
+static inline uint64_t
+timer_rdtsc(void)
 {
 	uint32_t low;
 	uint32_t high;
@@ -62,7 +63,8 @@ static inline uint64_t timer_rdtsc(void)
  * sees the terminal count, so every delay (a busy host, an SMI, the slow port
  * accesses of an emulator) can only make the result longer than the truth.
  */
-static uint64_t timer_measure_countdown(uint8_t gate)
+static uint64_t
+timer_measure_countdown(uint8_t gate)
 {
 	/* Gate channel 2 off and the speaker off while it is programmed. */
 	outb(PIT_GATE_PORT, (uint8_t)(gate & ~0x03U));
@@ -84,7 +86,8 @@ static uint64_t timer_measure_countdown(uint8_t gate)
 	return timer_rdtsc() - start;
 }
 
-uint64_t timer_calibrate(void)
+uint64_t
+timer_calibrate(void)
 {
 	uint8_t gate = inb(PIT_GATE_PORT);
 	uint64_t elapsed = ~0ULL;
@@ -106,36 +109,38 @@ uint64_t timer_calibrate(void)
 	return g_tsc_frequency;
 }
 
-uint64_t timer_get_frequency(void)
+uint64_t
+timer_get_frequency(void)
 {
 	return g_tsc_frequency;
 }
 
-uint64_t timer_get_ticks(void)
+uint64_t
+timer_get_ticks(void)
 {
 	return timer_rdtsc();
 }
 
-uint64_t timer_ticks_to_microseconds(uint64_t ticks)
+uint64_t
+timer_ticks_to_microseconds(uint64_t ticks)
 {
 	if (g_tsc_frequency == 0ULL) return 0ULL;
 
-	return ticks / g_tsc_frequency * 1000000ULL +
-		ticks % g_tsc_frequency * 1000000ULL / g_tsc_frequency;
+	return ticks / g_tsc_frequency * 1000000ULL + ticks % g_tsc_frequency * 1000000ULL / g_tsc_frequency;
 }
 
-uint64_t timer_get_microseconds(void)
+uint64_t
+timer_get_microseconds(void)
 {
 	return timer_ticks_to_microseconds(timer_rdtsc());
 }
 
-void timer_delay_ms(uint64_t milliseconds)
+void
+timer_delay_ms(uint64_t milliseconds)
 {
 	if (g_tsc_frequency == 0ULL) return;
 
-	uint64_t wait_ticks =
-		milliseconds / 1000ULL * g_tsc_frequency +
-		milliseconds % 1000ULL * g_tsc_frequency / 1000ULL;
+	uint64_t wait_ticks = milliseconds / 1000ULL * g_tsc_frequency + milliseconds % 1000ULL * g_tsc_frequency / 1000ULL;
 	uint64_t start = timer_rdtsc();
 
 	while ((timer_rdtsc() - start) < wait_ticks) {
@@ -143,7 +148,8 @@ void timer_delay_ms(uint64_t milliseconds)
 	}
 }
 
-void timer_start_periodic(uint32_t frequency_hz)
+void
+timer_start_periodic(uint32_t frequency_hz)
 {
 	if (frequency_hz == 0U) return;
 
@@ -168,13 +174,15 @@ void timer_start_periodic(uint32_t frequency_hz)
 	ml_irq_restore(state);
 }
 
-void timer_handle_interrupt(void)
+void
+timer_handle_interrupt(void)
 {
 	/* The PIT reloads itself, so unlike arm64 there is nothing to rearm. */
 	g_timer_interrupt_count++;
 }
 
-uint64_t timer_get_interrupt_count(void)
+uint64_t
+timer_get_interrupt_count(void)
 {
 	/* A 64-bit load is two instructions here; keep the handler out of it. */
 	uint64_t state = ml_irq_save();
@@ -184,7 +192,8 @@ uint64_t timer_get_interrupt_count(void)
 	return count;
 }
 
-uint32_t timer_get_interrupt_rate(void)
+uint32_t
+timer_get_interrupt_rate(void)
 {
 	return g_timer_interrupt_rate;
 }

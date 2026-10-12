@@ -20,38 +20,45 @@
 #include <stdint.h>
 
 /* x86 caches are on out of reset (CR0.CD/NW are clear); nothing to bring up. */
-static inline bool cache_init(void)
+static inline bool
+cache_init(void)
 {
 	return true;
 }
 
-static inline bool cache_instruction_enabled(void)
+static inline bool
+cache_instruction_enabled(void)
 {
 	return true;
 }
 
-static inline bool cache_data_enabled(void)
+static inline bool
+cache_data_enabled(void)
 {
 	return true;
 }
 
 /* 64 bytes on every part NXU targets; only a stride hint for maintenance loops. */
-static inline uint32_t cache_instruction_line_size(void)
+static inline uint32_t
+cache_instruction_line_size(void)
 {
 	return 64U;
 }
 
-static inline uint32_t cache_data_line_size(void)
+static inline uint32_t
+cache_data_line_size(void)
 {
 	return 64U;
 }
 
-static inline void cache_dump(void)
+static inline void
+cache_dump(void)
 {
 }
 
 /* Instruction fetch is coherent with data stores: nothing to publish. */
-static inline void cache_sync_instruction_range(uint64_t address, uint64_t size)
+static inline void
+cache_sync_instruction_range(uint64_t address, uint64_t size)
 {
 	(void)address;
 	(void)size;

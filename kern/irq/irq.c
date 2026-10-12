@@ -35,7 +35,8 @@ static bool g_irq_initialized;
  *
  * Reset every chain. Repeated initialisation is harmless.
  */
-bool irq_init(void)
+bool
+irq_init(void)
 {
 	if (g_irq_initialized) return true;
 	memset(g_irq_table, 0, sizeof(g_irq_table));
@@ -51,7 +52,8 @@ bool irq_init(void)
  * The slot is filled with local IRQs masked so dispatch cannot observe a
  * partially installed entry.
  */
-bool irq_register(uint32_t intid, irq_handler_t handler, void *context)
+bool
+irq_register(uint32_t intid, irq_handler_t handler, void *context)
 {
 	if (!g_irq_initialized || intid >= IRQ_LINE_COUNT || handler == 0) return false;
 
@@ -84,7 +86,8 @@ bool irq_register(uint32_t intid, irq_handler_t handler, void *context)
  *
  * Remove the chain entry that matches both handler and context exactly.
  */
-bool irq_unregister(uint32_t intid, irq_handler_t handler, void *context)
+bool
+irq_unregister(uint32_t intid, irq_handler_t handler, void *context)
 {
 	if (!g_irq_initialized || intid >= IRQ_LINE_COUNT || handler == 0) return false;
 
@@ -111,7 +114,8 @@ bool irq_unregister(uint32_t intid, irq_handler_t handler, void *context)
  * least one handler was present. A handler cannot tell the dispatcher whether
  * the interrupt was its own, so "handled" means "someone was listening".
  */
-bool irq_dispatch(uint32_t intid)
+bool
+irq_dispatch(uint32_t intid)
 {
 	if (!g_irq_initialized || intid >= IRQ_LINE_COUNT) return false;
 
@@ -145,7 +149,8 @@ static bool g_irq_initialized;
  * Initialize the fixed architectural interrupt dispatch table.
  * Registration state is reset before device drivers are attached.
  */
-bool irq_init(void)
+bool
+irq_init(void)
 {
 	if (g_irq_initialized) return true;
 	memset(g_irq_table, 0, sizeof(g_irq_table));
@@ -160,7 +165,8 @@ bool irq_init(void)
  * IRQs masked so interrupt dispatch cannot observe a partially installed
  * handler.
  */
-bool irq_register(uint32_t intid, irq_handler_t handler, void *context)
+bool
+irq_register(uint32_t intid, irq_handler_t handler, void *context)
 {
 	if (!g_irq_initialized || intid > IRQ_MAX_INTID || handler == 0) return false;
 
@@ -184,7 +190,8 @@ bool irq_register(uint32_t intid, irq_handler_t handler, void *context)
  * Remove one interrupt source binding. The handler and context must still
  * match the current owner.
  */
-bool irq_unregister(uint32_t intid, irq_handler_t handler, void *context)
+bool
+irq_unregister(uint32_t intid, irq_handler_t handler, void *context)
 {
 	if (!g_irq_initialized || intid > IRQ_MAX_INTID || handler == 0) return false;
 
@@ -208,7 +215,8 @@ bool irq_unregister(uint32_t intid, irq_handler_t handler, void *context)
  * Invoke the driver routine for one already-acknowledged INTID. The caller
  * retains responsibility for GIC end-of-interrupt.
  */
-bool irq_dispatch(uint32_t intid)
+bool
+irq_dispatch(uint32_t intid)
 {
 	if (!g_irq_initialized || intid > IRQ_MAX_INTID) return false;
 

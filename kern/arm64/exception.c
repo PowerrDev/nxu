@@ -71,17 +71,20 @@ _Static_assert(offsetof(arm64_exception_frame_t, sp_el0) == 296U, "exception fra
 
 static bool g_panic_active;
 
-static uint8_t exception_class(uint64_t esr)
+static uint8_t
+exception_class(uint64_t esr)
 {
 	return (uint8_t)((esr >> 26U) & 0x3FU);
 }
 
-static uint8_t exception_instruction_length(uint64_t esr)
+static uint8_t
+exception_instruction_length(uint64_t esr)
 {
 	return (uint8_t)((esr >> 25U) & 0x1U);
 }
 
-static uint32_t exception_iss(uint64_t esr)
+static uint32_t
+exception_iss(uint64_t esr)
 {
 	return (uint32_t)(esr & 0x01FFFFFFU);
 }
@@ -94,7 +97,8 @@ static uint32_t exception_iss(uint64_t esr)
  * pointer tables already contain higher-half addresses, so direct PC-relative
  * printing keeps the panic path usable during both bootstrap and runtime.
  */
-static __attribute__((noinline, optnone)) void exception_print_name(uint8_t ec)
+static __attribute__((noinline, optnone)) void
+exception_print_name(uint8_t ec)
 {
 	if (ec == 0x00U) {
 		kputs("Undefined Instruction");
@@ -134,7 +138,8 @@ static __attribute__((noinline, optnone)) void exception_print_name(uint8_t ec)
 	kputs("Unhandled ARM64 Exception");
 }
 
-static __attribute__((noinline, optnone)) void exception_print_origin(arm64_exception_origin_t origin)
+static __attribute__((noinline, optnone)) void
+exception_print_origin(arm64_exception_origin_t origin)
 {
 	if (origin == ARM64_EXCEPTION_ORIGIN_CURRENT_EL_SP0) {
 		kputs("current EL using SP_EL0");
@@ -159,7 +164,8 @@ static __attribute__((noinline, optnone)) void exception_print_origin(arm64_exce
 	kputs("invalid vector source");
 }
 
-static __attribute__((noinline, optnone)) void exception_print_instruction_length(uint8_t il)
+static __attribute__((noinline, optnone)) void
+exception_print_instruction_length(uint8_t il)
 {
 	if (il != 0U) {
 		kputs("32-bit instruction");
@@ -169,7 +175,8 @@ static __attribute__((noinline, optnone)) void exception_print_instruction_lengt
 	kputs("16-bit or unknown");
 }
 
-static __attribute__((noinline, optnone)) void exception_print_trap_origin(uint64_t vector_id)
+static __attribute__((noinline, optnone)) void
+exception_print_trap_origin(uint64_t vector_id)
 {
 	if (exception_vector_from_aarch64_el0(vector_id)) {
 		kputs("User trap type ");
@@ -183,7 +190,8 @@ static __attribute__((noinline, optnone)) void exception_print_trap_origin(uint6
  * These are NXU panic categories, not the architectural ESR exception
  * class numbers.
  */
-static uint8_t panic_trap_type(uint8_t ec)
+static uint8_t
+panic_trap_type(uint8_t ec)
 {
 	switch (ec) {
 	case 0x00:
@@ -205,7 +213,8 @@ static uint8_t panic_trap_type(uint8_t ec)
 	}
 }
 
-static __attribute__((noreturn)) void panic_halt(void)
+static __attribute__((noreturn)) void
+panic_halt(void)
 {
 	__asm__ volatile("msr daifset, #0xf" : : : "memory");
 
@@ -214,7 +223,8 @@ static __attribute__((noreturn)) void panic_halt(void)
 	}
 }
 
-static void kput_small_decimal(uint32_t value)
+static void
+kput_small_decimal(uint32_t value)
 {
 	if (value >= 10U) {
 		kputc((char)('0' + value / 10U));
@@ -223,7 +233,8 @@ static void kput_small_decimal(uint32_t value)
 	kputc((char)('0' + value % 10U));
 }
 
-static void panic_print_x_register(uint32_t index, uint64_t value)
+static void
+panic_print_x_register(uint32_t index, uint64_t value)
 {
 	/* The extra spaces align x0-x9 with x10-x28. */
 	if (index < 10U) {
@@ -237,12 +248,14 @@ static void panic_print_x_register(uint32_t index, uint64_t value)
 	kputhex64(value);
 }
 
-static uint64_t exception_interrupted_stack_pointer(const arm64_exception_frame_t *frame)
+static uint64_t
+exception_interrupted_stack_pointer(const arm64_exception_frame_t *frame)
 {
 	return exception_vector_from_aarch64_el0(frame->vector_id) ? frame->sp_el0 : frame->sp;
 }
 
-static void panic_print_thread_state(const arm64_exception_frame_t *frame)
+static void
+panic_print_thread_state(const arm64_exception_frame_t *frame)
 {
 	kputln("ARM Thread State (64-bit):");
 
@@ -288,12 +301,14 @@ static void panic_print_thread_state(const arm64_exception_frame_t *frame)
 	kputc('\n');
 }
 
-void exception_init(void)
+void
+exception_init(void)
 {
 	arm64_write_vbar_el1((uint64_t)exception_vectors);
 }
 
-arm64_exception_kind_t exception_vector_kind(uint64_t vector_id)
+arm64_exception_kind_t
+exception_vector_kind(uint64_t vector_id)
 {
 	if (vector_id >= 16ULL) {
 		return ARM64_EXCEPTION_KIND_INVALID;
@@ -302,7 +317,8 @@ arm64_exception_kind_t exception_vector_kind(uint64_t vector_id)
 	return (arm64_exception_kind_t)(vector_id & 0x3ULL);
 }
 
-arm64_exception_origin_t exception_vector_origin(uint64_t vector_id)
+arm64_exception_origin_t
+exception_vector_origin(uint64_t vector_id)
 {
 	if (vector_id >= 16ULL) {
 		return ARM64_EXCEPTION_ORIGIN_INVALID;
@@ -311,12 +327,14 @@ arm64_exception_origin_t exception_vector_origin(uint64_t vector_id)
 	return (arm64_exception_origin_t)(vector_id >> 2U);
 }
 
-bool exception_vector_from_aarch64_el0(uint64_t vector_id)
+bool
+exception_vector_from_aarch64_el0(uint64_t vector_id)
 {
 	return exception_vector_origin(vector_id) == ARM64_EXCEPTION_ORIGIN_LOWER_EL_AARCH64;
 }
 
-bool exception_validate_vector_classification(void)
+bool
+exception_validate_vector_classification(void)
 {
 	return exception_vector_kind(4ULL) == ARM64_EXCEPTION_KIND_SYNCHRONOUS &&
 		   exception_vector_origin(4ULL) == ARM64_EXCEPTION_ORIGIN_CURRENT_EL_SPX &&
@@ -328,7 +346,8 @@ bool exception_validate_vector_classification(void)
 		   exception_vector_origin(16ULL) == ARM64_EXCEPTION_ORIGIN_INVALID;
 }
 
-static void irq_handle(void)
+static void
+irq_handle(void)
 {
 	uint32_t intid = gic_acknowledge_interrupt();
 
@@ -362,13 +381,15 @@ static void irq_handle(void)
  * parked and returns from it, so the dying thread falls out of its EL0
  * excursion and exits.
  */
-static void exception_unwind_to_kernel(arm64_exception_frame_t *frame)
+static void
+exception_unwind_to_kernel(arm64_exception_frame_t *frame)
 {
 	frame->elr = arm64_el0_return_address();
 	frame->spsr = ARM64_SPSR_EL1H_MASKED;
 }
 
-static bool exception_handle_user_svc(arm64_exception_frame_t *frame)
+static bool
+exception_handle_user_svc(arm64_exception_frame_t *frame)
 {
 	if (!exception_vector_from_aarch64_el0(frame->vector_id) || exception_class(frame->esr) != ARM64_EC_SVC64) {
 		return false;
@@ -416,7 +437,8 @@ static bool exception_handle_user_svc(arm64_exception_frame_t *frame)
  * for it. Anything unrecognised is treated as an illegal instruction: EL0
  * has no business causing it and SIGILL is the least misleading answer.
  */
-static uint32_t exception_user_fault_signal(const arm64_exception_frame_t *frame)
+static uint32_t
+exception_user_fault_signal(const arm64_exception_frame_t *frame)
 {
 	uint32_t fault_status = exception_iss(frame->esr) & 0x3FU;
 
@@ -446,7 +468,8 @@ static uint32_t exception_user_fault_signal(const arm64_exception_frame_t *frame
 	}
 }
 
-static const char *exception_signal_name(uint32_t signal)
+static const char *
+exception_signal_name(uint32_t signal)
 {
 	switch (signal) {
 	case NXU_SIGSEGV:
@@ -470,7 +493,8 @@ static const char *exception_signal_name(uint32_t signal)
  * shared copy-on-write. On success the faulting instruction has nothing left
  * to trip over, so returning from the exception simply retries it.
  */
-static bool exception_resolve_page_fault(const arm64_exception_frame_t *frame, bool instruction)
+static bool
+exception_resolve_page_fault(const arm64_exception_frame_t *frame, bool instruction)
 {
 	uint32_t fault_status = exception_iss(frame->esr) & 0x3FU;
 
@@ -506,7 +530,8 @@ static bool exception_resolve_page_fault(const arm64_exception_frame_t *frame, b
  * Returns false only when there is no user process to blame (the fault came
  * from the kernel task, or termination was refused); the caller then panics.
  */
-static bool exception_handle_user_fault(arm64_exception_frame_t *frame)
+static bool
+exception_handle_user_fault(arm64_exception_frame_t *frame)
 {
 	if (!exception_vector_from_aarch64_el0(frame->vector_id)) {
 		return false;
@@ -577,7 +602,8 @@ static bool exception_handle_user_fault(arm64_exception_frame_t *frame)
  * would be; anything outside the current process's own user range is a
  * kernel bug and stays a panic.
  */
-static bool exception_handle_kernel_user_access(arm64_exception_frame_t *frame)
+static bool
+exception_handle_kernel_user_access(arm64_exception_frame_t *frame)
 {
 	if (exception_vector_origin(frame->vector_id) != ARM64_EXCEPTION_ORIGIN_CURRENT_EL_SPX ||
 		exception_class(frame->esr) != ARM64_EC_DABT_CURRENT || frame->far >= VM_MAX_USER_ADDRESS) {
@@ -596,7 +622,8 @@ static bool exception_handle_kernel_user_access(arm64_exception_frame_t *frame)
  * "returns" into the handler. One handler at a time -- the rest wait for the
  * handler's sigreturn, which comes back through here.
  */
-static void exception_deliver_pending_signals(arm64_exception_frame_t *frame)
+static void
+exception_deliver_pending_signals(arm64_exception_frame_t *frame)
 {
 	proc_t proc = current_proc();
 	thread_t thread = current_thread();
@@ -609,8 +636,7 @@ static void exception_deliver_pending_signals(arm64_exception_frame_t *frame)
 	for (;;) {
 		uint32_t signal = signal_dequeue(proc, thread);
 
-		if (signal == 0U)
-			return;
+		if (signal == 0U) return;
 
 		nxu_sigaction_t action;
 
@@ -623,8 +649,7 @@ static void exception_deliver_pending_signals(arm64_exception_frame_t *frame)
 		} else if (action.handler == NXU_SIG_IGN) {
 			continue;
 		} else if (action.handler == NXU_SIG_DFL) {
-			if (signal_default_action(signal) == SIGNAL_DEFAULT_IGNORE)
-				continue;
+			if (signal_default_action(signal) == SIGNAL_DEFAULT_IGNORE) continue;
 			terminate_with = signal;
 		} else {
 			uint32_t previous_mask = thread->sig_blocked;
@@ -646,7 +671,8 @@ static void exception_deliver_pending_signals(arm64_exception_frame_t *frame)
 	}
 }
 
-static void exception_dispatch(arm64_exception_frame_t *frame)
+static void
+exception_dispatch(arm64_exception_frame_t *frame)
 {
 	arm64_exception_kind_t kind = exception_vector_kind(frame->vector_id);
 
@@ -779,7 +805,8 @@ static void exception_dispatch(arm64_exception_frame_t *frame)
  * and, once the trap is handled, delivers any signal now due before the
  * thread returns to user mode.
  */
-void exception_handle(arm64_exception_frame_t *frame)
+void
+exception_handle(arm64_exception_frame_t *frame)
 {
 	thread_t thread = exception_vector_from_aarch64_el0(frame->vector_id) ? current_thread() : 0;
 

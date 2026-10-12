@@ -105,10 +105,10 @@ static thread_snapshot_t g_threads[THREAD_MAX];
 static nxu_stats_process_memory_t g_memory[PROC_MAX];
 static bool g_started;
 
-static bool trace_call(uint64_t call)
+static bool
+trace_call(uint64_t call)
 {
-	if (!kconsole_verbose() || !boot_arg_bool("log.trace", true))
-		return false;
+	if (!kconsole_verbose() || !boot_arg_bool("log.trace", true)) return false;
 	switch (call) {
 	/* bootd polls each live child every 10 ms; trace summaries retain counts. */
 	case NXU_SYS_WAITPID:
@@ -137,19 +137,19 @@ static bool trace_call(uint64_t call)
 	}
 }
 
-static uint32_t call_slot(uint64_t call)
+static uint32_t
+call_slot(uint64_t call)
 {
 	return call < CALL_COUNT && g_names[call] != 0 ? (uint32_t)call : 0U;
 }
 
-void diagnostics_syscall_begin(const syscall_request_t *request)
+void
+diagnostics_syscall_begin(const syscall_request_t *request)
 {
-	if (!kconsole_verbose())
-		return;
+	if (!kconsole_verbose()) return;
 	processor_t cpu = current_processor();
 	uint32_t id = cpu != 0 ? cpu->cpu_id : 0U;
-	if (id < NXU_MAX_CPUS)
-		__atomic_fetch_add(&g_calls[id][call_slot(request->number)], 1U, __ATOMIC_RELAXED);
+	if (id < NXU_MAX_CPUS) __atomic_fetch_add(&g_calls[id][call_slot(request->number)], 1U, __ATOMIC_RELAXED);
 	if (trace_call(request->number))
 		kverbosef("syscall: cpu=%u pid=%u tid=%llu %s(%llu) args=%llx,%llx,%llx,%llx,%llx,%llx enter\n", id,
 				  proc_selfpid(), (unsigned long long)thread_tid(current_thread()),
@@ -160,10 +160,10 @@ void diagnostics_syscall_begin(const syscall_request_t *request)
 				  (unsigned long long)request->arguments[5]);
 }
 
-void diagnostics_syscall_end(const syscall_request_t *request, syscall_result_t result)
+void
+diagnostics_syscall_end(const syscall_request_t *request, syscall_result_t result)
 {
-	if (!kconsole_verbose())
-		return;
+	if (!kconsole_verbose()) return;
 	processor_t cpu = current_processor();
 	uint32_t id = cpu != 0 ? cpu->cpu_id : 0U;
 	if (result.action == SYSCALL_ACTION_RETURN && result.value >= UINT64_MAX - 4094ULL && id < NXU_MAX_CPUS)
@@ -175,7 +175,8 @@ void diagnostics_syscall_end(const syscall_request_t *request, syscall_result_t 
 				  (unsigned long long)result.value, (unsigned)result.action);
 }
 
-static void diagnostics_sample(void)
+static void
+diagnostics_sample(void)
 {
 	uint32_t total;
 	nxu_stats_system_t system;
@@ -207,14 +208,12 @@ static void diagnostics_sample(void)
 	kverbosef("ipc: outstanding_ports=%llu\n", (unsigned long long)ipc_port_outstanding_count());
 	uint32_t processes = proc_snapshot(g_processes, PROC_MAX);
 	uint32_t memories = proc_memory_snapshot(g_memory, PROC_MAX);
-	if (memories > PROC_MAX)
-		memories = PROC_MAX;
+	if (memories > PROC_MAX) memories = PROC_MAX;
 	for (uint32_t i = 0; i < processes; i++) {
 		proc_snapshot_t *p = &g_processes[i];
 		for (uint32_t c = 0; c < PROC_NAME_MAX; c++)
 			if ((unsigned char)p->name[c] < 32U || (unsigned char)p->name[c] > 126U) {
-				if (p->name[c] == 0)
-					break;
+				if (p->name[c] == 0) break;
 				p->name[c] = '?';
 			}
 		p->name[PROC_NAME_MAX - 1U] = 0;
@@ -249,28 +248,24 @@ static void diagnostics_sample(void)
 	}
 }
 
-static void diagnostics_worker(void *parameter)
+static void
+diagnostics_worker(void *parameter)
 {
 	uint32_t interval = (uint32_t)(uintptr_t)parameter;
 	for (;;) {
-		if (kconsole_verbose())
-			diagnostics_sample();
-		if (!sched_sleep_us((uint64_t)interval * 1000ULL))
-			sched_yield();
+		if (kconsole_verbose()) diagnostics_sample();
+		if (!sched_sleep_us((uint64_t)interval * 1000ULL)) sched_yield();
 	}
 }
 
-void diagnostics_start(void)
+void
+diagnostics_start(void)
 {
-	if (g_started || !kconsole_verbose())
-		return;
+	if (g_started || !kconsole_verbose()) return;
 	uint32_t interval = boot_arg_uint32("log.stats_ms", 1000U);
-	if (interval == 0U)
-		return;
-	if (interval < 250U)
-		interval = 250U;
-	if (interval > 60000U)
-		interval = 60000U;
+	if (interval == 0U) return;
+	if (interval < 250U) interval = 250U;
+	if (interval > 60000U) interval = 60000U;
 	thread_t thread = 0;
 	nxu_cpuset_t affinity;
 	cpuset_clear(&affinity);

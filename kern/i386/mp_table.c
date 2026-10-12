@@ -19,7 +19,8 @@
 #include <string.h>
 
 /* Everything scanned here lies below 1 MiB, comfortably inside the direct map. */
-static inline const void *mp_direct(uint32_t physical_address)
+static inline const void *
+mp_direct(uint32_t physical_address)
 {
 	return (const void *)(uintptr_t)(physical_address + VMM_HIGHER_HALF_BASE);
 }
@@ -32,7 +33,8 @@ static inline const void *mp_direct(uint32_t physical_address)
  * RSDP itself always is. 0 (mp_direct(0) is never a valid table -- it is
  * where the real-mode IVT lives) means "outside the direct map, refuse it".
  */
-static const void *mp_direct_checked(uint32_t physical_address)
+static const void *
+mp_direct_checked(uint32_t physical_address)
 {
 	if (physical_address == 0U || (uint64_t)physical_address >= VM_DIRECT_MAP_SIZE) return 0;
 
@@ -42,7 +44,7 @@ static const void *mp_direct_checked(uint32_t physical_address)
 typedef struct __attribute__((packed)) {
 	char signature[4]; /* "_MP_" */
 	uint32_t config_physical;
-	uint8_t length; /* In 16-byte units; always 1. */
+	uint8_t length;	  /* In 16-byte units; always 1. */
 	uint8_t spec_rev; /* 1 = MP 1.1, 4 = MP 1.4. */
 	uint8_t checksum;
 	uint8_t feature[5];
@@ -93,18 +95,21 @@ _Static_assert(sizeof(mp_entry_processor_t) == MP_ENTRY_SIZE_PROCESSOR, "MP proc
 #define MP_CPU_FLAG_ENABLED 0x01U
 #define MP_CPU_FLAG_BSP 0x02U
 
-static uint8_t mp_checksum(const void *data, uint32_t length)
+static uint8_t
+mp_checksum(const void *data, uint32_t length)
 {
 	const uint8_t *bytes = (const uint8_t *)data;
 	uint8_t sum = 0U;
 
-	for (uint32_t index = 0U; index < length; index++) sum = (uint8_t)(sum + bytes[index]);
+	for (uint32_t index = 0U; index < length; index++)
+		sum = (uint8_t)(sum + bytes[index]);
 
 	return sum;
 }
 
 /* The floating pointer structure, or 0 if [base, base + length) holds none. */
-static const mp_floating_pointer_t *mp_scan_range(uint32_t base, uint32_t length)
+static const mp_floating_pointer_t *
+mp_scan_range(uint32_t base, uint32_t length)
 {
 	for (uint32_t offset = 0U; offset + sizeof(mp_floating_pointer_t) <= length; offset += 16U) {
 		const mp_floating_pointer_t *candidate = (const mp_floating_pointer_t *)mp_direct(base + offset);
@@ -119,7 +124,8 @@ static const mp_floating_pointer_t *mp_scan_range(uint32_t base, uint32_t length
 	return 0;
 }
 
-static const mp_floating_pointer_t *mp_find_floating_pointer(void)
+static const mp_floating_pointer_t *
+mp_find_floating_pointer(void)
 {
 	/* The EBDA segment (paragraphs), at the fixed BIOS data area word 0x40E. */
 	uint16_t ebda_segment = *(const uint16_t *)mp_direct(0x40EU);
@@ -173,7 +179,8 @@ _Static_assert(sizeof(acpi_madt_local_apic_t) == 8U, "ACPI MADT Processor Local 
 #define MP_CONFIG_LENGTH_MAX 8192U
 
 /* True if a usable MADT was found and table->cpu_count/lapic_physical are filled in. */
-static bool acpi_scan(mp_table_t *table)
+static bool
+acpi_scan(mp_table_t *table)
 {
 	const acpi_table_header_t *madt_header = nxu_acpi_find_table("APIC");
 	if (!madt_header || madt_header->length < sizeof(*madt_header) + 8U) return false;
@@ -203,7 +210,8 @@ static bool acpi_scan(mp_table_t *table)
 			uint32_t apic_id, flags;
 			memcpy(&apic_id, cursor + 4U, 4U);
 			memcpy(&flags, cursor + 8U, 4U);
-			if ((flags & ACPI_MADT_LOCAL_APIC_ENABLED) != 0U && apic_id <= 255U && table->cpu_count < MP_TABLE_MAX_CPUS) {
+			if ((flags & ACPI_MADT_LOCAL_APIC_ENABLED) != 0U && apic_id <= 255U &&
+				table->cpu_count < MP_TABLE_MAX_CPUS) {
 				table->cpus[table->cpu_count++].apic_id = (uint8_t)apic_id;
 			} else if ((flags & ACPI_MADT_LOCAL_APIC_ENABLED) != 0U && apic_id > 255U) {
 				kprintf("NxuACPIPlatform: x2APIC id=%u exceeds this kernel's xAPIC support\n", apic_id);
@@ -212,15 +220,18 @@ static bool acpi_scan(mp_table_t *table)
 		if (entry_type == 5U && entry_length >= 12U) {
 			uint64_t override;
 			memcpy(&override, cursor + 4U, 8U);
-			if (override <= UINT32_MAX) lapic_physical = (uint32_t)override;
-			else return false;
+			if (override <= UINT32_MAX)
+				lapic_physical = (uint32_t) override;
+			else
+				return false;
 		}
 		cursor += entry_length;
 	}
 
 	table->lapic_physical = lapic_physical;
 
-	kprintf("NxuACPIPlatform: MADT lists %u CPU(s), Local APIC at phys 0x%x\n", table->cpu_count, table->lapic_physical);
+	kprintf("NxuACPIPlatform: MADT lists %u CPU(s), Local APIC at phys 0x%x\n", table->cpu_count,
+			table->lapic_physical);
 
 	for (uint32_t index = 0U; index < table->cpu_count; index++) {
 		kprintf("NxuACPIPlatform: processor apic_id=%u\n", table->cpus[index].apic_id);
@@ -236,7 +247,8 @@ static bool acpi_scan(mp_table_t *table)
 	return table->present;
 }
 
-bool mp_table_scan(mp_table_t *table)
+bool
+mp_table_scan(mp_table_t *table)
 {
 	if (table == 0) return false;
 
@@ -253,11 +265,8 @@ bool mp_table_scan(mp_table_t *table)
 		return false;
 	}
 
-	kprintf(
-		"mp_table_scan: floating pointer at phys 0x%x, spec 1.%u\n",
-		(uint32_t)((uintptr_t)floating_pointer - VMM_HIGHER_HALF_BASE),
-		floating_pointer->spec_rev
-	);
+	kprintf("mp_table_scan: floating pointer at phys 0x%x, spec 1.%u\n",
+			(uint32_t)((uintptr_t)floating_pointer - VMM_HIGHER_HALF_BASE), floating_pointer->spec_rev);
 
 	if (floating_pointer->feature[0] != 0U || floating_pointer->config_physical == 0U) {
 		/* MP 1.1's "default configuration" case: no config table to read the real topology from. */
@@ -300,8 +309,8 @@ bool mp_table_scan(mp_table_t *table)
 			}
 
 			cursor += MP_ENTRY_SIZE_PROCESSOR;
-		} else if (entry_type == MP_ENTRY_BUS || entry_type == MP_ENTRY_IOAPIC ||
-			entry_type == MP_ENTRY_IO_INTERRUPT || entry_type == MP_ENTRY_LOCAL_INTERRUPT) {
+		} else if (entry_type == MP_ENTRY_BUS || entry_type == MP_ENTRY_IOAPIC || entry_type == MP_ENTRY_IO_INTERRUPT ||
+				   entry_type == MP_ENTRY_LOCAL_INTERRUPT) {
 			/*
 			 * This port keeps the legacy 8259 PIC for every existing device
 			 * IRQ (see doc/i386/smp.md's known gaps): bus, IOAPIC and
@@ -314,18 +323,11 @@ bool mp_table_scan(mp_table_t *table)
 		}
 	}
 
-	kprintf(
-		"mp_table_scan: %u CPU(s), Local APIC at phys 0x%x\n",
-		table->cpu_count,
-		table->lapic_physical
-	);
+	kprintf("mp_table_scan: %u CPU(s), Local APIC at phys 0x%x\n", table->cpu_count, table->lapic_physical);
 
 	for (uint32_t index = 0U; index < table->cpu_count; index++) {
-		kprintf(
-			"NxuACPIPlatform: processor apic_id=%u%s\n",
-			table->cpus[index].apic_id,
-			table->cpus[index].is_bsp ? " (BSP)" : ""
-		);
+		kprintf("NxuACPIPlatform: processor apic_id=%u%s\n", table->cpus[index].apic_id,
+				table->cpus[index].is_bsp ? " (BSP)" : "");
 	}
 
 	table->present = table->cpu_count != 0U;

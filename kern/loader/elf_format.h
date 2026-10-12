@@ -138,7 +138,8 @@ typedef elf32_program_header_t loader_disk_segment_t;
 static inline void
 loader_header_widen(const loader_disk_header_t *disk, loader_header_t *header)
 {
-	for (uint32_t index = 0U; index < ELF_IDENT_SIZE; index++) header->ident[index] = disk->ident[index];
+	for (uint32_t index = 0U; index < ELF_IDENT_SIZE; index++)
+		header->ident[index] = disk->ident[index];
 	header->type = disk->type;
 	header->machine = disk->machine;
 	header->version = disk->version;
@@ -201,10 +202,17 @@ static inline bool
 loader_header_valid(const loader_header_t *header)
 {
 	if (header == 0) return false;
-	if (header->ident[0] != 0x7FU || header->ident[1] != 'E' || header->ident[2] != 'L' || header->ident[3] != 'F') return false;
-	if (header->ident[4] != LOADER_ELF_CLASS || header->ident[5] != ELF_DATA_LSB || header->ident[6] != ELF_VERSION_CURRENT) return false;
-	if (header->type != ELF_TYPE_EXEC || header->machine != LOADER_ELF_MACHINE || header->version != ELF_VERSION_CURRENT) return false;
-	if (header->header_size != LOADER_ELF_HEADER_SIZE || header->program_header_entry_size != LOADER_ELF_PROGRAM_HEADER_SIZE) return false;
+	if (header->ident[0] != 0x7FU || header->ident[1] != 'E' || header->ident[2] != 'L' || header->ident[3] != 'F')
+		return false;
+	if (header->ident[4] != LOADER_ELF_CLASS || header->ident[5] != ELF_DATA_LSB ||
+		header->ident[6] != ELF_VERSION_CURRENT)
+		return false;
+	if (header->type != ELF_TYPE_EXEC || header->machine != LOADER_ELF_MACHINE ||
+		header->version != ELF_VERSION_CURRENT)
+		return false;
+	if (header->header_size != LOADER_ELF_HEADER_SIZE ||
+		header->program_header_entry_size != LOADER_ELF_PROGRAM_HEADER_SIZE)
+		return false;
 	if (header->program_header_count == 0U || header->program_header_count > ELF_PROGRAM_HEADER_MAX) return false;
 	return header->entry != 0ULL;
 }
@@ -234,7 +242,8 @@ static inline bool
 loader_segment_valid(const loader_segment_t *segment)
 {
 	if (segment->memory_size < segment->file_size || segment->memory_size == 0ULL) return false;
-	if ((segment->virtual_address & (LOADER_PAGE_SIZE - 1ULL)) != (segment->offset & (LOADER_PAGE_SIZE - 1ULL))) return false;
+	if ((segment->virtual_address & (LOADER_PAGE_SIZE - 1ULL)) != (segment->offset & (LOADER_PAGE_SIZE - 1ULL)))
+		return false;
 
 	uint64_t segment_end;
 	if (loader_add_overflow(segment->virtual_address, segment->memory_size, &segment_end)) return false;
@@ -292,7 +301,8 @@ loader_image_inspect(const void *image, uint64_t size, loader_image_info_t *info
 	if (image == 0 || info == 0) return "no image";
 	if (size < sizeof(disk_header)) return "truncated header";
 
-	for (uint32_t index = 0U; index < sizeof(disk_header); index++) ((uint8_t *)&disk_header)[index] = bytes[index];
+	for (uint32_t index = 0U; index < sizeof(disk_header); index++)
+		((uint8_t *)&disk_header)[index] = bytes[index];
 #if LOADER_ELF_WIDEN
 	loader_header_widen(&disk_header, &header);
 #else
@@ -308,7 +318,8 @@ loader_image_inspect(const void *image, uint64_t size, loader_image_info_t *info
 		loader_disk_segment_t disk_segment;
 		const uint8_t *record = bytes + header.program_header_offset + (uint64_t)index * sizeof(disk_segment);
 
-		for (uint32_t byte = 0U; byte < sizeof(disk_segment); byte++) ((uint8_t *)&disk_segment)[byte] = record[byte];
+		for (uint32_t byte = 0U; byte < sizeof(disk_segment); byte++)
+			((uint8_t *)&disk_segment)[byte] = record[byte];
 #if LOADER_ELF_WIDEN
 		loader_segment_widen(&disk_segment, &segments[index]);
 #else
@@ -332,7 +343,8 @@ loader_image_inspect(const void *image, uint64_t size, loader_image_info_t *info
 		if (!loader_segment_valid(segment)) return "bad segment";
 
 		uint64_t page_start = segment->virtual_address & ~(LOADER_PAGE_SIZE - 1ULL);
-		uint64_t page_end = (segment->virtual_address + segment->memory_size + LOADER_PAGE_SIZE - 1ULL) & ~(LOADER_PAGE_SIZE - 1ULL);
+		uint64_t page_end =
+			(segment->virtual_address + segment->memory_size + LOADER_PAGE_SIZE - 1ULL) & ~(LOADER_PAGE_SIZE - 1ULL);
 
 		for (uint32_t other = 0U; other < index; other++) {
 			const loader_segment_t *earlier = &segments[other];
@@ -340,7 +352,8 @@ loader_image_inspect(const void *image, uint64_t size, loader_image_info_t *info
 			if (earlier->type != ELF_PT_LOAD) continue;
 
 			uint64_t earlier_start = earlier->virtual_address & ~(LOADER_PAGE_SIZE - 1ULL);
-			uint64_t earlier_end = (earlier->virtual_address + earlier->memory_size + LOADER_PAGE_SIZE - 1ULL) & ~(LOADER_PAGE_SIZE - 1ULL);
+			uint64_t earlier_end = (earlier->virtual_address + earlier->memory_size + LOADER_PAGE_SIZE - 1ULL) &
+								   ~(LOADER_PAGE_SIZE - 1ULL);
 
 			if (page_start < earlier_end && earlier_start < page_end) return "segments share a page";
 		}

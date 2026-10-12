@@ -33,7 +33,8 @@
 
 static const char g_kernel_test_message[] = "NXU i386 ramfs round trip";
 
-bool i386_init_kernel(const i386_boot_info_t *boot)
+bool
+i386_init_kernel(const i386_boot_info_t *boot)
 {
 	/* The VM phase leaves the heap to this phase; a second init is harmless on i386. */
 	if (!heap_init()) {
@@ -101,20 +102,23 @@ bool i386_init_kernel(const i386_boot_info_t *boot)
 }
 
 /* Write a file into the ramfs root through the kernel process's descriptors and read it back. */
-static bool kernel_test_ramfs(void)
+static bool
+kernel_test_ramfs(void)
 {
 	filedesc_t filedesc = &proc_kernel()->p_fd;
 	uint32_t descriptor;
 
 	if (vfs_mkdir("/tmp") != VFS_STATUS_OK) return false;
 
-	if (vfs_open(filedesc, "/tmp/i386", VFS_OPEN_READ | VFS_OPEN_WRITE | VFS_OPEN_CREATE | VFS_OPEN_TRUNCATE, &descriptor) != VFS_STATUS_OK) {
+	if (vfs_open(filedesc, "/tmp/i386", VFS_OPEN_READ | VFS_OPEN_WRITE | VFS_OPEN_CREATE | VFS_OPEN_TRUNCATE,
+				 &descriptor) != VFS_STATUS_OK) {
 		return false;
 	}
 
 	uint64_t size = sizeof(g_kernel_test_message) - 1ULL;
 	uint64_t transferred = 0ULL;
-	bool ok = vfs_write(filedesc, descriptor, g_kernel_test_message, size, &transferred) == VFS_STATUS_OK && transferred == size;
+	bool ok = vfs_write(filedesc, descriptor, g_kernel_test_message, size, &transferred) == VFS_STATUS_OK &&
+			  transferred == size;
 
 	ok = ok && vfs_seek(filedesc, descriptor, 0ULL) == VFS_STATUS_OK;
 
@@ -129,7 +133,8 @@ static bool kernel_test_ramfs(void)
 	return ok && filedesc->fd_open_count == 0U;
 }
 
-bool i386_init_kernel_selftest(const i386_boot_info_t *boot)
+bool
+i386_init_kernel_selftest(const i386_boot_info_t *boot)
 {
 	bool ok = true;
 
@@ -150,7 +155,7 @@ bool i386_init_kernel_selftest(const i386_boot_info_t *boot)
 
 	/* The boot-args view must be the Multiboot command line we were given. */
 	if (boot->cmdline != 0 && (strlen(boot_args_raw()) < strlen(boot->cmdline) ||
-		memcmp(boot_args_raw(), boot->cmdline, strlen(boot->cmdline)) != 0)) {
+							   memcmp(boot_args_raw(), boot->cmdline, strlen(boot->cmdline)) != 0)) {
 		kputln("i386_init_kernel_selftest: FAIL boot-args do not carry the command line");
 		ok = false;
 	}

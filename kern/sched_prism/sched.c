@@ -93,17 +93,20 @@ static sched_state_t g_sched;
 static uint32_t g_sched_user_running;
 static uint32_t g_sched_user_peak;
 
-static bool sched_thread_is_user(thread_t thread)
+static bool
+sched_thread_is_user(thread_t thread)
 {
 	return thread != 0 && (thread->flags & TH_FLAG_KERNEL) == 0U && !thread_is_idle(thread);
 }
 
-uint32_t sched_user_running_peak(void)
+uint32_t
+sched_user_running_peak(void)
 {
 	return __atomic_load_n(&g_sched_user_peak, __ATOMIC_ACQUIRE);
 }
 
-void sched_user_running_reset_peak(void)
+void
+sched_user_running_reset_peak(void)
 {
 	__atomic_store_n(&g_sched_user_peak, __atomic_load_n(&g_sched_user_running, __ATOMIC_ACQUIRE), __ATOMIC_RELEASE);
 }
@@ -123,11 +126,11 @@ static waitq_t g_sched_sleep_queue;
 static uint32_t g_sched_sleepers;
 static bool g_sched_ticking;
 
-static bool sched_sleep_yield_until(uint64_t deadline)
+static bool
+sched_sleep_yield_until(uint64_t deadline)
 {
 	while (timer_get_microseconds() < deadline) {
-		if (!sched_yield())
-			return false;
+		if (!sched_yield()) return false;
 	}
 	return true;
 }
@@ -137,61 +140,58 @@ static waitq_t g_sched_kick_queue;
 static uint32_t g_sched_kick_sleepers;
 static uint32_t g_sched_kicks;
 
-bool sched_sleep_us(uint64_t microseconds)
+bool
+sched_sleep_us(uint64_t microseconds)
 {
-	if (!g_sched.initialized || current_thread() == 0 || thread_is_idle(current_thread()))
-		return false;
+	if (!g_sched.initialized || current_thread() == 0 || thread_is_idle(current_thread())) return false;
 
 	uint64_t deadline = timer_get_microseconds() + microseconds;
 
-	if (!__atomic_load_n(&g_sched_ticking, __ATOMIC_ACQUIRE))
-		return sched_sleep_yield_until(deadline);
+	if (!__atomic_load_n(&g_sched_ticking, __ATOMIC_ACQUIRE)) return sched_sleep_yield_until(deadline);
 
 	(void)__atomic_add_fetch(&g_sched_sleepers, 1U, __ATOMIC_ACQ_REL);
 
 	while (timer_get_microseconds() < deadline) {
 		uint32_t seq = waitq_seq(&g_sched_sleep_queue);
 
-		if (timer_get_microseconds() >= deadline)
-			break;
+		if (timer_get_microseconds() >= deadline) break;
 
-		if (!waitq_block_seq(&g_sched_sleep_queue, seq, false))
-			break;
+		if (!waitq_block_seq(&g_sched_sleep_queue, seq, false)) break;
 	}
 
 	(void)__atomic_sub_fetch(&g_sched_sleepers, 1U, __ATOMIC_ACQ_REL);
 	return true;
 }
 
-uint32_t sched_kick_sequence(void)
+uint32_t
+sched_kick_sequence(void)
 {
 	return __atomic_load_n(&g_sched_kicks, __ATOMIC_ACQUIRE);
 }
 
-bool sched_sleep_until_kicked(uint64_t microseconds)
+bool
+sched_sleep_until_kicked(uint64_t microseconds)
 {
 	return sched_sleep_until_kicked_seq(microseconds, sched_kick_sequence(), false);
 }
 
-bool sched_sleep_until_kicked_seq(uint64_t microseconds, uint32_t kicks, bool interruptible)
+bool
+sched_sleep_until_kicked_seq(uint64_t microseconds, uint32_t kicks, bool interruptible)
 {
-	if (!g_sched.initialized || current_thread() == 0 || thread_is_idle(current_thread()))
-		return false;
+	if (!g_sched.initialized || current_thread() == 0 || thread_is_idle(current_thread())) return false;
 
 	uint64_t now = timer_get_microseconds();
 	uint64_t deadline = microseconds > UINT64_MAX - now ? UINT64_MAX : now + microseconds;
 	bool completed = true;
 
-	if (!__atomic_load_n(&g_sched_ticking, __ATOMIC_ACQUIRE))
-		return sched_sleep_yield_until(deadline);
+	if (!__atomic_load_n(&g_sched_ticking, __ATOMIC_ACQUIRE)) return sched_sleep_yield_until(deadline);
 
 	(void)__atomic_add_fetch(&g_sched_kick_sleepers, 1U, __ATOMIC_ACQ_REL);
 
 	while (timer_get_microseconds() < deadline) {
 		uint32_t seq = waitq_seq(&g_sched_kick_queue);
 
-		if (__atomic_load_n(&g_sched_kicks, __ATOMIC_ACQUIRE) != kicks || timer_get_microseconds() >= deadline)
-			break;
+		if (__atomic_load_n(&g_sched_kicks, __ATOMIC_ACQUIRE) != kicks || timer_get_microseconds() >= deadline) break;
 		if (!waitq_block_seq(&g_sched_kick_queue, seq, interruptible)) {
 			completed = false;
 			break;
@@ -202,11 +202,11 @@ bool sched_sleep_until_kicked_seq(uint64_t microseconds, uint32_t kicks, bool in
 	return completed;
 }
 
-void sched_kick_sleepers(void)
+void
+sched_kick_sleepers(void)
 {
 	(void)__atomic_add_fetch(&g_sched_kicks, 1U, __ATOMIC_ACQ_REL);
-	if (__atomic_load_n(&g_sched_kick_sleepers, __ATOMIC_ACQUIRE) != 0U)
-		waitq_wake_all(&g_sched_kick_queue);
+	if (__atomic_load_n(&g_sched_kick_sleepers, __ATOMIC_ACQUIRE) != 0U) waitq_wake_all(&g_sched_kick_queue);
 }
 
 static bool sched_switch(sched_switch_reason_t reason);
@@ -216,7 +216,8 @@ static bool sched_enqueue_on(processor_t target, thread_t thread, run_queue_plac
 /*
  * sched_fatal
  */
-static __attribute__((noreturn)) void sched_fatal(const char *message)
+static __attribute__((noreturn)) void
+sched_fatal(const char *message)
 {
 	ml_irq_disable();
 	kputln(message);
@@ -244,17 +245,17 @@ _Static_assert(sizeof(sched_mlfq_priority) / sizeof(sched_mlfq_priority[0]) == S
 _Static_assert(sizeof(sched_mlfq_quantum) / sizeof(sched_mlfq_quantum[0]) == SCHED_MLFQ_LEVELS,
 			   "sched_mlfq_quantum must have exactly SCHED_MLFQ_LEVELS entries");
 
-uint16_t sched_mlfq_level_priority(uint8_t level)
+uint16_t
+sched_mlfq_level_priority(uint8_t level)
 {
-	if (level > SCHED_MLFQ_BOTTOM_LEVEL)
-		level = SCHED_MLFQ_BOTTOM_LEVEL;
+	if (level > SCHED_MLFQ_BOTTOM_LEVEL) level = SCHED_MLFQ_BOTTOM_LEVEL;
 	return sched_mlfq_priority[level];
 }
 
-uint32_t sched_mlfq_level_quantum(uint8_t level)
+uint32_t
+sched_mlfq_level_quantum(uint8_t level)
 {
-	if (level > SCHED_MLFQ_BOTTOM_LEVEL)
-		level = SCHED_MLFQ_BOTTOM_LEVEL;
+	if (level > SCHED_MLFQ_BOTTOM_LEVEL) level = SCHED_MLFQ_BOTTOM_LEVEL;
 	return sched_mlfq_quantum[level];
 }
 
@@ -269,13 +270,12 @@ uint32_t sched_mlfq_level_quantum(uint8_t level)
  * this only touches the thread's own fields, so it must be called either
  * before the thread is enqueued or while it is off any run queue.
  */
-static void sched_mlfq_assign(thread_t thread, uint8_t level)
+static void
+sched_mlfq_assign(thread_t thread, uint8_t level)
 {
-	if (thread == 0 || thread_is_idle(thread))
-		return;
+	if (thread == 0 || thread_is_idle(thread)) return;
 
-	if (level > SCHED_MLFQ_BOTTOM_LEVEL)
-		level = SCHED_MLFQ_BOTTOM_LEVEL;
+	if (level > SCHED_MLFQ_BOTTOM_LEVEL) level = SCHED_MLFQ_BOTTOM_LEVEL;
 
 	thread->mlfq_level = level;
 	thread->sched_pri = sched_mlfq_priority[level];
@@ -304,22 +304,19 @@ static void sched_mlfq_assign(thread_t thread, uint8_t level)
  * The bottom level has nowhere to fall to; running out of quantum there only
  * grants a fresh one. Called with the CPU's runq_lock held.
  */
-static bool sched_mlfq_charge_tick(thread_t thread, bool *quantum_expired)
+static bool
+sched_mlfq_charge_tick(thread_t thread, bool *quantum_expired)
 {
-	if (thread->quantum_remaining != 0U)
-		thread->quantum_remaining--;
-	if (thread->mlfq_ticks != UINT32_MAX)
-		thread->mlfq_ticks++;
+	if (thread->quantum_remaining != 0U) thread->quantum_remaining--;
+	if (thread->mlfq_ticks != UINT32_MAX) thread->mlfq_ticks++;
 
 	bool expired = thread->quantum_remaining == 0U;
 	bool spent =
 		thread->mlfq_level < SCHED_MLFQ_BOTTOM_LEVEL && thread->mlfq_ticks >= sched_mlfq_quantum[thread->mlfq_level];
 
-	if (quantum_expired != 0)
-		*quantum_expired = expired;
+	if (quantum_expired != 0) *quantum_expired = expired;
 
-	if (!expired && !spent)
-		return false;
+	if (!expired && !spent) return false;
 
 	/*
 	 * sched_mlfq_assign() also grants the new level's quantum and clears the
@@ -327,8 +324,7 @@ static bool sched_mlfq_charge_tick(thread_t thread, bool *quantum_expired)
 	 */
 	uint8_t level = thread->mlfq_level;
 
-	if (level < SCHED_MLFQ_BOTTOM_LEVEL)
-		level++;
+	if (level < SCHED_MLFQ_BOTTOM_LEVEL) level++;
 	sched_mlfq_assign(thread, level);
 	return true;
 }
@@ -339,7 +335,8 @@ static bool sched_mlfq_charge_tick(thread_t thread, bool *quantum_expired)
  * A thread that sleeps is not CPU-bound: what it ran at its level so far
  * no longer counts against it. Called with the CPU's runq_lock held.
  */
-static void sched_mlfq_blocked(thread_t thread)
+static void
+sched_mlfq_blocked(thread_t thread)
 {
 	thread->mlfq_ticks = 0U;
 }
@@ -351,10 +348,10 @@ static void sched_mlfq_blocked(thread_t thread)
  * threads back at level 0 with a fresh top-level quantum, then do the same
  * for the currently running thread. Called with the CPU's runq_lock held.
  */
-static void sched_mlfq_boost_locked(processor_t processor)
+static void
+sched_mlfq_boost_locked(processor_t processor)
 {
-	if (processor == 0)
-		return;
+	if (processor == 0) return;
 
 	for (uint8_t level = SCHED_MLFQ_TOP_LEVEL + 1U; level < SCHED_MLFQ_LEVELS; level++) {
 		uint16_t priority = sched_mlfq_priority[level];
@@ -383,10 +380,10 @@ static void sched_mlfq_boost_locked(processor_t processor)
  * sched_tick() and never appears in the run queue. Every other thread's
  * quantum comes from its current MLFQ level.
  */
-static void sched_quantum_reset(thread_t thread)
+static void
+sched_quantum_reset(thread_t thread)
 {
-	if (thread == 0)
-		return;
+	if (thread == 0) return;
 
 	thread->quantum_remaining =
 		thread_is_idle(thread) ? SCHED_DEFAULT_QUANTUM_TICKS : sched_mlfq_level_quantum(thread->mlfq_level);
@@ -395,7 +392,8 @@ static void sched_quantum_reset(thread_t thread)
 /*
  * sched_queue_placement
  */
-static run_queue_placement_t sched_queue_placement(sched_queue_placement_t placement)
+static run_queue_placement_t
+sched_queue_placement(sched_queue_placement_t placement)
 {
 	return placement == SCHED_HEADQ ? RUN_QUEUE_HEAD : RUN_QUEUE_TAIL;
 }
@@ -406,10 +404,10 @@ static run_queue_placement_t sched_queue_placement(sched_queue_placement_t place
  * Install the address-space and BSD process identity associated with the
  * incoming thread before its kernel context becomes current.
  */
-static bool sched_activate_thread(thread_t thread)
+static bool
+sched_activate_thread(thread_t thread)
 {
-	if (thread == 0 || thread->task == 0)
-		return false;
+	if (thread == 0 || thread->task == 0) return false;
 
 	task_t task = thread->task;
 
@@ -431,7 +429,8 @@ static bool sched_activate_thread(thread_t thread)
  * outgoing thread can only be reaped at this point because its old EL1 stack
  * is no longer executing.
  */
-static void sched_finish_switch(void)
+static void
+sched_finish_switch(void)
 {
 	uint64_t irq_state = ml_irq_save();
 	processor_t processor = current_processor();
@@ -451,8 +450,7 @@ static void sched_finish_switch(void)
 	/* Publishing on_cpu=0 lets teardown reap the stack and drop its final
 	 * reference. Keep the object resident until this CPU finishes reading it,
 	 * or a new thread can reuse the slot under the switch footer. */
-	if (!thread_reference(previous))
-		sched_fatal("sched_finish_switch: outgoing thread has no residency reference");
+	if (!thread_reference(previous)) sched_fatal("sched_finish_switch: outgoing thread has no residency reference");
 
 	/*
 	 * The previous thread's context was saved before the switch and this CPU
@@ -488,14 +486,14 @@ static void sched_finish_switch(void)
  * First C instruction executed by a never-run thread after its synthetic
  * machine context is restored.
  */
-static __attribute__((noreturn)) void sched_thread_continue(void)
+static __attribute__((noreturn)) void
+sched_thread_continue(void)
 {
 	sched_finish_switch();
 
 	thread_t thread = current_thread();
 
-	if (thread == 0)
-		sched_fatal("sched_thread_continue: first thread has no current object");
+	if (thread == 0) sched_fatal("sched_thread_continue: first thread has no current object");
 
 	if ((thread->flags & TH_FLAG_KERNEL) != 0U) {
 		thread_continue_t continuation = thread->continuation;
@@ -541,13 +539,12 @@ static __attribute__((noreturn)) void sched_thread_continue(void)
 /*
  * sched_prepare_new_thread
  */
-static bool sched_prepare_new_thread(thread_t thread)
+static bool
+sched_prepare_new_thread(thread_t thread)
 {
-	if (thread == 0 || thread_is_bootstrap(thread))
-		return thread != 0;
+	if (thread == 0 || thread_is_bootstrap(thread)) return thread != 0;
 
-	if (thread->kernel_stack == 0 && !thread_stack_alloc(thread))
-		return false;
+	if (thread->kernel_stack == 0 && !thread_stack_alloc(thread)) return false;
 
 	return machine_thread_prepare_context(&thread->machine, thread_kernel_stack_top(thread),
 										  (uint64_t)sched_thread_continue);
@@ -556,7 +553,8 @@ static bool sched_prepare_new_thread(thread_t thread)
 /*
  * sched_idle_continue
  */
-static __attribute__((noreturn)) void sched_idle_continue(void *parameter)
+static __attribute__((noreturn)) void
+sched_idle_continue(void *parameter)
 {
 	(void)parameter;
 
@@ -573,10 +571,10 @@ static __attribute__((noreturn)) void sched_idle_continue(void *parameter)
  * says; otherwise its affinity decides. Which CPUs a new thread starts with is
  * decided at creation (processor_default_affinity and the user default).
  */
-static bool sched_cpu_may_run(thread_t thread, uint32_t cpu)
+static bool
+sched_cpu_may_run(thread_t thread, uint32_t cpu)
 {
-	if (__atomic_load_n(&thread->legacy_depth, __ATOMIC_ACQUIRE) != 0U)
-		return cpu == 0U;
+	if (__atomic_load_n(&thread->legacy_depth, __ATOMIC_ACQUIRE) != 0U) return cpu == 0U;
 
 	return cpuset_contains(&thread->affinity, cpu);
 }
@@ -596,28 +594,27 @@ static bool sched_cpu_may_run(thread_t thread, uint32_t cpu)
  * CPU's run queue and back), so the caller must hold no spinlock and not have
  * cached this CPU's identity. It nests. Binding costs nothing on the boot CPU.
  */
-void sched_bind_boot_cpu(void)
+void
+sched_bind_boot_cpu(void)
 {
 	thread_t thread = current_thread();
 
-	if (thread == 0 || !g_sched.initialized)
-		return;
+	if (thread == 0 || !g_sched.initialized) return;
 
 	(void)__atomic_add_fetch(&thread->legacy_depth, 1U, __ATOMIC_ACQ_REL);
 
 	/* sched_switch sends a thread that may not stay where it is back to its allowed CPU. */
 	while (current_processor()->cpu_id != 0U) {
-		if (!sched_yield())
-			break;
+		if (!sched_yield()) break;
 	}
 }
 
-void sched_unbind_boot_cpu(void)
+void
+sched_unbind_boot_cpu(void)
 {
 	thread_t thread = current_thread();
 
-	if (thread == 0 || !g_sched.initialized)
-		return;
+	if (thread == 0 || !g_sched.initialized) return;
 
 	if (__atomic_load_n(&thread->legacy_depth, __ATOMIC_ACQUIRE) != 0U) {
 		(void)__atomic_sub_fetch(&thread->legacy_depth, 1U, __ATOMIC_ACQ_REL);
@@ -640,14 +637,14 @@ void sched_unbind_boot_cpu(void)
  * an idle previous CPU) does not scan. Loads are read without locks, so the
  * choice is a hint: the enqueue that follows is what is made atomic.
  */
-static processor_t sched_select_cpu(thread_t thread)
+static processor_t
+sched_select_cpu(thread_t thread)
 {
 	uint32_t count = processor_count();
 	processor_t last = processor_by_id(thread->last_cpu);
 	bool last_ok = last != 0 && processor_is_online(last) && sched_cpu_may_run(thread, last->cpu_id);
 
-	if (last_ok && processor_load(last) == 0U)
-		return last;
+	if (last_ok && processor_load(last) == 0U) return last;
 
 	processor_t best = 0;
 	uint32_t best_load = UINT32_MAX;
@@ -655,8 +652,7 @@ static processor_t sched_select_cpu(thread_t thread)
 	for (uint32_t cpu = 0U; cpu < count; cpu++) {
 		processor_t candidate = processor_by_id(cpu);
 
-		if (candidate == 0 || !processor_is_online(candidate) || !sched_cpu_may_run(thread, cpu))
-			continue;
+		if (candidate == 0 || !processor_is_online(candidate) || !sched_cpu_may_run(thread, cpu)) continue;
 
 		uint32_t load = processor_load(candidate);
 
@@ -666,11 +662,9 @@ static processor_t sched_select_cpu(thread_t thread)
 		}
 	}
 
-	if (best == 0)
-		return processor_by_id(0);
+	if (best == 0) return processor_by_id(0);
 
-	if (last_ok && best_load != 0U && processor_load(last) <= best_load + 1U)
-		return last;
+	if (last_ok && best_load != 0U && processor_load(last) <= best_load + 1U) return last;
 	return best;
 }
 
@@ -688,7 +682,8 @@ static processor_t sched_select_cpu(thread_t thread)
  * IPI is only sent when the flag was not already set, so a burst of wakeups
  * costs one interrupt.
  */
-static bool sched_enqueue_on(processor_t target, thread_t thread, run_queue_placement_t placement)
+static bool
+sched_enqueue_on(processor_t target, thread_t thread, run_queue_placement_t placement)
 {
 	processor_t self = current_processor();
 	uint64_t irq_state = ml_irq_save();
@@ -701,8 +696,7 @@ static bool sched_enqueue_on(processor_t target, thread_t thread, run_queue_plac
 	if (queued) {
 		thread_t active = target->active_thread;
 
-		if (thread->last_cpu != target->cpu_id)
-			target->migrate_in_count++;
+		if (thread->last_cpu != target->cpu_id) target->migrate_in_count++;
 
 		if (active == 0 || thread_is_idle(active) || thread->sched_pri > active->sched_pri) {
 			kick = !__atomic_exchange_n(&target->preemption_pending, true, __ATOMIC_ACQ_REL);
@@ -711,8 +705,7 @@ static bool sched_enqueue_on(processor_t target, thread_t thread, run_queue_plac
 
 	nxu_spin_unlock(&target->runq_lock);
 
-	if (kick && target != self)
-		ipi_send(target->cpu_id, IPI_RESCHEDULE);
+	if (kick && target != self) ipi_send(target->cpu_id, IPI_RESCHEDULE);
 
 	ml_irq_restore(irq_state);
 	return queued;
@@ -727,7 +720,8 @@ static bool sched_enqueue_on(processor_t target, thread_t thread, run_queue_plac
  * still "on" this CPU), so that wakeup is carried out now unless the thread is
  * gone. The caller holds no lock.
  */
-static void sched_abandon(thread_t thread)
+static void
+sched_abandon(thread_t thread)
 {
 	nxu_spin_lock(&thread->sched_lock);
 	__atomic_store_n(&thread->on_cpu, (struct processor *)0, __ATOMIC_RELEASE);
@@ -755,10 +749,10 @@ static void sched_abandon(thread_t thread)
  * sched_finish_switch (previous_requeue), which queues it from the incoming
  * thread's stack.
  */
-static bool sched_switch(sched_switch_reason_t reason)
+static bool
+sched_switch(sched_switch_reason_t reason)
 {
-	if (!g_sched.initialized)
-		return false;
+	if (!g_sched.initialized) return false;
 
 	uint64_t irq_state = ml_irq_save();
 	processor_t processor = current_processor();
@@ -778,8 +772,7 @@ static bool sched_switch(sched_switch_reason_t reason)
 		return false;
 	}
 
-	if (reason == SCHED_SWITCH_BLOCK)
-		sched_mlfq_blocked(current);
+	if (reason == SCHED_SWITCH_BLOCK) sched_mlfq_blocked(current);
 
 	bool yielding = reason == SCHED_SWITCH_YIELD || reason == SCHED_SWITCH_PREEMPT;
 
@@ -816,8 +809,7 @@ static bool sched_switch(sched_switch_reason_t reason)
 	for (;;) {
 		next = run_queue_dequeue(&processor->runq);
 
-		if (next == 0)
-			next = processor->idle_thread;
+		if (next == 0) next = processor->idle_thread;
 
 		if (next == 0 || next == current) {
 			nxu_spin_unlock(&processor->runq_lock);
@@ -851,8 +843,7 @@ static bool sched_switch(sched_switch_reason_t reason)
 		 * thread that is no longer runnable is given up, not run; a thread that
 		 * was only held is queued again when it is released.
 		 */
-		if (ready && thread_set_current(next))
-			break;
+		if (ready && thread_set_current(next)) break;
 
 		nxu_spin_unlock(&processor->runq_lock);
 
@@ -894,8 +885,7 @@ static bool sched_switch(sched_switch_reason_t reason)
 	bool leaving_user = sched_thread_is_user(current);
 	bool entering_user = sched_thread_is_user(next);
 
-	if (entering_user)
-		processor->user_dispatch_count++;
+	if (entering_user) processor->user_dispatch_count++;
 
 	if (entering_user && !leaving_user) {
 		uint32_t running = __atomic_add_fetch(&g_sched_user_running, 1U, __ATOMIC_ACQ_REL);
@@ -945,22 +935,19 @@ static bool sched_switch(sched_switch_reason_t reason)
 /*
  * sched_bootstrap
  */
-bool sched_bootstrap(task_t kernel_task)
+bool
+sched_bootstrap(task_t kernel_task)
 {
-	if (g_sched.initialized)
-		return true;
+	if (g_sched.initialized) return true;
 
-	if (kernel_task == 0 || !task_is_kernel(kernel_task))
-		return false;
-	if (!processor_bootstrap())
-		return false;
+	if (kernel_task == 0 || !task_is_kernel(kernel_task)) return false;
+	if (!processor_bootstrap()) return false;
 
 	memset(&g_sched, 0, sizeof(g_sched));
 
 	thread_t bootstrap_thread;
 
-	if (!thread_create_bootstrap(kernel_task, &bootstrap_thread))
-		return false;
+	if (!thread_create_bootstrap(kernel_task, &bootstrap_thread)) return false;
 
 	if (!thread_set_current(bootstrap_thread)) {
 		thread_deallocate(bootstrap_thread);
@@ -1023,17 +1010,16 @@ bool sched_bootstrap(task_t kernel_task)
  * also its idle thread. That context is the CPU's boot stack, so its idle loop
  * (sched_cpu_idle) runs there and the CPU needs no other stack for idling.
  */
-bool sched_cpu_prepare(uint32_t cpu)
+bool
+sched_cpu_prepare(uint32_t cpu)
 {
 	processor_t processor = processor_by_id(cpu);
 
-	if (!g_sched.initialized || processor == 0 || processor->idle_thread != 0)
-		return false;
+	if (!g_sched.initialized || processor == 0 || processor->idle_thread != 0) return false;
 
 	thread_t idle;
 
-	if (!thread_create_cpu_idle(g_sched.kernel_task, cpu, &idle))
-		return false;
+	if (!thread_create_cpu_idle(g_sched.kernel_task, cpu, &idle)) return false;
 
 	sched_quantum_reset(idle);
 
@@ -1052,7 +1038,8 @@ bool sched_cpu_prepare(uint32_t cpu)
  * path (sched_preempt, at the idle thread's safe point) switches to that work,
  * and the CPU comes back to this loop when it runs out.
  */
-__attribute__((noreturn)) void sched_cpu_idle(void)
+__attribute__((noreturn)) void
+sched_cpu_idle(void)
 {
 	processor_t processor = current_processor();
 
@@ -1064,17 +1051,20 @@ __attribute__((noreturn)) void sched_cpu_idle(void)
 	}
 }
 
-bool sched_is_initialized(void)
+bool
+sched_is_initialized(void)
 {
 	return g_sched.initialized;
 }
 
-thread_t sched_bootstrap_thread(void)
+thread_t
+sched_bootstrap_thread(void)
 {
 	return g_sched.initialized ? g_sched.bootstrap_thread : 0;
 }
 
-thread_t sched_idle_thread(void)
+thread_t
+sched_idle_thread(void)
 {
 	processor_t processor = g_sched.initialized ? current_processor() : 0;
 
@@ -1089,15 +1079,14 @@ thread_t sched_idle_thread(void)
  * noticed at the next return to user mode instead of waiting for a timer tick.
  * Nothing to do if it is not running anywhere, or is running here.
  */
-void sched_kick_thread(thread_t thread)
+void
+sched_kick_thread(thread_t thread)
 {
-	if (thread == 0)
-		return;
+	if (thread == 0) return;
 
 	processor_t target = __atomic_load_n(&thread->on_cpu, __ATOMIC_ACQUIRE);
 
-	if (target != 0 && target != current_processor())
-		ipi_send(target->cpu_id, IPI_RESCHEDULE);
+	if (target != 0 && target != current_processor()) ipi_send(target->cpu_id, IPI_RESCHEDULE);
 }
 
 /*
@@ -1111,10 +1100,10 @@ void sched_kick_thread(thread_t thread)
  * running after about five seconds, which means something is stuck and the
  * thread's resources must not be freed.
  */
-bool sched_wait_thread_off_cpu(thread_t thread)
+bool
+sched_wait_thread_off_cpu(thread_t thread)
 {
-	if (thread == 0)
-		return true;
+	if (thread == 0) return true;
 
 	uint64_t deadline = timer_get_microseconds() + 5000000ULL;
 	uint64_t next_kick = 0ULL;
@@ -1122,8 +1111,7 @@ bool sched_wait_thread_off_cpu(thread_t thread)
 	while (__atomic_load_n(&thread->on_cpu, __ATOMIC_ACQUIRE) != 0) {
 		uint64_t now = timer_get_microseconds();
 
-		if (now > deadline)
-			return false;
+		if (now > deadline) return false;
 
 		if (now >= next_kick) {
 			next_kick = now + 500ULL;
@@ -1136,7 +1124,8 @@ bool sched_wait_thread_off_cpu(thread_t thread)
 	return true;
 }
 
-bool sched_thread_can_run_on(thread_t thread, uint32_t cpu)
+bool
+sched_thread_can_run_on(thread_t thread, uint32_t cpu)
 {
 	return thread != 0 && !thread_is_idle(thread) && sched_cpu_may_run(thread, cpu);
 }
@@ -1150,7 +1139,8 @@ bool sched_thread_can_run_on(thread_t thread, uint32_t cpu)
  * context is safely saved (sched_finish_switch). That is what makes waking a
  * thread from any CPU, at any moment, safe.
  */
-bool thread_setrun(thread_t thread, sched_queue_placement_t placement)
+bool
+thread_setrun(thread_t thread, sched_queue_placement_t placement)
 {
 	if (!g_sched.initialized || thread == 0 || thread_is_idle(thread) || !thread_is_runnable(thread) ||
 		(placement != SCHED_HEADQ && placement != SCHED_TAILQ)) {
@@ -1188,10 +1178,10 @@ bool thread_setrun(thread_t thread, sched_queue_placement_t placement)
  * found from the thread, so it can move between the lookup and the lock;
  * the check after the lock says whether it did, and the lookup is retried.
  */
-bool thread_run_queue_remove(thread_t thread)
+bool
+thread_run_queue_remove(thread_t thread)
 {
-	if (!g_sched.initialized || thread == 0)
-		return false;
+	if (!g_sched.initialized || thread == 0) return false;
 
 	uint64_t irq_state = ml_irq_save();
 	bool result = false;
@@ -1199,8 +1189,7 @@ bool thread_run_queue_remove(thread_t thread)
 	for (;;) {
 		run_queue_t *runq = __atomic_load_n(&thread->runq, __ATOMIC_ACQUIRE);
 
-		if (runq == 0)
-			break;
+		if (runq == 0) break;
 
 		processor_t owner = (processor_t)((uint8_t *)runq - offsetof(struct processor, runq));
 
@@ -1219,17 +1208,16 @@ bool thread_run_queue_remove(thread_t thread)
 	return result;
 }
 
-thread_t thread_select(processor_t processor)
+thread_t
+thread_select(processor_t processor)
 {
-	if (!g_sched.initialized || processor == 0)
-		return 0;
+	if (!g_sched.initialized || processor == 0) return 0;
 
 	uint64_t irq_state = nxu_spin_lock_irqsave(&processor->runq_lock);
 
 	thread_t thread = run_queue_dequeue(&processor->runq);
 
-	if (thread == 0)
-		thread = processor->idle_thread;
+	if (thread == 0) thread = processor->idle_thread;
 
 	if (thread != 0) {
 		processor->next_thread = thread;
@@ -1241,13 +1229,12 @@ thread_t thread_select(processor_t processor)
 	return thread;
 }
 
-bool sched_thread_start(thread_t thread)
+bool
+sched_thread_start(thread_t thread)
 {
-	if (thread == 0 || thread->started)
-		return false;
+	if (thread == 0 || thread->started) return false;
 
-	if (!sched_prepare_new_thread(thread))
-		return false;
+	if (!sched_prepare_new_thread(thread)) return false;
 
 	/*
 	 * Rule 3, the newbie premium: a brand-new thread is assumed to be
@@ -1256,28 +1243,25 @@ bool sched_thread_start(thread_t thread)
 	 */
 	sched_mlfq_assign(thread, SCHED_MLFQ_TOP_LEVEL);
 
-	if (!thread_start(thread))
-		return false;
+	if (!thread_start(thread)) return false;
 
-	if (thread_is_idle(thread))
-		return true;
+	if (thread_is_idle(thread)) return true;
 	return thread_setrun(thread, SCHED_TAILQ);
 }
 
-bool sched_thread_wait(thread_t thread, bool uninterruptible)
+bool
+sched_thread_wait(thread_t thread, bool uninterruptible)
 {
-	if (thread == 0)
-		return false;
+	if (thread == 0) return false;
 
-	if (thread->runq != 0 && !thread_run_queue_remove(thread))
-		return false;
+	if (thread->runq != 0 && !thread_run_queue_remove(thread)) return false;
 	return thread_wait(thread, uninterruptible);
 }
 
-bool sched_thread_wakeup(thread_t thread)
+bool
+sched_thread_wakeup(thread_t thread)
 {
-	if (thread == 0 || !thread_go(thread))
-		return false;
+	if (thread == 0 || !thread_go(thread)) return false;
 
 	if (thread_is_runnable(thread) && !thread_is_idle(thread)) {
 		return thread_setrun(thread, SCHED_TAILQ);
@@ -1286,20 +1270,19 @@ bool sched_thread_wakeup(thread_t thread)
 	return true;
 }
 
-bool sched_thread_hold(thread_t thread)
+bool
+sched_thread_hold(thread_t thread)
 {
-	if (thread == 0)
-		return false;
+	if (thread == 0) return false;
 
-	if (thread->runq != 0 && !thread_run_queue_remove(thread))
-		return false;
+	if (thread->runq != 0 && !thread_run_queue_remove(thread)) return false;
 	return thread_hold(thread);
 }
 
-bool sched_thread_release(thread_t thread)
+bool
+sched_thread_release(thread_t thread)
 {
-	if (thread == 0 || !thread_release(thread))
-		return false;
+	if (thread == 0 || !thread_release(thread)) return false;
 
 	if (thread_is_runnable(thread) && !thread_is_idle(thread)) {
 		return thread_setrun(thread, SCHED_TAILQ);
@@ -1308,10 +1291,10 @@ bool sched_thread_release(thread_t thread)
 	return true;
 }
 
-bool sched_thread_terminate(thread_t thread)
+bool
+sched_thread_terminate(thread_t thread)
 {
-	if (thread == 0)
-		return false;
+	if (thread == 0) return false;
 
 	/* Before thread_terminate clobbers the links they share with the run
 	 * queue: a sleeping thread must leave its wait queue first. */
@@ -1323,20 +1306,18 @@ bool sched_thread_terminate(thread_t thread)
 	 * steps; so try again until it is either terminated or already gone.
 	 */
 	for (uint32_t attempt = 0U; attempt < 64U; attempt++) {
-		if (thread->runq != 0)
-			(void)thread_run_queue_remove(thread);
+		if (thread->runq != 0) (void)thread_run_queue_remove(thread);
 
-		if (thread_terminate(thread))
-			return true;
+		if (thread_terminate(thread)) return true;
 
-		if (thread_is_terminated(thread) || !thread_is_active(thread))
-			return false;
+		if (thread_is_terminated(thread) || !thread_is_active(thread)) return false;
 	}
 
 	return false;
 }
 
-bool sched_thread_set_priority(thread_t thread, uint16_t priority)
+bool
+sched_thread_set_priority(thread_t thread, uint16_t priority)
 {
 	if (thread == 0 || priority < THREAD_PRIORITY_MIN || priority > THREAD_PRIORITY_MAX || thread_is_idle(thread)) {
 		return false;
@@ -1344,17 +1325,14 @@ bool sched_thread_set_priority(thread_t thread, uint16_t priority)
 
 	bool queued = thread->runq != 0;
 
-	if (queued && !thread_run_queue_remove(thread))
-		return false;
+	if (queued && !thread_run_queue_remove(thread)) return false;
 
 	if (!thread_set_priority(thread, priority)) {
-		if (queued)
-			(void)thread_setrun(thread, SCHED_TAILQ);
+		if (queued) (void)thread_setrun(thread, SCHED_TAILQ);
 		return false;
 	}
 
-	if (queued)
-		return thread_setrun(thread, SCHED_TAILQ);
+	if (queued) return thread_setrun(thread, SCHED_TAILQ);
 
 	/* A thread lowering its own priority may now be beaten by something queued on its CPU. */
 	uint64_t irq_state = nxu_spin_lock_irqsave(&current_processor()->runq_lock);
@@ -1370,17 +1348,20 @@ bool sched_thread_set_priority(thread_t thread, uint16_t priority)
 	return true;
 }
 
-bool sched_yield(void)
+bool
+sched_yield(void)
 {
 	return sched_switch(SCHED_SWITCH_YIELD);
 }
 
-bool sched_block_commit(void)
+bool
+sched_block_commit(void)
 {
 	return sched_switch(SCHED_SWITCH_BLOCK);
 }
 
-bool sched_block(bool uninterruptible)
+bool
+sched_block(bool uninterruptible)
 {
 	thread_t thread = current_thread();
 
@@ -1391,7 +1372,8 @@ bool sched_block(bool uninterruptible)
 	return sched_block_commit();
 }
 
-__attribute__((noreturn)) void sched_exit_current(void)
+__attribute__((noreturn)) void
+sched_exit_current(void)
 {
 	thread_t thread = current_thread();
 
@@ -1418,7 +1400,8 @@ __attribute__((noreturn)) void sched_exit_current(void)
  * one that may run on `to`: it is the one whose delay hurts least and whose
  * cache is coldest, and the higher levels keep their interactive latency.
  */
-static bool sched_migrate_one(processor_t from, processor_t to)
+static bool
+sched_migrate_one(processor_t from, processor_t to)
 {
 	processor_t first = from->cpu_id < to->cpu_id ? from : to;
 	processor_t second = first == from ? to : from;
@@ -1429,8 +1412,7 @@ static bool sched_migrate_one(processor_t from, processor_t to)
 	thread_t victim = 0;
 
 	for (uint32_t priority = 0U; priority < RUN_QUEUE_COUNT && victim == 0; priority++) {
-		if ((from->runq.bitmap & (1ULL << priority)) == 0ULL)
-			continue;
+		if ((from->runq.bitmap & (1ULL << priority)) == 0ULL) continue;
 
 		for (thread_t thread = from->runq.queues[priority].head; thread != 0; thread = thread->sched_links.runq.next) {
 			if (sched_cpu_may_run(thread, to->cpu_id)) {
@@ -1445,8 +1427,7 @@ static bool sched_migrate_one(processor_t from, processor_t to)
 	if (victim != 0 && run_queue_remove(&from->runq, victim)) {
 		moved = run_queue_enqueue(&to->runq, victim, RUN_QUEUE_TAIL);
 
-		if (!moved)
-			sched_fatal("sched_migrate_one: could not queue a migrating thread");
+		if (!moved) sched_fatal("sched_migrate_one: could not queue a migrating thread");
 
 		from->migrate_out_count++;
 		to->migrate_in_count++;
@@ -1472,12 +1453,12 @@ static bool sched_migrate_one(processor_t from, processor_t to)
  * the wakeup or switch paths. The loads it reads are estimates; the move itself
  * is decided under the two run queue locks.
  */
-static void sched_balance(processor_t self)
+static void
+sched_balance(processor_t self)
 {
 	uint32_t count = processor_count();
 
-	if (count <= 1U)
-		return;
+	if (count <= 1U) return;
 
 	uint32_t own_load = processor_load(self);
 	processor_t busiest = 0;
@@ -1486,8 +1467,7 @@ static void sched_balance(processor_t self)
 	for (uint32_t cpu = 0U; cpu < count; cpu++) {
 		processor_t candidate = processor_by_id(cpu);
 
-		if (candidate == self || !processor_is_online(candidate))
-			continue;
+		if (candidate == self || !processor_is_online(candidate)) continue;
 
 		uint32_t load = processor_load(candidate);
 
@@ -1497,18 +1477,16 @@ static void sched_balance(processor_t self)
 		}
 	}
 
-	if (busiest == 0 || busiest->runq.count == 0U)
-		return;
-	if (busiest_load < own_load + (own_load == 0U ? 1U : 2U))
-		return;
+	if (busiest == 0 || busiest->runq.count == 0U) return;
+	if (busiest_load < own_load + (own_load == 0U ? 1U : 2U)) return;
 
 	(void)sched_migrate_one(busiest, self);
 }
 
-void sched_tick(void)
+void
+sched_tick(void)
 {
-	if (!g_sched.initialized)
-		return;
+	if (!g_sched.initialized) return;
 
 	uint64_t irq_state = ml_irq_save();
 	processor_t processor = current_processor();
@@ -1535,10 +1513,8 @@ void sched_tick(void)
 		 */
 		bool demoted = sched_mlfq_charge_tick(thread, &quantum_expired);
 
-		if (quantum_expired)
-			processor->quantum_expiration_count++;
-		if (demoted)
-			__atomic_store_n(&processor->preemption_pending, true, __ATOMIC_RELEASE);
+		if (quantum_expired) processor->quantum_expiration_count++;
+		if (demoted) __atomic_store_n(&processor->preemption_pending, true, __ATOMIC_RELEASE);
 	}
 
 	/*
@@ -1559,8 +1535,7 @@ void sched_tick(void)
 	nxu_spin_unlock(&processor->runq_lock);
 
 	/* Timed sleepers (sched_sleep_us) are checked on the boot CPU's tick. */
-	if (processor->cpu_id == 0U)
-		__atomic_store_n(&g_sched_ticking, true, __ATOMIC_RELEASE);
+	if (processor->cpu_id == 0U) __atomic_store_n(&g_sched_ticking, true, __ATOMIC_RELEASE);
 
 	if (processor->cpu_id == 0U && __atomic_load_n(&g_sched_sleepers, __ATOMIC_ACQUIRE) != 0U) {
 		waitq_wake_all(&g_sched_sleep_queue);
@@ -1570,38 +1545,38 @@ void sched_tick(void)
 		waitq_wake_all(&g_sched_kick_queue);
 	}
 
-	if (processor->ticks % SCHED_BALANCE_INTERVAL_TICKS == 0U)
-		sched_balance(processor);
+	if (processor->ticks % SCHED_BALANCE_INTERVAL_TICKS == 0U) sched_balance(processor);
 
 	ml_irq_restore(irq_state);
 }
 
-bool sched_preempt(void)
+bool
+sched_preempt(void)
 {
-	if (!sched_preemption_pending())
-		return true;
+	if (!sched_preemption_pending()) return true;
 	return sched_switch(SCHED_SWITCH_PREEMPT);
 }
 
-bool sched_preemption_pending(void)
+bool
+sched_preemption_pending(void)
 {
-	if (!g_sched.initialized)
-		return false;
+	if (!g_sched.initialized) return false;
 
 	processor_t processor = current_processor();
 	return __atomic_load_n(&processor->preemption_pending, __ATOMIC_ACQUIRE);
 }
 
-void sched_clear_preemption(void)
+void
+sched_clear_preemption(void)
 {
-	if (!g_sched.initialized)
-		return;
+	if (!g_sched.initialized) return;
 
 	processor_t processor = current_processor();
 	__atomic_store_n(&processor->preemption_pending, false, __ATOMIC_RELEASE);
 }
 
-static void sched_test_thread(struct thread *thread, uint16_t priority)
+static void
+sched_test_thread(struct thread *thread, uint16_t priority)
 {
 	memset(thread, 0, sizeof(*thread));
 	thread->thread_id = (thread_id_t)priority + 1ULL;
@@ -1614,7 +1589,8 @@ static void sched_test_thread(struct thread *thread, uint16_t priority)
 	thread->max_priority = THREAD_PRIORITY_MAX;
 }
 
-bool sched_run_queue_self_test(void)
+bool
+sched_run_queue_self_test(void)
 {
 	run_queue_t runq;
 	struct thread low;
@@ -1626,28 +1602,19 @@ bool sched_run_queue_self_test(void)
 	sched_test_thread(&high_a, 42U);
 	sched_test_thread(&high_b, 42U);
 
-	if (!run_queue_enqueue(&runq, &low, RUN_QUEUE_TAIL))
-		return false;
+	if (!run_queue_enqueue(&runq, &low, RUN_QUEUE_TAIL)) return false;
 
-	if (!run_queue_enqueue(&runq, &high_a, RUN_QUEUE_TAIL))
-		return false;
-	if (!run_queue_enqueue(&runq, &high_b, RUN_QUEUE_TAIL))
-		return false;
+	if (!run_queue_enqueue(&runq, &high_a, RUN_QUEUE_TAIL)) return false;
+	if (!run_queue_enqueue(&runq, &high_b, RUN_QUEUE_TAIL)) return false;
 
-	if (!run_queue_validate(&runq))
-		return false;
-	if (run_queue_peek(&runq) != &high_a)
-		return false;
+	if (!run_queue_validate(&runq)) return false;
+	if (run_queue_peek(&runq) != &high_a) return false;
 
-	if (run_queue_dequeue(&runq) != &high_a)
-		return false;
-	if (run_queue_dequeue(&runq) != &high_b)
-		return false;
+	if (run_queue_dequeue(&runq) != &high_a) return false;
+	if (run_queue_dequeue(&runq) != &high_b) return false;
 
-	if (run_queue_dequeue(&runq) != &low)
-		return false;
-	if (run_queue_dequeue(&runq) != 0)
-		return false;
+	if (run_queue_dequeue(&runq) != &low) return false;
+	if (run_queue_dequeue(&runq) != 0) return false;
 
 	return run_queue_validate(&runq);
 }
@@ -1655,7 +1622,8 @@ bool sched_run_queue_self_test(void)
 /*
  * sched_mlfq_test_thread
  */
-static void sched_mlfq_test_thread(struct thread *thread, uint8_t level)
+static void
+sched_mlfq_test_thread(struct thread *thread, uint8_t level)
 {
 	memset(thread, 0, sizeof(*thread));
 	thread->thread_id = (thread_id_t)level + 100ULL;
@@ -1668,7 +1636,8 @@ static void sched_mlfq_test_thread(struct thread *thread, uint8_t level)
 	sched_mlfq_assign(thread, level);
 }
 
-bool sched_mlfq_self_test(void)
+bool
+sched_mlfq_self_test(void)
 {
 	struct processor test_processor;
 	struct thread queued_mid;
@@ -1681,10 +1650,8 @@ bool sched_mlfq_self_test(void)
 
 	/* A thread starts life at the top queue (Rule 3). */
 	sched_mlfq_test_thread(&hog, SCHED_MLFQ_TOP_LEVEL);
-	if (hog.mlfq_level != SCHED_MLFQ_TOP_LEVEL)
-		return false;
-	if (hog.sched_pri != sched_mlfq_level_priority(SCHED_MLFQ_TOP_LEVEL))
-		return false;
+	if (hog.mlfq_level != SCHED_MLFQ_TOP_LEVEL) return false;
+	if (hog.sched_pri != sched_mlfq_level_priority(SCHED_MLFQ_TOP_LEVEL)) return false;
 
 	/*
 	 * Rule 4: a CPU-bound thread that keeps exhausting its quantum drops
@@ -1692,20 +1659,16 @@ bool sched_mlfq_self_test(void)
 	 * never falls off the bottom.
 	 */
 	for (uint8_t level = SCHED_MLFQ_TOP_LEVEL; level < SCHED_MLFQ_BOTTOM_LEVEL; level++) {
-		if (hog.mlfq_level != level)
-			return false;
-		if (hog.quantum_remaining != sched_mlfq_level_quantum(level))
-			return false;
+		if (hog.mlfq_level != level) return false;
+		if (hog.quantum_remaining != sched_mlfq_level_quantum(level)) return false;
 
 		sched_mlfq_assign(&hog, (uint8_t)(hog.mlfq_level + 1U));
 	}
 
-	if (hog.mlfq_level != SCHED_MLFQ_BOTTOM_LEVEL)
-		return false;
+	if (hog.mlfq_level != SCHED_MLFQ_BOTTOM_LEVEL) return false;
 
 	sched_mlfq_assign(&hog, (uint8_t)(hog.mlfq_level + 1U));
-	if (hog.mlfq_level != SCHED_MLFQ_BOTTOM_LEVEL)
-		return false;
+	if (hog.mlfq_level != SCHED_MLFQ_BOTTOM_LEVEL) return false;
 
 	/*
 	 * A thread that yields every tick never runs out its quantum (each
@@ -1718,30 +1681,24 @@ bool sched_mlfq_self_test(void)
 		uint32_t ticks = sched_mlfq_level_quantum(level);
 
 		for (uint32_t tick = 1U; tick <= ticks; tick++) {
-			if (hog.mlfq_level != level)
-				return false;
+			if (hog.mlfq_level != level) return false;
 
 			bool demoted = sched_mlfq_charge_tick(&hog, 0);
 
-			if (demoted != (tick == ticks))
-				return false;
+			if (demoted != (tick == ticks)) return false;
 
 			/* The yield: the next dispatch grants a whole quantum again. */
-			if (!demoted)
-				hog.quantum_remaining = sched_mlfq_level_quantum(level);
+			if (!demoted) hog.quantum_remaining = sched_mlfq_level_quantum(level);
 		}
 
-		if (hog.mlfq_level != level + 1U)
-			return false;
-		if (hog.mlfq_ticks != 0U)
-			return false;
+		if (hog.mlfq_level != level + 1U) return false;
+		if (hog.mlfq_ticks != 0U) return false;
 	}
 
 	/* The bottom level has nowhere lower to go. */
 	for (uint32_t tick = 0U; tick < sched_mlfq_level_quantum(SCHED_MLFQ_BOTTOM_LEVEL) * 2U; tick++) {
 		(void)sched_mlfq_charge_tick(&hog, 0);
-		if (hog.mlfq_level != SCHED_MLFQ_BOTTOM_LEVEL)
-			return false;
+		if (hog.mlfq_level != SCHED_MLFQ_BOTTOM_LEVEL) return false;
 	}
 
 	/* Sleeping clears the allotment, so a thread that blocks between short bursts stays where it is. */
@@ -1749,8 +1706,7 @@ bool sched_mlfq_self_test(void)
 
 	for (uint32_t round = 0U; round < 8U; round++) {
 		for (uint32_t tick = 1U; tick < sched_mlfq_level_quantum(SCHED_MLFQ_TOP_LEVEL); tick++) {
-			if (sched_mlfq_charge_tick(&hog, 0))
-				return false;
+			if (sched_mlfq_charge_tick(&hog, 0)) return false;
 
 			hog.quantum_remaining = sched_mlfq_level_quantum(SCHED_MLFQ_TOP_LEVEL);
 		}
@@ -1758,8 +1714,7 @@ bool sched_mlfq_self_test(void)
 		sched_mlfq_blocked(&hog);
 	}
 
-	if (hog.mlfq_level != SCHED_MLFQ_TOP_LEVEL)
-		return false;
+	if (hog.mlfq_level != SCHED_MLFQ_TOP_LEVEL) return false;
 
 	/*
 	 * Rule 5: threads parked below the top queue, and the currently
@@ -1769,36 +1724,28 @@ bool sched_mlfq_self_test(void)
 	sched_mlfq_test_thread(&queued_bottom, SCHED_MLFQ_BOTTOM_LEVEL);
 	sched_mlfq_test_thread(&running, SCHED_MLFQ_BOTTOM_LEVEL);
 
-	if (!run_queue_enqueue(&test_processor.runq, &queued_mid, RUN_QUEUE_TAIL))
-		return false;
-	if (!run_queue_enqueue(&test_processor.runq, &queued_bottom, RUN_QUEUE_TAIL))
-		return false;
+	if (!run_queue_enqueue(&test_processor.runq, &queued_mid, RUN_QUEUE_TAIL)) return false;
+	if (!run_queue_enqueue(&test_processor.runq, &queued_bottom, RUN_QUEUE_TAIL)) return false;
 
 	test_processor.active_thread = &running;
 
 	sched_mlfq_boost_locked(&test_processor);
 
-	if (queued_mid.mlfq_level != SCHED_MLFQ_TOP_LEVEL)
-		return false;
-	if (queued_bottom.mlfq_level != SCHED_MLFQ_TOP_LEVEL)
-		return false;
-	if (running.mlfq_level != SCHED_MLFQ_TOP_LEVEL)
-		return false;
+	if (queued_mid.mlfq_level != SCHED_MLFQ_TOP_LEVEL) return false;
+	if (queued_bottom.mlfq_level != SCHED_MLFQ_TOP_LEVEL) return false;
+	if (running.mlfq_level != SCHED_MLFQ_TOP_LEVEL) return false;
 
-	if (queued_mid.sched_pri != sched_mlfq_level_priority(SCHED_MLFQ_TOP_LEVEL))
-		return false;
-	if (queued_mid.runq != &test_processor.runq)
-		return false;
-	if (queued_bottom.runq != &test_processor.runq)
-		return false;
+	if (queued_mid.sched_pri != sched_mlfq_level_priority(SCHED_MLFQ_TOP_LEVEL)) return false;
+	if (queued_mid.runq != &test_processor.runq) return false;
+	if (queued_bottom.runq != &test_processor.runq) return false;
 
 	return run_queue_validate(&test_processor.runq);
 }
 
-bool sched_validate(void)
+bool
+sched_validate(void)
 {
-	if (!g_sched.initialized)
-		return false;
+	if (!g_sched.initialized) return false;
 
 	processor_t processor = current_processor();
 	thread_t current = current_thread();
@@ -1823,10 +1770,10 @@ bool sched_validate(void)
  * runs or is balanced away.) Costly (it walks every queue), so only tests call
  * it.
  */
-bool sched_validate_all(void)
+bool
+sched_validate_all(void)
 {
-	if (!g_sched.initialized)
-		return false;
+	if (!g_sched.initialized) return false;
 
 	uint64_t irq_state = ml_irq_save();
 	uint32_t count = processor_count();
@@ -1838,8 +1785,7 @@ bool sched_validate_all(void)
 	for (uint32_t cpu = 0U; cpu < count && ok; cpu++) {
 		processor_t processor = processor_by_id(cpu);
 
-		if (!run_queue_validate(&processor->runq))
-			ok = false;
+		if (!run_queue_validate(&processor->runq)) ok = false;
 
 		for (uint32_t priority = 0U; priority < RUN_QUEUE_COUNT && ok; priority++) {
 			for (thread_t thread = processor->runq.queues[priority].head; thread != 0 && ok;
@@ -1854,8 +1800,7 @@ bool sched_validate_all(void)
 					for (uint32_t level = 0U; level < RUN_QUEUE_COUNT && ok; level++) {
 						for (thread_t peer = processor_by_id(other)->runq.queues[level].head; peer != 0;
 							 peer = peer->sched_links.runq.next) {
-							if (peer == thread)
-								ok = false;
+							if (peer == thread) ok = false;
 						}
 					}
 				}
@@ -1870,7 +1815,8 @@ bool sched_validate_all(void)
 	return ok;
 }
 
-void sched_dump(void)
+void
+sched_dump(void)
 {
 	if (!g_sched.initialized) {
 		kputln("sched_dump: not initialized");
@@ -1885,8 +1831,7 @@ void sched_dump(void)
 	kprintf("sched_dump: run queue count: %llu\n", (unsigned long long)processor->runq.count);
 	kprintf("sched_dump: context switches: %llu\n", (unsigned long long)processor->context_switch_count);
 
-	if (!kconsole_verbose())
-		return;
+	if (!kconsole_verbose()) return;
 
 	if (processor->runq.highq == RUN_QUEUE_NONE) {
 		kverbosef("sched_dump: run queue highq: none\n");

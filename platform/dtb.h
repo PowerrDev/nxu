@@ -38,33 +38,16 @@ typedef struct {
 } dtb_t;
 
 typedef struct {
-	void (*begin_node)(
-		const char *name,
-		uint32_t depth,
-		void *context
-	);
+	void (*begin_node)(const char *name, uint32_t depth, void *context);
 
-	void (*property)(
-		const char *name,
-		const void *value,
-		uint32_t length,
-		uint32_t depth,
-		void *context
-	);
+	void (*property)(const char *name, const void *value, uint32_t length, uint32_t depth, void *context);
 
-	void (*end_node)(
-		uint32_t depth,
-		void *context
-	);
+	void (*end_node)(uint32_t depth, void *context);
 } dtb_visitor_t;
 
 bool dtb_init(dtb_t *dtb, const void *address);
 
-bool dtb_walk(
-	const dtb_t *dtb,
-	const dtb_visitor_t *visitor,
-	void *context
-);
+bool dtb_walk(const dtb_t *dtb, const dtb_visitor_t *visitor, void *context);
 
 /**
  * dtb_bootstrap - Initialize the permanent boot Device Tree view.
@@ -88,11 +71,6 @@ bool dtb_higher_half_enabled(void);
 bool dtb_dump(const dtb_t *dtb);
 
 /* Return one property from the top-level /chosen node. */
-bool dtb_chosen_property_get(
-	const dtb_t *dtb,
-	const char *name,
-	const void **value,
-	uint32_t *length
-);
+bool dtb_chosen_property_get(const dtb_t *dtb, const char *name, const void **value, uint32_t *length);
 
 #endif

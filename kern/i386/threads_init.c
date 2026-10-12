@@ -31,7 +31,8 @@ extern void pic_init(void) __attribute__((weak));
 
 #include <stdbool.h>
 
-bool i386_init_threads(const i386_boot_info_t *boot)
+bool
+i386_init_threads(const i386_boot_info_t *boot)
 {
 	(void)boot;
 
@@ -60,12 +61,9 @@ bool i386_init_threads(const i386_boot_info_t *boot)
 		return false;
 	}
 
-	kprintf(
-		"i386_init_threads: scheduler up, %u threads (bootstrap tid %llu, idle tid %llu)\n",
-		thread_count(),
-		(unsigned long long)thread_tid(sched_bootstrap_thread()),
-		(unsigned long long)thread_tid(sched_idle_thread())
-	);
+	kprintf("i386_init_threads: scheduler up, %u threads (bootstrap tid %llu, idle tid %llu)\n", thread_count(),
+			(unsigned long long)thread_tid(sched_bootstrap_thread()),
+			(unsigned long long)thread_tid(sched_idle_thread()));
 
 	if (pic_init != 0) {
 		ml_irq_enable();

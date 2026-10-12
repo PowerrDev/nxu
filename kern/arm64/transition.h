@@ -14,14 +14,10 @@
  *
  * This function never returns.
  */
-__attribute__((noreturn))
-void arm64_enter_higher_half(
-	uint64_t offset,
-	uint64_t vector_base,
-	uint64_t entry
-);
+__attribute__((noreturn)) void arm64_enter_higher_half(uint64_t offset, uint64_t vector_base, uint64_t entry);
 
-static inline uint64_t arm64_read_stack_pointer(void)
+static inline uint64_t
+arm64_read_stack_pointer(void)
 {
 	uint64_t value;
 
@@ -30,7 +26,8 @@ static inline uint64_t arm64_read_stack_pointer(void)
 	return value;
 }
 
-static inline uint64_t arm64_read_program_counter(void)
+static inline uint64_t
+arm64_read_program_counter(void)
 {
 	uint64_t value;
 
@@ -39,7 +36,8 @@ static inline uint64_t arm64_read_program_counter(void)
 	return value;
 }
 
-static inline uint64_t arm64_read_vector_base(void)
+static inline uint64_t
+arm64_read_vector_base(void)
 {
 	uint64_t value;
 

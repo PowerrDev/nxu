@@ -28,7 +28,8 @@ bool post_storage(void);
  * intentionally read-only so the development disk can later be formatted as
  * ext4 without a kernel bootstrap test modifying filesystem metadata.
  */
-static bool post_test_block_device(void)
+static bool
+post_test_block_device(void)
 {
 	block_device_t device = block_device_first();
 
@@ -36,34 +37,17 @@ static bool post_test_block_device(void)
 
 	uint8_t sector[BLOCK_SECTOR_SIZE];
 
-	memset(
-		sector,
-		0,
-		sizeof(sector)
-	);
+	memset(sector, 0, sizeof(sector));
 
-	if (!block_device_read(
-		device,
-		0ULL,
-		1U,
-		sector
-	)) {
+	if (!block_device_read(device, 0ULL, 1U, sector)) {
 		return false;
 	}
 
-	kputs(
-		"VirtIOBlockFamily: sector 0 first bytes:"
-	);
+	kputs("VirtIOBlockFamily: sector 0 first bytes:");
 
-	for (
-		uint32_t index = 0U;
-		index < 16U;
-		index++
-	) {
+	for (uint32_t index = 0U; index < 16U; index++) {
 		kputc(' ');
-		kputhex_byte(
-			sector[index]
-		);
+		kputhex_byte(sector[index]);
 	}
 
 	kputc('\n');
@@ -77,12 +61,8 @@ static const char g_ext4_persist_message[] = "NXU persistent ext4 marker\n";
 static const char g_ext4_tail_message[] = "tail-after-sparse-growth";
 static const char g_jbd2_recovery_message[] = "NXU JBD2 committed metadata survived the crash.\n";
 
-static bool post_ext4_read_exact(
-	filedesc_t filedesc,
-	const char *path,
-	const char *expected,
-	uint64_t size
-)
+static bool
+post_ext4_read_exact(filedesc_t filedesc, const char *path, const char *expected, uint64_t size)
 {
 	uint32_t descriptor;
 	if (vfs_open(filedesc, path, VFS_OPEN_READ, &descriptor) != VFS_STATUS_OK) return false;
@@ -113,18 +93,15 @@ static bool post_ext4_read_exact(
  * insertion, truncate shrink/grow semantics, sparse reads, unlink and a
  * persistent marker which is observed on subsequent boots.
  */
-static bool post_test_ext4(void)
+static bool
+post_test_ext4(void)
 {
 	proc_t kernel_proc = proc_kernel();
 	if (kernel_proc == 0) return false;
 	filedesc_t filedesc = &kernel_proc->p_fd;
 
-	if (!post_ext4_read_exact(
-		filedesc,
-		"/disk/hello.txt",
-		g_ext4_test_message,
-		sizeof(g_ext4_test_message) - 1ULL
-	)) return false;
+	if (!post_ext4_read_exact(filedesc, "/disk/hello.txt", g_ext4_test_message, sizeof(g_ext4_test_message) - 1ULL))
+		return false;
 
 	/* Installed System files may change between builds; only hello.txt is a fixed fixture. */
 
@@ -132,12 +109,8 @@ static bool post_test_ext4(void)
 	if (status != VFS_STATUS_OK && status != VFS_STATUS_EXISTS) return false;
 
 	uint32_t descriptor;
-	status = vfs_open(
-		filedesc,
-		"/disk/NXU/write-test.bin",
-		VFS_OPEN_READ | VFS_OPEN_WRITE | VFS_OPEN_CREATE | VFS_OPEN_TRUNCATE,
-		&descriptor
-	);
+	status = vfs_open(filedesc, "/disk/NXU/write-test.bin",
+					  VFS_OPEN_READ | VFS_OPEN_WRITE | VFS_OPEN_CREATE | VFS_OPEN_TRUNCATE, &descriptor);
 	if (status != VFS_STATUS_OK) return false;
 
 	uint8_t block[1024];
@@ -160,12 +133,7 @@ static bool post_test_ext4(void)
 	vnode_rele(vnode);
 	if (status != VFS_STATUS_OK) return false;
 
-	status = vfs_open(
-		filedesc,
-		"/disk/NXU/write-test.bin",
-		VFS_OPEN_READ | VFS_OPEN_WRITE,
-		&descriptor
-	);
+	status = vfs_open(filedesc, "/disk/NXU/write-test.bin", VFS_OPEN_READ | VFS_OPEN_WRITE, &descriptor);
 	if (status != VFS_STATUS_OK) return false;
 
 	if (vfs_seek(filedesc, descriptor, 5000ULL) != VFS_STATUS_OK) goto fail_close;
@@ -181,30 +149,14 @@ static bool post_test_ext4(void)
 
 	if (vfs_seek(filedesc, descriptor, 8192ULL) != VFS_STATUS_OK) goto fail_close;
 	uint64_t written;
-	status = vfs_write(
-		filedesc,
-		descriptor,
-		g_ext4_tail_message,
-		sizeof(g_ext4_tail_message) - 1ULL,
-		&written
-	);
+	status = vfs_write(filedesc, descriptor, g_ext4_tail_message, sizeof(g_ext4_tail_message) - 1ULL, &written);
 	if (status != VFS_STATUS_OK || written != sizeof(g_ext4_tail_message) - 1ULL) goto fail_close;
 	if (vfs_close(filedesc, descriptor) != VFS_STATUS_OK) return false;
 
-	status = vfs_open(
-		filedesc,
-		"/disk/NXU/delete-me.txt",
-		VFS_OPEN_WRITE | VFS_OPEN_CREATE | VFS_OPEN_TRUNCATE,
-		&descriptor
-	);
+	status = vfs_open(filedesc, "/disk/NXU/delete-me.txt", VFS_OPEN_WRITE | VFS_OPEN_CREATE | VFS_OPEN_TRUNCATE,
+					  &descriptor);
 	if (status != VFS_STATUS_OK) return false;
-	status = vfs_write(
-		filedesc,
-		descriptor,
-		g_ext4_write_message,
-		sizeof(g_ext4_write_message) - 1ULL,
-		&written
-	);
+	status = vfs_write(filedesc, descriptor, g_ext4_write_message, sizeof(g_ext4_write_message) - 1ULL, &written);
 	if (status != VFS_STATUS_OK) goto fail_close;
 	if (vfs_close(filedesc, descriptor) != VFS_STATUS_OK) return false;
 
@@ -218,12 +170,9 @@ static bool post_test_ext4(void)
 	status = vfs_lookup("/disk/NXU/journal-recovery.txt", &vnode);
 	if (status == VFS_STATUS_OK) {
 		vnode_rele(vnode);
-		if (!post_ext4_read_exact(
-			filedesc,
-			"/disk/NXU/journal-recovery.txt",
-			g_jbd2_recovery_message,
-			sizeof(g_jbd2_recovery_message) - 1ULL
-		)) return false;
+		if (!post_ext4_read_exact(filedesc, "/disk/NXU/journal-recovery.txt", g_jbd2_recovery_message,
+								  sizeof(g_jbd2_recovery_message) - 1ULL))
+			return false;
 		kputln("jbd2: committed crash-test transaction recovered");
 	} else if (status != VFS_STATUS_NOT_FOUND) {
 		return false;
@@ -232,28 +181,15 @@ static bool post_test_ext4(void)
 	status = vfs_lookup("/disk/NXU/persistent.txt", &vnode);
 	if (status == VFS_STATUS_OK) {
 		vnode_rele(vnode);
-		if (!post_ext4_read_exact(
-			filedesc,
-			"/disk/NXU/persistent.txt",
-			g_ext4_persist_message,
-			sizeof(g_ext4_persist_message) - 1ULL
-		)) return false;
+		if (!post_ext4_read_exact(filedesc, "/disk/NXU/persistent.txt", g_ext4_persist_message,
+								  sizeof(g_ext4_persist_message) - 1ULL))
+			return false;
 		kputln("IOFilesystemFamily: persistence marker recovered from previous boot");
 	} else if (status == VFS_STATUS_NOT_FOUND) {
-		status = vfs_open(
-			filedesc,
-			"/disk/NXU/persistent.txt",
-			VFS_OPEN_WRITE | VFS_OPEN_CREATE,
-			&descriptor
-		);
+		status = vfs_open(filedesc, "/disk/NXU/persistent.txt", VFS_OPEN_WRITE | VFS_OPEN_CREATE, &descriptor);
 		if (status != VFS_STATUS_OK) return false;
-		status = vfs_write(
-			filedesc,
-			descriptor,
-			g_ext4_persist_message,
-			sizeof(g_ext4_persist_message) - 1ULL,
-			&written
-		);
+		status =
+			vfs_write(filedesc, descriptor, g_ext4_persist_message, sizeof(g_ext4_persist_message) - 1ULL, &written);
 		if (vfs_close(filedesc, descriptor) != VFS_STATUS_OK) return false;
 
 		if (status != VFS_STATUS_OK || written != sizeof(g_ext4_persist_message) - 1ULL) return false;
@@ -272,7 +208,8 @@ fail_close:
 	return false;
 }
 
-bool post_storage(void)
+bool
+post_storage(void)
 {
 	if (!post_test_block_device()) {
 		kputln("VirtIOBlockFamily: sector read test failed");

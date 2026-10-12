@@ -11,22 +11,26 @@
 #ifndef NXU_KERN_ARM64_BARRIER_H
 #define NXU_KERN_ARM64_BARRIER_H
 
-static inline void ml_dma_wmb(void)
+static inline void
+ml_dma_wmb(void)
 {
 	__asm__ volatile("dmb oshst" : : : "memory");
 }
 
-static inline void ml_dma_rmb(void)
+static inline void
+ml_dma_rmb(void)
 {
 	__asm__ volatile("dmb oshld" : : : "memory");
 }
 
-static inline void ml_dma_mb(void)
+static inline void
+ml_dma_mb(void)
 {
 	__asm__ volatile("dmb osh" : : : "memory");
 }
 
-static inline void ml_cpu_relax(void)
+static inline void
+ml_cpu_relax(void)
 {
 	__asm__ volatile("yield");
 }

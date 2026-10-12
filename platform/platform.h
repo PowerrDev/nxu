@@ -13,11 +13,7 @@
 #define PLATFORM_MAX_CPUS 16U
 
 /* How firmware wants PSCI calls made: which instruction traps to it. */
-typedef enum {
-	PLATFORM_PSCI_NONE,
-	PLATFORM_PSCI_HVC,
-	PLATFORM_PSCI_SMC
-} platform_psci_method_t;
+typedef enum { PLATFORM_PSCI_NONE, PLATFORM_PSCI_HVC, PLATFORM_PSCI_SMC } platform_psci_method_t;
 
 typedef struct {
 	uint64_t base;
@@ -58,8 +54,7 @@ typedef struct {
 	uint32_t pcie_bus_start;
 	uint32_t pcie_bus_end;
 
-	platform_region_t
-		virtio_mmio[PLATFORM_MAX_VIRTIO_MMIO_DEVICES];
+	platform_region_t virtio_mmio[PLATFORM_MAX_VIRTIO_MMIO_DEVICES];
 
 	uint32_t virtio_mmio_intid[PLATFORM_MAX_VIRTIO_MMIO_DEVICES];
 	uint32_t virtio_mmio_irq_flags[PLATFORM_MAX_VIRTIO_MMIO_DEVICES];
@@ -77,10 +72,7 @@ typedef struct {
 	uint32_t pci_device_count;
 } platform_t;
 
-bool platform_discover(
-	const dtb_t *dtb,
-	platform_t *platform
-);
+bool platform_discover(const dtb_t *dtb, platform_t *platform);
 
 /**
  * platform_bootstrap - Discover and retain the boot platform.

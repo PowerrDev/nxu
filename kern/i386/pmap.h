@@ -49,11 +49,14 @@
 typedef uint64_t pmap_entry_t __attribute__((aligned(8)));
 
 /* Atomic stores prevent torn PAE entries while other CPUs walk shared tables. */
-static inline void pmap_entry_store(pmap_entry_t *entry, pmap_entry_t value)
+static inline void
+pmap_entry_store(pmap_entry_t *entry, pmap_entry_t value)
 {
 	__atomic_store_n(entry, value, __ATOMIC_SEQ_CST);
 }
-static inline pmap_entry_t pmap_entry_load(const pmap_entry_t *entry)
+
+static inline pmap_entry_t
+pmap_entry_load(const pmap_entry_t *entry)
 {
 	return __atomic_load_n(entry, __ATOMIC_SEQ_CST);
 }
@@ -71,18 +74,21 @@ void pmap_boot_identity(bool enabled);
 #define PMAP_CR0_PG 0x80000000U
 #define PMAP_CR4_PSE 0x00000010U
 
-static inline uint32_t pmap_directory_index(uint32_t virtual_address)
+static inline uint32_t
+pmap_directory_index(uint32_t virtual_address)
 {
 	return virtual_address >> 21U;
 }
 
-static inline uint32_t pmap_table_index(uint32_t virtual_address)
+static inline uint32_t
+pmap_table_index(uint32_t virtual_address)
 {
 	return (virtual_address >> 12U) & 0x1FFU;
 }
 
 /* Direct-map pointer to a page-table page (or any page) at a physical address. */
-static inline pmap_entry_t *pmap_table_pointer(uint32_t physical_address)
+static inline pmap_entry_t *
+pmap_table_pointer(uint32_t physical_address)
 {
 	return (pmap_entry_t *)(uintptr_t)(physical_address + VMM_HIGHER_HALF_BASE);
 }
@@ -126,14 +132,8 @@ void pmap_table_free(uint32_t physical_address);
  * incremented if it is not null. Fails, leaving *entry unset, if the
  * directory entry is absent (and not created) or is a 2 MiB page.
  */
-bool pmap_get_entry(
-	pmap_entry_t *directory,
-	uint32_t virtual_address,
-	bool create,
-	bool user_tables,
-	uint64_t *table_count,
-	pmap_entry_t **entry
-);
+bool pmap_get_entry(pmap_entry_t *directory, uint32_t virtual_address, bool create, bool user_tables,
+					uint64_t *table_count, pmap_entry_t **entry);
 
 /*
  * Map a physical device range (which may lie above the direct map, e.g. a PCI

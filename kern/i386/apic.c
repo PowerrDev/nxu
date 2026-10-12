@@ -39,18 +39,22 @@
 
 static volatile uint8_t *g_apic_base;
 
-static uint32_t apic_read(uint32_t offset)
+static uint32_t
+apic_read(uint32_t offset)
 {
 	return *(volatile uint32_t *)(g_apic_base + offset);
 }
 
-static void apic_write(uint32_t offset, uint32_t value)
+static void
+apic_write(uint32_t offset, uint32_t value)
 {
 	*(volatile uint32_t *)(g_apic_base + offset) = value;
 }
 
-/* ICR writes only take effect once the previous one has been sent (bit 12 clears). Bounded: a stuck ICR must not hang boot forever. */
-static void apic_wait_icr_idle(void)
+/* ICR writes only take effect once the previous one has been sent (bit 12 clears). Bounded: a stuck ICR must not hang
+ * boot forever. */
+static void
+apic_wait_icr_idle(void)
 {
 	uint64_t deadline = timer_get_microseconds() + 100000ULL;
 
@@ -60,7 +64,8 @@ static void apic_wait_icr_idle(void)
 	}
 }
 
-bool apic_init(uint32_t physical_address)
+bool
+apic_init(uint32_t physical_address)
 {
 	void *virtual_address;
 
@@ -73,33 +78,32 @@ bool apic_init(uint32_t physical_address)
 
 	apic_enable_local();
 
-	kprintf(
-		"apic_init: Local APIC at phys 0x%x mapped to %p, id %u, spurious vector 0x%x\n",
-		physical_address,
-		(void *)g_apic_base,
-		apic_id(),
-		T_LAPIC_SPURIOUS
-	);
+	kprintf("apic_init: Local APIC at phys 0x%x mapped to %p, id %u, spurious vector 0x%x\n", physical_address,
+			(void *)g_apic_base, apic_id(), T_LAPIC_SPURIOUS);
 
 	return true;
 }
 
-void apic_enable_local(void)
+void
+apic_enable_local(void)
 {
 	apic_write(APIC_REG_SPURIOUS, APIC_SPURIOUS_SOFTWARE_ENABLE | T_LAPIC_SPURIOUS);
 }
 
-uint32_t apic_id(void)
+uint32_t
+apic_id(void)
 {
 	return apic_read(APIC_REG_ID) >> 24U;
 }
 
-void apic_eoi(void)
+void
+apic_eoi(void)
 {
 	apic_write(APIC_REG_EOI, 0U);
 }
 
-void apic_start_cpu(uint8_t target_apic_id, uint32_t entry_physical)
+void
+apic_start_cpu(uint8_t target_apic_id, uint32_t entry_physical)
 {
 	uint32_t vector = entry_physical >> 12U;
 
@@ -116,7 +120,8 @@ void apic_start_cpu(uint8_t target_apic_id, uint32_t entry_physical)
 
 	uint64_t deadline = timer_get_microseconds() + 10000ULL;
 
-	while (timer_get_microseconds() < deadline) cpu_relax();
+	while (timer_get_microseconds() < deadline)
+		cpu_relax();
 
 	/* SIPI, twice (the second is a no-op on hardware that started on the first, required on some that has not). */
 	for (uint32_t attempt = 0U; attempt < 2U; attempt++) {
@@ -126,18 +131,21 @@ void apic_start_cpu(uint8_t target_apic_id, uint32_t entry_physical)
 		apic_wait_icr_idle();
 
 		deadline = timer_get_microseconds() + 200ULL;
-		while (timer_get_microseconds() < deadline) cpu_relax();
+		while (timer_get_microseconds() < deadline)
+			cpu_relax();
 	}
 }
 
-void apic_send_ipi(uint8_t target_apic_id, uint8_t vector)
+void
+apic_send_ipi(uint8_t target_apic_id, uint8_t vector)
 {
 	apic_wait_icr_idle();
 	apic_write(APIC_REG_ICR_HIGH, (uint32_t)target_apic_id << 24U);
 	apic_write(APIC_REG_ICR_LOW, APIC_ICR_DELIVERY_FIXED | vector);
 }
 
-void apic_send_ipi_all_but_self(uint8_t vector)
+void
+apic_send_ipi_all_but_self(uint8_t vector)
 {
 	apic_wait_icr_idle();
 	apic_write(APIC_REG_ICR_HIGH, 0U);

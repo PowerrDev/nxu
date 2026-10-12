@@ -29,33 +29,29 @@
  * sleeping.
  */
 
-bool signal_valid(uint32_t signal)
+bool
+signal_valid(uint32_t signal)
 {
 	return signal >= 1U && signal < NXU_NSIG;
 }
 
-signal_default_t signal_default_action(uint32_t signal)
+signal_default_t
+signal_default_action(uint32_t signal)
 {
-	return signal == NXU_SIGCHLD
-		? SIGNAL_DEFAULT_IGNORE
-		: SIGNAL_DEFAULT_TERMINATE;
+	return signal == NXU_SIGCHLD ? SIGNAL_DEFAULT_IGNORE : SIGNAL_DEFAULT_TERMINATE;
 }
 
-uint32_t signal_sanitize_mask(uint32_t mask)
+uint32_t
+signal_sanitize_mask(uint32_t mask)
 {
 	return mask & ~(1U | NXU_SIG_UNCATCHABLE_MASK);
 }
 
-bool signal_set_action(proc_t proc, uint32_t signal, const nxu_sigaction_t *action)
+bool
+signal_set_action(proc_t proc, uint32_t signal, const nxu_sigaction_t *action)
 {
-	if (
-		proc == 0 ||
-		action == 0 ||
-		!signal_valid(signal) ||
-		signal == NXU_SIGKILL ||
-		signal == NXU_SIGSTOP ||
-		signal == NXU_SIGCONT
-	) {
+	if (proc == 0 || action == 0 || !signal_valid(signal) || signal == NXU_SIGKILL || signal == NXU_SIGSTOP ||
+		signal == NXU_SIGCONT) {
 		return false;
 	}
 
@@ -77,7 +73,8 @@ bool signal_set_action(proc_t proc, uint32_t signal, const nxu_sigaction_t *acti
 	return true;
 }
 
-bool signal_get_action(proc_t proc, uint32_t signal, nxu_sigaction_t *action)
+bool
+signal_get_action(proc_t proc, uint32_t signal, nxu_sigaction_t *action)
 {
 	if (proc == 0 || action == 0 || !signal_valid(signal)) return false;
 
@@ -89,7 +86,8 @@ bool signal_get_action(proc_t proc, uint32_t signal, nxu_sigaction_t *action)
 	return true;
 }
 
-void signal_inherit(proc_t child, proc_t parent)
+void
+signal_inherit(proc_t child, proc_t parent)
 {
 	if (child == 0 || parent == 0) return;
 
@@ -105,7 +103,8 @@ void signal_inherit(proc_t child, proc_t parent)
 	child->p_sigpending = 0U;
 }
 
-void signal_reset_for_exec(proc_t proc)
+void
+signal_reset_for_exec(proc_t proc)
 {
 	if (proc == 0) return;
 
@@ -113,18 +112,20 @@ void signal_reset_for_exec(proc_t proc)
 
 	for (uint32_t signal = 0U; signal < NXU_NSIG; signal++) {
 		if (proc->p_sigact[signal].handler > NXU_SIG_IGN) {
-			proc->p_sigact[signal] = (nxu_sigaction_t) { 0 };
+			proc->p_sigact[signal] = (nxu_sigaction_t){0};
 		}
 	}
 
 	nxu_spin_unlock_irqrestore(&proc->p_siglock, irq_state);
 }
 
-bool signal_pending_for(proc_t proc, thread_t thread)
+bool
+signal_pending_for(proc_t proc, thread_t thread)
 {
 	if (proc == 0 || thread == 0) return false;
 
-	return (__atomic_load_n(&proc->p_sigpending, __ATOMIC_ACQUIRE) & (~thread->sig_blocked | NXU_SIG_UNCATCHABLE_MASK)) != 0U;
+	return (__atomic_load_n(&proc->p_sigpending, __ATOMIC_ACQUIRE) &
+			(~thread->sig_blocked | NXU_SIG_UNCATCHABLE_MASK)) != 0U;
 }
 
 /*
@@ -134,7 +135,8 @@ bool signal_pending_for(proc_t proc, thread_t thread)
  * every thread that would take it, so its system call returns "interrupted"
  * and the handler can run instead of the signal waiting behind the sleep.
  */
-static void signal_interrupt_sleepers(proc_t proc, uint32_t signal)
+static void
+signal_interrupt_sleepers(proc_t proc, uint32_t signal)
 {
 	/*
 	 * Walk the threads with references, not through the raw list: a thread of
@@ -143,10 +145,7 @@ static void signal_interrupt_sleepers(proc_t proc, uint32_t signal)
 	 * for a thread in user mode on another CPU is delivered at its next return
 	 * to user mode (one interrupt away) rather than up to a timer tick later.
 	 */
-	for (
-		thread_t thread = task_first_thread_ref(&proc->p_task);
-		thread != 0;
-	) {
+	for (thread_t thread = task_first_thread_ref(&proc->p_task); thread != 0;) {
 		if ((thread->sig_blocked & SIGNAL_BIT(signal)) == 0U || signal == NXU_SIGKILL) {
 			(void)waitq_interrupt(thread);
 			sched_kick_thread(thread);
@@ -159,7 +158,8 @@ static void signal_interrupt_sleepers(proc_t proc, uint32_t signal)
 	}
 }
 
-signal_send_result_t signal_send(proc_t sender, proc_id_t pid, uint32_t signal)
+signal_send_result_t
+signal_send(proc_t sender, proc_id_t pid, uint32_t signal)
 {
 	if (sender == 0) return SIGNAL_SEND_INVALID;
 	if (signal != 0U && !signal_valid(signal)) return SIGNAL_SEND_INVALID;
@@ -182,9 +182,8 @@ signal_send_result_t signal_send(proc_t sender, proc_id_t pid, uint32_t signal)
 
 		(void)signal_get_action(target, signal, &action);
 
-		bool terminate =
-			signal == NXU_SIGKILL ||
-			(action.handler == NXU_SIG_DFL && signal_default_action(signal) == SIGNAL_DEFAULT_TERMINATE);
+		bool terminate = signal == NXU_SIGKILL ||
+						 (action.handler == NXU_SIG_DFL && signal_default_action(signal) == SIGNAL_DEFAULT_TERMINATE);
 
 		if (signal != NXU_SIGKILL && action.handler == NXU_SIG_IGN) {
 			/* Ignored: nothing to record. */
@@ -215,7 +214,8 @@ signal_send_result_t signal_send(proc_t sender, proc_id_t pid, uint32_t signal)
 	return result;
 }
 
-uint32_t signal_dequeue(proc_t proc, thread_t thread)
+uint32_t
+signal_dequeue(proc_t proc, thread_t thread)
 {
 	if (proc == 0 || thread == 0) return 0U;
 
@@ -238,7 +238,8 @@ uint32_t signal_dequeue(proc_t proc, thread_t thread)
 	return taken;
 }
 
-uint32_t signal_blocked_mask_for_handler(uint32_t current_mask, uint32_t signal, const nxu_sigaction_t *action)
+uint32_t
+signal_blocked_mask_for_handler(uint32_t current_mask, uint32_t signal, const nxu_sigaction_t *action)
 {
 	uint32_t mask = current_mask;
 
@@ -250,7 +251,8 @@ uint32_t signal_blocked_mask_for_handler(uint32_t current_mask, uint32_t signal,
 	return signal_sanitize_mask(mask);
 }
 
-void signal_notify_parent_of_exit_locked(proc_t parent)
+void
+signal_notify_parent_of_exit_locked(proc_t parent)
 {
 	if (parent == 0) return;
 

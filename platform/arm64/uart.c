@@ -13,12 +13,14 @@
 static uint64_t g_uart_base = UART_EARLY_BASE;
 static bool g_uart_higher_half;
 
-static volatile uint32_t *uart_register(uint64_t offset)
+static volatile uint32_t *
+uart_register(uint64_t offset)
 {
 	return (volatile uint32_t *)(g_uart_base + offset);
 }
 
-bool uart_enter_higher_half(void)
+bool
+uart_enter_higher_half(void)
 {
 	if (g_uart_higher_half || !vmm_higher_half_direct_map_enabled()) {
 		return false;
@@ -26,10 +28,7 @@ bool uart_enter_higher_half(void)
 
 	uint64_t virtual_address;
 
-	if (!vmm_physical_to_higher_half(
-		UART_EARLY_BASE,
-		&virtual_address
-	)) {
+	if (!vmm_physical_to_higher_half(UART_EARLY_BASE, &virtual_address)) {
 		return false;
 	}
 
@@ -39,12 +38,14 @@ bool uart_enter_higher_half(void)
 	return true;
 }
 
-bool uart_higher_half_enabled(void)
+bool
+uart_higher_half_enabled(void)
 {
 	return g_uart_higher_half;
 }
 
-void uart_putc(char character)
+void
+uart_putc(char character)
 {
 	if (character == '\n') {
 		uart_putc('\r');

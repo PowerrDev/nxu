@@ -24,7 +24,8 @@ extern uint8_t __kernel_end[];
 
 volatile i386_vm_fault_expectation_t i386_vm_fault_expectation;
 
-const char *i386_vm_region_name(uint32_t address)
+const char *
+i386_vm_region_name(uint32_t address)
 {
 	if (address < PMAP_PAGE_SIZE) return "null guard page";
 	if (address < VM_MAX_USER_ADDRESS) return "user space";
@@ -41,7 +42,8 @@ const char *i386_vm_region_name(uint32_t address)
 }
 
 /* Read the live page tables the way the MMU would, without faulting. */
-static void vm_fault_describe_tables(uint32_t address)
+static void
+vm_fault_describe_tables(uint32_t address)
 {
 	uint32_t cr3 = pmap_current_directory_physical();
 	pmap_entry_t directory_entry = pmap_directory_from_root(cr3)[pmap_directory_index(address)];
@@ -67,16 +69,19 @@ static void vm_fault_describe_tables(uint32_t address)
 		return;
 	}
 
-	kprintf(" (%s, %s)\n", (entry & PTE_WRITE) != 0U ? "writable" : "read-only", (entry & PTE_USER) != 0U ? "user" : "supervisor");
+	kprintf(" (%s, %s)\n", (entry & PTE_WRITE) != 0U ? "writable" : "read-only",
+			(entry & PTE_USER) != 0U ? "user" : "supervisor");
 }
 
-__attribute__((weak)) bool i386_vm_fault_resolve(x86_saved_state_t *state)
+__attribute__((weak)) bool
+i386_vm_fault_resolve(x86_saved_state_t *state)
 {
 	(void)state;
 	return false;
 }
 
-bool i386_trap_page_fault(x86_saved_state_t *state)
+bool
+i386_trap_page_fault(x86_saved_state_t *state)
 {
 	volatile i386_vm_fault_expectation_t *expected = &i386_vm_fault_expectation;
 
@@ -97,12 +102,8 @@ bool i386_trap_page_fault(x86_saved_state_t *state)
 	 */
 	if (x86_saved_state_is_user(state)) return false;
 
-	kprintf(
-		"i386_trap_page_fault: unresolved fault at 0x%x in %s, eip 0x%x\n",
-		state->cr2,
-		i386_vm_region_name(state->cr2),
-		state->eip
-	);
+	kprintf("i386_trap_page_fault: unresolved fault at 0x%x in %s, eip 0x%x\n", state->cr2,
+			i386_vm_region_name(state->cr2), state->eip);
 	vm_fault_describe_tables(state->cr2);
 
 	/* Not ours to fix: let the trap layer print its report and stop. */

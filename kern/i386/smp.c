@@ -75,7 +75,8 @@
 #define SMP_TRAMPOLINE_PHYS 0x8000U
 #define SMP_TRAMPOLINE_PARAMS 0x8800U
 
-/* What smp_trampoline.S reads, at a fixed physical address; see its own file comment. Packed, no padding: the .S file's PARAMS_* offsets assume exactly this layout. */
+/* What smp_trampoline.S reads, at a fixed physical address; see its own file comment. Packed, no padding: the .S file's
+ * PARAMS_* offsets assume exactly this layout. */
 typedef struct __attribute__((packed)) {
 	uint16_t gdt_limit;
 	uint32_t gdt_base;
@@ -103,17 +104,20 @@ static uint32_t g_reschedule_deliveries[NXU_MAX_CPUS];
 /* Logical id -> Local APIC id. Entry 0 is the boot CPU. */
 static uint8_t g_cpu_apic_id[NXU_MAX_CPUS];
 
-uint32_t smp_cpu_count(void)
+uint32_t
+smp_cpu_count(void)
 {
 	return g_cpu_total;
 }
 
-uint32_t smp_online_count(void)
+uint32_t
+smp_online_count(void)
 {
 	return __atomic_load_n(&g_cpu_online, __ATOMIC_ACQUIRE);
 }
 
-uint64_t smp_cpu_mpidr(uint32_t cpu)
+uint64_t
+smp_cpu_mpidr(uint32_t cpu)
 {
 	return cpu < g_cpu_total ? (uint64_t)g_cpu_apic_id[cpu] : 0ULL;
 }
@@ -126,8 +130,8 @@ uint64_t smp_cpu_mpidr(uint32_t cpu)
  * trampoline never touched IF, and it starts clear the way every CPU's does
  * on reset).
  */
-__attribute__((noreturn))
-void i386_smp_secondary_main(uint32_t cpu_id, processor_t cpu)
+__attribute__((noreturn)) void
+i386_smp_secondary_main(uint32_t cpu_id, processor_t cpu)
 {
 	/*
 	 * i386_gdt_init_secondary() first: it is what actually gives this CPU
@@ -144,10 +148,10 @@ void i386_smp_secondary_main(uint32_t cpu_id, processor_t cpu)
 
 	if (!pmap_cpu_protection_valid()) {
 		kprintf("SMP: CPU%u paging protection validation failed\n", cpu_id);
-		for (;;) cpu_wait_for_interrupt();
+		for (;;)
+			cpu_wait_for_interrupt();
 	}
-	kprintf("cpu%u: PAE and %s protections validated\n", cpu_id,
-		pmap_nx_enabled() ? "NX" : "write");
+	kprintf("cpu%u: PAE and %s protections validated\n", cpu_id, pmap_nx_enabled() ? "NX" : "write");
 
 	apic_enable_local();
 
@@ -175,12 +179,14 @@ void i386_smp_secondary_main(uint32_t cpu_id, processor_t cpu)
 	 */
 	sched_cpu_idle();
 
-	for (;;) cpu_wait_for_interrupt();
+	for (;;)
+		cpu_wait_for_interrupt();
 }
 
 /* ---- inter-processor interrupts ----------------------------------------- */
 
-void machine_ipi_raise(uint32_t cpu, uint32_t vector)
+void
+machine_ipi_raise(uint32_t cpu, uint32_t vector)
 {
 	if (cpu >= g_cpu_total || cpu == machine_cpu_id()) return;
 
@@ -189,7 +195,8 @@ void machine_ipi_raise(uint32_t cpu, uint32_t vector)
 	apic_send_ipi(g_cpu_apic_id[cpu], raw_vector);
 }
 
-void machine_ipi_raise_others(uint32_t vector)
+void
+machine_ipi_raise_others(uint32_t vector)
 {
 	if (g_cpu_total <= 1U) return;
 
@@ -198,7 +205,8 @@ void machine_ipi_raise_others(uint32_t vector)
 	apic_send_ipi_all_but_self(raw_vector);
 }
 
-void smp_handle_ipi(uint32_t vector)
+void
+smp_handle_ipi(uint32_t vector)
 {
 	processor_t self = current_processor();
 
@@ -214,14 +222,16 @@ void smp_handle_ipi(uint32_t vector)
 		ml_irq_disable();
 		__atomic_store_n(&self->state, PROCESSOR_SHUTDOWN, __ATOMIC_RELEASE);
 
-		for (;;) cpu_wait_for_event();
+		for (;;)
+			cpu_wait_for_event();
 
 	default:
 		break;
 	}
 }
 
-void smp_tick_others(void)
+void
+smp_tick_others(void)
 {
 	if (g_cpu_total <= 1U) return;
 
@@ -233,7 +243,8 @@ void smp_tick_others(void)
  * T_IPI_TICK / T_LAPIC_SPURIOUS (kern/i386/trap.c). Strong-overrides trap.c's
  * weak default.
  */
-void i386_trap_ipi(x86_saved_state_t *state)
+void
+i386_trap_ipi(x86_saved_state_t *state)
 {
 	uint32_t vector = state->trapno;
 
@@ -248,7 +259,8 @@ void i386_trap_ipi(x86_saved_state_t *state)
 	apic_eoi();
 }
 
-void smp_stop_other_cpus(void)
+void
+smp_stop_other_cpus(void)
 {
 	if (g_cpu_total <= 1U) return;
 
@@ -257,14 +269,13 @@ void smp_stop_other_cpus(void)
 	/* Bounded: a CPU with interrupts masked for ever cannot be stopped, and the panic must go on. */
 	uint64_t deadline = timer_get_microseconds() + 20000ULL;
 
-	while (timer_get_microseconds() < deadline) cpu_relax();
+	while (timer_get_microseconds() < deadline)
+		cpu_relax();
 
 	kconsole_break_lock();
 }
 
 /* ---- the boot CPU -------------------------------------------------------- */
-
-
 
 /*
  * The boot CPU's own GDTR (its complete GDT, slots 1/2 of which are the same
@@ -274,7 +285,8 @@ void smp_stop_other_cpus(void)
  * pointer value today, so this reads it back from the CPU the same way
  * pmap_current_directory_physical() reads CR3 back, with sgdt.
  */
-static void smp_read_boot_gdtr(uint16_t *limit, uint32_t *base)
+static void
+smp_read_boot_gdtr(uint16_t *limit, uint32_t *base)
 {
 	uint8_t raw[6];
 
@@ -285,7 +297,8 @@ static void smp_read_boot_gdtr(uint16_t *limit, uint32_t *base)
 }
 
 /* Start one secondary CPU. Returns whether it reported ONLINE. */
-static bool smp_start_cpu(uint32_t cpu_id, uint8_t apic_id_value)
+static bool
+smp_start_cpu(uint32_t cpu_id, uint8_t apic_id_value)
 {
 	processor_t cpu = processor_register(cpu_id, (uint64_t)apic_id_value);
 
@@ -340,7 +353,8 @@ static bool smp_start_cpu(uint32_t cpu_id, uint8_t apic_id_value)
 	uint64_t deadline = timer_get_microseconds() + SMP_ONLINE_TIMEOUT_US;
 
 	while (!processor_is_online(cpu)) {
-		if (__atomic_load_n(&cpu->state, __ATOMIC_ACQUIRE) == PROCESSOR_SHUTDOWN || timer_get_microseconds() > deadline) {
+		if (__atomic_load_n(&cpu->state, __ATOMIC_ACQUIRE) == PROCESSOR_SHUTDOWN ||
+			timer_get_microseconds() > deadline) {
 			kprintf("SMP: CPU%u did not come online\n", cpu_id);
 			return false;
 		}
@@ -351,7 +365,8 @@ static bool smp_start_cpu(uint32_t cpu_id, uint8_t apic_id_value)
 	return true;
 }
 
-uint32_t smp_boot_secondaries(void)
+uint32_t
+smp_boot_secondaries(void)
 {
 	mp_table_t table;
 
@@ -427,7 +442,8 @@ uint32_t smp_boot_secondaries(void)
 
 /* ---- boot phase ---------------------------------------------------------- */
 
-bool i386_init_smp(const i386_boot_info_t *boot)
+bool
+i386_init_smp(const i386_boot_info_t *boot)
 {
 	(void)boot;
 
@@ -442,7 +458,8 @@ bool i386_init_smp(const i386_boot_info_t *boot)
  * same from outside, which is why the count is what is checked, not whether
  * bring-up itself reported an error.
  */
-static bool smp_selftest_expected_cpus(const i386_boot_info_t *boot)
+static bool
+smp_selftest_expected_cpus(const i386_boot_info_t *boot)
 {
 	char value[16];
 
@@ -477,7 +494,8 @@ static bool smp_selftest_expected_cpus(const i386_boot_info_t *boot)
  * -> apic_send_ipi -> the target's IDT gate -> i386_trap_ipi ->
  * smp_handle_ipi), not just that bring-up reported the CPU online.
  */
-static bool smp_selftest_ipi_round_trip(void)
+static bool
+smp_selftest_ipi_round_trip(void)
 {
 	uint32_t online = smp_online_count();
 
@@ -521,7 +539,8 @@ static bool smp_selftest_ipi_round_trip(void)
 	return ok;
 }
 
-bool i386_init_smp_selftest(const i386_boot_info_t *boot)
+bool
+i386_init_smp_selftest(const i386_boot_info_t *boot)
 {
 	bool ok = smp_selftest_expected_cpus(boot);
 

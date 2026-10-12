@@ -42,14 +42,16 @@ socket_process_test(void)
 	proc_t proc_server = 0;
 	proc_t proc_client = 0;
 
-	loader_status_t status_server = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/sockettest_server", "sockettest_server", &proc_server);
+	loader_status_t status_server = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/sockettest_server",
+												 "sockettest_server", &proc_server);
 	if (status_server != LOADER_STATUS_OK) {
 		kputs("socket_process_test: spawning sockettest_server failed: ");
 		kputln(loader_status_name(status_server));
 		return false;
 	}
 
-	loader_status_t status_client = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/sockettest_client", "sockettest_client", &proc_client);
+	loader_status_t status_client = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/sockettest_client",
+												 "sockettest_client", &proc_client);
 	if (status_client != LOADER_STATUS_OK) {
 		kputs("socket_process_test: spawning sockettest_client failed: ");
 		kputln(loader_status_name(status_client));
@@ -70,10 +72,12 @@ socket_process_test(void)
 	}
 
 	if (exit_server != 0ULL || exit_client != 0ULL) {
-		kprintf("socket_process_test: nonzero exit status (server=%llu client=%llu)\n", (unsigned long long)exit_server, (unsigned long long)exit_client);
+		kprintf("socket_process_test: nonzero exit status (server=%llu client=%llu)\n", (unsigned long long)exit_server,
+				(unsigned long long)exit_client);
 		return false;
 	}
 
-	kputln("socket_process_test: two-process streaming socket round trip passed (listen, connect, accept, stream > 4096 bytes, reply, reap)");
+	kputln("socket_process_test: two-process streaming socket round trip passed (listen, connect, accept, stream > "
+		   "4096 bytes, reply, reap)");
 	return true;
 }

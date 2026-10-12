@@ -62,7 +62,8 @@ static proc_t g_boot_process;
 static waitq_t g_boot_dispatch_wait;
 
 /* Decimal boot-arg value to uint32_t; stops at the first non-digit. */
-static uint32_t userland_parse_u32(const char *text)
+static uint32_t
+userland_parse_u32(const char *text)
 {
 	uint32_t value = 0U;
 
@@ -73,7 +74,8 @@ static uint32_t userland_parse_u32(const char *text)
 	return value;
 }
 
-static bool userland_run_process_test(const char *name)
+static bool
+userland_run_process_test(const char *name)
 {
 	bool ok;
 
@@ -93,7 +95,8 @@ static bool userland_run_process_test(const char *name)
 }
 
 /* Same policy as arm64: prefer bootd, fall back to its recovery image. */
-static bool userland_spawn_bootd(void)
+static bool
+userland_spawn_bootd(void)
 {
 	bool recovery = boot_mode_is_triage_os();
 	const char *path = recovery ? boot_update_recovery_program() : USERLAND_BOOTD_PATH;
@@ -123,7 +126,8 @@ static bool userland_spawn_bootd(void)
 	return true;
 }
 
-bool i386_init_userland(const i386_boot_info_t *boot)
+bool
+i386_init_userland(const i386_boot_info_t *boot)
 {
 	(void)boot;
 
@@ -169,18 +173,14 @@ bool i386_init_userland(const i386_boot_info_t *boot)
 	memset(&list_request, 0, sizeof(list_request));
 	list_request.list = i386_boot_arg("btrfs-ls", list_value, sizeof(list_value));
 
-	if (i386_boot_arg("btrfs-cat", list_value, sizeof(list_value)))
-		list_request.cat_path = list_value;
+	if (i386_boot_arg("btrfs-cat", list_value, sizeof(list_value))) list_request.cat_path = list_value;
 
 	if (list_request.list || list_request.cat_path != 0) {
 		char option[24];
 
-		if (i386_boot_arg("btrfs-dev", option, sizeof(option)))
-			list_request.device_index = userland_parse_u32(option);
-		if (i386_boot_arg("btrfs-subvol", option, sizeof(option)))
-			list_request.subvolume = userland_parse_u32(option);
-		if (i386_boot_arg("btrfs-max", option, sizeof(option)))
-			list_request.max_entries = userland_parse_u32(option);
+		if (i386_boot_arg("btrfs-dev", option, sizeof(option))) list_request.device_index = userland_parse_u32(option);
+		if (i386_boot_arg("btrfs-subvol", option, sizeof(option))) list_request.subvolume = userland_parse_u32(option);
+		if (i386_boot_arg("btrfs-max", option, sizeof(option))) list_request.max_entries = userland_parse_u32(option);
 		list_request.noverify = i386_boot_arg("btrfs-noverify", option, sizeof(option));
 
 		bool list_ok = btrfs_list_run(&list_request);
@@ -231,8 +231,7 @@ bool i386_init_userland(const i386_boot_info_t *boot)
 	 */
 	char test[16];
 
-	if (i386_boot_arg("process-test", test, sizeof(test)))
-		return userland_run_process_test(test);
+	if (i386_boot_arg("process-test", test, sizeof(test))) return userland_run_process_test(test);
 
 	/*
 	 * "sound-test=1": play the test tone through the VirtIO Sound driver
@@ -284,8 +283,7 @@ bool i386_init_userland(const i386_boot_info_t *boot)
 	}
 	/* Stop the boot log sink before recovery or the desktop owns scanout. */
 	if (display_primary()) (void)boot_splash_finish();
-	if (boot_mode_is_triage_os())
-		return userland_spawn_bootd();
+	if (boot_mode_is_triage_os()) return userland_spawn_bootd();
 
 	/*
 	 * "test=desktop": the compositor's kernel-embedded bring-up (see
@@ -302,10 +300,8 @@ bool i386_init_userland(const i386_boot_info_t *boot)
 	if (selected_present && strcmp(selected, "desktop") == 0) {
 		diagnostics_start();
 		if (boot_arg_bool("ui.userland", false)) {
-			if (!boot_mode_is_triage_os() && !ui_service_trusted_prepare())
-				return false;
-			if (!userland_spawn_bootd())
-				return false;
+			if (!boot_mode_is_triage_os() && !ui_service_trusted_prepare()) return false;
+			if (!userland_spawn_bootd()) return false;
 			boot_chime_arm();
 			boot_chime_start();
 			return true;
@@ -334,7 +330,8 @@ bool i386_init_userland(const i386_boot_info_t *boot)
 	return userland_spawn_bootd();
 }
 
-bool i386_init_run(const i386_boot_info_t *boot)
+bool
+i386_init_run(const i386_boot_info_t *boot)
 {
 	(void)boot;
 
@@ -343,8 +340,7 @@ bool i386_init_run(const i386_boot_info_t *boot)
 	 * left to run. The tepOS mailbox monitor is a kernel thread, though, so
 	 * keep scheduling while the machine has a mailbox link.
 	 */
-	if (g_boot_process == 0 && tep_mailbox_link_state() == TEP_LINK_ABSENT)
-		return true;
+	if (g_boot_process == 0 && tep_mailbox_link_state() == TEP_LINK_ABSENT) return true;
 
 	char value[16];
 	uint64_t limit_us = 0ULL;
@@ -376,8 +372,7 @@ bool i386_init_run(const i386_boot_info_t *boot)
 			return false;
 		}
 
-		if (limit_us != 0ULL && timer_get_microseconds() - start_us >= limit_us)
-			break;
+		if (limit_us != 0ULL && timer_get_microseconds() - start_us >= limit_us) break;
 	}
 
 	kputln("i386_init_run: run time elapsed, leaving the scheduler");

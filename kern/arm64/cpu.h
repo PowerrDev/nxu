@@ -10,17 +10,20 @@
 #ifndef NXU_KERN_ARM64_CPU_H
 #define NXU_KERN_ARM64_CPU_H
 
-static inline void cpu_relax(void)
+static inline void
+cpu_relax(void)
 {
 	__asm__ volatile("yield");
 }
 
-static inline void cpu_wait_for_interrupt(void)
+static inline void
+cpu_wait_for_interrupt(void)
 {
 	__asm__ volatile("wfi");
 }
 
-static inline void cpu_wait_for_event(void)
+static inline void
+cpu_wait_for_event(void)
 {
 	__asm__ volatile("wfe");
 }

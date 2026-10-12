@@ -28,13 +28,16 @@ typedef struct {
 	uint64_t words[NXU_CPUSET_WORDS] __attribute__((aligned(8)));
 } nxu_cpuset_t;
 
-static inline void cpuset_clear(nxu_cpuset_t *set)
+static inline void
+cpuset_clear(nxu_cpuset_t *set)
 {
-	for (uint32_t index = 0U; index < NXU_CPUSET_WORDS; index++) set->words[index] = 0ULL;
+	for (uint32_t index = 0U; index < NXU_CPUSET_WORDS; index++)
+		set->words[index] = 0ULL;
 }
 
 /* The set of CPUs 0 .. count - 1. */
-static inline void cpuset_fill(nxu_cpuset_t *set, uint32_t count)
+static inline void
+cpuset_fill(nxu_cpuset_t *set, uint32_t count)
 {
 	cpuset_clear(set);
 
@@ -43,22 +46,26 @@ static inline void cpuset_fill(nxu_cpuset_t *set, uint32_t count)
 	}
 }
 
-static inline void cpuset_add(nxu_cpuset_t *set, uint32_t cpu)
+static inline void
+cpuset_add(nxu_cpuset_t *set, uint32_t cpu)
 {
 	if (cpu < NXU_MAX_CPUS) set->words[cpu / 64U] |= 1ULL << (cpu % 64U);
 }
 
-static inline void cpuset_remove(nxu_cpuset_t *set, uint32_t cpu)
+static inline void
+cpuset_remove(nxu_cpuset_t *set, uint32_t cpu)
 {
 	if (cpu < NXU_MAX_CPUS) set->words[cpu / 64U] &= ~(1ULL << (cpu % 64U));
 }
 
-static inline bool cpuset_contains(const nxu_cpuset_t *set, uint32_t cpu)
+static inline bool
+cpuset_contains(const nxu_cpuset_t *set, uint32_t cpu)
 {
 	return cpu < NXU_MAX_CPUS && (set->words[cpu / 64U] & (1ULL << (cpu % 64U))) != 0ULL;
 }
 
-static inline bool cpuset_empty(const nxu_cpuset_t *set)
+static inline bool
+cpuset_empty(const nxu_cpuset_t *set)
 {
 	for (uint32_t index = 0U; index < NXU_CPUSET_WORDS; index++) {
 		if (set->words[index] != 0ULL) return false;
@@ -67,16 +74,20 @@ static inline bool cpuset_empty(const nxu_cpuset_t *set)
 	return true;
 }
 
-static inline void cpuset_intersect(nxu_cpuset_t *result, const nxu_cpuset_t *left, const nxu_cpuset_t *right)
+static inline void
+cpuset_intersect(nxu_cpuset_t *result, const nxu_cpuset_t *left, const nxu_cpuset_t *right)
 {
-	for (uint32_t index = 0U; index < NXU_CPUSET_WORDS; index++) result->words[index] = left->words[index] & right->words[index];
+	for (uint32_t index = 0U; index < NXU_CPUSET_WORDS; index++)
+		result->words[index] = left->words[index] & right->words[index];
 }
 
-static inline uint32_t cpuset_count(const nxu_cpuset_t *set)
+static inline uint32_t
+cpuset_count(const nxu_cpuset_t *set)
 {
 	uint32_t count = 0U;
 
-	for (uint32_t index = 0U; index < NXU_CPUSET_WORDS; index++) count += (uint32_t)__builtin_popcountll(set->words[index]);
+	for (uint32_t index = 0U; index < NXU_CPUSET_WORDS; index++)
+		count += (uint32_t)__builtin_popcountll(set->words[index]);
 	return count;
 }
 
@@ -85,19 +96,23 @@ static inline uint32_t cpuset_count(const nxu_cpuset_t *set)
  * several CPUs at once, so these change one bit atomically. Release/acquire
  * order the bit against the state it announces.
  */
-static inline void cpuset_add_atomic(nxu_cpuset_t *set, uint32_t cpu)
+static inline void
+cpuset_add_atomic(nxu_cpuset_t *set, uint32_t cpu)
 {
 	if (cpu < NXU_MAX_CPUS) __atomic_fetch_or(&set->words[cpu / 64U], 1ULL << (cpu % 64U), __ATOMIC_RELEASE);
 }
 
-static inline void cpuset_remove_atomic(nxu_cpuset_t *set, uint32_t cpu)
+static inline void
+cpuset_remove_atomic(nxu_cpuset_t *set, uint32_t cpu)
 {
 	if (cpu < NXU_MAX_CPUS) __atomic_fetch_and(&set->words[cpu / 64U], ~(1ULL << (cpu % 64U)), __ATOMIC_RELEASE);
 }
 
-static inline bool cpuset_contains_atomic(const nxu_cpuset_t *set, uint32_t cpu)
+static inline bool
+cpuset_contains_atomic(const nxu_cpuset_t *set, uint32_t cpu)
 {
-	return cpu < NXU_MAX_CPUS && (__atomic_load_n(&set->words[cpu / 64U], __ATOMIC_ACQUIRE) & (1ULL << (cpu % 64U))) != 0ULL;
+	return cpu < NXU_MAX_CPUS &&
+		   (__atomic_load_n(&set->words[cpu / 64U], __ATOMIC_ACQUIRE) & (1ULL << (cpu % 64U))) != 0ULL;
 }
 
 #endif

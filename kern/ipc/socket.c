@@ -205,7 +205,8 @@ socket_registry_lookup(const char *name)
 	return found;
 }
 
-bool socket_create(socket_t *result)
+bool
+socket_create(socket_t *result)
 {
 	if (result != 0) *result = SOCKET_NULL;
 	if (result == 0) return false;
@@ -213,7 +214,7 @@ bool socket_create(socket_t *result)
 	socket_t s = kmalloc(sizeof(struct socket));
 	if (s == 0) return false;
 
-	*s = (struct socket) { 0 };
+	*s = (struct socket){0};
 	s->state = SOCKET_STATE_UNBOUND;
 	s->references = 1U;
 
@@ -221,7 +222,8 @@ bool socket_create(socket_t *result)
 	return true;
 }
 
-bool socket_reference(socket_t s)
+bool
+socket_reference(socket_t s)
 {
 	if (s == SOCKET_NULL) return false;
 
@@ -233,7 +235,8 @@ bool socket_reference(socket_t s)
 	return valid;
 }
 
-bool socket_listen(socket_t s, const char *name, uint32_t backlog)
+bool
+socket_listen(socket_t s, const char *name, uint32_t backlog)
 {
 	if (s == SOCKET_NULL || name == 0) return false;
 
@@ -244,11 +247,10 @@ bool socket_listen(socket_t s, const char *name, uint32_t backlog)
 	bool valid = s->state == SOCKET_STATE_UNBOUND;
 	if (valid) {
 		s->state = SOCKET_STATE_LISTENING;
-		s->backlog_limit = backlog == 0U
-			? 1U
-			: (backlog > SOCKET_BACKLOG_MAX ? SOCKET_BACKLOG_MAX : backlog);
+		s->backlog_limit = backlog == 0U ? 1U : (backlog > SOCKET_BACKLOG_MAX ? SOCKET_BACKLOG_MAX : backlog);
 
-		for (uint64_t index = 0ULL; index < name_length; index++) s->name[index] = name[index];
+		for (uint64_t index = 0ULL; index < name_length; index++)
+			s->name[index] = name[index];
 		s->name[name_length] = '\0';
 	}
 	nxu_spin_unlock(&s->lock);
@@ -271,7 +273,8 @@ bool socket_listen(socket_t s, const char *name, uint32_t backlog)
 	bool inserted = false;
 	if (!duplicate && free_slot >= 0) {
 		uint32_t slot = (uint32_t)free_slot;
-		for (uint64_t index = 0ULL; index <= name_length; index++) g_socket_registry[slot].name[index] = s->name[index];
+		for (uint64_t index = 0ULL; index <= name_length; index++)
+			g_socket_registry[slot].name[index] = s->name[index];
 		g_socket_registry[slot].socket = s;
 		inserted = true;
 	}
@@ -288,7 +291,8 @@ bool socket_listen(socket_t s, const char *name, uint32_t backlog)
 	return true;
 }
 
-bool socket_connect(const char *name, bool block, socket_t *result)
+bool
+socket_connect(const char *name, bool block, socket_t *result)
 {
 	if (result != 0) *result = SOCKET_NULL;
 	if (name == 0 || result == 0) return false;
@@ -347,7 +351,8 @@ bool socket_connect(const char *name, bool block, socket_t *result)
 	return true;
 }
 
-bool socket_accept(socket_t listener, bool block, socket_t *result)
+bool
+socket_accept(socket_t listener, bool block, socket_t *result)
 {
 	if (result != 0) *result = SOCKET_NULL;
 	if (listener == SOCKET_NULL || result == 0) return false;
@@ -447,7 +452,8 @@ socket_read_poll(socket_t socket, void *buffer, uint64_t length)
 	return count;
 }
 
-int64_t socket_read(socket_t s, void *buffer, uint64_t length)
+int64_t
+socket_read(socket_t s, void *buffer, uint64_t length)
 {
 	if (s == SOCKET_NULL || buffer == 0) return -1;
 
@@ -478,7 +484,8 @@ int64_t socket_read(socket_t s, void *buffer, uint64_t length)
 	return (int64_t)read;
 }
 
-int64_t socket_write(socket_t s, const void *buffer, uint64_t length)
+int64_t
+socket_write(socket_t s, const void *buffer, uint64_t length)
 {
 	if (s == SOCKET_NULL || buffer == 0) return -1;
 
@@ -521,7 +528,8 @@ int64_t socket_write(socket_t s, const void *buffer, uint64_t length)
 	return length == 0ULL ? 0 : -1;
 }
 
-void socket_close(socket_t s)
+void
+socket_close(socket_t s)
 {
 	if (s == SOCKET_NULL) return;
 

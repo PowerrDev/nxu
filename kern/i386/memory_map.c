@@ -31,7 +31,8 @@ typedef struct {
 	uint64_t end;
 } memory_range_t;
 
-const void *i386_memory_map_pointer(uint32_t address)
+const void *
+i386_memory_map_pointer(uint32_t address)
 {
 	if (address >= VMM_HIGHER_HALF_BASE) {
 		return address < VMM_HIGHER_HALF_BASE + VM_DIRECT_MAP_SIZE ? (const void *)(uintptr_t)address : 0;
@@ -41,17 +42,20 @@ const void *i386_memory_map_pointer(uint32_t address)
 	return (const void *)(uintptr_t)(address + VMM_HIGHER_HALF_BASE);
 }
 
-static uint64_t memory_map_physical(uint32_t address)
+static uint64_t
+memory_map_physical(uint32_t address)
 {
 	return address >= VMM_HIGHER_HALF_BASE ? (uint64_t)(address - VMM_HIGHER_HALF_BASE) : (uint64_t)address;
 }
 
-static uint64_t memory_map_align_up(uint64_t value)
+static uint64_t
+memory_map_align_up(uint64_t value)
 {
 	return (value + (MEMORY_MAP_PAGE - 1ULL)) & ~(MEMORY_MAP_PAGE - 1ULL);
 }
 
-static uint64_t memory_map_align_down(uint64_t value)
+static uint64_t
+memory_map_align_down(uint64_t value)
 {
 	return value & ~(MEMORY_MAP_PAGE - 1ULL);
 }
@@ -60,7 +64,8 @@ static uint64_t memory_map_align_down(uint64_t value)
  * Add [base, end) to list after clipping it to the range the kernel can use
  * and rounding inward to whole pages. Drops what is left empty or does not fit.
  */
-static void memory_map_add_usable(memory_range_t *list, uint32_t *count, uint64_t base, uint64_t end)
+static void
+memory_map_add_usable(memory_range_t *list, uint32_t *count, uint64_t base, uint64_t end)
 {
 	if (end <= base) return;
 
@@ -78,7 +83,8 @@ static void memory_map_add_usable(memory_range_t *list, uint32_t *count, uint64_
 }
 
 /* Remove [hole_base, hole_end) from every range in list, splitting as needed. */
-static void memory_map_carve(memory_range_t *list, uint32_t *count, uint64_t hole_base, uint64_t hole_end)
+static void
+memory_map_carve(memory_range_t *list, uint32_t *count, uint64_t hole_base, uint64_t hole_end)
 {
 	memory_range_t result[MEMORY_MAP_WORK_MAX];
 	uint32_t result_count = 0U;
@@ -106,11 +112,13 @@ static void memory_map_carve(memory_range_t *list, uint32_t *count, uint64_t hol
 		}
 	}
 
-	for (uint32_t index = 0U; index < result_count; index++) list[index] = result[index];
+	for (uint32_t index = 0U; index < result_count; index++)
+		list[index] = result[index];
 	*count = result_count;
 }
 
-static void memory_map_sort(memory_range_t *list, uint32_t count)
+static void
+memory_map_sort(memory_range_t *list, uint32_t count)
 {
 	for (uint32_t index = 1U; index < count; index++) {
 		memory_range_t value = list[index];
@@ -125,7 +133,8 @@ static void memory_map_sort(memory_range_t *list, uint32_t count)
 	}
 }
 
-static uint32_t memory_map_merge(memory_range_t *list, uint32_t count)
+static uint32_t
+memory_map_merge(memory_range_t *list, uint32_t count)
 {
 	uint32_t out = 0U;
 
@@ -141,7 +150,8 @@ static uint32_t memory_map_merge(memory_range_t *list, uint32_t count)
 	return out;
 }
 
-bool i386_memory_map_load(platform_t *platform, const multiboot_info_t *mbi)
+bool
+i386_memory_map_load(platform_t *platform, const multiboot_info_t *mbi)
 {
 	memory_range_t usable[MEMORY_MAP_WORK_MAX];
 	uint32_t count = 0U;
@@ -181,7 +191,8 @@ bool i386_memory_map_load(platform_t *platform, const multiboot_info_t *mbi)
 			if (entry->type != MULTIBOOT_MEMORY_AVAILABLE) {
 				uint64_t end = entry->length > UINT64_MAX - entry->base ? UINT64_MAX : entry->base + entry->length;
 
-				memory_map_carve(usable, &count, memory_map_align_down(entry->base), end == UINT64_MAX ? end : memory_map_align_up(end));
+				memory_map_carve(usable, &count, memory_map_align_down(entry->base),
+								 end == UINT64_MAX ? end : memory_map_align_up(end));
 			}
 
 			entry_pointer += entry->size + sizeof(uint32_t);
@@ -201,7 +212,8 @@ bool i386_memory_map_load(platform_t *platform, const multiboot_info_t *mbi)
 			if (usable[index].end - usable[index].base < usable[smallest].end - usable[smallest].base) smallest = index;
 		}
 
-		for (uint32_t index = smallest + 1U; index < count; index++) usable[index - 1U] = usable[index];
+		for (uint32_t index = smallest + 1U; index < count; index++)
+			usable[index - 1U] = usable[index];
 		count--;
 	}
 
@@ -215,35 +227,34 @@ bool i386_memory_map_load(platform_t *platform, const multiboot_info_t *mbi)
 	return count != 0U;
 }
 
-void i386_memory_map_dump(const platform_t *platform)
+void
+i386_memory_map_dump(const platform_t *platform)
 {
 	uint64_t total = 0ULL;
 
 	for (uint32_t index = 0U; index < platform->memory_region_count; index++) {
 		const platform_region_t *region = &platform->memory_regions[index];
 
-		kprintf(
-			"i386_memory_map_dump: region %u: 0x%llx-0x%llx (%llu KiB)\n",
-			index,
-			region->base,
-			region->base + region->size,
-			region->size / 1024ULL
-		);
+		kprintf("i386_memory_map_dump: region %u: 0x%llx-0x%llx (%llu KiB)\n", index, region->base,
+				region->base + region->size, region->size / 1024ULL);
 		total += region->size;
 	}
 
 	kprintf("i386_memory_map_dump: %u region(s), %llu KiB usable\n", platform->memory_region_count, total / 1024ULL);
 }
 
-static uint32_t memory_map_string_length(const char *string)
+static uint32_t
+memory_map_string_length(const char *string)
 {
 	uint32_t length = 0U;
 
-	while (length < MULTIBOOT_STRING_MAX && string[length] != '\0') length++;
+	while (length < MULTIBOOT_STRING_MAX && string[length] != '\0')
+		length++;
 	return length + 1U;
 }
 
-uint32_t i386_memory_map_boot_ranges(const multiboot_info_t *mbi, i386_boot_range_fn report, void *context)
+uint32_t
+i386_memory_map_boot_ranges(const multiboot_info_t *mbi, i386_boot_range_fn report, void *context)
 {
 	uint32_t reported = 0U;
 
@@ -270,12 +281,14 @@ uint32_t i386_memory_map_boot_ranges(const multiboot_info_t *mbi, i386_boot_rang
 		const multiboot_module_t *modules = (const multiboot_module_t *)i386_memory_map_pointer(mbi->mods_addr);
 
 		if (modules != 0) {
-			report(memory_map_physical(mbi->mods_addr), (uint64_t)mbi->mods_count * sizeof(multiboot_module_t), context);
+			report(memory_map_physical(mbi->mods_addr), (uint64_t)mbi->mods_count * sizeof(multiboot_module_t),
+				   context);
 			reported++;
 
 			for (uint32_t index = 0U; index < mbi->mods_count; index++) {
 				if (modules[index].mod_end > modules[index].mod_start) {
-					report(modules[index].mod_start, (uint64_t)modules[index].mod_end - modules[index].mod_start, context);
+					report(modules[index].mod_start, (uint64_t)modules[index].mod_end - modules[index].mod_start,
+						   context);
 					reported++;
 				}
 

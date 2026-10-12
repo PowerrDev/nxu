@@ -20,7 +20,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-static inline void *machine_cpu_local(void)
+static inline void *
+machine_cpu_local(void)
 {
 	void *value;
 
@@ -28,12 +29,14 @@ static inline void *machine_cpu_local(void)
 	return value;
 }
 
-static inline void machine_cpu_local_set(void *local)
+static inline void
+machine_cpu_local_set(void *local)
 {
 	__asm__ volatile("movl %0, %%fs:0" : : "r"(local) : "memory");
 }
 
-static inline uint32_t machine_cpu_id(void)
+static inline uint32_t
+machine_cpu_id(void)
 {
 	const uint32_t *local = (const uint32_t *)machine_cpu_local();
 
@@ -51,7 +54,8 @@ static inline uint32_t machine_cpu_id(void)
  * away from its CPUID-reported reset value); apic.c's own bring-up code
  * still reads the real register directly rather than relying on that.
  */
-static inline uint64_t machine_cpu_mpidr(void)
+static inline uint64_t
+machine_cpu_mpidr(void)
 {
 	uint32_t eax = 1U;
 	uint32_t ebx;
@@ -95,7 +99,8 @@ uint32_t smp_boot_secondaries(void);
 uint32_t smp_cpu_count(void);
 uint32_t smp_online_count(void);
 
-/* The Local APIC id of logical CPU `cpu`, or 0 if there is no such CPU (0 is also a real APIC id, so range-check with smp_cpu_count() first). */
+/* The Local APIC id of logical CPU `cpu`, or 0 if there is no such CPU (0 is also a real APIC id, so range-check with
+ * smp_cpu_count() first). */
 uint64_t smp_cpu_mpidr(uint32_t cpu);
 
 /*

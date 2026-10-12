@@ -35,7 +35,8 @@
 extern uint8_t __kernel_start[];
 extern uint8_t __kernel_end[];
 
-static void vm_init_reserve_boot_range(uint64_t base, uint64_t size, void *context)
+static void
+vm_init_reserve_boot_range(uint64_t base, uint64_t size, void *context)
 {
 	uint32_t *count = (uint32_t *)context;
 
@@ -47,7 +48,8 @@ static void vm_init_reserve_boot_range(uint64_t base, uint64_t size, void *conte
 	}
 }
 
-bool i386_init_vm(const i386_boot_info_t *boot)
+bool
+i386_init_vm(const i386_boot_info_t *boot)
 {
 	platform_t platform;
 	uint32_t reserved = 0U;
@@ -87,14 +89,9 @@ bool i386_init_vm(const i386_boot_info_t *boot)
 		return false;
 	}
 
-	kprintf(
-		"i386_init_vm: pmm %llu page(s), %llu free, %u boot range(s) reserved, kernel 0x%x-0x%x\n",
-		pmm_get_page_count(),
-		pmm_get_free_page_count(),
-		reserved,
-		(uint32_t)(uintptr_t)__kernel_start,
-		(uint32_t)(uintptr_t)__kernel_end
-	);
+	kprintf("i386_init_vm: pmm %llu page(s), %llu free, %u boot range(s) reserved, kernel 0x%x-0x%x\n",
+			pmm_get_page_count(), pmm_get_free_page_count(), reserved, (uint32_t)(uintptr_t)__kernel_start,
+			(uint32_t)(uintptr_t)__kernel_end);
 
 	kputln("vmm_init: refining PAE higher-half mappings and kernel permissions");
 	if (!vmm_init(&platform)) {
@@ -118,22 +115,17 @@ bool i386_init_vm(const i386_boot_info_t *boot)
 	}
 
 	kputln("vmm_init: higher-half direct map validated and low identity mapping removed");
-	kprintf("i386_init_vm: hardware execute protection %s\n", pmap_nx_enabled() ? "enabled (PAE + NX)" : "unavailable (CPU lacks NX)");
+	kprintf("i386_init_vm: hardware execute protection %s\n",
+			pmap_nx_enabled() ? "enabled (PAE + NX)" : "unavailable (CPU lacks NX)");
 	kputln("vm_kern_init: initializing kernel virtual arena");
 	if (!vm_kern_init()) {
 		kputln("i386_init_vm: vm_kern_init failed");
 		return false;
 	}
 
-	kprintf(
-		"i386_init_vm: paging on, cr3 0x%x, %llu free page(s), vm_kern arena 0x%x-0x%x, mmio window 0x%x-0x%x\n",
-		pmap_current_directory_physical(),
-		pmm_get_free_page_count(),
-		(uint32_t)VM_KERN_BASE,
-		(uint32_t)(VM_KERN_END - 1ULL),
-		(uint32_t)VM_MMIO_BASE,
-		(uint32_t)(VM_MMIO_BASE + VM_MMIO_SIZE - 1U)
-	);
+	kprintf("i386_init_vm: paging on, cr3 0x%x, %llu free page(s), vm_kern arena 0x%x-0x%x, mmio window 0x%x-0x%x\n",
+			pmap_current_directory_physical(), pmm_get_free_page_count(), (uint32_t)VM_KERN_BASE,
+			(uint32_t)(VM_KERN_END - 1ULL), (uint32_t)VM_MMIO_BASE, (uint32_t)(VM_MMIO_BASE + VM_MMIO_SIZE - 1U));
 
 	pmm_dump();
 	vmm_dump();

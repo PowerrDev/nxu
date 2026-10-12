@@ -24,7 +24,8 @@
 #define I386_BOCHS_SHUTDOWN_PORT 0xB004U
 #define I386_ACPI_SLEEP_S5 0x2000U
 
-static inline void i386_outw(uint16_t port, uint16_t value)
+static inline void
+i386_outw(uint16_t port, uint16_t value)
 {
 	__asm__ volatile("outw %0, %1" : : "a"(value), "Nd"(port) : "memory");
 }
@@ -37,23 +38,26 @@ static inline void i386_outw(uint16_t port, uint16_t value)
  * raise an exception, so the CPU cannot deliver it, the double fault
  * cannot be delivered either, and the processor resets.
  */
-static inline void machine_system_reset(void)
+static inline void
+machine_system_reset(void)
 {
 	__asm__ volatile("cli" : : : "memory");
 
 	outb((uint16_t)I386_KBC_COMMAND_PORT, (uint8_t)I386_KBC_PULSE_RESET);
 
 	/* Give the controller time to act before falling back. */
-	for (uint32_t spin = 0U; spin < 1000U; spin++) io_wait();
+	for (uint32_t spin = 0U; spin < 1000U; spin++)
+		io_wait();
 
 	static const struct {
 		uint16_t limit;
 		uint32_t base;
-	} __attribute__((packed)) empty_idt = { 0U, 0U };
+	} __attribute__((packed)) empty_idt = {0U, 0U};
 
 	__asm__ volatile("lidt %0\n\tint3" : : "m"(empty_idt) : "memory");
 
-	for (;;) __asm__ volatile("hlt");
+	for (;;)
+		__asm__ volatile("hlt");
 }
 
 /*
@@ -63,12 +67,14 @@ static inline void machine_system_reset(void)
  * needs ACPI tables to find the port; without them the machine is halted
  * with interrupts masked, which is the best a bare kernel can do.
  */
-static inline void machine_system_power_off(void)
+static inline void
+machine_system_power_off(void)
 {
 	i386_outw((uint16_t)I386_QEMU_SHUTDOWN_PORT, (uint16_t)I386_ACPI_SLEEP_S5);
 	i386_outw((uint16_t)I386_BOCHS_SHUTDOWN_PORT, (uint16_t)I386_ACPI_SLEEP_S5);
 
-	for (;;) __asm__ volatile("cli\n\thlt");
+	for (;;)
+		__asm__ volatile("cli\n\thlt");
 }
 
 #endif

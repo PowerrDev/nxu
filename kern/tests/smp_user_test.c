@@ -31,28 +31,24 @@
 #define SMP_USER_TEST_WATCHDOG_US 14000000ULL
 
 /* Where everything is: per CPU, what runs and what is queued; per thread, its scheduling state. */
-static void smp_user_test_dump(uint32_t cpus)
+static void
+smp_user_test_dump(uint32_t cpus)
 {
 	for (uint32_t cpu = 0U; cpu < cpus; cpu++) {
 		processor_t processor = processor_by_id(cpu);
 		thread_t active = processor->active_thread;
 
-		kprintf(
-			"smp_user_test: cpu%u: state %u, running tid %llu%s, %u queued, need_resched %u, %llu ticks\n",
-			cpu,
-			(unsigned)processor->state,
-			(unsigned long long)(active != 0 ? active->thread_id : 0ULL),
-			(active != 0 && thread_is_idle(active)) ? " (idle)" : "",
-			processor->runq.count,
-			processor->preemption_pending ? 1U : 0U,
-			(unsigned long long)processor->ticks
-		);
+		kprintf("smp_user_test: cpu%u: state %u, running tid %llu%s, %u queued, need_resched %u, %llu ticks\n", cpu,
+				(unsigned)processor->state, (unsigned long long)(active != 0 ? active->thread_id : 0ULL),
+				(active != 0 && thread_is_idle(active)) ? " (idle)" : "", processor->runq.count,
+				processor->preemption_pending ? 1U : 0U, (unsigned long long)processor->ticks);
 	}
 
 	thread_dump_sched();
 }
 
-bool smp_user_test_run(void)
+bool
+smp_user_test_run(void)
 {
 	uint32_t cpus = smp_online_count();
 
@@ -69,7 +65,8 @@ bool smp_user_test_run(void)
 
 	uint64_t dispatches_before[NXU_MAX_CPUS];
 
-	for (uint32_t cpu = 0U; cpu < cpus; cpu++) dispatches_before[cpu] = processor_by_id(cpu)->user_dispatch_count;
+	for (uint32_t cpu = 0U; cpu < cpus; cpu++)
+		dispatches_before[cpu] = processor_by_id(cpu)->user_dispatch_count;
 
 	uint64_t free_before = pmm_get_free_page_count();
 
@@ -102,7 +99,8 @@ bool smp_user_test_run(void)
 			smp_user_test_dump(cpus);
 		}
 
-		/* Asleep, not spinning: a yield loop would count as load on the boot CPU and keep the balancer from using it. */
+		/* Asleep, not spinning: a yield loop would count as load on the boot CPU and keep the balancer from using it.
+		 */
 		if (!reaped) (void)sched_sleep_us(5000ULL);
 	}
 
@@ -113,7 +111,8 @@ bool smp_user_test_run(void)
 	}
 
 	if (exit_status != 0ULL) {
-		kprintf("smp_user_test: FAILED: smptest exited with status %llu (its own lines above say which case)\n", (unsigned long long)exit_status);
+		kprintf("smp_user_test: FAILED: smptest exited with status %llu (its own lines above say which case)\n",
+				(unsigned long long)exit_status);
 		return false;
 	}
 
@@ -151,7 +150,8 @@ bool smp_user_test_run(void)
 	/* Every process is gone: every page they used, and their page tables, must be back. */
 	uint64_t free_after = pmm_get_free_page_count();
 
-	kprintf("smp_user_test: free pages before %llu, after %llu\n", (unsigned long long)free_before, (unsigned long long)free_after);
+	kprintf("smp_user_test: free pages before %llu, after %llu\n", (unsigned long long)free_before,
+			(unsigned long long)free_after);
 
 	if (free_after + SMP_USER_TEST_LEAK_TOLERANCE_PAGES < free_before) {
 		kputln("smp_user_test: FAILED: pages were leaked");

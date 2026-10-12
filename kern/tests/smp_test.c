@@ -47,31 +47,38 @@ static uint32_t g_thread_total;
 
 /* ---- helpers ------------------------------------------------------------- */
 
-static uint64_t now_us(void)
+static uint64_t
+now_us(void)
 {
 	return timer_get_microseconds();
 }
 
-static void cpus_only(nxu_cpuset_t *set, uint32_t cpu)
+static void
+cpus_only(nxu_cpuset_t *set, uint32_t cpu)
 {
 	cpuset_clear(set);
 	cpuset_add(set, cpu);
 }
 
 /* Every online CPU but the boot CPU (which also runs the legacy threads and the coordinator). */
-static void cpus_not_boot(nxu_cpuset_t *set)
+static void
+cpus_not_boot(nxu_cpuset_t *set)
 {
 	cpuset_clear(set);
-	for (uint32_t cpu = 1U; cpu < g_ncpu; cpu++) cpuset_add(set, cpu);
+	for (uint32_t cpu = 1U; cpu < g_ncpu; cpu++)
+		cpuset_add(set, cpu);
 }
 
-static void cpus_all(nxu_cpuset_t *set)
+static void
+cpus_all(nxu_cpuset_t *set)
 {
 	cpuset_clear(set);
-	for (uint32_t cpu = 0U; cpu < g_ncpu; cpu++) cpuset_add(set, cpu);
+	for (uint32_t cpu = 0U; cpu < g_ncpu; cpu++)
+		cpuset_add(set, cpu);
 }
 
-static bool spawn(thread_continue_t function, void *argument, const nxu_cpuset_t *affinity, bool preemptible)
+static bool
+spawn(thread_continue_t function, void *argument, const nxu_cpuset_t *affinity, bool preemptible)
 {
 	thread_t thread;
 
@@ -86,15 +93,18 @@ static bool spawn(thread_continue_t function, void *argument, const nxu_cpuset_t
 	return true;
 }
 
-static void release_threads(void)
+static void
+release_threads(void)
 {
-	for (uint32_t index = 0U; index < g_thread_total; index++) thread_deallocate(g_threads[index]);
+	for (uint32_t index = 0U; index < g_thread_total; index++)
+		thread_deallocate(g_threads[index]);
 
 	g_thread_total = 0U;
 }
 
 /* The coordinator waits by yielding, so workers pinned to the boot CPU (and the legacy threads) still run. */
-static bool wait_for(volatile uint32_t *counter, uint32_t target, uint64_t timeout_us)
+static bool
+wait_for(volatile uint32_t *counter, uint32_t target, uint64_t timeout_us)
 {
 	uint64_t deadline = now_us() + timeout_us;
 
@@ -106,14 +116,17 @@ static bool wait_for(volatile uint32_t *counter, uint32_t target, uint64_t timeo
 	return true;
 }
 
-static void pause_us(uint64_t microseconds)
+static void
+pause_us(uint64_t microseconds)
 {
 	uint64_t deadline = now_us() + microseconds;
 
-	while (now_us() < deadline) (void)sched_yield();
+	while (now_us() < deadline)
+		(void)sched_yield();
 }
 
-static bool check(bool condition, const char *name, const char *what)
+static bool
+check(bool condition, const char *name, const char *what)
 {
 	if (!condition) kprintf("smp_test: %s: FAILED: %s\n", name, what);
 	return condition;
@@ -121,25 +134,29 @@ static bool check(bool condition, const char *name, const char *what)
 
 /* ---- 1: CPUs, per-CPU state, per-CPU timers ---------------------------- */
 
-static bool test_cpus_online(void)
+static bool
+test_cpus_online(void)
 {
 	const char *name = "cpus";
 
 	if (!check(g_ncpu >= 2U, name, "fewer than two CPUs online")) return false;
 
-	void *stacks[NXU_MAX_CPUS] = { 0 };
+	void *stacks[NXU_MAX_CPUS] = {0};
 
 	for (uint32_t cpu = 0U; cpu < g_ncpu; cpu++) {
 		processor_t processor = processor_by_id(cpu);
 
 		if (!check(processor != 0 && processor_is_online(processor), name, "a CPU is not online")) return false;
 		if (!check(processor->cpu_id == cpu, name, "processor id does not match its slot")) return false;
-		if (!check(processor->idle_thread != 0 && thread_is_idle(processor->idle_thread), name, "a CPU has no idle thread")) return false;
+		if (!check(processor->idle_thread != 0 && thread_is_idle(processor->idle_thread), name,
+				   "a CPU has no idle thread"))
+			return false;
 		if (!check(cpu == 0U || processor->boot_stack != 0, name, "a secondary CPU has no boot stack")) return false;
 		if (!check(processor_validate(processor), name, "processor_validate failed")) return false;
 
 		for (uint32_t other = 0U; other < cpu; other++) {
-			if (!check(cpu == 0U || stacks[other] != processor->boot_stack, name, "two CPUs share a boot stack")) return false;
+			if (!check(cpu == 0U || stacks[other] != processor->boot_stack, name, "two CPUs share a boot stack"))
+				return false;
 		}
 
 		stacks[cpu] = processor->boot_stack;
@@ -148,7 +165,8 @@ static bool test_cpus_online(void)
 	/* Every CPU takes its own timer interrupts: 5 ticks each within a second. */
 	uint64_t before[NXU_MAX_CPUS];
 
-	for (uint32_t cpu = 0U; cpu < g_ncpu; cpu++) before[cpu] = processor_by_id(cpu)->ticks;
+	for (uint32_t cpu = 0U; cpu < g_ncpu; cpu++)
+		before[cpu] = processor_by_id(cpu)->ticks;
 
 	uint64_t deadline = now_us() + 1000000ULL;
 	bool ticking = false;
@@ -175,7 +193,8 @@ static struct {
 	volatile uint32_t barrier_timeouts;
 } g_pin;
 
-static void pin_worker(void *argument)
+static void
+pin_worker(void *argument)
 {
 	uint32_t cpu = (uint32_t)(uintptr_t)argument;
 
@@ -208,7 +227,8 @@ static void pin_worker(void *argument)
 	__atomic_add_fetch(&g_pin.done, 1U, __ATOMIC_ACQ_REL);
 }
 
-static bool test_pinned_per_cpu(void)
+static bool
+test_pinned_per_cpu(void)
 {
 	const char *name = "pinned";
 
@@ -218,7 +238,8 @@ static bool test_pinned_per_cpu(void)
 		nxu_cpuset_t only;
 
 		cpus_only(&only, cpu);
-		if (!check(spawn(pin_worker, (void *)(uintptr_t)cpu, &only, false), name, "could not start a pinned worker")) return false;
+		if (!check(spawn(pin_worker, (void *)(uintptr_t)cpu, &only, false), name, "could not start a pinned worker"))
+			return false;
 	}
 
 	bool finished = wait_for(&g_pin.done, g_ncpu, 10000000ULL);
@@ -244,7 +265,8 @@ static struct {
 	volatile uint64_t cpu_hits[NXU_MAX_CPUS];
 } g_mlfq;
 
-static void mlfq_worker(void *argument)
+static void
+mlfq_worker(void *argument)
 {
 	uint32_t index = (uint32_t)(uintptr_t)argument;
 
@@ -276,7 +298,8 @@ static void mlfq_worker(void *argument)
 	__atomic_add_fetch(&g_mlfq.done, 1U, __ATOMIC_ACQ_REL);
 }
 
-static bool test_mlfq_concurrent(void)
+static bool
+test_mlfq_concurrent(void)
 {
 	const char *name = "mlfq";
 	uint32_t count = g_ncpu * MLFQ_THREADS_PER_CPU;
@@ -326,7 +349,8 @@ static bool test_mlfq_concurrent(void)
 	 * placement then rightly sends the workers elsewhere.
 	 */
 	kprintf("smp_test: mlfq: iterations per CPU:");
-	for (uint32_t cpu = 0U; cpu < g_ncpu; cpu++) kprintf(" cpu%u=%llu", cpu, (unsigned long long)g_mlfq.cpu_hits[cpu]);
+	for (uint32_t cpu = 0U; cpu < g_ncpu; cpu++)
+		kprintf(" cpu%u=%llu", cpu, (unsigned long long)g_mlfq.cpu_hits[cpu]);
 	kprintf("\n");
 
 	for (uint32_t cpu = 1U; cpu < g_ncpu; cpu++) {
@@ -348,7 +372,8 @@ static struct {
 	volatile uint32_t done;
 } g_pp;
 
-static void ping_pong_worker(void *argument)
+static void
+ping_pong_worker(void *argument)
 {
 	uint32_t me = (uint32_t)(uintptr_t)argument;
 	uint32_t other = 1U - me;
@@ -376,7 +401,8 @@ static void ping_pong_worker(void *argument)
 	__atomic_add_fetch(&g_pp.done, 1U, __ATOMIC_ACQ_REL);
 }
 
-static bool test_ping_pong(void)
+static bool
+test_ping_pong(void)
 {
 	const char *name = "wakeups";
 	nxu_cpuset_t first;
@@ -389,15 +415,18 @@ static bool test_ping_pong(void)
 	cpus_only(&first, g_ncpu > 2U ? 1U : 0U);
 	cpus_only(&second, g_ncpu > 2U ? 2U : 1U);
 
-	if (!check(spawn(ping_pong_worker, (void *)0, &first, false), name, "could not start the first thread")) return false;
-	if (!check(spawn(ping_pong_worker, (void *)1, &second, false), name, "could not start the second thread")) return false;
+	if (!check(spawn(ping_pong_worker, (void *)0, &first, false), name, "could not start the first thread"))
+		return false;
+	if (!check(spawn(ping_pong_worker, (void *)1, &second, false), name, "could not start the second thread"))
+		return false;
 
 	bool finished = wait_for(&g_pp.done, 2U, 30000000ULL);
 
 	release_threads();
 
 	if (!check(finished, name, "the threads did not finish (a wakeup was lost)")) return false;
-	return check(g_pp.rounds[0] == PING_PONG_ROUNDS && g_pp.rounds[1] == PING_PONG_ROUNDS, name, "wrong number of rounds");
+	return check(g_pp.rounds[0] == PING_PONG_ROUNDS && g_pp.rounds[1] == PING_PONG_ROUNDS, name,
+				 "wrong number of rounds");
 }
 
 /* ---- 4b: the sequence-checked sleep, with no lock shared with the waker ---- */
@@ -417,7 +446,8 @@ static struct {
  * only thing standing between "not my turn" and "asleep" is the wait queue's
  * sequence number.
  */
-static void seq_worker(void *argument)
+static void
+seq_worker(void *argument)
 {
 	uint32_t me = (uint32_t)(uintptr_t)argument;
 	uint32_t other = 1U - me;
@@ -439,7 +469,8 @@ static void seq_worker(void *argument)
 	__atomic_add_fetch(&g_seq.done, 1U, __ATOMIC_ACQ_REL);
 }
 
-static bool test_seq_wait(void)
+static bool
+test_seq_wait(void)
 {
 	const char *name = "seqwait";
 	nxu_cpuset_t first;
@@ -470,7 +501,8 @@ static struct {
 	volatile uint32_t done;
 } g_ipi;
 
-static void ipi_worker(void *argument)
+static void
+ipi_worker(void *argument)
 {
 	(void)argument;
 
@@ -478,7 +510,8 @@ static void ipi_worker(void *argument)
 	__atomic_store_n(&g_ipi.done, 1U, __ATOMIC_RELEASE);
 }
 
-static bool test_ipi(void)
+static bool
+test_ipi(void)
 {
 	const char *name = "ipi";
 	uint32_t target = g_ncpu - 1U;
@@ -493,13 +526,16 @@ static bool test_ipi(void)
 		/* Let the target go idle and asleep in WFI first: that is the case an IPI exists for. */
 		uint64_t deadline = now_us() + 100000ULL;
 
-		while (__atomic_load_n(&processor->state, __ATOMIC_ACQUIRE) != PROCESSOR_IDLE && now_us() < deadline) (void)sched_yield();
+		while (__atomic_load_n(&processor->state, __ATOMIC_ACQUIRE) != PROCESSOR_IDLE && now_us() < deadline)
+			(void)sched_yield();
 
 		pause_us(15000ULL);
 
 		thread_t thread;
 
-		if (!check(kernel_thread_create(proc_task(proc_kernel()), ipi_worker, 0, &thread), name, "thread creation failed")) return false;
+		if (!check(kernel_thread_create(proc_task(proc_kernel()), ipi_worker, 0, &thread), name,
+				   "thread creation failed"))
+			return false;
 		if (!check(thread_set_affinity(thread, &only), name, "thread_set_affinity failed")) return false;
 
 		__atomic_store_n(&g_ipi.done, 0U, __ATOMIC_RELEASE);
@@ -528,7 +564,8 @@ static bool test_ipi(void)
 
 	uint64_t ipis = processor->ipi_reschedule_count - ipis_before;
 
-	kprintf("smp_test: ipi: wake-up latency of an idle CPU: median %llu us, worst %llu us, %llu IPIs taken\n", (unsigned long long)latency[10], (unsigned long long)latency[19], (unsigned long long)ipis);
+	kprintf("smp_test: ipi: wake-up latency of an idle CPU: median %llu us, worst %llu us, %llu IPIs taken\n",
+			(unsigned long long)latency[10], (unsigned long long)latency[19], (unsigned long long)ipis);
 
 	/* A tick is 10000 us: without the IPI a sleeping CPU would wait for it, so the median would be near 5000 us. */
 	if (!check(ipis >= 10ULL, name, "the idle CPU took too few reschedule IPIs")) return false;
@@ -544,7 +581,8 @@ static struct {
 	volatile uint32_t current_cpu;
 } g_aff;
 
-static void affinity_worker(void *argument)
+static void
+affinity_worker(void *argument)
 {
 	(void)argument;
 
@@ -556,7 +594,8 @@ static void affinity_worker(void *argument)
 	__atomic_add_fetch(&g_aff.done, 1U, __ATOMIC_ACQ_REL);
 }
 
-static void follower_worker(void *argument)
+static void
+follower_worker(void *argument)
 {
 	(void)argument;
 
@@ -568,7 +607,8 @@ static void follower_worker(void *argument)
 	__atomic_add_fetch(&g_aff.done, 1U, __ATOMIC_ACQ_REL);
 }
 
-static bool test_affinity(void)
+static bool
+test_affinity(void)
 {
 	const char *name = "affinity";
 	nxu_cpuset_t set;
@@ -616,7 +656,8 @@ static bool test_affinity(void)
 	bool changed = thread_set_affinity(g_threads[0], &set);
 	uint64_t deadline = now_us() + 2000000ULL;
 
-	while (changed && __atomic_load_n(&g_aff.current_cpu, __ATOMIC_ACQUIRE) != moved_to && now_us() < deadline) (void)sched_yield();
+	while (changed && __atomic_load_n(&g_aff.current_cpu, __ATOMIC_ACQUIRE) != moved_to && now_us() < deadline)
+		(void)sched_yield();
 
 	bool followed = __atomic_load_n(&g_aff.current_cpu, __ATOMIC_ACQUIRE) == moved_to;
 
@@ -638,7 +679,8 @@ static struct {
 	volatile uint32_t seen_mask;
 } g_bal;
 
-static void balance_worker(void *argument)
+static void
+balance_worker(void *argument)
 {
 	(void)argument;
 
@@ -647,12 +689,14 @@ static void balance_worker(void *argument)
 
 	__atomic_or_fetch(&g_bal.seen_mask, 1U << machine_cpu_id(), __ATOMIC_ACQ_REL);
 
-	while (now_us() < deadline) cpu_relax();
+	while (now_us() < deadline)
+		cpu_relax();
 
 	__atomic_add_fetch(&g_bal.done, 1U, __ATOMIC_ACQ_REL);
 }
 
-static bool test_balance(void)
+static bool
+test_balance(void)
 {
 	const char *name = "balance";
 	uint32_t count = 3U * g_ncpu;
@@ -665,7 +709,8 @@ static bool test_balance(void)
 
 	uint64_t moved_before = 0ULL;
 
-	for (uint32_t cpu = 0U; cpu < g_ncpu; cpu++) moved_before += processor_by_id(cpu)->migrate_out_count;
+	for (uint32_t cpu = 0U; cpu < g_ncpu; cpu++)
+		moved_before += processor_by_id(cpu)->migrate_out_count;
 
 	uint64_t started = now_us();
 
@@ -683,21 +728,24 @@ static bool test_balance(void)
 	uint64_t elapsed = now_us() - started;
 	uint64_t moved = 0ULL;
 
-	for (uint32_t cpu = 0U; cpu < g_ncpu; cpu++) moved += processor_by_id(cpu)->migrate_out_count;
+	for (uint32_t cpu = 0U; cpu < g_ncpu; cpu++)
+		moved += processor_by_id(cpu)->migrate_out_count;
 
 	moved -= moved_before;
 	release_threads();
 
 	uint32_t distinct = (uint32_t)__builtin_popcount(g_bal.seen_mask);
 
-	kprintf("smp_test: balance: %u threads, %llu us, %u CPUs used, %llu migrated by the balancer\n", count, (unsigned long long)elapsed, distinct, (unsigned long long)moved);
+	kprintf("smp_test: balance: %u threads, %llu us, %u CPUs used, %llu migrated by the balancer\n", count,
+			(unsigned long long)elapsed, distinct, (unsigned long long)moved);
 
 	if (!check(finished, name, "the workers did not finish")) return false;
 	if (!check(distinct >= (g_ncpu > 2U ? 3U : 1U), name, "the load was not spread over the CPUs")) return false;
 	if (!check(g_ncpu <= 2U || moved > 0ULL, name, "the balancer never migrated a thread")) return false;
 
 	/* Serial on one CPU it is count * BALANCE_SPIN_US; with three CPUs helping it must beat that clearly. */
-	return check(g_ncpu <= 3U || elapsed < (uint64_t)count * BALANCE_SPIN_US * 3ULL / 4ULL, name, "migration did not speed up the overloaded CPU");
+	return check(g_ncpu <= 3U || elapsed < (uint64_t)count * BALANCE_SPIN_US * 3ULL / 4ULL, name,
+				 "migration did not speed up the overloaded CPU");
 }
 
 /* ---- 8: contention, thread churn ---------------------------------------- */
@@ -710,7 +758,8 @@ static struct {
 	volatile uint32_t done;
 } g_lock;
 
-static void lock_worker(void *argument)
+static void
+lock_worker(void *argument)
 {
 	(void)argument;
 
@@ -736,14 +785,16 @@ static struct {
 	volatile uint32_t failures;
 } g_churn;
 
-static void churn_child(void *argument)
+static void
+churn_child(void *argument)
 {
 	(void)argument;
 
 	__atomic_add_fetch(&g_churn.children_done, 1U, __ATOMIC_ACQ_REL);
 }
 
-static void churn_spawner(void *argument)
+static void
+churn_spawner(void *argument)
 {
 	(void)argument;
 
@@ -768,7 +819,8 @@ static void churn_spawner(void *argument)
 	__atomic_add_fetch(&g_churn.spawners_done, 1U, __ATOMIC_ACQ_REL);
 }
 
-static bool test_stress(void)
+static bool
+test_stress(void)
 {
 	const char *name = "stress";
 	nxu_cpuset_t all;
@@ -787,7 +839,9 @@ static bool test_stress(void)
 	release_threads();
 
 	if (!check(finished, name, "lock workers did not finish")) return false;
-	if (!check(g_lock.counter == (uint64_t)g_ncpu * LOCK_ITERATIONS, name, "the contended counter is wrong: the lock does not exclude")) return false;
+	if (!check(g_lock.counter == (uint64_t)g_ncpu * LOCK_ITERATIONS, name,
+			   "the contended counter is wrong: the lock does not exclude"))
+		return false;
 
 	/* (b) threads created and exiting on every CPU while the others do the same. */
 	uint32_t baseline = thread_count();
@@ -813,7 +867,8 @@ static bool test_stress(void)
 	/* Every child exited and was reaped: the pool is back to where it started. */
 	uint64_t deadline = now_us() + 2000000ULL;
 
-	while (thread_count() > baseline && now_us() < deadline) (void)sched_yield();
+	while (thread_count() > baseline && now_us() < deadline)
+		(void)sched_yield();
 
 	return check(thread_count() <= baseline, name, "threads were not reaped after exiting on other CPUs");
 }
@@ -827,7 +882,8 @@ static struct {
 	volatile uint32_t errors;
 } g_mem;
 
-static void memory_worker(void *argument)
+static void
+memory_worker(void *argument)
 {
 	uint64_t tag = (uint64_t)(uintptr_t)argument * 0x0101010101010101ULL;
 
@@ -878,7 +934,8 @@ static void memory_worker(void *argument)
 
 		uint64_t *words = region;
 
-		for (uint32_t index = 0U; index < (3U * 4096U) / 8U; index++) words[index] = tag + index + iteration;
+		for (uint32_t index = 0U; index < (3U * 4096U) / 8U; index++)
+			words[index] = tag + index + iteration;
 
 		(void)sched_yield();
 
@@ -924,7 +981,8 @@ static struct {
  * entry survived the unmap would read the old page: the inner-shareable
  * invalidation is what makes it read the new one.
  */
-static void tlb_writer(void *argument)
+static void
+tlb_writer(void *argument)
 {
 	(void)argument;
 
@@ -959,7 +1017,8 @@ static void tlb_writer(void *argument)
 		g_tlb.address = word;
 		__atomic_store_n(&g_tlb.published, round, __ATOMIC_RELEASE);
 
-		while (__atomic_load_n(&g_tlb.acked, __ATOMIC_ACQUIRE) != round) cpu_relax();
+		while (__atomic_load_n(&g_tlb.acked, __ATOMIC_ACQUIRE) != round)
+			cpu_relax();
 
 		(void)vm_kern_free(region, 4096U);
 
@@ -977,12 +1036,14 @@ static void tlb_writer(void *argument)
 	__atomic_add_fetch(&g_tlb.done, 1U, __ATOMIC_ACQ_REL);
 }
 
-static void tlb_reader(void *argument)
+static void
+tlb_reader(void *argument)
 {
 	(void)argument;
 
 	for (uint32_t round = 1U; round <= TLB_ROUNDS; round++) {
-		while (__atomic_load_n(&g_tlb.published, __ATOMIC_ACQUIRE) != round) cpu_relax();
+		while (__atomic_load_n(&g_tlb.published, __ATOMIC_ACQUIRE) != round)
+			cpu_relax();
 
 		if (*g_tlb.address != g_tlb.expected) __atomic_add_fetch(&g_tlb.mismatches, 1U, __ATOMIC_ACQ_REL);
 
@@ -992,7 +1053,8 @@ static void tlb_reader(void *argument)
 	__atomic_add_fetch(&g_tlb.done, 1U, __ATOMIC_ACQ_REL);
 }
 
-static bool test_memory(void)
+static bool
+test_memory(void)
 {
 	const char *name = "memory";
 	nxu_cpuset_t all;
@@ -1002,7 +1064,9 @@ static bool test_memory(void)
 	memset((void *)&g_mem, 0, sizeof(g_mem));
 
 	for (uint32_t cpu = 0U; cpu < g_ncpu; cpu++) {
-		if (!check(spawn(memory_worker, (void *)(uintptr_t)(cpu + 1U), &all, false), name, "could not start a memory worker")) return false;
+		if (!check(spawn(memory_worker, (void *)(uintptr_t)(cpu + 1U), &all, false), name,
+				   "could not start a memory worker"))
+			return false;
 	}
 
 	bool finished = wait_for(&g_mem.done, g_ncpu, 60000000ULL);
@@ -1010,7 +1074,8 @@ static bool test_memory(void)
 	release_threads();
 
 	if (!check(finished, name, "memory workers did not finish")) return false;
-	if (!check(g_mem.errors == 0U, name, "the heap, kernel VM or page allocator gave a wrong answer under concurrency")) return false;
+	if (!check(g_mem.errors == 0U, name, "the heap, kernel VM or page allocator gave a wrong answer under concurrency"))
+		return false;
 
 	/* (b) TLB shootdown across CPUs. */
 	nxu_cpuset_t writer_cpu;
@@ -1027,10 +1092,12 @@ static bool test_memory(void)
 
 	release_threads();
 
-	kprintf("smp_test: memory: %u of %u rounds reused the same kernel virtual address\n", g_tlb.same_address, TLB_ROUNDS);
+	kprintf("smp_test: memory: %u of %u rounds reused the same kernel virtual address\n", g_tlb.same_address,
+			TLB_ROUNDS);
 
 	if (!check(finished, name, "the TLB writer and reader did not finish")) return false;
-	if (!check(g_tlb.mismatches == 0U, name, "a CPU read through a stale translation after the page was unmapped")) return false;
+	if (!check(g_tlb.mismatches == 0U, name, "a CPU read through a stale translation after the page was unmapped"))
+		return false;
 
 	/* Nothing leaked: the pages the workers took were all given back. */
 	return check(pmm_get_free_page_count() + 8ULL >= free_before, name, "pages were leaked");
@@ -1047,20 +1114,23 @@ static bool test_memory(void)
  * at once.
  */
 
-static bool user_space_new(vm_address_space_t *space)
+static bool
+user_space_new(vm_address_space_t *space)
 {
 	memset(space, 0, sizeof(*space));
 	return vm_address_space_create(space);
 }
 
-static void user_space_free(vm_address_space_t *space)
+static void
+user_space_free(vm_address_space_t *space)
 {
 	vm_map_destroy_all(space);
 	(void)vm_address_space_release_pages(space);
 	(void)vm_address_space_destroy(space);
 }
 
-static void user_cpus(nxu_cpuset_t *first, nxu_cpuset_t *second)
+static void
+user_cpus(nxu_cpuset_t *first, nxu_cpuset_t *second)
 {
 	cpus_only(first, g_ncpu > 2U ? 1U : 0U);
 	cpus_only(second, g_ncpu > 2U ? 2U : 1U);
@@ -1081,7 +1151,8 @@ static struct {
 	volatile uint64_t expected;
 } g_utlb;
 
-static void utlb_writer(void *argument)
+static void
+utlb_writer(void *argument)
 {
 	(void)argument;
 
@@ -1113,9 +1184,11 @@ static void utlb_writer(void *argument)
 		g_utlb.expected = UTLB_TAG + round;
 		__atomic_store_n(&g_utlb.published, round, __ATOMIC_RELEASE);
 
-		while (__atomic_load_n(&g_utlb.acked, __ATOMIC_ACQUIRE) != round) cpu_relax();
+		while (__atomic_load_n(&g_utlb.acked, __ATOMIC_ACQUIRE) != round)
+			cpu_relax();
 
-		if (!vm_address_space_unmap_page(&g_utlb.space, UTLB_VA)) __atomic_add_fetch(&g_utlb.mismatches, 1U, __ATOMIC_ACQ_REL);
+		if (!vm_address_space_unmap_page(&g_utlb.space, UTLB_VA))
+			__atomic_add_fetch(&g_utlb.mismatches, 1U, __ATOMIC_ACQ_REL);
 
 		/* What a stale translation would still reach now holds something else. */
 		*(volatile uint64_t *)alias = TLB_POISON;
@@ -1128,12 +1201,14 @@ static void utlb_writer(void *argument)
 	__atomic_add_fetch(&g_utlb.done, 1U, __ATOMIC_ACQ_REL);
 }
 
-static void utlb_reader(void *argument)
+static void
+utlb_reader(void *argument)
 {
 	(void)argument;
 
 	for (uint32_t round = 1U; round <= UTLB_ROUNDS; round++) {
-		while (__atomic_load_n(&g_utlb.published, __ATOMIC_ACQUIRE) != round) cpu_relax();
+		while (__atomic_load_n(&g_utlb.published, __ATOMIC_ACQUIRE) != round)
+			cpu_relax();
 
 		/* Loaded into this CPU's TTBR0 once and left there: its TLB keeps the translation between rounds. */
 		if (!vm_address_space_activate(&g_utlb.space)) {
@@ -1149,7 +1224,8 @@ static void utlb_reader(void *argument)
 	__atomic_add_fetch(&g_utlb.done, 1U, __ATOMIC_ACQ_REL);
 }
 
-static bool test_user_tlb(void)
+static bool
+test_user_tlb(void)
 {
 	const char *name = "usertlb";
 	nxu_cpuset_t writer_cpu;
@@ -1171,7 +1247,8 @@ static bool test_user_tlb(void)
 
 	user_space_free(&g_utlb.space);
 
-	return check(g_utlb.mismatches == 0U, name, "a CPU translated through a stale entry after a user page was unmapped");
+	return check(g_utlb.mismatches == 0U, name,
+				 "a CPU translated through a stale entry after a user page was unmapped");
 }
 
 /* -- a fault racing an munmap of its region -- */
@@ -1186,19 +1263,22 @@ static struct {
 	volatile uint32_t done;
 } g_vrace;
 
-static void vrace_faulter(void *argument)
+static void
+vrace_faulter(void *argument)
 {
 	uint32_t state = (uint32_t)(uintptr_t)argument * 2654435761U + 1U;
 
 	while (!__atomic_load_n(&g_vrace.stop, __ATOMIC_ACQUIRE)) {
 		state = state * 1664525U + 1013904223U;
-		(void)vm_fault_user(&g_vrace.space, VRACE_BASE + (uint64_t)((state >> 16U) % VRACE_PAGES) * 4096ULL, VM_FAULT_WRITE);
+		(void)vm_fault_user(&g_vrace.space, VRACE_BASE + (uint64_t)((state >> 16U) % VRACE_PAGES) * 4096ULL,
+							VM_FAULT_WRITE);
 	}
 
 	__atomic_add_fetch(&g_vrace.done, 1U, __ATOMIC_ACQ_REL);
 }
 
-static bool test_fault_vs_unmap(void)
+static bool
+test_fault_vs_unmap(void)
 {
 	const char *name = "vmrace";
 	uint64_t free_before = pmm_get_free_page_count();
@@ -1216,20 +1296,27 @@ static bool test_fault_vs_unmap(void)
 	uint32_t stragglers = 0U;
 
 	for (uint32_t iteration = 0U; iteration < VRACE_ITERATIONS; iteration++) {
-		if (!check(vm_map_reserve(&g_vrace.space, VRACE_BASE, VRACE_BASE + (uint64_t)VRACE_PAGES * 4096ULL, VM_USER_PROTECTION_READ_WRITE), name, "vm_map_reserve failed")) break;
+		if (!check(vm_map_reserve(&g_vrace.space, VRACE_BASE, VRACE_BASE + (uint64_t)VRACE_PAGES * 4096ULL,
+								  VM_USER_PROTECTION_READ_WRITE),
+				   name, "vm_map_reserve failed"))
+			break;
 
 		/* Let the faulters populate part of it... */
 		uint64_t until = now_us() + 20ULL + (uint64_t)(iteration % 7U) * 15ULL;
 
-		while (now_us() < until) cpu_relax();
+		while (now_us() < until)
+			cpu_relax();
 
 		/* ...then unmap it under them. */
-		if (!check(vm_map_free(&g_vrace.space, VRACE_BASE, (uint64_t)VRACE_PAGES * 4096ULL), name, "vm_map_free failed")) break;
+		if (!check(vm_map_free(&g_vrace.space, VRACE_BASE, (uint64_t)VRACE_PAGES * 4096ULL), name,
+				   "vm_map_free failed"))
+			break;
 
 		/* From here no fault may put a page back into a region that no longer exists. */
 		until = now_us() + 60ULL;
 
-		while (now_us() < until) cpu_relax();
+		while (now_us() < until)
+			cpu_relax();
 
 		for (uint32_t page = 0U; page < VRACE_PAGES; page++) {
 			vm_user_page_mapping_t mapping;
@@ -1270,7 +1357,8 @@ static struct {
 	volatile uint32_t quit;
 } g_cow;
 
-static void cow_worker(void *argument)
+static void
+cow_worker(void *argument)
 {
 	(void)argument;
 
@@ -1283,15 +1371,18 @@ static void cow_worker(void *argument)
 		/* Both workers leave the barrier together and fault on the same shared page. */
 		(void)__atomic_add_fetch(&g_cow.arrived[round], 1U, __ATOMIC_ACQ_REL);
 
-		while (__atomic_load_n(&g_cow.arrived[round], __ATOMIC_ACQUIRE) < 2U) cpu_relax();
+		while (__atomic_load_n(&g_cow.arrived[round], __ATOMIC_ACQUIRE) < 2U)
+			cpu_relax();
 
-		if (!vm_fault_user(&g_cow.parent, COW_VA, VM_FAULT_WRITE)) __atomic_add_fetch(&g_cow.failures, 1U, __ATOMIC_ACQ_REL);
+		if (!vm_fault_user(&g_cow.parent, COW_VA, VM_FAULT_WRITE))
+			__atomic_add_fetch(&g_cow.failures, 1U, __ATOMIC_ACQ_REL);
 
 		(void)__atomic_add_fetch(&g_cow.finished[round], 1U, __ATOMIC_ACQ_REL);
 	}
 }
 
-static bool test_cow_race(void)
+static bool
+test_cow_race(void)
 {
 	const char *name = "cowrace";
 	uint64_t free_before = pmm_get_free_page_count();
@@ -1310,7 +1401,8 @@ static bool test_cow_race(void)
 		uint64_t physical;
 		uint64_t alias;
 
-		ok = user_space_new(&g_cow.parent) && pmm_allocate_page(&physical) && vmm_physical_to_higher_half(physical, &alias);
+		ok = user_space_new(&g_cow.parent) && pmm_allocate_page(&physical) &&
+			 vmm_physical_to_higher_half(physical, &alias);
 
 		if (!ok) {
 			kprintf("smp_test: %s: FAILED: setup\n", name);
@@ -1320,8 +1412,8 @@ static bool test_cow_race(void)
 		*(volatile uint64_t *)alias = 0xC0DE000000ULL + round;
 
 		ok = vm_map_reserve(&g_cow.parent, COW_VA, COW_VA + 4096ULL, VM_USER_PROTECTION_READ_WRITE) &&
-			vm_address_space_map_page(&g_cow.parent, COW_VA, physical, VM_USER_PROTECTION_READ_WRITE) &&
-			vm_address_space_fork(&g_cow.parent, &g_cow.child);
+			 vm_address_space_map_page(&g_cow.parent, COW_VA, physical, VM_USER_PROTECTION_READ_WRITE) &&
+			 vm_address_space_fork(&g_cow.parent, &g_cow.child);
 
 		if (!ok) {
 			kprintf("smp_test: %s: FAILED: fork of the address space\n", name);
@@ -1338,14 +1430,14 @@ static bool test_cow_race(void)
 
 		if (ok) {
 			ok = vm_address_space_query_page(&g_cow.parent, COW_VA, &parent_page) &&
-				vm_address_space_query_page(&g_cow.child, COW_VA, &child_page) &&
-				parent_page.protection == VM_USER_PROTECTION_READ_WRITE && !parent_page.cow &&
-				parent_page.physical_address != child_page.physical_address;
+				 vm_address_space_query_page(&g_cow.child, COW_VA, &child_page) &&
+				 parent_page.protection == VM_USER_PROTECTION_READ_WRITE && !parent_page.cow &&
+				 parent_page.physical_address != child_page.physical_address;
 
 			uint64_t parent_alias;
 
 			ok = ok && vmm_physical_to_higher_half(parent_page.physical_address, &parent_alias) &&
-				*(volatile uint64_t *)parent_alias == 0xC0DE000000ULL + round;
+				 *(volatile uint64_t *)parent_alias == 0xC0DE000000ULL + round;
 		}
 
 		if (!ok) kprintf("smp_test: %s: FAILED: after round %u the copy is wrong or was lost\n", name, round);
@@ -1359,7 +1451,8 @@ static bool test_cow_race(void)
 	release_threads();
 
 	if (!ok) return false;
-	if (!check(g_cow.failures == 0U, name, "a COW fault that lost the race to another CPU was reported as a failure")) return false;
+	if (!check(g_cow.failures == 0U, name, "a COW fault that lost the race to another CPU was reported as a failure"))
+		return false;
 
 	return check(pmm_get_free_page_count() + 8ULL >= free_before, name, "pages were leaked");
 }
@@ -1371,23 +1464,15 @@ typedef struct {
 	bool (*run)(void);
 } smp_test_case_t;
 
-bool smp_test_run(void)
+bool
+smp_test_run(void)
 {
 	static const smp_test_case_t cases[] = {
-		{ "cpus", test_cpus_online },
-		{ "pinned", test_pinned_per_cpu },
-		{ "mlfq", test_mlfq_concurrent },
-		{ "wakeups", test_ping_pong },
-		{ "seqwait", test_seq_wait },
-		{ "ipi", test_ipi },
-		{ "affinity", test_affinity },
-		{ "balance", test_balance },
-		{ "stress", test_stress },
-		{ "memory", test_memory },
-		{ "usertlb", test_user_tlb },
-		{ "vmrace", test_fault_vs_unmap },
-		{ "cowrace", test_cow_race }
-	};
+		{"cpus", test_cpus_online},	 {"pinned", test_pinned_per_cpu}, {"mlfq", test_mlfq_concurrent},
+		{"wakeups", test_ping_pong}, {"seqwait", test_seq_wait},	  {"ipi", test_ipi},
+		{"affinity", test_affinity}, {"balance", test_balance},		  {"stress", test_stress},
+		{"memory", test_memory},	 {"usertlb", test_user_tlb},	  {"vmrace", test_fault_vs_unmap},
+		{"cowrace", test_cow_race}};
 
 	g_ncpu = smp_online_count();
 
@@ -1408,16 +1493,10 @@ bool smp_test_run(void)
 	for (uint32_t cpu = 0U; cpu < g_ncpu; cpu++) {
 		processor_t processor = processor_by_id(cpu);
 
-		kprintf(
-			"smp_test: cpu%u: %llu ticks, %llu switches, %llu preemptions, %llu IPIs, %llu migrated in, %llu out\n",
-			cpu,
-			(unsigned long long)processor->ticks,
-			(unsigned long long)processor->context_switch_count,
-			(unsigned long long)processor->preemption_count,
-			(unsigned long long)processor->ipi_reschedule_count,
-			(unsigned long long)processor->migrate_in_count,
-			(unsigned long long)processor->migrate_out_count
-		);
+		kprintf("smp_test: cpu%u: %llu ticks, %llu switches, %llu preemptions, %llu IPIs, %llu migrated in, %llu out\n",
+				cpu, (unsigned long long)processor->ticks, (unsigned long long)processor->context_switch_count,
+				(unsigned long long)processor->preemption_count, (unsigned long long)processor->ipi_reschedule_count,
+				(unsigned long long)processor->migrate_in_count, (unsigned long long)processor->migrate_out_count);
 	}
 
 	return true;

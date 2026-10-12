@@ -105,31 +105,19 @@ void machine_thread_init_kernel(machine_thread_t *machine);
  * Initialize machine-dependent state for a ring 3 thread. arg becomes the
  * thread's initial eax. entry, stack and arg must fit in 32 bits.
  */
-bool machine_thread_init_user(
-	machine_thread_t *machine,
-	uint64_t entry,
-	uint64_t stack,
-	uint64_t arg
-);
+bool machine_thread_init_user(machine_thread_t *machine, uint64_t entry, uint64_t stack, uint64_t arg);
 
 /*
  * machine_thread_set_user_state
  *
  * Replace the initial ring 3 eip, esp and eax.
  */
-bool machine_thread_set_user_state(
-	machine_thread_t *machine,
-	uint64_t entry,
-	uint64_t stack,
-	uint64_t arg
-);
+bool machine_thread_set_user_state(machine_thread_t *machine, uint64_t entry, uint64_t stack, uint64_t arg);
 
 /*
  * machine_thread_has_user_state
  */
-bool machine_thread_has_user_state(
-	const machine_thread_t *machine
-);
+bool machine_thread_has_user_state(const machine_thread_t *machine);
 
 /*
  * machine_thread_prepare_context
@@ -139,23 +127,21 @@ bool machine_thread_has_user_state(
  * never returning) while executing on stack_top, which must be 16-byte
  * aligned. Also records stack_top as the thread's TSS esp0.
  */
-bool machine_thread_prepare_context(
-	machine_thread_t *machine,
-	uint64_t stack_top,
-	uint64_t entry
-);
+bool machine_thread_prepare_context(machine_thread_t *machine, uint64_t stack_top, uint64_t entry);
 
 /*
  * machine_thread_user_pc / machine_thread_user_sp
  *
  * The initial ring 3 eip and esp.
  */
-static inline uint64_t machine_thread_user_pc(const machine_thread_t *machine)
+static inline uint64_t
+machine_thread_user_pc(const machine_thread_t *machine)
 {
 	return machine->user.pc;
 }
 
-static inline uint64_t machine_thread_user_sp(const machine_thread_t *machine)
+static inline uint64_t
+machine_thread_user_sp(const machine_thread_t *machine)
 {
 	return machine->user.sp;
 }
@@ -194,10 +180,8 @@ void i386_user_return(void);
  * new_machine's, after pointing TSS esp0 at the incoming thread's kernel
  * stack. Returns in the restored thread.
  */
-static inline void machine_thread_switch_context(
-	machine_thread_t *old_machine,
-	machine_thread_t *new_machine
-)
+static inline void
+machine_thread_switch_context(machine_thread_t *old_machine, machine_thread_t *new_machine)
 {
 	if (new_machine->esp0 != 0U) i386_gdt_set_kernel_stack(new_machine->esp0);
 
@@ -210,7 +194,8 @@ static inline void machine_thread_switch_context(
  * Enter ring 3 with the thread's initial user state. Returns only when the
  * user program has exited or been terminated.
  */
-static inline void machine_thread_enter_user(machine_thread_t *machine)
+static inline void
+machine_thread_enter_user(machine_thread_t *machine)
 {
 	i386_enter_user(machine);
 }

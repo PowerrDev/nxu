@@ -30,30 +30,35 @@ typedef struct {
 	volatile uint32_t value;
 } nxu_spinlock_t;
 
-#define NXU_SPINLOCK_INIT { 0U }
+#define NXU_SPINLOCK_INIT {0U}
 
-static inline void nxu_spin_lock(nxu_spinlock_t *lock)
+static inline void
+nxu_spin_lock(nxu_spinlock_t *lock)
 {
 	for (;;) {
 		if (__atomic_exchange_n(&lock->value, 1U, __ATOMIC_ACQUIRE) == 0U) return;
 
 		/* Test-and-test-and-set: wait on a plain load, not on failed stores that bounce the line between CPUs. */
-		while (__atomic_load_n(&lock->value, __ATOMIC_RELAXED) != 0U) cpu_relax();
+		while (__atomic_load_n(&lock->value, __ATOMIC_RELAXED) != 0U)
+			cpu_relax();
 	}
 }
 
-static inline bool nxu_spin_trylock(nxu_spinlock_t *lock)
+static inline bool
+nxu_spin_trylock(nxu_spinlock_t *lock)
 {
 	return __atomic_exchange_n(&lock->value, 1U, __ATOMIC_ACQUIRE) == 0U;
 }
 
-static inline void nxu_spin_unlock(nxu_spinlock_t *lock)
+static inline void
+nxu_spin_unlock(nxu_spinlock_t *lock)
 {
 	__atomic_store_n(&lock->value, 0U, __ATOMIC_RELEASE);
 }
 
 /* Mask interrupts on this CPU, then take the lock. Returns the state to give back to the unlock. */
-static inline uint64_t nxu_spin_lock_irqsave(nxu_spinlock_t *lock)
+static inline uint64_t
+nxu_spin_lock_irqsave(nxu_spinlock_t *lock)
 {
 	uint64_t state = ml_irq_save();
 
@@ -61,7 +66,8 @@ static inline uint64_t nxu_spin_lock_irqsave(nxu_spinlock_t *lock)
 	return state;
 }
 
-static inline void nxu_spin_unlock_irqrestore(nxu_spinlock_t *lock, uint64_t state)
+static inline void
+nxu_spin_unlock_irqrestore(nxu_spinlock_t *lock, uint64_t state)
 {
 	nxu_spin_unlock(lock);
 	ml_irq_restore(state);
@@ -79,11 +85,11 @@ static inline void nxu_spin_unlock_irqrestore(nxu_spinlock_t *lock, uint64_t sta
  */
 typedef struct {
 	nxu_spinlock_t lock;
-	uint32_t owner;		/* logical CPU id + 1, 0 when free */
+	uint32_t owner; /* logical CPU id + 1, 0 when free */
 	uint32_t depth;
 } nxu_rlock_t;
 
-#define NXU_RLOCK_INIT { NXU_SPINLOCK_INIT, 0U, 0U }
+#define NXU_RLOCK_INIT {NXU_SPINLOCK_INIT, 0U, 0U}
 
 static inline uint64_t nxu_rlock_irqsave(nxu_rlock_t *rlock);
 static inline void nxu_rlock_irqrestore(nxu_rlock_t *rlock, uint64_t state);
@@ -102,16 +108,18 @@ typedef struct {
 	uint64_t state;
 } nxu_rlock_guard_t;
 
-static inline void nxu_rlock_guard_release(nxu_rlock_guard_t *guard)
+static inline void
+nxu_rlock_guard_release(nxu_rlock_guard_t *guard)
 {
 	nxu_rlock_irqrestore(guard->rlock, guard->state);
 }
 
-#define NXU_RLOCK_GUARD(rlock_pointer) \
-	nxu_rlock_guard_t nxu_rlock_guard_ __attribute__((cleanup(nxu_rlock_guard_release), unused)) = \
-		{ (rlock_pointer), nxu_rlock_irqsave(rlock_pointer) }
+#define NXU_RLOCK_GUARD(rlock_pointer)                                                                                 \
+	nxu_rlock_guard_t nxu_rlock_guard_ __attribute__((cleanup(nxu_rlock_guard_release), unused)) = {                   \
+		(rlock_pointer), nxu_rlock_irqsave(rlock_pointer)}
 
-static inline uint64_t nxu_rlock_irqsave(nxu_rlock_t *rlock)
+static inline uint64_t
+nxu_rlock_irqsave(nxu_rlock_t *rlock)
 {
 	uint64_t state = ml_irq_save();
 	uint32_t me = machine_cpu_id() + 1U;
@@ -127,7 +135,8 @@ static inline uint64_t nxu_rlock_irqsave(nxu_rlock_t *rlock)
 	return state;
 }
 
-static inline void nxu_rlock_irqrestore(nxu_rlock_t *rlock, uint64_t state)
+static inline void
+nxu_rlock_irqrestore(nxu_rlock_t *rlock, uint64_t state)
 {
 	if (--rlock->depth == 0U) {
 		__atomic_store_n(&rlock->owner, 0U, __ATOMIC_RELAXED);

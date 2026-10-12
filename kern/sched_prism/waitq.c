@@ -20,7 +20,8 @@
 
 #include <stdbool.h>
 
-void waitq_init(waitq_t *queue)
+void
+waitq_init(waitq_t *queue)
 {
 	if (queue == 0) return;
 
@@ -30,7 +31,8 @@ void waitq_init(waitq_t *queue)
 	queue->seq = 0U;
 }
 
-static void waitq_enqueue_locked(waitq_t *queue, thread_t thread, bool interruptible)
+static void
+waitq_enqueue_locked(waitq_t *queue, thread_t thread, bool interruptible)
 {
 	thread->sched_links.waitq.next = 0;
 	thread->sched_links.waitq.prev = queue->tail;
@@ -47,7 +49,8 @@ static void waitq_enqueue_locked(waitq_t *queue, thread_t thread, bool interrupt
 	thread->wait_interruptible = interruptible;
 }
 
-void waitq_enqueue(waitq_t *queue, thread_t thread, bool interruptible)
+void
+waitq_enqueue(waitq_t *queue, thread_t thread, bool interruptible)
 {
 	if (queue == 0 || thread == 0) return;
 
@@ -58,7 +61,8 @@ void waitq_enqueue(waitq_t *queue, thread_t thread, bool interruptible)
 	nxu_spin_unlock_irqrestore(&queue->lock, irq_state);
 }
 
-thread_t waitq_dequeue(waitq_t *queue)
+thread_t
+waitq_dequeue(waitq_t *queue)
 {
 	if (queue == 0) return 0;
 
@@ -85,7 +89,8 @@ thread_t waitq_dequeue(waitq_t *queue)
 	return thread;
 }
 
-bool waitq_remove(thread_t thread)
+bool
+waitq_remove(thread_t thread)
 {
 	if (thread == 0) return false;
 
@@ -131,7 +136,8 @@ bool waitq_remove(thread_t thread)
 	}
 }
 
-uint32_t waitq_seq(waitq_t *queue)
+uint32_t
+waitq_seq(waitq_t *queue)
 {
 	return queue == 0 ? 0U : __atomic_load_n(&queue->seq, __ATOMIC_ACQUIRE);
 }
@@ -143,7 +149,8 @@ uint32_t waitq_seq(waitq_t *queue)
  * sequence before the sleeper's check (the sleeper does not sleep) or dequeues
  * after the sleeper joined (it finds it).
  */
-void waitq_wake_one(waitq_t *queue)
+void
+waitq_wake_one(waitq_t *queue)
 {
 	if (queue == 0) return;
 
@@ -154,7 +161,8 @@ void waitq_wake_one(waitq_t *queue)
 	if (thread != 0) (void)sched_thread_wakeup(thread);
 }
 
-void waitq_wake_all(waitq_t *queue)
+void
+waitq_wake_all(waitq_t *queue)
 {
 	thread_t thread;
 
@@ -167,7 +175,8 @@ void waitq_wake_all(waitq_t *queue)
 	}
 }
 
-bool waitq_interrupt(thread_t thread)
+bool
+waitq_interrupt(thread_t thread)
 {
 	if (thread == 0 || thread->wait_queue == 0 || !thread->wait_interruptible) return false;
 
@@ -189,13 +198,8 @@ bool waitq_interrupt(thread_t thread)
  * and switch away. The caller has interrupts masked (irq_state is what to restore)
  * and, when it holds a guard, releases it after the thread is on the queue.
  */
-static bool waitq_sleep(
-	waitq_t *queue,
-	bool interruptible,
-	nxu_spinlock_t *guard,
-	uint64_t irq_state,
-	const uint32_t *expected_seq
-)
+static bool
+waitq_sleep(waitq_t *queue, bool interruptible, nxu_spinlock_t *guard, uint64_t irq_state, const uint32_t *expected_seq)
 {
 	thread_t thread = current_thread();
 
@@ -243,7 +247,8 @@ static bool waitq_sleep(
 	return switched && !thread->wait_interrupted;
 }
 
-bool waitq_block(waitq_t *queue, bool interruptible)
+bool
+waitq_block(waitq_t *queue, bool interruptible)
 {
 	if (queue == 0 || current_thread() == 0) return false;
 
@@ -252,7 +257,8 @@ bool waitq_block(waitq_t *queue, bool interruptible)
 	return waitq_sleep(queue, interruptible, 0, irq_state, 0);
 }
 
-bool waitq_block_seq(waitq_t *queue, uint32_t seq, bool interruptible)
+bool
+waitq_block_seq(waitq_t *queue, uint32_t seq, bool interruptible)
 {
 	if (queue == 0 || current_thread() == 0) return false;
 
@@ -261,7 +267,8 @@ bool waitq_block_seq(waitq_t *queue, uint32_t seq, bool interruptible)
 	return waitq_sleep(queue, interruptible, 0, irq_state, &seq);
 }
 
-bool waitq_block_unlock(waitq_t *queue, bool interruptible, nxu_spinlock_t *guard, uint64_t irq_state)
+bool
+waitq_block_unlock(waitq_t *queue, bool interruptible, nxu_spinlock_t *guard, uint64_t irq_state)
 {
 	if (queue == 0 || guard == 0 || current_thread() == 0) {
 		if (guard != 0) nxu_spin_unlock(guard);

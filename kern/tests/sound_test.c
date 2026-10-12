@@ -28,14 +28,15 @@
 
 #define SOUND_TEST_CHUNK_FRAMES 1024U
 
-void sound_test_fill_tone(int16_t *frames, uint32_t first_frame, uint32_t count)
+void
+sound_test_fill_tone(int16_t *frames, uint32_t first_frame, uint32_t count)
 {
 	for (uint32_t index = 0U; index < count; index++) {
 		uint32_t phase = (first_frame + index) % SOUND_TEST_TONE_PERIOD_FRAMES;
 		int32_t step = 2 * SOUND_TEST_TONE_AMPLITUDE / (int32_t)(SOUND_TEST_TONE_PERIOD_FRAMES / 2U);
 		int32_t left = phase < SOUND_TEST_TONE_PERIOD_FRAMES / 2U
-			? -SOUND_TEST_TONE_AMPLITUDE + (int32_t)phase * step
-			: SOUND_TEST_TONE_AMPLITUDE - (int32_t)(phase - SOUND_TEST_TONE_PERIOD_FRAMES / 2U) * step;
+						   ? -SOUND_TEST_TONE_AMPLITUDE + (int32_t)phase * step
+						   : SOUND_TEST_TONE_AMPLITUDE - (int32_t)(phase - SOUND_TEST_TONE_PERIOD_FRAMES / 2U) * step;
 
 		frames[2U * index] = (int16_t)left;
 		frames[2U * index + 1U] = (int16_t)-left;
@@ -49,7 +50,8 @@ static volatile bool g_sound_test_ok;
 static bool g_sound_test_shared;
 
 /* Play the tone and the silence after it through /dev/audio0; true when nothing went wrong. */
-static bool sound_test_play_tone(void)
+static bool
+sound_test_play_tone(void)
 {
 	filedesc_t filedesc = &proc_kernel()->p_fd;
 	uint32_t descriptor;
@@ -71,11 +73,12 @@ static bool sound_test_play_tone(void)
 
 	SOUND_TEST_LOG("a second open of %s is refused as busy\n", NXU_AUDIO_DEVICE_PATH);
 
-	nxu_audio_params_t params = { .rate = 44100U, .channels = 2U, .format = NXU_AUDIO_FORMAT_S16 };
+	nxu_audio_params_t params = {.rate = 44100U, .channels = 2U, .format = NXU_AUDIO_FORMAT_S16};
 
 	status = vfs_ioctl(filedesc, descriptor, NXU_AUDIO_SET_PARAMS, &params);
 
-	if (status != VFS_STATUS_OK || params.rate != 44100U || params.channels != 2U || params.format != NXU_AUDIO_FORMAT_S16) {
+	if (status != VFS_STATUS_OK || params.rate != 44100U || params.channels != 2U ||
+		params.format != NXU_AUDIO_FORMAT_S16) {
 		SOUND_TEST_LOG("FAILED: 16-bit stereo at 44100 Hz was not accepted (%s)\n", vfs_status_name(status));
 		(void)vfs_close(filedesc, descriptor);
 		return false;
@@ -128,8 +131,11 @@ static bool sound_test_play_tone(void)
 
 	uint64_t expected_ms = (uint64_t)total * 1000ULL / 44100ULL;
 
-	SOUND_TEST_LOG("wrote %llu byte(s), %llu period(s) played, %llu underrun(s), %llu I/O error(s)\n", (unsigned long long)info.bytes_written, (unsigned long long)info.periods_played, (unsigned long long)info.xruns, (unsigned long long)info.io_errors);
-	SOUND_TEST_LOG("took %llu ms for %llu ms of audio\n", (unsigned long long)elapsed_ms, (unsigned long long)expected_ms);
+	SOUND_TEST_LOG("wrote %llu byte(s), %llu period(s) played, %llu underrun(s), %llu I/O error(s)\n",
+				   (unsigned long long)info.bytes_written, (unsigned long long)info.periods_played,
+				   (unsigned long long)info.xruns, (unsigned long long)info.io_errors);
+	SOUND_TEST_LOG("took %llu ms for %llu ms of audio\n", (unsigned long long)elapsed_ms,
+				   (unsigned long long)expected_ms);
 
 	if (info.xruns != 0ULL || info.io_errors != 0ULL) ok = false;
 	if (info.bytes_written != (uint64_t)total * 4ULL) ok = false;
@@ -143,7 +149,8 @@ static bool sound_test_play_tone(void)
 	return ok;
 }
 
-static void sound_test_thread(void *parameter)
+static void
+sound_test_thread(void *parameter)
 {
 	(void)parameter;
 
@@ -178,7 +185,8 @@ static void sound_test_thread(void *parameter)
  * given no file), holding exactly `caps`, and wait for it. True when it
  * exits with `expected`. Its own report goes to the console as it runs.
  */
-static bool sound_test_run_playsound(uint32_t caps, uint64_t expected, const char *what)
+static bool
+sound_test_run_playsound(uint32_t caps, uint64_t expected, const char *what)
 {
 	proc_t proc = 0;
 	loader_status_t loaded = loader_spawn_caps(proc_kernel(), SOUND_TEST_PLAYSOUND_PATH, "playsound", caps, &proc);
@@ -199,7 +207,8 @@ static bool sound_test_run_playsound(uint32_t caps, uint64_t expected, const cha
 	}
 
 	if (status != expected) {
-		SOUND_TEST_LOG("FAILED: %s: playsound exited with status 0x%llx, expected %llu\n", what, (unsigned long long)status, (unsigned long long)expected);
+		SOUND_TEST_LOG("FAILED: %s: playsound exited with status 0x%llx, expected %llu\n", what,
+					   (unsigned long long)status, (unsigned long long)expected);
 		return false;
 	}
 
@@ -207,7 +216,8 @@ static bool sound_test_run_playsound(uint32_t caps, uint64_t expected, const cha
 	return true;
 }
 
-static bool sound_test_run_all(bool shared)
+static bool
+sound_test_run_all(bool shared)
 {
 	g_sound_test_shared = shared;
 	g_sound_test_done = false;
@@ -252,12 +262,14 @@ static bool sound_test_run_all(bool shared)
 	return refused && played;
 }
 
-bool sound_test_run(void)
+bool
+sound_test_run(void)
 {
 	return sound_test_run_all(false);
 }
 
-bool sound_test_run_shared(void)
+bool
+sound_test_run_shared(void)
 {
 	return sound_test_run_all(true);
 }

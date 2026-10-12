@@ -45,7 +45,8 @@ extern bool i386_memory_map_load(platform_t *platform, const multiboot_info_t *m
 static platform_t g_platform;
 static bool g_platform_ready;
 
-bool platform_discover(const dtb_t *dtb, platform_t *platform)
+bool
+platform_discover(const dtb_t *dtb, platform_t *platform)
 {
 	(void)dtb;
 
@@ -80,7 +81,8 @@ bool platform_discover(const dtb_t *dtb, platform_t *platform)
 	return true;
 }
 
-bool platform_bootstrap(const dtb_t *dtb)
+bool
+platform_bootstrap(const dtb_t *dtb)
 {
 	if (g_platform_ready) return false;
 
@@ -93,43 +95,32 @@ bool platform_bootstrap(const dtb_t *dtb)
 	return true;
 }
 
-const platform_t *platform_get(void)
+const platform_t *
+platform_get(void)
 {
 	return g_platform_ready ? &g_platform : 0;
 }
 
-void platform_dump(const platform_t *platform)
+void
+platform_dump(const platform_t *platform)
 {
 	if (platform == 0) return;
 
 	kprintf("platform_dump: memory regions: %u\n", platform->memory_region_count);
 
 	for (uint32_t index = 0U; index < platform->memory_region_count; index++) {
-		kprintf(
-			"platform_dump: RAM[%u] base: 0x%llx, size: %llu bytes\n",
-			index,
-			(unsigned long long)platform->memory_regions[index].base,
-			(unsigned long long)platform->memory_regions[index].size
-		);
+		kprintf("platform_dump: RAM[%u] base: 0x%llx, size: %llu bytes\n", index,
+				(unsigned long long)platform->memory_regions[index].base,
+				(unsigned long long)platform->memory_regions[index].size);
 	}
 
-	kprintf(
-		"platform_dump: UART (COM1) I/O ports 0x%llx-0x%llx\n",
-		(unsigned long long)platform->uart.base,
-		(unsigned long long)(platform->uart.base + platform->uart.size - 1ULL)
-	);
+	kprintf("platform_dump: UART (COM1) I/O ports 0x%llx-0x%llx\n", (unsigned long long)platform->uart.base,
+			(unsigned long long)(platform->uart.base + platform->uart.size - 1ULL));
 
-	kprintf(
-		"platform_dump: RTC (CMOS) I/O ports 0x%llx-0x%llx\n",
-		(unsigned long long)platform->rtc.base,
-		(unsigned long long)(platform->rtc.base + platform->rtc.size - 1ULL)
-	);
+	kprintf("platform_dump: RTC (CMOS) I/O ports 0x%llx-0x%llx\n", (unsigned long long)platform->rtc.base,
+			(unsigned long long)(platform->rtc.base + platform->rtc.size - 1ULL));
 
-	kprintf(
-		"platform_dump: PCI: %u function(s) on %u bus(es)\n",
-		platform->pci_device_count,
-		platform->pci_bus_count
-	);
+	kprintf("platform_dump: PCI: %u function(s) on %u bus(es)\n", platform->pci_device_count, platform->pci_bus_count);
 
 	if (platform->pci_device_count != 0U) pci_dump();
 }

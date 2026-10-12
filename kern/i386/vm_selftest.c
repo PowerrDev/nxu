@@ -78,7 +78,8 @@ static uint32_t g_last_fault_error;
  * Store `value` at `address`. True if the store happened; false if it
  * faulted, which the expected-fault window turns into a normal return.
  */
-static bool vm_probe_write(uint32_t address, uint32_t value)
+static bool
+vm_probe_write(uint32_t address, uint32_t value)
 {
 	volatile i386_vm_fault_expectation_t *expected = &i386_vm_fault_expectation;
 
@@ -101,7 +102,8 @@ static bool vm_probe_write(uint32_t address, uint32_t value)
 }
 
 /* Load a word; false if the load faulted (see vm_probe_write). */
-static bool vm_probe_read(uint32_t address, uint32_t *value)
+static bool
+vm_probe_read(uint32_t address, uint32_t *value)
 {
 	volatile i386_vm_fault_expectation_t *expected = &i386_vm_fault_expectation;
 	uint32_t loaded = 0U;
@@ -122,20 +124,20 @@ static bool vm_probe_read(uint32_t address, uint32_t *value)
 
 	g_last_fault_error = expected->error_code;
 
-	if (expected->hits != 0U)
-		return false;
+	if (expected->hits != 0U) return false;
 
-	if (value != 0)
-		*value = loaded;
+	if (value != 0) *value = loaded;
 	return true;
 }
 
-static volatile uint32_t *vm_word(uint64_t virtual_address)
+static volatile uint32_t *
+vm_word(uint64_t virtual_address)
 {
 	return (volatile uint32_t *)(uintptr_t)virtual_address;
 }
 
-static bool vm_fill_and_verify(uint64_t virtual_address, uint32_t words, uint32_t seed)
+static bool
+vm_fill_and_verify(uint64_t virtual_address, uint32_t words, uint32_t seed)
 {
 	volatile uint32_t *memory = vm_word(virtual_address);
 
@@ -143,20 +145,19 @@ static bool vm_fill_and_verify(uint64_t virtual_address, uint32_t words, uint32_
 		memory[index] = seed + index * 0x9E3779B1U;
 
 	for (uint32_t index = 0U; index < words; index++) {
-		if (memory[index] != seed + index * 0x9E3779B1U)
-			return false;
+		if (memory[index] != seed + index * 0x9E3779B1U) return false;
 	}
 
 	return true;
 }
 
-static bool vm_all_zero(uint64_t virtual_address, uint32_t words)
+static bool
+vm_all_zero(uint64_t virtual_address, uint32_t words)
 {
 	volatile uint32_t *memory = vm_word(virtual_address);
 
 	for (uint32_t index = 0U; index < words; index++) {
-		if (memory[index] != 0U)
-			return false;
+		if (memory[index] != 0U) return false;
 	}
 
 	return true;
@@ -176,7 +177,8 @@ typedef struct {
 	uint32_t count;
 } vm_test_ranges_t;
 
-static void vm_test_collect_range(uint64_t base, uint64_t size, void *context)
+static void
+vm_test_collect_range(uint64_t base, uint64_t size, void *context)
 {
 	vm_test_ranges_t *ranges = (vm_test_ranges_t *)context;
 
@@ -187,7 +189,8 @@ static void vm_test_collect_range(uint64_t base, uint64_t size, void *context)
 	}
 }
 
-static bool vm_test_pmm(const i386_boot_info_t *boot)
+static bool
+vm_test_pmm(const i386_boot_info_t *boot)
 {
 	uint64_t free_before = pmm_get_free_page_count();
 	uint64_t used_before = pmm_get_used_page_count();
@@ -205,8 +208,7 @@ static bool vm_test_pmm(const i386_boot_info_t *boot)
 	uint64_t managed_end = last->base + last->size;
 	/* Everything the boot path put in managed RAM must be reserved. */
 	for (uint64_t address = 0x100000ULL; address < (uintptr_t)__kernel_phys_end; address += PMM_PAGE_SIZE) {
-		if (address >= managed_start && address < managed_end)
-			VM_CHECK(pmm_page_refcount(address) != 0U);
+		if (address >= managed_start && address < managed_end) VM_CHECK(pmm_page_refcount(address) != 0U);
 	}
 
 	vm_test_ranges_t boot_ranges = {.count = 0U};
@@ -218,8 +220,7 @@ static bool vm_test_pmm(const i386_boot_info_t *boot)
 		uint64_t end = boot_ranges.ranges[index].base + boot_ranges.ranges[index].size;
 
 		for (uint64_t address = start; address < end; address += PMM_PAGE_SIZE) {
-			if (address >= managed_start && address < managed_end)
-				VM_CHECK(pmm_page_refcount(address) != 0U);
+			if (address >= managed_start && address < managed_end) VM_CHECK(pmm_page_refcount(address) != 0U);
 		}
 	}
 
@@ -311,7 +312,8 @@ static bool vm_test_pmm(const i386_boot_info_t *boot)
  * direct map and the kernel image
  * ------------------------------------------------------------------------ */
 
-static bool vm_test_direct_map(const platform_t *platform)
+static bool
+vm_test_direct_map(const platform_t *platform)
 {
 	uint64_t page;
 	uint64_t alias;
@@ -438,7 +440,8 @@ static bool vm_test_direct_map(const platform_t *platform)
  * vm_kern
  * ------------------------------------------------------------------------ */
 
-static bool vm_test_vm_kern(void)
+static bool
+vm_test_vm_kern(void)
 {
 	uint64_t free_before = pmm_get_free_page_count();
 	uint64_t arena_used_before = vm_kern_get_used_pages();
@@ -547,7 +550,8 @@ static bool vm_test_vm_kern(void)
  * kernel mappings and the MMIO window
  * ------------------------------------------------------------------------ */
 
-static bool vm_test_kernel_mappings(void)
+static bool
+vm_test_kernel_mappings(void)
 {
 	uint64_t page;
 	uint64_t unmapped;
@@ -679,7 +683,8 @@ static bool vm_test_kernel_mappings(void)
 #define VM_USER_FAR 0x08000000U
 #define VM_USER_COPY 0x00800000U
 
-static bool vm_test_address_spaces(void)
+static bool
+vm_test_address_spaces(void)
 {
 	uint64_t free_before = pmm_get_free_page_count();
 	vm_address_space_t space_a = {0};
@@ -746,7 +751,8 @@ static bool vm_test_address_spaces(void)
 	VM_CHECK(vm_address_space_map_page(&space_a, VM_USER_A, page_a, VM_USER_PROTECTION_READ_WRITE));
 	VM_CHECK(vm_address_space_map_page(&space_b, VM_USER_A, page_b, VM_USER_PROTECTION_READ_WRITE));
 	VM_CHECK(!vm_address_space_map_page(&space_a, VM_USER_A, page_b, VM_USER_PROTECTION_READ_WRITE));
-	VM_CHECK(vm_address_space_table_count(&space_a) == PMAP_ROOT_PAGES + 2ULL && vm_address_space_table_count(&space_b) == PMAP_ROOT_PAGES + 1ULL);
+	VM_CHECK(vm_address_space_table_count(&space_a) == PMAP_ROOT_PAGES + 2ULL &&
+			 vm_address_space_table_count(&space_b) == PMAP_ROOT_PAGES + 1ULL);
 
 	VM_CHECK(vm_address_space_query_page(&space_a, VM_USER_A, &mapping));
 	VM_CHECK(mapping.physical_address == page_a && mapping.protection == VM_USER_PROTECTION_READ_WRITE);
@@ -926,7 +932,8 @@ static bool vm_test_address_spaces(void)
  * heap
  * ------------------------------------------------------------------------ */
 
-static bool vm_test_heap(void)
+static bool
+vm_test_heap(void)
 {
 	void *probe = kmalloc(1U);
 
@@ -996,8 +1003,7 @@ static bool vm_test_heap(void)
 		VM_CHECK(kfree(many[index]));
 
 	for (uint32_t index = 0U; index < 8U; index++) {
-		if (index != 3U)
-			VM_CHECK(kfree(blocks[index]));
+		if (index != 3U) VM_CHECK(kfree(blocks[index]));
 	}
 
 	VM_CHECK(!kfree(0));
@@ -1014,14 +1020,16 @@ static bool vm_test_heap(void)
 /* Prove actual instruction-fetch protection, not just permission metadata. */
 extern void i386_vm_probe_execute(uint32_t address);
 
-static bool vm_probe_execute(uint32_t address)
+static bool
+vm_probe_execute(uint32_t address)
 {
 	i386_vm_probe_execute(address);
 	if (i386_vm_fault_expectation.hits == 0U) return true;
 	return false;
 }
 
-bool i386_execute_selftest(void)
+bool
+i386_execute_selftest(void)
 {
 	if (!pmap_nx_enabled()) {
 		kputln("i386_execute_selftest: unavailable (CPU lacks NX)");
@@ -1062,7 +1070,8 @@ bool i386_execute_selftest(void)
  * deliberate faults, for the trap layer's report
  * ------------------------------------------------------------------------ */
 
-static void vm_selftest_deliberate_fault(const char *name)
+static void
+vm_selftest_deliberate_fault(const char *name)
 {
 	kprintf("i386_init_vm_selftest: raising deliberate fault \"%s\"\n", name);
 
@@ -1074,8 +1083,7 @@ static void vm_selftest_deliberate_fault(const char *name)
 	} else if (strcmp(name, "write-ro") == 0) {
 		void *page;
 
-		if (!vm_kern_allocate(PMM_PAGE_SIZE, VMM_PROTECTION_READ_ONLY, &page))
-			return;
+		if (!vm_kern_allocate(PMM_PAGE_SIZE, VMM_PROTECTION_READ_ONLY, &page)) return;
 		*(volatile uint32_t *)page = 1U;
 	} else if (strcmp(name, "write-text") == 0) {
 		*(volatile uint32_t *)(uintptr_t)__text_start = 1U;
@@ -1091,12 +1099,9 @@ static void vm_selftest_deliberate_fault(const char *name)
 		static vm_address_space_t space;
 		uint64_t page;
 
-		if (!vm_address_space_create(&space) || !pmm_allocate_page(&page))
-			return;
-		if (!vm_address_space_map_page(&space, VM_USER_RO, page, VM_USER_PROTECTION_READ_ONLY))
-			return;
-		if (!vm_address_space_activate(&space))
-			return;
+		if (!vm_address_space_create(&space) || !pmm_allocate_page(&page)) return;
+		if (!vm_address_space_map_page(&space, VM_USER_RO, page, VM_USER_PROTECTION_READ_ONLY)) return;
+		if (!vm_address_space_activate(&space)) return;
 
 		if (strcmp(name, "user-null") == 0) {
 			volatile uint32_t sink = *(volatile uint32_t *)0x10;
@@ -1110,7 +1115,8 @@ static void vm_selftest_deliberate_fault(const char *name)
 	}
 }
 
-bool i386_init_vm_selftest(const i386_boot_info_t *boot)
+bool
+i386_init_vm_selftest(const i386_boot_info_t *boot)
 {
 	platform_t platform;
 
@@ -1121,22 +1127,15 @@ bool i386_init_vm_selftest(const i386_boot_info_t *boot)
 		return false;
 	}
 
-	if (!vm_test_pmm(boot))
-		return false;
-	if (!vm_test_direct_map(&platform))
-		return false;
-	if (!vm_test_vm_kern())
-		return false;
-	if (!vm_test_kernel_mappings())
-		return false;
+	if (!vm_test_pmm(boot)) return false;
+	if (!vm_test_direct_map(&platform)) return false;
+	if (!vm_test_vm_kern()) return false;
+	if (!vm_test_kernel_mappings()) return false;
 
 	/* The heap backs vm_shm, vm_map and the address-space tests' bookkeeping. */
-	if (!i386_execute_selftest())
-		return false;
-	if (!vm_test_heap())
-		return false;
-	if (!vm_test_address_spaces())
-		return false;
+	if (!i386_execute_selftest()) return false;
+	if (!vm_test_heap()) return false;
+	if (!vm_test_address_spaces()) return false;
 
 	if (!vm_shm_self_test()) {
 		kputln("i386_init_vm_selftest: vm_shm self-test failed");

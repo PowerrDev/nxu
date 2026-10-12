@@ -68,15 +68,8 @@ typedef struct {
 bool sl_device_register(const char *name, const sl_backend_ops_t *ops, void *context, sl_device_t **device_out);
 
 /* A scanout of `device`: `pixels` (XRGB8888, `stride` pixels apart) is what it shows. */
-bool sl_display_register(
-	sl_device_t *device,
-	uint32_t index,
-	uint32_t *pixels,
-	uint32_t width,
-	uint32_t height,
-	uint32_t stride,
-	sl_display_t **display_out
-);
+bool sl_display_register(sl_device_t *device, uint32_t index, uint32_t *pixels, uint32_t width, uint32_t height,
+						 uint32_t stride, sl_display_t **display_out);
 
 /* --- Devices and displays ------------------------------------------------ */
 
@@ -117,10 +110,12 @@ void sl_fill_rect(sl_surface_t *surface, sl_rect_t rect, uint32_t color, sl_blen
  * Copy `source_rect` of `source` to (`x`, `y`) of `destination`, clipped to
  * both. Records the destination rectangle as damage.
  */
-void sl_copy(sl_surface_t *destination, int32_t x, int32_t y, sl_surface_t *source, sl_rect_t source_rect, sl_blend_t blend);
+void sl_copy(sl_surface_t *destination, int32_t x, int32_t y, sl_surface_t *source, sl_rect_t source_rect,
+			 sl_blend_t blend);
 
 /* Copy raw pixels (a caller's buffer, `stride` pixels apart) into a surface. */
-void sl_upload(sl_surface_t *destination, int32_t x, int32_t y, const uint32_t *pixels, uint32_t width, uint32_t height, uint32_t stride);
+void sl_upload(sl_surface_t *destination, int32_t x, int32_t y, const uint32_t *pixels, uint32_t width, uint32_t height,
+			   uint32_t stride);
 
 /* Damage: what changed since it was last taken. */
 void sl_damage(sl_surface_t *surface, sl_rect_t rect);
@@ -128,7 +123,8 @@ sl_rect_t sl_take_damage(sl_surface_t *surface);
 
 /* --- Rectangles ---------------------------------------------------------- */
 
-static inline bool sl_rect_empty(sl_rect_t rect)
+static inline bool
+sl_rect_empty(sl_rect_t rect)
 {
 	return rect.width == 0U || rect.height == 0U;
 }

@@ -42,7 +42,8 @@ static bool g_thread_initialized;
  *
  * Serialize thread-object, task-membership and global-list state.
  */
-static void thread_lock(thread_lock_t *lock)
+static void
+thread_lock(thread_lock_t *lock)
 {
 	while (__atomic_exchange_n(&lock->value, 1U, __ATOMIC_ACQUIRE) != 0U) {
 		cpu_relax();
@@ -52,7 +53,8 @@ static void thread_lock(thread_lock_t *lock)
 /*
  * thread_unlock
  */
-static void thread_unlock(thread_lock_t *lock)
+static void
+thread_unlock(thread_lock_t *lock)
 {
 	__atomic_store_n(&lock->value, 0U, __ATOMIC_RELEASE);
 }
@@ -62,7 +64,8 @@ static void thread_unlock(thread_lock_t *lock)
  *
  * Initialize one thread slot to the detached inactive state.
  */
-static void thread_reset_locked(thread_t thread, uint32_t slot)
+static void
+thread_reset_locked(thread_t thread, uint32_t slot)
 {
 	*thread = (struct thread){.threads_prev = 0,
 							  .threads_next = 0,
@@ -107,11 +110,11 @@ static void thread_reset_locked(thread_t thread, uint32_t slot)
  *
  * Reserve one object from the static thread pool.
  */
-static thread_t thread_allocate_slot_locked(void)
+static thread_t
+thread_allocate_slot_locked(void)
 {
 	for (uint32_t index = 0U; index < THREAD_MAX; index++) {
-		if (g_thread_slot_used[index])
-			continue;
+		if (g_thread_slot_used[index]) continue;
 
 		g_thread_slot_used[index] = true;
 		thread_reset_locked(&g_thread_slots[index], index);
@@ -126,15 +129,14 @@ static thread_t thread_allocate_slot_locked(void)
  *
  * Return a fully-detached thread object to the allocator.
  */
-static void thread_release_slot_locked(thread_t thread)
+static void
+thread_release_slot_locked(thread_t thread)
 {
-	if (thread == 0 || thread->slot >= THREAD_MAX)
-		return;
+	if (thread == 0 || thread->slot >= THREAD_MAX) return;
 
 	uint32_t slot = thread->slot;
 
-	if (&g_thread_slots[slot] != thread)
-		return;
+	if (&g_thread_slots[slot] != thread) return;
 
 	g_thread_slot_used[slot] = false;
 	thread_reset_locked(&g_thread_slots[slot], slot);
@@ -146,7 +148,8 @@ static void thread_release_slot_locked(thread_t thread)
  * Allocate a monotonically increasing thread identifier. Zero and
  * THREAD_ID_INVALID are never returned.
  */
-static thread_id_t thread_allocate_id_locked(void)
+static thread_id_t
+thread_allocate_id_locked(void)
 {
 	for (;;) {
 		thread_id_t thread_id = g_next_thread_id++;
@@ -160,7 +163,8 @@ static thread_id_t thread_allocate_id_locked(void)
 /*
  * thread_global_insert_locked
  */
-static void thread_global_insert_locked(thread_t thread)
+static void
+thread_global_insert_locked(thread_t thread)
 {
 	thread->threads_prev = g_threads_tail;
 	thread->threads_next = 0;
@@ -178,7 +182,8 @@ static void thread_global_insert_locked(thread_t thread)
 /*
  * thread_global_remove_locked
  */
-static void thread_global_remove_locked(thread_t thread)
+static void
+thread_global_remove_locked(thread_t thread)
 {
 	if (thread->threads_prev != 0) {
 		thread->threads_prev->threads_next = thread->threads_next;
@@ -195,8 +200,7 @@ static void thread_global_remove_locked(thread_t thread)
 	thread->threads_prev = 0;
 	thread->threads_next = 0;
 
-	if (g_thread_count != 0U)
-		g_thread_count--;
+	if (g_thread_count != 0U) g_thread_count--;
 }
 
 /*
@@ -205,15 +209,15 @@ static void thread_global_remove_locked(thread_t thread)
  * Attach thread to the owning task. The task list owns one residency
  * reference until thread termination removes the object.
  */
-static void thread_task_insert_locked(task_t task, thread_t thread)
+static void
+thread_task_insert_locked(task_t task, thread_t thread)
 {
 	thread->task = task;
 	thread->home_task = task;
 	thread->task_prev = 0;
 	thread->task_next = task->threads;
 
-	if (task->threads != 0)
-		task->threads->task_prev = thread;
+	if (task->threads != 0) task->threads->task_prev = thread;
 
 	task->threads = thread;
 	task->thread_count++;
@@ -223,12 +227,12 @@ static void thread_task_insert_locked(task_t task, thread_t thread)
 /*
  * thread_task_remove_locked
  */
-static void thread_task_remove_locked(thread_t thread)
+static void
+thread_task_remove_locked(thread_t thread)
 {
 	task_t task = thread->task;
 
-	if (task == 0)
-		return;
+	if (task == 0) return;
 
 	if (thread->task_prev != 0) {
 		thread->task_prev->task_next = thread->task_next;
@@ -240,10 +244,8 @@ static void thread_task_remove_locked(thread_t thread)
 		thread->task_next->task_prev = thread->task_prev;
 	}
 
-	if (task->thread_count != 0U)
-		task->thread_count--;
-	if (thread->active && task->active_thread_count != 0U)
-		task->active_thread_count--;
+	if (task->thread_count != 0U) task->thread_count--;
+	if (thread->active && task->active_thread_count != 0U) task->active_thread_count--;
 
 	thread->task_prev = 0;
 	thread->task_next = 0;
@@ -253,7 +255,8 @@ static void thread_task_remove_locked(thread_t thread)
 /*
  * thread_reference_locked
  */
-static bool thread_reference_locked(thread_t thread)
+static bool
+thread_reference_locked(thread_t thread)
 {
 	if (thread == 0 || thread->ref_count == 0U || thread->ref_count == UINT32_MAX) {
 		return false;
@@ -269,21 +272,18 @@ static bool thread_reference_locked(thread_t thread)
  * Allocate and attach one thread object. The task membership owns the first
  * reference and the caller receives a second reference through result.
  */
-static bool thread_create_common(task_t task, bool kernel_thread, uint64_t entry, uint64_t stack, uint64_t user_arg,
-								 thread_continue_t continuation, void *parameter, thread_t *result)
+static bool
+thread_create_common(task_t task, bool kernel_thread, uint64_t entry, uint64_t stack, uint64_t user_arg,
+					 thread_continue_t continuation, void *parameter, thread_t *result)
 {
-	if (task == 0 || result == 0 || !task_is_active(task) || task->halting)
-		return false;
+	if (task == 0 || result == 0 || !task_is_active(task) || task->halting) return false;
 
-	if (!kernel_thread && (entry == 0ULL || stack == 0ULL))
-		return false;
-	if (kernel_thread && continuation == 0)
-		return false;
+	if (!kernel_thread && (entry == 0ULL || stack == 0ULL)) return false;
+	if (kernel_thread && continuation == 0) return false;
 
 	*result = 0;
 
-	if (!g_thread_initialized && !thread_bootstrap())
-		return false;
+	if (!g_thread_initialized && !thread_bootstrap()) return false;
 
 	thread_lock(&g_thread_lock);
 
@@ -352,7 +352,8 @@ static bool thread_create_common(task_t task, bool kernel_thread, uint64_t entry
  *
  * Initialize the thread allocator and global lists.
  */
-bool thread_bootstrap(void)
+bool
+thread_bootstrap(void)
 {
 	thread_lock(&g_thread_lock);
 
@@ -379,10 +380,10 @@ bool thread_bootstrap(void)
 /*
  * thread_create
  */
-bool thread_create(task_t task, uint64_t entry, uint64_t stack, uint64_t arg, thread_t *result)
+bool
+thread_create(task_t task, uint64_t entry, uint64_t stack, uint64_t arg, thread_t *result)
 {
-	if (task_is_kernel(task))
-		return false;
+	if (task_is_kernel(task)) return false;
 
 	return thread_create_common(task, false, entry, stack, arg, 0, 0, result);
 }
@@ -390,10 +391,10 @@ bool thread_create(task_t task, uint64_t entry, uint64_t stack, uint64_t arg, th
 /*
  * kernel_thread_create
  */
-bool kernel_thread_create(task_t task, thread_continue_t continuation, void *parameter, thread_t *result)
+bool
+kernel_thread_create(task_t task, thread_continue_t continuation, void *parameter, thread_t *result)
 {
-	if (!task_is_kernel(task))
-		return false;
+	if (!task_is_kernel(task)) return false;
 
 	return thread_create_common(task, true, 0ULL, 0ULL, 0ULL, continuation, parameter, result);
 }
@@ -405,7 +406,8 @@ bool kernel_thread_create(task_t task, thread_continue_t continuation, void *par
  * context. The first real context switch will save its current SP and
  * callee-saved registers into machine.context.
  */
-bool thread_create_bootstrap(task_t task, thread_t *result)
+bool
+thread_create_bootstrap(task_t task, thread_t *result)
 {
 	if (task == 0 || result == 0 || !task_is_active(task) || !task_is_kernel(task)) {
 		return false;
@@ -413,8 +415,7 @@ bool thread_create_bootstrap(task_t task, thread_t *result)
 
 	*result = 0;
 
-	if (!g_thread_initialized && !thread_bootstrap())
-		return false;
+	if (!g_thread_initialized && !thread_bootstrap()) return false;
 
 	thread_lock(&g_thread_lock);
 
@@ -460,13 +461,12 @@ bool thread_create_bootstrap(task_t task, thread_t *result)
  * booted on (no stack of its own: it idles on the boot stack), so it is a
  * bootstrap thread that is also idle, running and pinned to `cpu`.
  */
-bool thread_create_cpu_idle(task_t task, uint32_t cpu, thread_t *result)
+bool
+thread_create_cpu_idle(task_t task, uint32_t cpu, thread_t *result)
 {
-	if (result == 0 || cpu >= NXU_MAX_CPUS)
-		return false;
+	if (result == 0 || cpu >= NXU_MAX_CPUS) return false;
 
-	if (!thread_create_bootstrap(task, result))
-		return false;
+	if (!thread_create_bootstrap(task, result)) return false;
 
 	thread_t thread = *result;
 
@@ -484,17 +484,16 @@ bool thread_create_cpu_idle(task_t task, uint32_t cpu, thread_t *result)
 /*
  * thread_set_affinity
  */
-bool thread_set_affinity(thread_t thread, const nxu_cpuset_t *affinity)
+bool
+thread_set_affinity(thread_t thread, const nxu_cpuset_t *affinity)
 {
-	if (thread == 0 || affinity == 0 || cpuset_empty(affinity))
-		return false;
+	if (thread == 0 || affinity == 0 || cpuset_empty(affinity)) return false;
 
 	thread_lock(&g_thread_lock);
 
 	bool valid = thread->active && (thread->state & (TH_IDLE | TH_TERMINATE)) == 0U;
 
-	if (valid)
-		thread->affinity = *affinity;
+	if (valid) thread->affinity = *affinity;
 
 	thread_unlock(&g_thread_lock);
 	return valid;
@@ -503,10 +502,10 @@ bool thread_set_affinity(thread_t thread, const nxu_cpuset_t *affinity)
 /*
  * thread_get_affinity
  */
-bool thread_get_affinity(thread_t thread, nxu_cpuset_t *affinity)
+bool
+thread_get_affinity(thread_t thread, nxu_cpuset_t *affinity)
 {
-	if (thread == 0 || affinity == 0)
-		return false;
+	if (thread == 0 || affinity == 0) return false;
 
 	thread_lock(&g_thread_lock);
 	*affinity = thread->affinity;
@@ -517,25 +516,24 @@ bool thread_get_affinity(thread_t thread, nxu_cpuset_t *affinity)
 /*
  * thread_set_preemptible
  */
-bool thread_set_preemptible(thread_t thread, bool preemptible)
+bool
+thread_set_preemptible(thread_t thread, bool preemptible)
 {
-	if (thread == 0)
-		return false;
+	if (thread == 0) return false;
 
 	thread_lock(&g_thread_lock);
 
 	bool valid = thread->active && (thread->flags & TH_FLAG_KERNEL) != 0U;
 
-	if (valid && preemptible)
-		thread->flags |= TH_FLAG_PREEMPTIBLE;
-	if (valid && !preemptible)
-		thread->flags &= ~TH_FLAG_PREEMPTIBLE;
+	if (valid && preemptible) thread->flags |= TH_FLAG_PREEMPTIBLE;
+	if (valid && !preemptible) thread->flags &= ~TH_FLAG_PREEMPTIBLE;
 
 	thread_unlock(&g_thread_lock);
 	return valid;
 }
 
-bool thread_is_preemptible(thread_t thread)
+bool
+thread_is_preemptible(thread_t thread)
 {
 	return thread != 0 && (thread->flags & TH_FLAG_PREEMPTIBLE) != 0U;
 }
@@ -543,10 +541,10 @@ bool thread_is_preemptible(thread_t thread)
 /*
  * thread_reference
  */
-bool thread_reference(thread_t thread)
+bool
+thread_reference(thread_t thread)
 {
-	if (thread == 0)
-		return false;
+	if (thread == 0) return false;
 
 	thread_lock(&g_thread_lock);
 
@@ -563,10 +561,10 @@ bool thread_reference(thread_t thread)
  * residency reference owned by its task membership. A terminated thread
  * retains a termination residency reference until thread_reap().
  */
-void thread_deallocate(thread_t thread)
+void
+thread_deallocate(thread_t thread)
 {
-	if (thread == 0)
-		return;
+	if (thread == 0) return;
 
 	thread_lock(&g_thread_lock);
 
@@ -574,8 +572,7 @@ void thread_deallocate(thread_t thread)
 		(thread->task != 0 || ((thread->state & TH_TERMINATE) != 0U && (thread->flags & TH_FLAG_REAPED) == 0U)) ? 1U
 																												: 0U;
 
-	if (thread->ref_count > residency)
-		thread->ref_count--;
+	if (thread->ref_count > residency) thread->ref_count--;
 
 	if (thread->ref_count == 0U && !thread->active && thread->task == 0) {
 		thread_release_slot_locked(thread);
@@ -589,10 +586,10 @@ void thread_deallocate(thread_t thread)
  *
  * Release the creation hold and make a new thread runnable.
  */
-bool thread_start(thread_t thread)
+bool
+thread_start(thread_t thread)
 {
-	if (thread == 0)
-		return false;
+	if (thread == 0) return false;
 
 	thread_lock(&g_thread_lock);
 
@@ -619,10 +616,10 @@ bool thread_start(thread_t thread)
  * Move a runnable thread into wait state. The scheduler will later remove
  * runq ownership before calling this transition.
  */
-bool thread_wait(thread_t thread, bool uninterruptible)
+bool
+thread_wait(thread_t thread, bool uninterruptible)
 {
-	if (thread == 0)
-		return false;
+	if (thread == 0) return false;
 
 	thread_lock(&g_thread_lock);
 
@@ -650,10 +647,10 @@ bool thread_wait(thread_t thread, bool uninterruptible)
  * Wake a waiting thread. A suspended thread is made non-waiting but is not
  * runnable until its final suspension hold is released.
  */
-bool thread_go(thread_t thread)
+bool
+thread_go(thread_t thread)
 {
-	if (thread == 0)
-		return false;
+	if (thread == 0) return false;
 
 	thread_lock(&g_thread_lock);
 
@@ -662,8 +659,7 @@ bool thread_go(thread_t thread)
 	if (valid) {
 		thread->state &= ~(TH_WAIT | TH_UNINT | TH_WAKING);
 
-		if (thread->suspend_count == 0U)
-			thread->state |= TH_RUN;
+		if (thread->suspend_count == 0U) thread->state |= TH_RUN;
 	}
 
 	thread_unlock(&g_thread_lock);
@@ -675,10 +671,10 @@ bool thread_go(thread_t thread)
  *
  * Add a kernel suspension hold. A held thread is not runnable.
  */
-bool thread_hold(thread_t thread)
+bool
+thread_hold(thread_t thread)
 {
-	if (thread == 0)
-		return false;
+	if (thread == 0) return false;
 
 	thread_lock(&g_thread_lock);
 
@@ -700,10 +696,10 @@ bool thread_hold(thread_t thread)
  *
  * Drop one kernel suspension hold.
  */
-bool thread_release(thread_t thread)
+bool
+thread_release(thread_t thread)
 {
-	if (thread == 0)
-		return false;
+	if (thread == 0) return false;
 
 	thread_lock(&g_thread_lock);
 
@@ -732,10 +728,10 @@ bool thread_release(thread_t thread)
  * Kernel-stack reclamation is deliberately deferred to thread_reap() so a
  * thread can terminate while it is still executing on its own EL1 stack.
  */
-bool thread_terminate(thread_t thread)
+bool
+thread_terminate(thread_t thread)
 {
-	if (thread == 0)
-		return false;
+	if (thread == 0) return false;
 
 	thread_lock(&g_thread_lock);
 
@@ -770,10 +766,10 @@ bool thread_terminate(thread_t thread)
  * Release the termination residency reference and reclaim a dead thread's
  * kernel stack after it is no longer executing.
  */
-bool thread_reap(thread_t thread)
+bool
+thread_reap(thread_t thread)
 {
-	if (thread == 0)
-		return false;
+	if (thread == 0) return false;
 
 	thread_lock(&g_thread_lock);
 
@@ -807,8 +803,7 @@ bool thread_reap(thread_t thread)
 	thread_unlock(&g_thread_lock);
 
 	if (stack != 0 && stack_size != 0ULL) {
-		if (!vm_kern_free(stack, (size_t)stack_size))
-			return false;
+		if (!vm_kern_free(stack, (size_t)stack_size)) return false;
 	}
 
 	if (release_slot) {
@@ -829,10 +824,10 @@ bool thread_reap(thread_t thread)
  *
  * Allocate the EL1 stack used while this thread executes kernel code.
  */
-bool thread_stack_alloc(thread_t thread)
+bool
+thread_stack_alloc(thread_t thread)
 {
-	if (thread == 0)
-		return false;
+	if (thread == 0) return false;
 
 	thread_lock(&g_thread_lock);
 
@@ -840,8 +835,7 @@ bool thread_stack_alloc(thread_t thread)
 
 	thread_unlock(&g_thread_lock);
 
-	if (!valid)
-		return false;
+	if (!valid) return false;
 
 	void *stack = 0;
 
@@ -869,10 +863,10 @@ bool thread_stack_alloc(thread_t thread)
 /*
  * thread_stack_free
  */
-bool thread_stack_free(thread_t thread)
+bool
+thread_stack_free(thread_t thread)
 {
-	if (thread == 0)
-		return false;
+	if (thread == 0) return false;
 
 	thread_lock(&g_thread_lock);
 
@@ -899,12 +893,12 @@ bool thread_stack_free(thread_t thread)
  * run. The caller has interrupts masked (the scheduler does), so the CPU
  * cannot change under it.
  */
-bool thread_set_current(thread_t thread)
+bool
+thread_set_current(thread_t thread)
 {
 	processor_t processor = current_processor();
 
-	if (thread == 0 || processor == 0)
-		return false;
+	if (thread == 0 || processor == 0) return false;
 
 	thread_lock(&g_thread_lock);
 
@@ -925,12 +919,12 @@ bool thread_set_current(thread_t thread)
  * The thread running on this CPU. Only this CPU ever writes its active_thread,
  * so a caller that cannot be moved to another CPU reads a stable value.
  */
-thread_t current_thread(void)
+thread_t
+current_thread(void)
 {
 	processor_t processor = current_processor();
 
-	if (processor == 0)
-		return 0;
+	if (processor == 0) return 0;
 
 	return __atomic_load_n(&processor->active_thread, __ATOMIC_ACQUIRE);
 }
@@ -938,10 +932,10 @@ thread_t current_thread(void)
 /*
  * task_first_thread_ref
  */
-thread_t task_first_thread_ref(task_t task)
+thread_t
+task_first_thread_ref(task_t task)
 {
-	if (task == 0)
-		return 0;
+	if (task == 0) return 0;
 
 	thread_lock(&g_thread_lock);
 
@@ -958,10 +952,10 @@ thread_t task_first_thread_ref(task_t task)
 /*
  * thread_next_task_thread_ref
  */
-thread_t thread_next_task_thread_ref(thread_t thread)
+thread_t
+thread_next_task_thread_ref(thread_t thread)
 {
-	if (thread == 0)
-		return 0;
+	if (thread == 0) return 0;
 
 	thread_lock(&g_thread_lock);
 
@@ -978,18 +972,17 @@ thread_t thread_next_task_thread_ref(thread_t thread)
 /*
  * thread_snapshot
  */
-uint32_t thread_snapshot(thread_snapshot_t *out, uint32_t capacity)
+uint32_t
+thread_snapshot(thread_snapshot_t *out, uint32_t capacity)
 {
-	if (out == 0)
-		return 0U;
+	if (out == 0) return 0U;
 
 	thread_lock(&g_thread_lock);
 
 	uint32_t count = 0U;
 
 	for (thread_t thread = g_threads_head; thread != 0 && count < capacity; thread = thread->threads_next) {
-		if (!thread->active)
-			continue;
+		if (!thread->active) continue;
 
 		task_t task = thread->home_task != 0 ? thread->home_task : thread->task;
 
@@ -1020,20 +1013,20 @@ uint32_t thread_snapshot(thread_snapshot_t *out, uint32_t capacity)
 /*
  * thread_tid
  */
-thread_id_t thread_tid(thread_t thread)
+thread_id_t
+thread_tid(thread_t thread)
 {
-	if (thread == 0)
-		return THREAD_ID_INVALID;
+	if (thread == 0) return THREAD_ID_INVALID;
 	return thread->thread_id;
 }
 
 /*
  * thread_task
  */
-task_t thread_task(thread_t thread)
+task_t
+thread_task(thread_t thread)
 {
-	if (thread == 0)
-		return 0;
+	if (thread == 0) return 0;
 	return thread->task;
 }
 
@@ -1045,10 +1038,10 @@ task_t thread_task(thread_t thread)
  * g_thread_lock thread_task_insert_locked/thread_task_remove_locked take to
  * mutate the field.
  */
-uint32_t task_active_thread_count(task_t task)
+uint32_t
+task_active_thread_count(task_t task)
 {
-	if (task == 0)
-		return 0U;
+	if (task == 0) return 0U;
 
 	thread_lock(&g_thread_lock);
 	uint32_t count = task->active_thread_count;
@@ -1060,7 +1053,8 @@ uint32_t task_active_thread_count(task_t task)
 /*
  * thread_is_active
  */
-bool thread_is_active(thread_t thread)
+bool
+thread_is_active(thread_t thread)
 {
 	return thread != 0 && thread->active;
 }
@@ -1068,7 +1062,8 @@ bool thread_is_active(thread_t thread)
 /*
  * thread_is_started
  */
-bool thread_is_started(thread_t thread)
+bool
+thread_is_started(thread_t thread)
 {
 	return thread != 0 && thread->started;
 }
@@ -1076,7 +1071,8 @@ bool thread_is_started(thread_t thread)
 /*
  * thread_is_runnable
  */
-bool thread_is_runnable(thread_t thread)
+bool
+thread_is_runnable(thread_t thread)
 {
 	return (thread != 0 && thread->active && (thread->state & TH_RUN) != 0U &&
 			(thread->state & (TH_WAIT | TH_SUSP | TH_TERMINATE)) == 0U);
@@ -1085,7 +1081,8 @@ bool thread_is_runnable(thread_t thread)
 /*
  * thread_is_waiting
  */
-bool thread_is_waiting(thread_t thread)
+bool
+thread_is_waiting(thread_t thread)
 {
 	return (thread != 0 && (thread->state & TH_WAIT) != 0U);
 }
@@ -1093,7 +1090,8 @@ bool thread_is_waiting(thread_t thread)
 /*
  * thread_is_suspended
  */
-bool thread_is_suspended(thread_t thread)
+bool
+thread_is_suspended(thread_t thread)
 {
 	return (thread != 0 && (thread->state & TH_SUSP) != 0U);
 }
@@ -1101,7 +1099,8 @@ bool thread_is_suspended(thread_t thread)
 /*
  * thread_is_terminated
  */
-bool thread_is_terminated(thread_t thread)
+bool
+thread_is_terminated(thread_t thread)
 {
 	return (thread != 0 && (thread->state & TH_TERMINATE) != 0U);
 }
@@ -1109,7 +1108,8 @@ bool thread_is_terminated(thread_t thread)
 /*
  * thread_is_idle
  */
-bool thread_is_idle(thread_t thread)
+bool
+thread_is_idle(thread_t thread)
 {
 	return thread != 0 && (thread->state & TH_IDLE) != 0U;
 }
@@ -1117,7 +1117,8 @@ bool thread_is_idle(thread_t thread)
 /*
  * thread_is_bootstrap
  */
-bool thread_is_bootstrap(thread_t thread)
+bool
+thread_is_bootstrap(thread_t thread)
 {
 	return thread != 0 && (thread->flags & TH_FLAG_BOOTSTRAP) != 0U;
 }
@@ -1127,18 +1128,17 @@ bool thread_is_bootstrap(thread_t thread)
  *
  * Mark an unstarted kernel thread as the processor idle thread.
  */
-bool thread_set_idle(thread_t thread)
+bool
+thread_set_idle(thread_t thread)
 {
-	if (thread == 0)
-		return false;
+	if (thread == 0) return false;
 
 	thread_lock(&g_thread_lock);
 
 	bool valid = thread->active && !thread->started && thread->runq == 0 && (thread->flags & TH_FLAG_KERNEL) != 0U &&
 				 (thread->flags & TH_FLAG_BOOTSTRAP) == 0U && (thread->state & TH_TERMINATE) == 0U;
 
-	if (valid)
-		thread->state |= TH_IDLE;
+	if (valid) thread->state |= TH_IDLE;
 
 	thread_unlock(&g_thread_lock);
 	return valid;
@@ -1150,7 +1150,8 @@ bool thread_set_idle(thread_t thread)
  * Change a detached scheduling priority. Queued threads are repositioned by
  * sched_thread_set_priority() so run-queue bucket invariants stay intact.
  */
-bool thread_set_priority(thread_t thread, uint16_t priority)
+bool
+thread_set_priority(thread_t thread, uint16_t priority)
 {
 	if (thread == 0 || priority < THREAD_PRIORITY_MIN || priority > THREAD_PRIORITY_MAX) {
 		return false;
@@ -1173,7 +1174,8 @@ bool thread_set_priority(thread_t thread, uint16_t priority)
 /*
  * thread_priority
  */
-uint16_t thread_priority(thread_t thread)
+uint16_t
+thread_priority(thread_t thread)
 {
 	return thread == 0 ? 0U : thread->sched_pri;
 }
@@ -1181,7 +1183,8 @@ uint16_t thread_priority(thread_t thread)
 /*
  * thread_base_priority
  */
-uint16_t thread_base_priority(thread_t thread)
+uint16_t
+thread_base_priority(thread_t thread)
 {
 	return thread == 0 ? 0U : thread->base_pri;
 }
@@ -1189,7 +1192,8 @@ uint16_t thread_base_priority(thread_t thread)
 /*
  * thread_user_entry
  */
-uint64_t thread_user_entry(thread_t thread)
+uint64_t
+thread_user_entry(thread_t thread)
 {
 	if (thread == 0 || !machine_thread_has_user_state(&thread->machine)) {
 		return 0ULL;
@@ -1201,7 +1205,8 @@ uint64_t thread_user_entry(thread_t thread)
 /*
  * thread_user_stack
  */
-uint64_t thread_user_stack(thread_t thread)
+uint64_t
+thread_user_stack(thread_t thread)
 {
 	if (thread == 0 || !machine_thread_has_user_state(&thread->machine)) {
 		return 0ULL;
@@ -1213,7 +1218,8 @@ uint64_t thread_user_stack(thread_t thread)
 /*
  * thread_set_user_state
  */
-bool thread_set_user_state(thread_t thread, uint64_t entry, uint64_t stack, uint64_t arg)
+bool
+thread_set_user_state(thread_t thread, uint64_t entry, uint64_t stack, uint64_t arg)
 {
 	if (thread == 0 || (thread->flags & TH_FLAG_KERNEL) != 0U) {
 		return false;
@@ -1234,17 +1240,18 @@ bool thread_set_user_state(thread_t thread, uint64_t entry, uint64_t stack, uint
 /*
  * thread_kernel_stack_base
  */
-uint64_t thread_kernel_stack_base(thread_t thread)
+uint64_t
+thread_kernel_stack_base(thread_t thread)
 {
-	if (thread == 0)
-		return 0ULL;
+	if (thread == 0) return 0ULL;
 	return (uint64_t)thread->kernel_stack;
 }
 
 /*
  * thread_kernel_stack_top
  */
-uint64_t thread_kernel_stack_top(thread_t thread)
+uint64_t
+thread_kernel_stack_top(thread_t thread)
 {
 	if (thread == 0 || thread->kernel_stack == 0) {
 		return 0ULL;
@@ -1256,7 +1263,8 @@ uint64_t thread_kernel_stack_top(thread_t thread)
 /*
  * thread_count
  */
-uint32_t thread_count(void)
+uint32_t
+thread_count(void)
 {
 	thread_lock(&g_thread_lock);
 
@@ -1271,7 +1279,8 @@ uint32_t thread_count(void)
  *
  * Validate global linkage, task back-pointers and task thread counters.
  */
-bool thread_validate(void)
+bool
+thread_validate(void)
 {
 	thread_lock(&g_thread_lock);
 
@@ -1291,11 +1300,9 @@ bool thread_validate(void)
 
 		for (thread_t member = thread->task->threads; member != 0; member = member->task_next) {
 			task_count++;
-			if (member->active)
-				active_count++;
+			if (member->active) active_count++;
 
-			if (member == thread)
-				found_in_task = true;
+			if (member == thread) found_in_task = true;
 
 			if (task_count > THREAD_MAX) {
 				thread_unlock(&g_thread_lock);
@@ -1329,7 +1336,8 @@ bool thread_validate(void)
  *
  * Print thread state without requiring a returned static string pointer.
  */
-static void thread_print_state(uint32_t state)
+static void
+thread_print_state(uint32_t state)
 {
 	bool printed = false;
 
@@ -1339,47 +1347,41 @@ static void thread_print_state(uint32_t state)
 	}
 
 	if ((state & TH_WAIT) != 0U) {
-		if (printed)
-			kputc('|');
+		if (printed) kputc('|');
 
 		kputs("wait");
 		printed = true;
 	}
 
 	if ((state & TH_SUSP) != 0U) {
-		if (printed)
-			kputc('|');
+		if (printed) kputc('|');
 
 		kputs("susp");
 		printed = true;
 	}
 
 	if ((state & TH_UNINT) != 0U) {
-		if (printed)
-			kputc('|');
+		if (printed) kputc('|');
 
 		kputs("unint");
 		printed = true;
 	}
 
 	if ((state & TH_TERMINATE) != 0U) {
-		if (printed)
-			kputc('|');
+		if (printed) kputc('|');
 
 		kputs("terminate");
 		printed = true;
 	}
 
 	if ((state & TH_IDLE) != 0U) {
-		if (printed)
-			kputc('|');
+		if (printed) kputc('|');
 
 		kputs("idle");
 		printed = true;
 	}
 
-	if (!printed)
-		kputs("new");
+	if (!printed) kputs("new");
 }
 
 /*
@@ -1389,7 +1391,8 @@ static void thread_print_state(uint32_t state)
  * bits, the CPU it is on (on_cpu) or the queue it is in, its affinity, whether a
  * wakeup is deferred. For diagnosing a hang; takes only the thread lock.
  */
-void thread_dump_sched(void)
+void
+thread_dump_sched(void)
 {
 	thread_lock(&g_thread_lock);
 
@@ -1411,7 +1414,8 @@ void thread_dump_sched(void)
 /*
  * thread_dump
  */
-void thread_dump(void)
+void
+thread_dump(void)
 {
 	thread_lock(&g_thread_lock);
 

@@ -40,7 +40,8 @@ thread_process_test(void)
 {
 	proc_t proc = 0;
 
-	loader_status_t status = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/threadtest", "threadtest", &proc);
+	loader_status_t status =
+		loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/threadtest", "threadtest", &proc);
 	if (status != LOADER_STATUS_OK) {
 		kputs("thread_process_test: spawning threadtest failed: ");
 		kputln(loader_status_name(status));

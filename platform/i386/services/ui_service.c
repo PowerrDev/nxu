@@ -45,17 +45,20 @@ static bool g_ui_service_cooperative;
 static volatile bool g_ui_service_running;
 static volatile uint64_t g_ui_service_polls;
 
-void ui_service_set_cooperative(bool cooperative)
+void
+ui_service_set_cooperative(bool cooperative)
 {
 	g_ui_service_cooperative = cooperative;
 }
 
-bool ui_service_running(void)
+bool
+ui_service_running(void)
 {
 	return g_ui_service_running;
 }
 
-uint64_t ui_service_poll_count(void)
+uint64_t
+ui_service_poll_count(void)
 {
 	return g_ui_service_polls;
 }
@@ -68,18 +71,17 @@ uint64_t ui_service_poll_count(void)
  * pulling the NVRAM/boot_args subsystem in for one value.
  */
 #if defined(NXU_UI_SERVICE)
-static uint32_t ui_service_arg_uint32(const char *name, uint32_t default_value)
+static uint32_t
+ui_service_arg_uint32(const char *name, uint32_t default_value)
 {
 	char text[16];
 
-	if (!i386_boot_arg(name, text, sizeof(text)) || text[0] == '\0')
-		return default_value;
+	if (!i386_boot_arg(name, text, sizeof(text)) || text[0] == '\0') return default_value;
 
 	uint32_t result = 0U;
 
 	for (uint32_t index = 0U; text[index] != '\0'; index++) {
-		if (text[index] < '0' || text[index] > '9')
-			return default_value;
+		if (text[index] < '0' || text[index] > '9') return default_value;
 
 		result = result * 10U + (uint32_t)(text[index] - '0');
 	}
@@ -117,14 +119,13 @@ typedef struct {
  * Rendering a complete scene offscreen prevents users from seeing the old
  * damage region get erased before the replacement window/cursor is drawn.
  */
-static uint32_t UIServiceGetSurface(void *opaque, UIServiceSurfaceDescriptor *surface)
+static uint32_t
+UIServiceGetSurface(void *opaque, UIServiceSurfaceDescriptor *surface)
 {
-	if (opaque == 0 || surface == 0)
-		return UI_SERVICE_STATUS_INVALID_ARGUMENT;
+	if (opaque == 0 || surface == 0) return UI_SERVICE_STATUS_INVALID_ARGUMENT;
 
 	UIServiceContext *context = (UIServiceContext *)opaque;
-	if (context->backbuffer == 0)
-		return UI_SERVICE_STATUS_NO_SURFACE;
+	if (context->backbuffer == 0) return UI_SERVICE_STATUS_NO_SURFACE;
 
 	*surface = (UIServiceSurfaceDescriptor){.pixels = context->backbuffer,
 											.width = context->width,
@@ -150,11 +151,11 @@ static uint32_t UIServiceGetSurface(void *opaque, UIServiceSurfaceDescriptor *su
  * override that MLFQ's own demotion would just undo on the next quantum
  * anyway. See platform/arm64/services/ui_service.c, ported from verbatim.
  */
-static void UIServicePaceFrame(UIServiceContext *context)
+static void
+UIServicePaceFrame(UIServiceContext *context)
 {
 	uint64_t now = timer_get_microseconds();
-	if (now == 0ULL)
-		return;
+	if (now == 0ULL) return;
 
 	if (context->last_present_us != 0ULL) {
 		uint64_t elapsed = now - context->last_present_us;
@@ -175,21 +176,18 @@ static void UIServicePaceFrame(UIServiceContext *context)
  * Copy one completed damage rectangle from UI's backbuffer to the actual NXU
  * scanout. This is the software equivalent of presenting a finished frame.
  */
-static bool UIServiceCopyDamage(UIServiceContext *context, const UIServiceDamageRect *damage)
+static bool
+UIServiceCopyDamage(UIServiceContext *context, const UIServiceDamageRect *damage)
 {
-	if (context == 0 || damage == 0 || context->output_pixels == 0 || context->backbuffer == 0)
-		return false;
+	if (context == 0 || damage == 0 || context->output_pixels == 0 || context->backbuffer == 0) return false;
 
-	if (damage->x < 0 || damage->y < 0 || damage->width == 0U || damage->height == 0U)
-		return false;
+	if (damage->x < 0 || damage->y < 0 || damage->width == 0U || damage->height == 0U) return false;
 
 	uint32_t x = (uint32_t)damage->x;
 	uint32_t y = (uint32_t)damage->y;
-	if (x >= context->width || y >= context->height)
-		return false;
+	if (x >= context->width || y >= context->height) return false;
 
-	if (damage->width > context->width - x || damage->height > context->height - y)
-		return false;
+	if (damage->width > context->width - x || damage->height > context->height - y) return false;
 
 	for (uint32_t row = 0U; row < damage->height; row++) {
 		uint32_t *destination = context->output_pixels + (uint64_t)(y + row) * context->stride + x;
@@ -204,10 +202,10 @@ static bool UIServiceCopyDamage(UIServiceContext *context, const UIServiceDamage
  * Present a finished UI frame: VirtIO GPU receives its transfer and flush
  * command after the backbuffer copy.
  */
-static uint32_t UIServicePresent(void *opaque, const UIServiceDamageRect *damage)
+static uint32_t
+UIServicePresent(void *opaque, const UIServiceDamageRect *damage)
 {
-	if (opaque == 0)
-		return UI_SERVICE_STATUS_INVALID_ARGUMENT;
+	if (opaque == 0) return UI_SERVICE_STATUS_INVALID_ARGUMENT;
 
 	UIServiceContext *context = (UIServiceContext *)opaque;
 	UIServiceDamageRect full = {.x = 0, .y = 0, .width = context->width, .height = context->height};
@@ -235,13 +233,12 @@ static uint32_t UIServicePresent(void *opaque, const UIServiceDamageRect *damage
 /*
  * Clamp a relative pointer accumulation to the visible surface.
  */
-static int32_t UIServiceClampPointer(int64_t value, uint32_t extent)
+static int32_t
+UIServiceClampPointer(int64_t value, uint32_t extent)
 {
-	if (extent == 0U || value < 0)
-		return 0;
+	if (extent == 0U || value < 0) return 0;
 
-	if ((uint64_t)value >= (uint64_t)extent)
-		return (int32_t)(extent - 1U);
+	if ((uint64_t)value >= (uint64_t)extent) return (int32_t)(extent - 1U);
 	return (int32_t)value;
 }
 
@@ -257,7 +254,8 @@ static int32_t UIServiceClampPointer(int64_t value, uint32_t extent)
  * as that same sequence of discrete samples instead of collapsing into one
  * net move. See mouse_take_delta()'s doc comment for the full reasoning.
  */
-static void UIServiceRefreshPointer(UIServiceContext *context)
+static void
+UIServiceRefreshPointer(UIServiceContext *context)
 {
 	int32_t dx = 0;
 	int32_t dy = 0;
@@ -333,27 +331,23 @@ static void UIServiceRefreshPointer(UIServiceContext *context)
 /*
  * Convert NXU mouse button bits into UI's platform-neutral ABI values.
  */
-static uint32_t UIServiceButtonFromMask(uint32_t mask)
+static uint32_t
+UIServiceButtonFromMask(uint32_t mask)
 {
-	if ((mask & MOUSE_BUTTON_LEFT) != 0U)
-		return UI_SERVICE_POINTER_BUTTON_PRIMARY;
+	if ((mask & MOUSE_BUTTON_LEFT) != 0U) return UI_SERVICE_POINTER_BUTTON_PRIMARY;
 
-	if ((mask & MOUSE_BUTTON_RIGHT) != 0U)
-		return UI_SERVICE_POINTER_BUTTON_SECONDARY;
-	if ((mask & MOUSE_BUTTON_MIDDLE) != 0U)
-		return UI_SERVICE_POINTER_BUTTON_MIDDLE;
+	if ((mask & MOUSE_BUTTON_RIGHT) != 0U) return UI_SERVICE_POINTER_BUTTON_SECONDARY;
+	if ((mask & MOUSE_BUTTON_MIDDLE) != 0U) return UI_SERVICE_POINTER_BUTTON_MIDDLE;
 	return UI_SERVICE_POINTER_BUTTON_NONE;
 }
 
-static uint32_t UIServiceSelectButtonMask(uint32_t mask)
+static uint32_t
+UIServiceSelectButtonMask(uint32_t mask)
 {
-	if ((mask & MOUSE_BUTTON_LEFT) != 0U)
-		return MOUSE_BUTTON_LEFT;
+	if ((mask & MOUSE_BUTTON_LEFT) != 0U) return MOUSE_BUTTON_LEFT;
 
-	if ((mask & MOUSE_BUTTON_RIGHT) != 0U)
-		return MOUSE_BUTTON_RIGHT;
-	if ((mask & MOUSE_BUTTON_MIDDLE) != 0U)
-		return MOUSE_BUTTON_MIDDLE;
+	if ((mask & MOUSE_BUTTON_RIGHT) != 0U) return MOUSE_BUTTON_RIGHT;
+	if ((mask & MOUSE_BUTTON_MIDDLE) != 0U) return MOUSE_BUTTON_MIDDLE;
 	return 0U;
 }
 
@@ -380,20 +374,19 @@ static uint32_t UIServiceSelectButtonMask(uint32_t mask)
  * start an app). The sleep ends early when an input interrupt or an app
  * kicks it (sched_kick_sleepers).
  */
-static void UIServiceYieldAfterPoll(bool delivered_event)
+static void
+UIServiceYieldAfterPoll(bool delivered_event)
 {
 	static uint32_t delivered_since_yield;
 	/* The poll before this one found nothing either. */
 	static bool idle_once;
 
-	if (!g_ui_service_cooperative)
-		return;
+	if (!g_ui_service_cooperative) return;
 
 	bool sleep = !delivered_event && idle_once;
 	idle_once = !delivered_event;
 
-	if (delivered_event && ++delivered_since_yield < UI_SERVICE_EVENTS_PER_YIELD)
-		return;
+	if (delivered_event && ++delivered_since_yield < UI_SERVICE_EVENTS_PER_YIELD) return;
 
 	delivered_since_yield = 0U;
 
@@ -413,10 +406,10 @@ static void UIServiceYieldAfterPoll(bool delivered_event)
 		(void)sched_yield();
 }
 
-static uint32_t UIServicePollEvent(void *opaque, UIServiceHostEvent *event)
+static uint32_t
+UIServicePollEvent(void *opaque, UIServiceHostEvent *event)
 {
-	if (opaque == 0 || event == 0)
-		return UI_SERVICE_STATUS_INVALID_ARGUMENT;
+	if (opaque == 0 || event == 0) return UI_SERVICE_STATUS_INVALID_ARGUMENT;
 
 	UIServiceContext *context = (UIServiceContext *)opaque;
 
@@ -479,38 +472,36 @@ static uint32_t UIServicePollEvent(void *opaque, UIServiceHostEvent *event)
  * Report wall-clock time from the CMOS RTC so UIService can draw a live
  * clock in its menu bar without owning any device itself.
  */
-static uint32_t UIServiceGetTime(void *opaque, uint64_t *unix_seconds)
+static uint32_t
+UIServiceGetTime(void *opaque, uint64_t *unix_seconds)
 {
 	(void)opaque;
-	if (unix_seconds == 0)
-		return UI_SERVICE_STATUS_INVALID_ARGUMENT;
+	if (unix_seconds == 0) return UI_SERVICE_STATUS_INVALID_ARGUMENT;
 
 	*unix_seconds = rtc_unix_time();
 	return UI_SERVICE_STATUS_OK;
 }
 
 /* The size of the regular file `name` in `directory`, or 0 if it cannot be found or the path is too long. */
-static uint64_t UIServiceFileSize(const char *directory, const char *name)
+static uint64_t
+UIServiceFileSize(const char *directory, const char *name)
 {
 	char path[VFS_PATH_MAX];
 	size_t directory_length = strlen(directory);
 	size_t name_length = strlen(name);
 
-	if (directory_length + 1U + name_length >= sizeof(path))
-		return 0ULL;
+	if (directory_length + 1U + name_length >= sizeof(path)) return 0ULL;
 
 	memcpy(path, directory, directory_length);
 	size_t length = directory_length;
 
-	if (length == 0U || path[length - 1U] != '/')
-		path[length++] = '/';
+	if (length == 0U || path[length - 1U] != '/') path[length++] = '/';
 
 	memcpy(path + length, name, name_length + 1U);
 
 	vnode_t vnode;
 
-	if (vfs_lookup(path, &vnode) != VFS_STATUS_OK)
-		return 0ULL;
+	if (vfs_lookup(path, &vnode) != VFS_STATUS_OK) return 0ULL;
 
 	uint64_t size = vnode->v_type == VNODE_TYPE_REGULAR ? vnode->v_size : 0ULL;
 
@@ -524,19 +515,18 @@ static uint64_t UIServiceFileSize(const char *directory, const char *name)
  * would read it, into the app's own buffer. The kernel stack this runs on is
  * small, so nothing here is larger than a path or one directory entry.
  */
-static uint32_t UIServiceListDirectory(void *opaque, const char *path, uint32_t path_len, UIServiceDirEntry *entries,
-									   uint32_t capacity, uint32_t *count_out, bool *truncated_out)
+static uint32_t
+UIServiceListDirectory(void *opaque, const char *path, uint32_t path_len, UIServiceDirEntry *entries, uint32_t capacity,
+					   uint32_t *count_out, bool *truncated_out)
 {
 	(void)opaque;
 
-	if (path == 0 || entries == 0 || count_out == 0 || truncated_out == 0)
-		return UI_SERVICE_FS_STATUS_ERROR;
+	if (path == 0 || entries == 0 || count_out == 0 || truncated_out == 0) return UI_SERVICE_FS_STATUS_ERROR;
 
 	*count_out = 0U;
 	*truncated_out = false;
 
-	if (path_len == 0U || path_len >= VFS_PATH_MAX)
-		return UI_SERVICE_FS_STATUS_ERROR;
+	if (path_len == 0U || path_len >= VFS_PATH_MAX) return UI_SERVICE_FS_STATUS_ERROR;
 
 	char directory[VFS_PATH_MAX];
 
@@ -553,14 +543,12 @@ static uint32_t UIServiceListDirectory(void *opaque, const char *path, uint32_t 
 
 	vnode_rele(vnode);
 
-	if (!is_directory)
-		return UI_SERVICE_FS_STATUS_NOT_A_DIRECTORY;
+	if (!is_directory) return UI_SERVICE_FS_STATUS_NOT_A_DIRECTORY;
 
 	filedesc_t filedesc = &proc_kernel()->p_fd;
 	uint32_t descriptor;
 
-	if (vfs_open(filedesc, directory, VFS_OPEN_READ, &descriptor) != VFS_STATUS_OK)
-		return UI_SERVICE_FS_STATUS_ERROR;
+	if (vfs_open(filedesc, directory, VFS_OPEN_READ, &descriptor) != VFS_STATUS_OK) return UI_SERVICE_FS_STATUS_ERROR;
 
 	uint32_t result = UI_SERVICE_FS_STATUS_OK;
 	uint32_t count = 0U;
@@ -569,8 +557,7 @@ static uint32_t UIServiceListDirectory(void *opaque, const char *path, uint32_t 
 	for (;;) {
 		status = vfs_readdir(filedesc, descriptor, &dirent);
 
-		if (status == VFS_STATUS_END_OF_DIRECTORY)
-			break;
+		if (status == VFS_STATUS_END_OF_DIRECTORY) break;
 
 		if (status != VFS_STATUS_OK) {
 			result = UI_SERVICE_FS_STATUS_ERROR;
@@ -578,8 +565,7 @@ static uint32_t UIServiceListDirectory(void *opaque, const char *path, uint32_t 
 		}
 
 		/* A browser shows what is inside a folder, not the folder's own links. */
-		if (strcmp(dirent.name, ".") == 0 || strcmp(dirent.name, "..") == 0)
-			continue;
+		if (strcmp(dirent.name, ".") == 0 || strcmp(dirent.name, "..") == 0) continue;
 
 		if (count >= capacity) {
 			*truncated_out = true;
@@ -609,7 +595,8 @@ static uint32_t UIServiceListDirectory(void *opaque, const char *path, uint32_t 
 }
 #endif
 
-bool ui_service_bootstrap(void)
+bool
+ui_service_bootstrap(void)
 {
 #if !defined(NXU_UI_SERVICE)
 	kputln("[com.butterscotch.UIService.framework]: NXU bridge is not linked");
@@ -733,7 +720,8 @@ bool ui_service_bootstrap(void)
 static bool g_secure_pause;
 static uint32_t g_secure_callbacks;
 
-bool ui_service_untrusted_enter(void)
+bool
+ui_service_untrusted_enter(void)
 {
 	__atomic_add_fetch(&g_secure_callbacks, 1, __ATOMIC_ACQ_REL);
 	if (__atomic_load_n(&g_secure_pause, __ATOMIC_ACQUIRE)) {
@@ -743,12 +731,14 @@ bool ui_service_untrusted_enter(void)
 	return true;
 }
 
-void ui_service_untrusted_leave(void)
+void
+ui_service_untrusted_leave(void)
 {
 	__atomic_sub_fetch(&g_secure_callbacks, 1, __ATOMIC_ACQ_REL);
 }
 
-bool ui_service_secure_lock(void)
+bool
+ui_service_secure_lock(void)
 {
 	bool expected = false;
 
@@ -761,33 +751,35 @@ bool ui_service_secure_lock(void)
 	return true;
 }
 
-bool ui_service_secure_begin(void)
+bool
+ui_service_secure_begin(void)
 {
 	return (boot_mode_is_triage_os() || ui_bridge_session_ready()) && ui_service_secure_lock();
 }
 
-void ui_service_secure_end(void)
+void
+ui_service_secure_end(void)
 {
 	__atomic_store_n(&g_secure_pause, false, __ATOMIC_RELEASE);
 }
 
-bool ui_service_secure_active(void)
+bool
+ui_service_secure_active(void)
 {
 	return __atomic_load_n(&g_secure_pause, __ATOMIC_ACQUIRE);
 }
 
-bool ui_service_secure_pointer(int32_t *x, int32_t *y, uint32_t *pressed)
+bool
+ui_service_secure_pointer(int32_t *x, int32_t *y, uint32_t *pressed)
 {
-	if (!ui_service_secure_active() || !x || !y || !pressed)
-		return false;
+	if (!ui_service_secure_active() || !x || !y || !pressed) return false;
 
 	static int32_t raw_x, raw_y, pointer_x, pointer_y;
 	static uint32_t buttons;
 	static bool baseline;
 	display_device_t *display = display_primary();
 
-	if (!display)
-		return false;
+	if (!display) return false;
 
 	int32_t next_x = (int32_t)mouse_x();
 	int32_t next_y = (int32_t)mouse_y();

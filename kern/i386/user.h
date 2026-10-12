@@ -20,13 +20,15 @@
 
 #define MACHINE_USER_CONTEXT 0
 
-static inline bool machine_user_fork_state(machine_thread_t *child)
+static inline bool
+machine_user_fork_state(machine_thread_t *child)
 {
 	(void)child;
 	return false;
 }
 
-static inline bool machine_user_exec_state(uint64_t entry, uint64_t stack, uint64_t argc, uint64_t argv)
+static inline bool
+machine_user_exec_state(uint64_t entry, uint64_t stack, uint64_t argc, uint64_t argv)
 {
 	(void)entry;
 	(void)stack;
@@ -35,7 +37,8 @@ static inline bool machine_user_exec_state(uint64_t entry, uint64_t stack, uint6
 	return false;
 }
 
-static inline bool machine_user_signal_push(uint64_t handler, uint64_t restorer, uint32_t signal, uint32_t saved_mask)
+static inline bool
+machine_user_signal_push(uint64_t handler, uint64_t restorer, uint32_t signal, uint32_t saved_mask)
 {
 	(void)handler;
 	(void)restorer;
@@ -44,7 +47,8 @@ static inline bool machine_user_signal_push(uint64_t handler, uint64_t restorer,
 	return false;
 }
 
-static inline bool machine_user_signal_pop(uint32_t *saved_mask)
+static inline bool
+machine_user_signal_pop(uint32_t *saved_mask)
 {
 	(void)saved_mask;
 	return false;

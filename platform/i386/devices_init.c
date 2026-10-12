@@ -71,7 +71,8 @@ static uint8_t g_selftest_pattern[DEVICES_SELFTEST_SECTORS * BLOCK_SECTOR_SIZE];
 static uint8_t g_selftest_readback[DEVICES_SELFTEST_SECTORS * BLOCK_SECTOR_SIZE];
 
 /* Parse a decimal boot argument; false when absent or not a number. */
-static bool devices_arg_number(const char *name, uint64_t *value)
+static bool
+devices_arg_number(const char *name, uint64_t *value)
 {
 	char text[DEVICES_ARG_MAX];
 
@@ -89,14 +90,16 @@ static bool devices_arg_number(const char *name, uint64_t *value)
 	return true;
 }
 
-static uint64_t devices_arg_or(const char *name, uint64_t fallback)
+static uint64_t
+devices_arg_or(const char *name, uint64_t fallback)
 {
 	uint64_t value;
 
 	return devices_arg_number(name, &value) ? value : fallback;
 }
 
-static void devices_print_time(uint64_t unix_time)
+static void
+devices_print_time(uint64_t unix_time)
 {
 	uint64_t days = unix_time / 86400ULL;
 	uint32_t seconds_of_day = (uint32_t)(unix_time % 86400ULL);
@@ -112,18 +115,15 @@ static void devices_print_time(uint64_t unix_time)
 	uint32_t month = month_index < 10U ? month_index + 3U : month_index - 9U;
 	uint32_t year = (uint32_t)(year_of_era + era * 400ULL) + (month <= 2U ? 1U : 0U);
 
-	kprintf(
-		"%u-%c%c-%c%c %c%c:%c%c:%c%c UTC",
-		year,
-		(char)('0' + month / 10U), (char)('0' + month % 10U),
-		(char)('0' + day / 10U), (char)('0' + day % 10U),
-		(char)('0' + seconds_of_day / 36000U), (char)('0' + seconds_of_day / 3600U % 10U),
-		(char)('0' + seconds_of_day / 600U % 6U), (char)('0' + seconds_of_day / 60U % 10U),
-		(char)('0' + seconds_of_day % 60U / 10U), (char)('0' + seconds_of_day % 10U)
-	);
+	kprintf("%u-%c%c-%c%c %c%c:%c%c:%c%c UTC", year, (char)('0' + month / 10U), (char)('0' + month % 10U),
+			(char)('0' + day / 10U), (char)('0' + day % 10U), (char)('0' + seconds_of_day / 36000U),
+			(char)('0' + seconds_of_day / 3600U % 10U), (char)('0' + seconds_of_day / 600U % 6U),
+			(char)('0' + seconds_of_day / 60U % 10U), (char)('0' + seconds_of_day % 60U / 10U),
+			(char)('0' + seconds_of_day % 10U));
 }
 
-static uint32_t devices_count_virtio_pci(void)
+static uint32_t
+devices_count_virtio_pci(void)
 {
 	uint32_t count = 0U;
 
@@ -136,7 +136,8 @@ static uint32_t devices_count_virtio_pci(void)
 
 /* ---- platform phase --------------------------------------------------- */
 
-bool i386_init_platform(const i386_boot_info_t *boot)
+bool
+i386_init_platform(const i386_boot_info_t *boot)
 {
 	(void)boot;
 
@@ -168,14 +169,16 @@ bool i386_init_platform(const i386_boot_info_t *boot)
 	return true;
 }
 
-static bool devices_check(bool condition, const char *what)
+static bool
+devices_check(bool condition, const char *what)
 {
 	if (!condition) kprintf("i386_init_platform_selftest: FAIL %s\n", what);
 
 	return condition;
 }
 
-bool i386_init_platform_selftest(const i386_boot_info_t *boot)
+bool
+i386_init_platform_selftest(const i386_boot_info_t *boot)
 {
 	(void)boot;
 
@@ -187,14 +190,16 @@ bool i386_init_platform_selftest(const i386_boot_info_t *boot)
 	if (platform == 0) return false;
 
 	ok &= devices_check(pci_present(), "PCI configuration mechanism 1 not present");
-	ok &= devices_check(platform->pci_device_count == pci_device_count() && pci_device_count() != 0U, "PCI enumeration found nothing");
+	ok &= devices_check(platform->pci_device_count == pci_device_count() && pci_device_count() != 0U,
+						"PCI enumeration found nothing");
 	ok &= devices_check(pci_find_class(PCI_CLASS_BRIDGE, 0x00U, 0U) != 0, "no PCI host bridge");
 	ok &= devices_check(pci_find_class(PCI_CLASS_BRIDGE, 0x01U, 0U) != 0, "no PCI-ISA bridge");
 
 	uint32_t virtio_functions = devices_count_virtio_pci();
 	uint64_t expected_virtio = devices_arg_or("expect-virtio", 0ULL);
 
-	kprintf("i386_init_platform_selftest: %u VirtIO function(s), expecting at least %llu\n", virtio_functions, (unsigned long long)expected_virtio);
+	kprintf("i386_init_platform_selftest: %u VirtIO function(s), expecting at least %llu\n", virtio_functions,
+			(unsigned long long)expected_virtio);
 	ok &= devices_check(virtio_functions >= expected_virtio, "fewer VirtIO PCI functions than expected");
 
 	/* Every sized BAR must be a power of two, or the sizing logic is wrong. */
@@ -205,13 +210,9 @@ bool i386_init_platform_selftest(const i386_boot_info_t *boot)
 			const pci_bar_t *region = &device->bars[bar];
 
 			if (region->valid && (region->size & (region->size - 1ULL)) != 0ULL) {
-				kprintf(
-					"i386_init_platform_selftest: FAIL BAR%u of %x:%x has size 0x%llx\n",
-					bar,
-					(unsigned int)device->vendor_id,
-					(unsigned int)device->device_id,
-					(unsigned long long)region->size
-				);
+				kprintf("i386_init_platform_selftest: FAIL BAR%u of %x:%x has size 0x%llx\n", bar,
+						(unsigned int)device->vendor_id, (unsigned int)device->device_id,
+						(unsigned long long)region->size);
 				ok = false;
 			}
 		}
@@ -249,13 +250,14 @@ bool i386_init_platform_selftest(const i386_boot_info_t *boot)
 /* ---- drivers phase ---------------------------------------------------- */
 
 /* Present as soon as the GPU is ready, before the remaining drivers attach. */
-static void devices_show_boot_splash(void)
+static void
+devices_show_boot_splash(void)
 {
-	if (!boot_splash_show(display_primary()))
-		kputln("i386_init_drivers: boot splash unavailable");
+	if (!boot_splash_show(display_primary())) kputln("i386_init_drivers: boot splash unavailable");
 }
 
-bool i386_init_drivers(const i386_boot_info_t *boot)
+bool
+i386_init_drivers(const i386_boot_info_t *boot)
 {
 	(void)boot;
 
@@ -288,14 +290,12 @@ bool i386_init_drivers(const i386_boot_info_t *boot)
 		kputln("i386_init_drivers: VirtIO polling (no interrupts)");
 	}
 
-	virtio_probe_policy_t policy = {
-		.input = true,
-		.block = true,
-		.gpu = true,
-		.network = true,
-		.sound = true,
-		.on_gpu_ready = devices_show_boot_splash
-	};
+	virtio_probe_policy_t policy = {.input = true,
+									.block = true,
+									.gpu = true,
+									.network = true,
+									.sound = true,
+									.on_gpu_ready = devices_show_boot_splash};
 
 	if (!virtio_pci_register()) {
 		kputln("i386_init_drivers: virtio_pci_register failed");
@@ -307,17 +307,11 @@ bool i386_init_drivers(const i386_boot_info_t *boot)
 		return false;
 	}
 
-	if (!display_primary() && firmware_display_init(boot))
-		devices_show_boot_splash();
+	if (!display_primary() && firmware_display_init(boot)) devices_show_boot_splash();
 
-	kprintf(
-		"i386_init_drivers: %u block device(s), %u input device(s), keyboard %s, mouse %s, %u display(s)\n",
-		block_device_count(),
-		virtio_input_count(),
-		keyboard_is_present() ? "present" : "absent",
-		mouse_is_present() ? "present" : "absent",
-		virtio_gpu_device_count()
-	);
+	kprintf("i386_init_drivers: %u block device(s), %u input device(s), keyboard %s, mouse %s, %u display(s)\n",
+			block_device_count(), virtio_input_count(), keyboard_is_present() ? "present" : "absent",
+			mouse_is_present() ? "present" : "absent", virtio_gpu_device_count());
 
 	/*
 	 * The Trusted Enclave link (COM2 when QEMU has a second -serial). Absent, tepOS requests fail closed.
@@ -341,7 +335,8 @@ bool i386_init_drivers(const i386_boot_info_t *boot)
  * back and compare, prove an out-of-range request is refused, then restore the
  * sectors that were overwritten.
  */
-static bool devices_selftest_block(void)
+static bool
+devices_selftest_block(void)
 {
 	block_device_t device = block_device_first();
 
@@ -350,14 +345,9 @@ static bool devices_selftest_block(void)
 		return false;
 	}
 
-	kprintf(
-		"i386_init_drivers_selftest: block device %s, %llu sectors of %u bytes, %s, flush %s\n",
-		device->name,
-		(unsigned long long)device->sector_count,
-		device->sector_size,
-		device->read_only ? "read-only" : "read-write",
-		device->flush_supported ? "supported" : "absent"
-	);
+	kprintf("i386_init_drivers_selftest: block device %s, %llu sectors of %u bytes, %s, flush %s\n", device->name,
+			(unsigned long long)device->sector_count, device->sector_size,
+			device->read_only ? "read-only" : "read-write", device->flush_supported ? "supported" : "absent");
 
 	if (!block_device_read(device, 0ULL, 1U, g_selftest_readback)) {
 		kputln("i386_init_drivers_selftest: FAIL read of sector 0");
@@ -412,7 +402,8 @@ static bool devices_selftest_block(void)
 			kputln("i386_init_drivers_selftest: FAIL read-back differs from the pattern written");
 			ok = false;
 		} else {
-			kprintf("i386_init_drivers_selftest: wrote, flushed and read back %u sectors at %llu\n", DEVICES_SELFTEST_SECTORS, (unsigned long long)scratch);
+			kprintf("i386_init_drivers_selftest: wrote, flushed and read back %u sectors at %llu\n",
+					DEVICES_SELFTEST_SECTORS, (unsigned long long)scratch);
 		}
 	}
 
@@ -426,7 +417,8 @@ static bool devices_selftest_block(void)
 		return ok;
 	}
 
-	if (!block_device_write(device, scratch, DEVICES_SELFTEST_SECTORS, g_selftest_original) || !block_device_flush(device)) {
+	if (!block_device_write(device, scratch, DEVICES_SELFTEST_SECTORS, g_selftest_original) ||
+		!block_device_flush(device)) {
 		kputln("i386_init_drivers_selftest: FAIL restoring the scratch sectors");
 		ok = false;
 	}
@@ -434,7 +426,8 @@ static bool devices_selftest_block(void)
 	return ok;
 }
 
-static uint64_t devices_input_interrupts(void)
+static uint64_t
+devices_input_interrupts(void)
 {
 	uint64_t total = 0ULL;
 
@@ -447,7 +440,8 @@ static uint64_t devices_input_interrupts(void)
 	return total;
 }
 
-static uint64_t devices_input_events(input_device_class_t device_class)
+static uint64_t
+devices_input_events(input_device_class_t device_class)
 {
 	uint64_t total = 0ULL;
 
@@ -467,17 +461,14 @@ static uint64_t devices_input_events(input_device_class_t device_class)
  * poll the event queues until a keyboard and a mouse event have both arrived
  * (the test harness injects them through the QEMU monitor).
  */
-static bool devices_selftest_input(void)
+static bool
+devices_selftest_input(void)
 {
 	uint32_t count = virtio_input_count();
 	uint64_t expected = devices_arg_or("expect-input", 0ULL);
 
-	kprintf(
-		"i386_init_drivers_selftest: %u input device(s), keyboard %s, mouse %s\n",
-		count,
-		keyboard_is_present() ? "present" : "absent",
-		mouse_is_present() ? "present" : "absent"
-	);
+	kprintf("i386_init_drivers_selftest: %u input device(s), keyboard %s, mouse %s\n", count,
+			keyboard_is_present() ? "present" : "absent", mouse_is_present() ? "present" : "absent");
 
 	if (count < expected) {
 		kprintf("i386_init_drivers_selftest: FAIL expected %llu input device(s)\n", (unsigned long long)expected);
@@ -516,13 +507,11 @@ static bool devices_selftest_input(void)
 
 		if (devices_input_events(INPUT_DEVICE_KEYBOARD) != 0ULL && devices_input_events(INPUT_DEVICE_MOUSE) != 0ULL) {
 			ml_irq_restore(irq_state);
-			kprintf(
-				"i386_init_drivers_selftest: received %llu keyboard and %llu mouse event(s), %llu interrupt(s), %u queued for userspace\n",
-				(unsigned long long)devices_input_events(INPUT_DEVICE_KEYBOARD),
-				(unsigned long long)devices_input_events(INPUT_DEVICE_MOUSE),
-				(unsigned long long)devices_input_interrupts(),
-				input_pending_count()
-			);
+			kprintf("i386_init_drivers_selftest: received %llu keyboard and %llu mouse event(s), %llu interrupt(s), %u "
+					"queued for userspace\n",
+					(unsigned long long)devices_input_events(INPUT_DEVICE_KEYBOARD),
+					(unsigned long long)devices_input_events(INPUT_DEVICE_MOUSE),
+					(unsigned long long)devices_input_interrupts(), input_pending_count());
 			return true;
 		}
 
@@ -544,12 +533,14 @@ static bool devices_selftest_input(void)
  * check the scanout from inside the guest; a missing display only fails when
  * expect-display=<n> asked for at least one.
  */
-static bool devices_selftest_display(void)
+static bool
+devices_selftest_display(void)
 {
 	uint64_t expected = devices_arg_or("expect-display", 0ULL);
 	uint32_t count = virtio_gpu_device_count();
 
-	kprintf("i386_init_drivers_selftest: %u display(s), expecting at least %llu\n", count, (unsigned long long)expected);
+	kprintf("i386_init_drivers_selftest: %u display(s), expecting at least %llu\n", count,
+			(unsigned long long)expected);
 
 	if (count < expected) {
 		kprintf("i386_init_drivers_selftest: FAIL expected %llu display(s)\n", (unsigned long long)expected);
@@ -565,12 +556,8 @@ static bool devices_selftest_display(void)
 		return false;
 	}
 
-	kprintf(
-		"i386_init_drivers_selftest: painting test pattern, %ux%u, stride %u\n",
-		display->width,
-		display->height,
-		display->stride
-	);
+	kprintf("i386_init_drivers_selftest: painting test pattern, %ux%u, stride %u\n", display->width, display->height,
+			display->stride);
 
 	uint32_t half_width = display->width / 2U;
 	uint32_t half_height = display->height / 2U;
@@ -593,14 +580,16 @@ static bool devices_selftest_display(void)
 	return true;
 }
 
-bool i386_init_drivers_selftest(const i386_boot_info_t *boot)
+bool
+i386_init_drivers_selftest(const i386_boot_info_t *boot)
 {
 	(void)boot;
 
 	uint64_t expected_blocks = devices_arg_or("expect-block", 1ULL);
 
 	if (virtio_block_count() < expected_blocks) {
-		kprintf("i386_init_drivers_selftest: FAIL %u block device(s), expected %llu\n", virtio_block_count(), (unsigned long long)expected_blocks);
+		kprintf("i386_init_drivers_selftest: FAIL %u block device(s), expected %llu\n", virtio_block_count(),
+				(unsigned long long)expected_blocks);
 		return false;
 	}
 

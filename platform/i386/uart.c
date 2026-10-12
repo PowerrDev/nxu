@@ -30,30 +30,34 @@
 
 static bool g_uart_ready;
 
-static void uart_init(void)
+static void
+uart_init(void)
 {
 	outb(UART_COM1 + UART_INTERRUPT_ENABLE, 0x00U);
 	outb(UART_COM1 + UART_LINE_CONTROL, 0x80U); /* DLAB on */
-	outb(UART_COM1 + UART_DATA, 0x01U); /* divisor 1: 115200 baud */
+	outb(UART_COM1 + UART_DATA, 0x01U);			/* divisor 1: 115200 baud */
 	outb(UART_COM1 + UART_INTERRUPT_ENABLE, 0x00U);
-	outb(UART_COM1 + UART_LINE_CONTROL, 0x03U); /* 8N1, DLAB off */
-	outb(UART_COM1 + UART_FIFO_CONTROL, 0xC7U); /* enable and clear FIFOs */
+	outb(UART_COM1 + UART_LINE_CONTROL, 0x03U);	 /* 8N1, DLAB off */
+	outb(UART_COM1 + UART_FIFO_CONTROL, 0xC7U);	 /* enable and clear FIFOs */
 	outb(UART_COM1 + UART_MODEM_CONTROL, 0x03U); /* DTR + RTS */
 
 	g_uart_ready = true;
 }
 
-bool uart_enter_higher_half(void)
+bool
+uart_enter_higher_half(void)
 {
 	return true;
 }
 
-bool uart_higher_half_enabled(void)
+bool
+uart_higher_half_enabled(void)
 {
 	return true;
 }
 
-void uart_putc(char character)
+void
+uart_putc(char character)
 {
 	if (!g_uart_ready) uart_init();
 

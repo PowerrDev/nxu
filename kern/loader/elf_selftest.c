@@ -71,7 +71,8 @@ phdr(uint32_t index)
 }
 
 static void
-set_segment(uint32_t index, uint32_t type, uint32_t offset, uint32_t vaddr, uint32_t filesz, uint32_t memsz, uint32_t flags)
+set_segment(uint32_t index, uint32_t type, uint32_t offset, uint32_t vaddr, uint32_t filesz, uint32_t memsz,
+			uint32_t flags)
 {
 	uint32_t base = phdr(index);
 
@@ -124,7 +125,8 @@ check(const char *name, uint32_t size, const char *expected)
 	if (pass) return;
 
 	g_failures++;
-	kprintf("i386_init_userland_selftest: FAIL %s: expected %s, got %s\n", name, expected != 0 ? expected : "accept", reason != 0 ? reason : "accept");
+	kprintf("i386_init_userland_selftest: FAIL %s: expected %s, got %s\n", name, expected != 0 ? expected : "accept",
+			reason != 0 ? reason : "accept");
 }
 
 static void
@@ -140,15 +142,11 @@ check_valid_image(void)
 	g_cases++;
 
 	/* The widened fields must land where the ELF32 layout puts them (flags follow memsz). */
-	if (reason != 0 || info.entry != TEST_TEXT_VADDR || info.segment_count != 2U || info.image_low != 0x00401000ULL || info.image_high != 0x00403000ULL) {
+	if (reason != 0 || info.entry != TEST_TEXT_VADDR || info.segment_count != 2U || info.image_low != 0x00401000ULL ||
+		info.image_high != 0x00403000ULL) {
 		g_failures++;
-		kprintf(
-			"i386_init_userland_selftest: FAIL decoded fields: entry 0x%x, %u segments, [0x%x, 0x%x)\n",
-			(uint32_t)info.entry,
-			info.segment_count,
-			(uint32_t)info.image_low,
-			(uint32_t)info.image_high
-		);
+		kprintf("i386_init_userland_selftest: FAIL decoded fields: entry 0x%x, %u segments, [0x%x, 0x%x)\n",
+				(uint32_t)info.entry, info.segment_count, (uint32_t)info.image_low, (uint32_t)info.image_high);
 	}
 }
 
@@ -224,7 +222,8 @@ check_segment_rejections(void)
 	check("vaddr/offset misaligned", TEST_IMAGE_SIZE, "bad segment");
 
 	build_valid();
-	set_segment(1U, ELF_PT_LOAD, TEST_DATA_OFFSET, (uint32_t)LOADER_USER_STACK_BASE - 0x1000U, 0x80U, 0x2000U, PF_R | ELF_PF_W);
+	set_segment(1U, ELF_PT_LOAD, TEST_DATA_OFFSET, (uint32_t)LOADER_USER_STACK_BASE - 0x1000U, 0x80U, 0x2000U,
+				PF_R | ELF_PF_W);
 	check("segment reaches the stack", TEST_IMAGE_SIZE, "bad segment");
 
 	build_valid();
@@ -248,7 +247,8 @@ check_segment_rejections(void)
 	check("file bytes past end of file", TEST_IMAGE_SIZE, "segment outside file");
 
 	build_valid();
-	set_segment(1U, ELF_PT_LOAD, 0xFFFFF000U | (TEST_DATA_VADDR & 0xFFFU), TEST_DATA_VADDR, 0x2000U, 0x2000U, PF_R | ELF_PF_W);
+	set_segment(1U, ELF_PT_LOAD, 0xFFFFF000U | (TEST_DATA_VADDR & 0xFFFU), TEST_DATA_VADDR, 0x2000U, 0x2000U,
+				PF_R | ELF_PF_W);
 	check("file offset + size wraps 32 bits", TEST_IMAGE_SIZE, "segment outside file");
 
 	build_valid();

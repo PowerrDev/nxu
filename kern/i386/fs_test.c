@@ -35,14 +35,16 @@ static const char g_journal_message[] = "NXU JBD2 committed metadata survived th
 #define FS_TEST_CHUNK_SIZE 1024U
 #define FS_TEST_CHUNKS 12U
 
-static bool fs_test_fail(const char *what)
+static bool
+fs_test_fail(const char *what)
 {
 	kprintf("i386_fs_test: FAIL %s\n", what);
 	return false;
 }
 
 /* Read a whole file and require it to be exactly `expected`. */
-static bool fs_test_read_exact(filedesc_t filedesc, const char *path, const char *expected, uint64_t size)
+static bool
+fs_test_read_exact(filedesc_t filedesc, const char *path, const char *expected, uint64_t size)
 {
 	uint32_t descriptor;
 
@@ -59,15 +61,15 @@ static bool fs_test_read_exact(filedesc_t filedesc, const char *path, const char
 	memset(buffer, 0, sizeof(buffer));
 
 	bool ok = vfs_read(filedesc, descriptor, buffer, sizeof(buffer), &read_size) == VFS_STATUS_OK &&
-		read_size == size &&
-		memcmp(buffer, expected, (size_t)size) == 0;
+			  read_size == size && memcmp(buffer, expected, (size_t)size) == 0;
 
 	if (vfs_close(filedesc, descriptor) != VFS_STATUS_OK) ok = false;
 
 	return ok;
 }
 
-static bool fs_test_write_file(filedesc_t filedesc, const char *path, uint32_t flags, const char *data, uint64_t size)
+static bool
+fs_test_write_file(filedesc_t filedesc, const char *path, uint32_t flags, const char *data, uint64_t size)
 {
 	uint32_t descriptor;
 
@@ -81,7 +83,8 @@ static bool fs_test_write_file(filedesc_t filedesc, const char *path, uint32_t f
 	return ok;
 }
 
-static bool fs_test_write(void)
+static bool
+fs_test_write(void)
 {
 	filedesc_t filedesc = &proc_kernel()->p_fd;
 	uint32_t descriptor;
@@ -100,14 +103,16 @@ static bool fs_test_write(void)
 	if (status != VFS_STATUS_OK && status != VFS_STATUS_EXISTS) return fs_test_fail("mkdir /disk/NXU");
 
 	/* Twelve 1 KiB chunks of a position-dependent pattern: crosses a page and grows the extent. */
-	if (vfs_open(filedesc, "/disk/NXU/write-test.bin", VFS_OPEN_READ | VFS_OPEN_WRITE | VFS_OPEN_CREATE | VFS_OPEN_TRUNCATE, &descriptor) != VFS_STATUS_OK) {
+	if (vfs_open(filedesc, "/disk/NXU/write-test.bin",
+				 VFS_OPEN_READ | VFS_OPEN_WRITE | VFS_OPEN_CREATE | VFS_OPEN_TRUNCATE, &descriptor) != VFS_STATUS_OK) {
 		return fs_test_fail("create write-test.bin");
 	}
 
 	uint8_t block[FS_TEST_CHUNK_SIZE];
 
 	for (uint32_t chunk = 0U; chunk < FS_TEST_CHUNKS; chunk++) {
-		for (uint32_t index = 0U; index < sizeof(block); index++) block[index] = (uint8_t)(chunk ^ index);
+		for (uint32_t index = 0U; index < sizeof(block); index++)
+			block[index] = (uint8_t)(chunk ^ index);
 
 		status = vfs_write(filedesc, descriptor, block, sizeof(block), &written);
 
@@ -140,8 +145,8 @@ static bool fs_test_write(void)
 	memset(probe, 0xA5, sizeof(probe));
 
 	bool ok = vfs_seek(filedesc, descriptor, 5000ULL) == VFS_STATUS_OK &&
-		vfs_read(filedesc, descriptor, probe, sizeof(probe), &read_size) == VFS_STATUS_OK &&
-		read_size == sizeof(probe);
+			  vfs_read(filedesc, descriptor, probe, sizeof(probe), &read_size) == VFS_STATUS_OK &&
+			  read_size == sizeof(probe);
 
 	for (uint32_t index = 0U; ok && index < sizeof(probe); index++) {
 		if (probe[index] != 0U) ok = false;
@@ -154,13 +159,14 @@ static bool fs_test_write(void)
 
 	/* A write past the current end leaves a sparse gap and extends the file to 8192 + len. */
 	ok = vfs_seek(filedesc, descriptor, 8192ULL) == VFS_STATUS_OK &&
-		vfs_write(filedesc, descriptor, g_tail_message, sizeof(g_tail_message) - 1ULL, &written) == VFS_STATUS_OK &&
-		written == sizeof(g_tail_message) - 1ULL;
+		 vfs_write(filedesc, descriptor, g_tail_message, sizeof(g_tail_message) - 1ULL, &written) == VFS_STATUS_OK &&
+		 written == sizeof(g_tail_message) - 1ULL;
 
 	if (vfs_close(filedesc, descriptor) != VFS_STATUS_OK || !ok) return fs_test_fail("write past end of file");
 
 	/* Create then unlink: the name must be gone and its blocks released. */
-	if (!fs_test_write_file(filedesc, "/disk/NXU/delete-me.txt", VFS_OPEN_WRITE | VFS_OPEN_CREATE | VFS_OPEN_TRUNCATE, g_write_message, sizeof(g_write_message) - 1ULL)) {
+	if (!fs_test_write_file(filedesc, "/disk/NXU/delete-me.txt", VFS_OPEN_WRITE | VFS_OPEN_CREATE | VFS_OPEN_TRUNCATE,
+							g_write_message, sizeof(g_write_message) - 1ULL)) {
 		return fs_test_fail("create delete-me.txt");
 	}
 
@@ -179,13 +185,15 @@ static bool fs_test_write(void)
 	if (status == VFS_STATUS_OK) {
 		vnode_rele(vnode);
 
-		if (!fs_test_read_exact(filedesc, "/disk/NXU/persistent.txt", g_persist_message, sizeof(g_persist_message) - 1ULL)) {
+		if (!fs_test_read_exact(filedesc, "/disk/NXU/persistent.txt", g_persist_message,
+								sizeof(g_persist_message) - 1ULL)) {
 			return fs_test_fail("persistence marker contents");
 		}
 
 		kputln("i386_fs_test: persistence marker recovered from previous boot");
 	} else if (status == VFS_STATUS_NOT_FOUND) {
-		if (!fs_test_write_file(filedesc, "/disk/NXU/persistent.txt", VFS_OPEN_WRITE | VFS_OPEN_CREATE, g_persist_message, sizeof(g_persist_message) - 1ULL)) {
+		if (!fs_test_write_file(filedesc, "/disk/NXU/persistent.txt", VFS_OPEN_WRITE | VFS_OPEN_CREATE,
+								g_persist_message, sizeof(g_persist_message) - 1ULL)) {
 			return fs_test_fail("create persistence marker");
 		}
 
@@ -202,7 +210,8 @@ static bool fs_test_write(void)
 	return true;
 }
 
-static bool fs_test_journal_crash(void)
+static bool
+fs_test_journal_crash(void)
 {
 	filedesc_t filedesc = &proc_kernel()->p_fd;
 	uint32_t descriptor;
@@ -212,7 +221,8 @@ static bool fs_test_journal_crash(void)
 	if (status != VFS_STATUS_OK && status != VFS_STATUS_EXISTS) return fs_test_fail("mkdir /disk/NXU");
 
 	/* An empty file first, so the crashing write is the only metadata change left to commit. */
-	if (vfs_open(filedesc, "/disk/NXU/journal-recovery.txt", VFS_OPEN_WRITE | VFS_OPEN_CREATE | VFS_OPEN_TRUNCATE, &descriptor) != VFS_STATUS_OK) {
+	if (vfs_open(filedesc, "/disk/NXU/journal-recovery.txt", VFS_OPEN_WRITE | VFS_OPEN_CREATE | VFS_OPEN_TRUNCATE,
+				 &descriptor) != VFS_STATUS_OK) {
 		return fs_test_fail("prepare journal-recovery.txt");
 	}
 
@@ -240,11 +250,13 @@ static bool fs_test_journal_crash(void)
 	i386_shutdown(0x00U);
 }
 
-static bool fs_test_journal_verify(void)
+static bool
+fs_test_journal_verify(void)
 {
 	filedesc_t filedesc = &proc_kernel()->p_fd;
 
-	if (!fs_test_read_exact(filedesc, "/disk/NXU/journal-recovery.txt", g_journal_message, sizeof(g_journal_message) - 1ULL)) {
+	if (!fs_test_read_exact(filedesc, "/disk/NXU/journal-recovery.txt", g_journal_message,
+							sizeof(g_journal_message) - 1ULL)) {
 		return fs_test_fail("the committed transaction was not recovered by the mount");
 	}
 
@@ -252,7 +264,8 @@ static bool fs_test_journal_verify(void)
 	return true;
 }
 
-bool i386_fs_test_run(const char *mode)
+bool
+i386_fs_test_run(const char *mode)
 {
 	if (strcmp(mode, "write") == 0) return fs_test_write();
 	if (strcmp(mode, "journal-crash") == 0) return fs_test_journal_crash();

@@ -49,7 +49,8 @@ static volatile uint32_t g_sched_context_test_stage;
  * reaps this thread while it is queued, validating both directions of the
  * AArch64 context switch before userspace is dispatched.
  */
-static void post_sched_context_test_continue(void *parameter)
+static void
+post_sched_context_test_continue(void *parameter)
 {
 	volatile uint32_t *stage = (volatile uint32_t *)parameter;
 
@@ -71,61 +72,51 @@ static const char g_vfs_test_message[] = "NXU VFS ramfs self-test\n";
  * Validate pathname traversal, vnode creation, per-process descriptors and
  * file offsets against the bootstrap ramfs root.
  */
-static bool post_test_vfs(void)
+static bool
+post_test_vfs(void)
 {
 	proc_t kernel_proc = proc_kernel();
-	if (kernel_proc == 0)
-		return false;
+	if (kernel_proc == 0) return false;
 
 	filedesc_t filedesc = &kernel_proc->p_fd;
 
-	if (vfs_mkdir("/tmp") != VFS_STATUS_OK)
-		return false;
+	if (vfs_mkdir("/tmp") != VFS_STATUS_OK) return false;
 
 	uint32_t descriptor;
 	vfs_status_t status = vfs_open(filedesc, "/tmp/hello",
 								   VFS_OPEN_READ | VFS_OPEN_WRITE | VFS_OPEN_CREATE | VFS_OPEN_TRUNCATE, &descriptor);
-	if (status != VFS_STATUS_OK)
-		return false;
+	if (status != VFS_STATUS_OK) return false;
 
 	uint64_t message_size = sizeof(g_vfs_test_message) - 1ULL;
 	uint64_t written_size;
 	status = vfs_write(filedesc, descriptor, g_vfs_test_message, message_size, &written_size);
-	if (status != VFS_STATUS_OK || written_size != message_size)
-		goto fail_close;
+	if (status != VFS_STATUS_OK || written_size != message_size) goto fail_close;
 
-	if (vfs_seek(filedesc, descriptor, 0ULL) != VFS_STATUS_OK)
-		goto fail_close;
+	if (vfs_seek(filedesc, descriptor, 0ULL) != VFS_STATUS_OK) goto fail_close;
 
 	char buffer[sizeof(g_vfs_test_message)];
 	memset(buffer, 0, sizeof(buffer));
 
 	uint64_t read_size;
 	status = vfs_read(filedesc, descriptor, buffer, message_size, &read_size);
-	if (status != VFS_STATUS_OK || read_size != message_size)
-		goto fail_close;
+	if (status != VFS_STATUS_OK || read_size != message_size) goto fail_close;
 
 	for (uint64_t index = 0ULL; index < message_size; index++) {
-		if (buffer[index] != g_vfs_test_message[index])
-			goto fail_close;
+		if (buffer[index] != g_vfs_test_message[index]) goto fail_close;
 	}
 
-	if (vfs_close(filedesc, descriptor) != VFS_STATUS_OK)
-		return false;
+	if (vfs_close(filedesc, descriptor) != VFS_STATUS_OK) return false;
 
 	vnode_t vnode;
 	status = vfs_lookup("/tmp/./../tmp/hello", &vnode);
-	if (status != VFS_STATUS_OK)
-		return false;
+	if (status != VFS_STATUS_OK) return false;
 
 	bool vnode_valid = vnode->v_type == VNODE_TYPE_REGULAR && vnode->v_size == message_size;
 	vnode_rele(vnode);
-	if (!vnode_valid)
-		return false;
+	if (!vnode_valid) return false;
 
 	status = vfs_read(filedesc, descriptor, buffer, sizeof(buffer), &read_size);
-	if (status != VFS_STATUS_BAD_FD)
-		return false;
+	if (status != VFS_STATUS_BAD_FD) return false;
 
 	return filedesc->fd_open_count == 0U;
 
@@ -140,13 +131,15 @@ fail_close:
  * Verify the software Castagnoli implementation against the canonical
  * 123456789 check value using the running-checksum convention used by ext4.
  */
-static bool post_test_crc32c(void)
+static bool
+post_test_crc32c(void)
 {
 	static const char vector[] = "123456789";
 	return crc32c(~0U, vector, sizeof(vector) - 1U) == 0x1CF96D7CU;
 }
 
-static bool post_test_vm_kern(void)
+static bool
+post_test_vm_kern(void)
 {
 	void *allocation_a = 0;
 	void *allocation_b = 0;
@@ -237,7 +230,8 @@ cleanup:
 	return passed && cleanup_passed;
 }
 
-static bool post_test_small_heap(void)
+static bool
+post_test_small_heap(void)
 {
 	void *allocation_a = kmalloc(24U);
 	void *allocation_b = kmalloc(200U);
@@ -268,7 +262,8 @@ static bool post_test_small_heap(void)
 	return true;
 }
 
-static bool post_test_large_heap(void)
+static bool
+post_test_large_heap(void)
 {
 	void *large_allocation = kmalloc(KERNEL_HEAP_LARGE_TEST_SIZE);
 
@@ -328,13 +323,15 @@ bool post_storage(void);
  *
  * Log which check failed and report it to kernel_do_post()'s caller.
  */
-static bool post_fail(const char *message)
+static bool
+post_fail(const char *message)
 {
 	kputln(message);
 	return false;
 }
 
-static bool post_memory(void)
+static bool
+post_memory(void)
 {
 	kputln("post_test_vm_kern: testing virtual allocations");
 
@@ -366,7 +363,8 @@ static bool post_memory(void)
 	return true;
 }
 
-static bool post_core(void)
+static bool
+post_core(void)
 {
 	/* NXPC kernel message transport, shared memory and mmap. */
 
@@ -388,8 +386,7 @@ static bool post_core(void)
 		return post_fail("shm_registry: self-test failed");
 	}
 
-	if (!statistics_self_test())
-		return post_fail("statistics: self-test failed");
+	if (!statistics_self_test()) return post_fail("statistics: self-test failed");
 
 	if (!vm_map_self_test()) {
 		return post_fail("vm_map: self-test failed");
@@ -488,7 +485,8 @@ static bool post_core(void)
 	return true;
 }
 
-bool kernel_do_post(kernel_post_stage_t stage)
+bool
+kernel_do_post(kernel_post_stage_t stage)
 {
 	switch (stage) {
 	case KERNEL_POST_MEMORY:

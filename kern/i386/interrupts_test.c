@@ -63,14 +63,16 @@ typedef struct {
 static uint32_t g_failures;
 static volatile uint32_t g_sequence;
 
-static void check(bool ok, const char *what)
+static void
+check(bool ok, const char *what)
 {
 	if (!ok) g_failures++;
 
 	kprintf("i386_init_interrupts_selftest: %s: %s\n", ok ? "ok" : "FAIL", what);
 }
 
-static void probe_handler(uint32_t intid, void *context)
+static void
+probe_handler(uint32_t intid, void *context)
 {
 	probe_t *probe = context;
 
@@ -82,32 +84,37 @@ static void probe_handler(uint32_t intid, void *context)
 }
 
 /* Let interrupts in for a while, on the TSC so it works while they are off. */
-static void wait_with_interrupts(uint64_t milliseconds)
+static void
+wait_with_interrupts(uint64_t milliseconds)
 {
 	ml_irq_enable();
 	timer_delay_ms(milliseconds);
 	ml_irq_disable();
 }
 
-static uint8_t cmos_read(uint8_t reg)
+static uint8_t
+cmos_read(uint8_t reg)
 {
 	outb(CMOS_INDEX, reg);
 	return inb(CMOS_DATA);
 }
 
-static void cmos_write(uint8_t reg, uint8_t value)
+static void
+cmos_write(uint8_t reg, uint8_t value)
 {
 	outb(CMOS_INDEX, reg);
 	outb(CMOS_DATA, value);
 }
 
 /* IRQ8 handler: reading register C is what re-arms the RTC interrupt. */
-static void rtc_handler(uint32_t intid, void *context)
+static void
+rtc_handler(uint32_t intid, void *context)
 {
 	if ((cmos_read(CMOS_REG_C) & CMOS_C_PERIODIC) != 0U) probe_handler(intid, context);
 }
 
-static void test_pic(void)
+static void
+test_pic(void)
 {
 	bool consistent = true;
 	uint16_t imr = pic_read_imr();
@@ -134,7 +141,8 @@ static void test_pic(void)
 	check((pic_read_imr() & (1U << PIC_CASCADE_LINE)) == 0U, "unmasking a slave line opens the cascade");
 	pic_mask(11U);
 
-	if (slave_idle) check((pic_read_imr() & (1U << PIC_CASCADE_LINE)) != 0U, "masking the last slave line closes the cascade");
+	if (slave_idle)
+		check((pic_read_imr() & (1U << PIC_CASCADE_LINE)) != 0U, "masking the last slave line closes the cascade");
 }
 
 /*
@@ -155,9 +163,10 @@ typedef struct {
 } window_result_t;
 
 /* Wait @windows times @delay_ms with interrupts on and compare ticks to time. */
-static window_result_t measure_windows(uint32_t windows, uint64_t delay_ms)
+static window_result_t
+measure_windows(uint32_t windows, uint64_t delay_ms)
 {
-	window_result_t result = { true, false, ~0ULL, 0ULL, 0ULL };
+	window_result_t result = {true, false, ~0ULL, 0ULL, 0ULL};
 
 	for (uint32_t window = 0U; window < windows; window++) {
 		uint64_t count0 = timer_get_interrupt_count();
@@ -183,16 +192,14 @@ static window_result_t measure_windows(uint32_t windows, uint64_t delay_ms)
 	return result;
 }
 
-static void test_tick_rate(void)
+static void
+test_tick_rate(void)
 {
 	window_result_t result = measure_windows(5U, 100ULL);
 
-	kprintf(
-		"i386_init_interrupts_selftest: best window %llu ticks, expected about %llu, at %u Hz\n",
-		(unsigned long long)result.best_ticks,
-		(unsigned long long)result.best_expected,
-		timer_get_interrupt_rate()
-	);
+	kprintf("i386_init_interrupts_selftest: best window %llu ticks, expected about %llu, at %u Hz\n",
+			(unsigned long long)result.best_ticks, (unsigned long long)result.best_expected,
+			timer_get_interrupt_rate());
 
 	check(timer_get_interrupt_rate() == I386_TIMER_HZ, "timer_get_interrupt_rate reports the configured rate");
 	check(timer_get_interrupt_count() > 0ULL, "the IRQ0 tick count advances");
@@ -200,7 +207,8 @@ static void test_tick_rate(void)
 	check(result.one_on_target, "IRQ0 ticks at the requested rate");
 }
 
-static void test_delay_and_restart(void)
+static void
+test_delay_and_restart(void)
 {
 	timer_start_periodic(200U);
 
@@ -210,12 +218,10 @@ static void test_delay_and_restart(void)
 	/* 100 ms of timer_delay_ms against the PIT is about 20 ticks at 200 Hz. */
 	window_result_t result = measure_windows(5U, 100ULL);
 
-	kprintf(
-		"i386_init_interrupts_selftest: timer_delay_ms(100) x5: shortest %llu us, best window %llu ticks (expected about %llu) at 200 Hz\n",
-		(unsigned long long)result.shortest_us,
-		(unsigned long long)result.best_ticks,
-		(unsigned long long)result.best_expected
-	);
+	kprintf("i386_init_interrupts_selftest: timer_delay_ms(100) x5: shortest %llu us, best window %llu ticks (expected "
+			"about %llu) at 200 Hz\n",
+			(unsigned long long)result.shortest_us, (unsigned long long)result.best_ticks,
+			(unsigned long long)result.best_expected);
 
 	check(result.shortest_us >= 100000ULL, "timer_delay_ms waits at least the requested time");
 	check(result.none_too_many, "timer_delay_ms does not wait longer than requested");
@@ -235,11 +241,12 @@ static void test_delay_and_restart(void)
 	check(timer_get_interrupt_rate() == I386_TIMER_HZ, "the boot rate is restored");
 }
 
-static void test_dispatch(void)
+static void
+test_dispatch(void)
 {
-	probe_t a = { 0U, 0U, 0U, 0U };
-	probe_t b = { 0U, 0U, 0U, 0U };
-	probe_t c = { 0U, 0U, 0U, 0U };
+	probe_t a = {0U, 0U, 0U, 0U};
+	probe_t b = {0U, 0U, 0U, 0U};
+	probe_t c = {0U, 0U, 0U, 0U};
 
 	check(!irq_dispatch(TEST_SOFT_LINE), "irq_dispatch on an empty line reports unhandled");
 	check(!irq_register(PIC_LINE_COUNT, probe_handler, &a), "irq_register refuses a line above 15");
@@ -258,7 +265,8 @@ static void test_dispatch(void)
 	__asm__ volatile("int %0" : : "i"(TEST_SOFT_VECTOR) : "memory");
 	check(a.hits == 2U && b.hits == 1U && c.hits == 1U, "every chained handler runs");
 	check(a.sequence < b.sequence && b.sequence < c.sequence, "chained handlers run in registration order");
-	check(irq_dispatch(TEST_SOFT_LINE) && a.hits == 3U && c.hits == 2U, "irq_dispatch runs the chain and reports handled");
+	check(irq_dispatch(TEST_SOFT_LINE) && a.hits == 3U && c.hits == 2U,
+		  "irq_dispatch runs the chain and reports handled");
 
 	check(!irq_unregister(TEST_SOFT_LINE, probe_handler, &g_failures), "irq_unregister needs a matching context");
 	check(irq_unregister(TEST_SOFT_LINE, probe_handler, &b), "irq_unregister removes one handler");
@@ -274,7 +282,8 @@ static void test_dispatch(void)
 	static probe_t chain[TEST_CHAIN_MAX];
 	uint32_t registered = 0U;
 
-	while (registered < TEST_CHAIN_MAX && irq_register(TEST_SOFT_LINE, probe_handler, &chain[registered])) registered++;
+	while (registered < TEST_CHAIN_MAX && irq_register(TEST_SOFT_LINE, probe_handler, &chain[registered]))
+		registered++;
 
 	check(registered >= 4U && registered < TEST_CHAIN_MAX, "a line takes several handlers and a full chain is refused");
 
@@ -297,10 +306,11 @@ static void test_dispatch(void)
 	check(all_removed && !irq_dispatch(TEST_SOFT_LINE), "a full chain unregisters cleanly");
 }
 
-static void test_spurious(void)
+static void
+test_spurious(void)
 {
-	probe_t master = { 0U, 0U, 0U, 0U };
-	probe_t slave = { 0U, 0U, 0U, 0U };
+	probe_t master = {0U, 0U, 0U, 0U};
+	probe_t slave = {0U, 0U, 0U, 0U};
 	uint32_t before = pic_spurious_count();
 
 	check(irq_register(7U, probe_handler, &master), "handler registered on IRQ7");
@@ -318,9 +328,10 @@ static void test_spurious(void)
 	check(irq_unregister(15U, probe_handler, &slave), "IRQ15 handler removed");
 }
 
-static void test_mask(void)
+static void
+test_mask(void)
 {
-	probe_t probe = { 0U, 0U, 0U, 0U };
+	probe_t probe = {0U, 0U, 0U, 0U};
 
 	check(irq_register(I386_TIMER_IRQ, probe_handler, &probe), "a handler chains behind the timer on IRQ0");
 
@@ -331,7 +342,8 @@ static void test_mask(void)
 	uint64_t ticks = timer_get_interrupt_count() - ticks0;
 
 	check(probe.hits > 0U, "a real PIT interrupt reaches a handler registered with irq_register");
-	check(probe.last_intid == I386_TIMER_IRQ && probe.seen_if_set == 0U, "the real interrupt arrives as IRQ0 with IF clear");
+	check(probe.last_intid == I386_TIMER_IRQ && probe.seen_if_set == 0U,
+		  "the real interrupt arrives as IRQ0 with IF clear");
 	check(probe.hits == ticks, "the tick handler and the chained handler run once per interrupt");
 
 	pic_mask(I386_TIMER_IRQ);
@@ -349,9 +361,10 @@ static void test_mask(void)
 	check(irq_unregister(I386_TIMER_IRQ, probe_handler, &probe), "the IRQ0 test handler is removed");
 }
 
-static void test_cascade(void)
+static void
+test_cascade(void)
 {
-	probe_t rtc = { 0U, 0U, 0U, 0U };
+	probe_t rtc = {0U, 0U, 0U, 0U};
 	uint8_t saved_a = cmos_read(CMOS_REG_A);
 	uint8_t saved_b = cmos_read(CMOS_REG_B);
 
@@ -382,7 +395,8 @@ static void test_cascade(void)
 	check(irq_unregister(I386_RTC_IRQ, rtc_handler, &rtc), "IRQ8 handler removed");
 }
 
-bool i386_init_interrupts_selftest(const i386_boot_info_t *boot)
+bool
+i386_init_interrupts_selftest(const i386_boot_info_t *boot)
 {
 	(void)boot;
 
@@ -402,7 +416,8 @@ bool i386_init_interrupts_selftest(const i386_boot_info_t *boot)
 
 	check(pic_read_isr() == 0U, "every interrupt that was taken has been acknowledged");
 	check(i386_irq_unhandled_count() == 0U, "no hardware interrupt was left without a handler");
-	check(!pic_is_masked(I386_TIMER_IRQ) && timer_get_interrupt_rate() == I386_TIMER_HZ, "the boot timer configuration is intact");
+	check(!pic_is_masked(I386_TIMER_IRQ) && timer_get_interrupt_rate() == I386_TIMER_HZ,
+		  "the boot timer configuration is intact");
 
 	ml_irq_restore(flags);
 	check((i386_read_flags() & I386_EFLAGS_IF) == 0ULL, "interrupts are disabled again on return");

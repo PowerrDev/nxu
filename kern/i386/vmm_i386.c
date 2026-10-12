@@ -58,7 +58,8 @@ extern uint8_t i386_boot_stack_guard[];
 
 static bool g_vmm_enabled;
 
-static bool vmm_entry_flags(vmm_memory_type_t memory_type, vmm_protection_t protection, pmap_entry_t *flags)
+static bool
+vmm_entry_flags(vmm_memory_type_t memory_type, vmm_protection_t protection, pmap_entry_t *flags)
 {
 	pmap_entry_t value = PTE_PRESENT | pmap_data_flags();
 
@@ -94,19 +95,22 @@ static bool vmm_entry_flags(vmm_memory_type_t memory_type, vmm_protection_t prot
 	return true;
 }
 
-static vmm_protection_t vmm_entry_protection(pmap_entry_t entry)
+static vmm_protection_t
+vmm_entry_protection(pmap_entry_t entry)
 {
 	if ((entry & PTE_WRITE) != 0U) return VMM_PROTECTION_READ_WRITE;
 	return (entry & PTE_SOFTWARE_EXEC) != 0U ? VMM_PROTECTION_READ_EXECUTE : VMM_PROTECTION_READ_ONLY;
 }
 
-static bool vmm_page_aligned(uint64_t value)
+static bool
+vmm_page_aligned(uint64_t value)
 {
 	return (value & (uint64_t)PMAP_PAGE_MASK) == 0ULL;
 }
 
 /* Addresses vmm_map_page/vmm_unmap_page may touch: arena and MMIO window. */
-static bool vmm_live_range(uint64_t virtual_address)
+static bool
+vmm_live_range(uint64_t virtual_address)
 {
 	return virtual_address >= VM_KERN_BASE && virtual_address < VMM_ADDRESS_LIMIT;
 }
@@ -117,7 +121,8 @@ static bool vmm_live_range(uint64_t virtual_address)
  * a 2 MiB direct-map page. `writable` reports the effective write permission
  * for supervisor accesses (both levels must allow it).
  */
-static bool vmm_walk(uint64_t virtual_address, pmap_entry_t *leaf, uint64_t *physical_address, bool *writable)
+static bool
+vmm_walk(uint64_t virtual_address, pmap_entry_t *leaf, uint64_t *physical_address, bool *writable)
 {
 	if (!g_vmm_enabled || virtual_address < VMM_HIGHER_HALF_BASE || virtual_address >= VMM_ADDRESS_LIMIT) return false;
 
@@ -128,7 +133,8 @@ static bool vmm_walk(uint64_t virtual_address, pmap_entry_t *leaf, uint64_t *phy
 
 	if ((directory_entry & PTE_LARGE) != 0U) {
 		if (leaf != 0) *leaf = directory_entry;
-		if (physical_address != 0) *physical_address = (uint64_t)(directory_entry & 0xFFE00000ULL) | (address & (PMAP_LARGE_PAGE_SIZE - 1U));
+		if (physical_address != 0)
+			*physical_address = (uint64_t)(directory_entry & 0xFFE00000ULL) | (address & (PMAP_LARGE_PAGE_SIZE - 1U));
 		if (writable != 0) *writable = (directory_entry & PTE_WRITE) != 0U;
 		return true;
 	}
@@ -143,7 +149,8 @@ static bool vmm_walk(uint64_t virtual_address, pmap_entry_t *leaf, uint64_t *phy
 	return true;
 }
 
-bool vmm_init(const platform_t *platform)
+bool
+vmm_init(const platform_t *platform)
 {
 	if (g_vmm_enabled || platform == 0 || platform->memory_region_count == 0U) return false;
 
@@ -163,12 +170,8 @@ bool vmm_init(const platform_t *platform)
 }
 
 /* Paging is on from the first instruction of C; there is no identity mapping to add. */
-bool vmm_map_identity(
-	uint64_t physical_address,
-	uint64_t size,
-	vmm_memory_type_t memory_type,
-	vmm_protection_t protection
-)
+bool
+vmm_map_identity(uint64_t physical_address, uint64_t size, vmm_memory_type_t memory_type, vmm_protection_t protection)
 {
 	(void)physical_address;
 	(void)size;
@@ -177,23 +180,15 @@ bool vmm_map_identity(
 	return false;
 }
 
-bool vmm_map_page(
-	uint64_t virtual_address,
-	uint64_t physical_address,
-	vmm_memory_type_t memory_type,
-	vmm_protection_t protection
-)
+bool
+vmm_map_page(uint64_t virtual_address, uint64_t physical_address, vmm_memory_type_t memory_type,
+			 vmm_protection_t protection)
 {
 	pmap_entry_t flags;
 
-	if (
-		!g_vmm_enabled ||
-		!vmm_page_aligned(virtual_address) ||
-		!vmm_page_aligned(physical_address) ||
-		!vmm_live_range(virtual_address) ||
-		physical_address >= VMM_ADDRESS_LIMIT ||
-		!vmm_entry_flags(memory_type, protection, &flags)
-	) {
+	if (!g_vmm_enabled || !vmm_page_aligned(virtual_address) || !vmm_page_aligned(physical_address) ||
+		!vmm_live_range(virtual_address) || physical_address >= VMM_ADDRESS_LIMIT ||
+		!vmm_entry_flags(memory_type, protection, &flags)) {
 		return false;
 	}
 
@@ -207,7 +202,8 @@ bool vmm_map_page(
 	return true;
 }
 
-bool vmm_unmap_page(uint64_t virtual_address, uint64_t *physical_address)
+bool
+vmm_unmap_page(uint64_t virtual_address, uint64_t *physical_address)
 {
 	if (!g_vmm_enabled || !vmm_page_aligned(virtual_address) || !vmm_live_range(virtual_address)) return false;
 
@@ -223,14 +219,11 @@ bool vmm_unmap_page(uint64_t virtual_address, uint64_t *physical_address)
 	return true;
 }
 
-bool vmm_protect_page(uint64_t virtual_address, vmm_protection_t protection)
+bool
+vmm_protect_page(uint64_t virtual_address, vmm_protection_t protection)
 {
-	if (
-		!g_vmm_enabled ||
-		!vmm_page_aligned(virtual_address) ||
-		virtual_address < VMM_HIGHER_HALF_BASE ||
-		virtual_address >= VMM_ADDRESS_LIMIT
-	) {
+	if (!g_vmm_enabled || !vmm_page_aligned(virtual_address) || virtual_address < VMM_HIGHER_HALF_BASE ||
+		virtual_address >= VMM_ADDRESS_LIMIT) {
 		return false;
 	}
 
@@ -243,12 +236,14 @@ bool vmm_protect_page(uint64_t virtual_address, vmm_protection_t protection)
 	if (!pmap_get_entry(pmap_kernel_directory(), (uint32_t)virtual_address, false, false, 0, &entry)) return false;
 	if ((*entry & PTE_PRESENT) == 0U) return false;
 
-	pmap_entry_store(entry, (pmap_entry_load(entry) & ~(PTE_WRITE | PTE_SOFTWARE_EXEC | PTE_NX)) | (flags & (PTE_WRITE | PTE_SOFTWARE_EXEC | PTE_NX)));
+	pmap_entry_store(entry, (pmap_entry_load(entry) & ~(PTE_WRITE | PTE_SOFTWARE_EXEC | PTE_NX)) |
+								(flags & (PTE_WRITE | PTE_SOFTWARE_EXEC | PTE_NX)));
 	pmap_invalidate_page((uint32_t)virtual_address);
 	return true;
 }
 
-bool vmm_query_page(uint64_t virtual_address, vmm_page_mapping_t *mapping)
+bool
+vmm_query_page(uint64_t virtual_address, vmm_page_mapping_t *mapping)
 {
 	pmap_entry_t leaf;
 	uint64_t physical;
@@ -261,45 +256,53 @@ bool vmm_query_page(uint64_t virtual_address, vmm_page_mapping_t *mapping)
 	return true;
 }
 
-bool vmm_translate(uint64_t virtual_address, uint64_t *physical_address)
+bool
+vmm_translate(uint64_t virtual_address, uint64_t *physical_address)
 {
 	return physical_address != 0 && vmm_walk(virtual_address, 0, physical_address, 0);
 }
 
-bool vmm_translate_write(uint64_t virtual_address, uint64_t *physical_address)
+bool
+vmm_translate_write(uint64_t virtual_address, uint64_t *physical_address)
 {
 	bool writable;
 
 	return physical_address != 0 && vmm_walk(virtual_address, 0, physical_address, &writable) && writable;
 }
 
-bool vmm_is_enabled(void)
+bool
+vmm_is_enabled(void)
 {
 	return g_vmm_enabled;
 }
 
-bool vmm_is_higher_half_address(uint64_t virtual_address)
+bool
+vmm_is_higher_half_address(uint64_t virtual_address)
 {
 	return virtual_address >= VMM_HIGHER_HALF_BASE && virtual_address < VMM_ADDRESS_LIMIT;
 }
 
-bool vmm_higher_half_enabled(void)
+bool
+vmm_higher_half_enabled(void)
 {
 	return true;
 }
 
-bool vmm_higher_half_direct_map_enabled(void)
+bool
+vmm_higher_half_direct_map_enabled(void)
 {
 	return true;
 }
 
-bool vmm_init_higher_half_alias(void)
+bool
+vmm_init_higher_half_alias(void)
 {
 	/* start.S installed the kernel alias before the first C instruction. */
 	return true;
 }
 
-bool vmm_physical_to_higher_half(uint64_t physical_address, uint64_t *virtual_address)
+bool
+vmm_physical_to_higher_half(uint64_t physical_address, uint64_t *virtual_address)
 {
 	if (virtual_address == 0 || physical_address >= VM_DIRECT_MAP_SIZE) return false;
 
@@ -307,13 +310,11 @@ bool vmm_physical_to_higher_half(uint64_t physical_address, uint64_t *virtual_ad
 	return true;
 }
 
-bool vmm_higher_half_to_physical(uint64_t virtual_address, uint64_t *physical_address)
+bool
+vmm_higher_half_to_physical(uint64_t virtual_address, uint64_t *physical_address)
 {
-	if (
-		physical_address == 0 ||
-		virtual_address < VMM_HIGHER_HALF_BASE ||
-		virtual_address >= (uint64_t)VMM_HIGHER_HALF_BASE + VM_DIRECT_MAP_SIZE
-	) {
+	if (physical_address == 0 || virtual_address < VMM_HIGHER_HALF_BASE ||
+		virtual_address >= (uint64_t)VMM_HIGHER_HALF_BASE + VM_DIRECT_MAP_SIZE) {
 		return false;
 	}
 
@@ -321,7 +322,8 @@ bool vmm_higher_half_to_physical(uint64_t virtual_address, uint64_t *physical_ad
 	return true;
 }
 
-bool vmm_kernel_address_to_physical(uint64_t kernel_address, uint64_t *physical_address)
+bool
+vmm_kernel_address_to_physical(uint64_t kernel_address, uint64_t *physical_address)
 {
 	if (physical_address == 0) return false;
 
@@ -329,7 +331,8 @@ bool vmm_kernel_address_to_physical(uint64_t kernel_address, uint64_t *physical_
 	if (vmm_higher_half_to_physical(kernel_address, physical_address)) return true;
 
 	/* Above the direct map (arena, MMIO): ask the page tables. */
-	if (kernel_address >= (uint64_t)VMM_HIGHER_HALF_BASE + VM_DIRECT_MAP_SIZE) return vmm_translate(kernel_address, physical_address);
+	if (kernel_address >= (uint64_t)VMM_HIGHER_HALF_BASE + VM_DIRECT_MAP_SIZE)
+		return vmm_translate(kernel_address, physical_address);
 
 	/* A physical address, as the bootstrap alias would produce. */
 	if (kernel_address < VM_DIRECT_MAP_SIZE) {
@@ -340,39 +343,46 @@ bool vmm_kernel_address_to_physical(uint64_t kernel_address, uint64_t *physical_
 	return false;
 }
 
-bool vmm_map_higher_half_direct_map(const platform_t *platform)
+bool
+vmm_map_higher_half_direct_map(const platform_t *platform)
 {
 	/* The direct map exists already; this just confirms it covers the platform's RAM. */
 	return g_vmm_enabled && platform != 0 && vmm_validate_higher_half_direct_map(platform);
 }
 
-bool vmm_rebase_kernel_pointers(void)
+bool
+vmm_rebase_kernel_pointers(void)
 {
 	/* Table pointers are direct-map addresses from the start. */
 	return g_vmm_enabled;
 }
 
-bool vmm_disable_ttbr0(void)
+bool
+vmm_disable_ttbr0(void)
 {
 	return g_vmm_enabled && vm_address_space_deactivate();
 }
 
-bool vmm_ttbr0_disabled(void)
+bool
+vmm_ttbr0_disabled(void)
 {
 	return vm_address_space_current() == 0;
 }
 
-uint64_t vmm_get_ttbr1_root(void)
+uint64_t
+vmm_get_ttbr1_root(void)
 {
 	return pmap_kernel_directory_physical();
 }
 
-uint64_t vmm_get_ttbr1_table_count(void)
+uint64_t
+vmm_get_ttbr1_table_count(void)
 {
 	return (uint64_t)pmap_kernel_table_count() + PMAP_ROOT_PAGES;
 }
 
-static bool vmm_validate_section(uint64_t start, uint64_t end, bool writable, bool executable)
+static bool
+vmm_validate_section(uint64_t start, uint64_t end, bool writable, bool executable)
 {
 	for (uint64_t address = start; address < end; address += PMAP_PAGE_SIZE) {
 		uint64_t expected;
@@ -395,35 +405,32 @@ static bool vmm_validate_section(uint64_t start, uint64_t end, bool writable, bo
 	return true;
 }
 
-bool vmm_validate_kernel_permissions(void)
+bool
+vmm_validate_kernel_permissions(void)
 {
 	if (!g_vmm_enabled) return false;
 
-	return
-		vmm_validate_section((uintptr_t)__kernel_start, (uintptr_t)__text_start, false, false) &&
-		vmm_validate_section((uintptr_t)__text_start, (uintptr_t)__text_end, false, true) &&
-		vmm_validate_section((uintptr_t)__text_end, (uintptr_t)__data_start, false, false) &&
-		vmm_validate_section((uintptr_t)__data_start, (uintptr_t)__kernel_end, true, false);
+	return vmm_validate_section((uintptr_t)__kernel_start, (uintptr_t)__text_start, false, false) &&
+		   vmm_validate_section((uintptr_t)__text_start, (uintptr_t)__text_end, false, true) &&
+		   vmm_validate_section((uintptr_t)__text_end, (uintptr_t)__data_start, false, false) &&
+		   vmm_validate_section((uintptr_t)__data_start, (uintptr_t)__kernel_end, true, false);
 }
 
-bool vmm_validate_linked_kernel_layout(void)
+bool
+vmm_validate_linked_kernel_layout(void)
 {
 	uint64_t physical;
 
 	if (!g_vmm_enabled) return false;
 
-	if (
-		(uintptr_t)__kernel_start != VMM_HIGHER_HALF_BASE + VMM_KERNEL_PHYSICAL_BASE ||
-		!vmm_kernel_address_to_physical((uintptr_t)__kernel_start, &physical) ||
-		physical != VMM_KERNEL_PHYSICAL_BASE
-	) {
+	if ((uintptr_t)__kernel_start != VMM_HIGHER_HALF_BASE + VMM_KERNEL_PHYSICAL_BASE ||
+		!vmm_kernel_address_to_physical((uintptr_t)__kernel_start, &physical) || physical != VMM_KERNEL_PHYSICAL_BASE) {
 		return false;
 	}
 
 	/* Sections follow one another, page aligned, in the order the permissions assume. */
-	const uint8_t *bounds[] = {
-		__kernel_start, __text_start, __text_end, __rodata_start, __rodata_end, __data_start, __data_end, __bss_start, __bss_end, __kernel_end
-	};
+	const uint8_t *bounds[] = {__kernel_start, __text_start, __text_end,  __rodata_start, __rodata_end,
+							   __data_start,   __data_end,	 __bss_start, __bss_end,	  __kernel_end};
 
 	for (uint32_t index = 0U; index < sizeof(bounds) / sizeof(bounds[0]); index++) {
 		if (((uintptr_t)bounds[index] & PMAP_PAGE_MASK) != 0U) return false;
@@ -433,7 +440,8 @@ bool vmm_validate_linked_kernel_layout(void)
 	return true;
 }
 
-bool vmm_validate_higher_half_direct_map(const platform_t *platform)
+bool
+vmm_validate_higher_half_direct_map(const platform_t *platform)
 {
 	if (!g_vmm_enabled || platform == 0 || platform->memory_region_count == 0U) return false;
 
@@ -442,7 +450,7 @@ bool vmm_validate_higher_half_direct_map(const platform_t *platform)
 
 		if (region->size < PMAP_PAGE_SIZE || region->base + region->size > VM_DIRECT_MAP_SIZE) return false;
 
-		uint64_t probes[2] = { region->base, region->base + region->size - PMAP_PAGE_SIZE };
+		uint64_t probes[2] = {region->base, region->base + region->size - PMAP_PAGE_SIZE};
 
 		for (uint32_t probe = 0U; probe < 2U; probe++) {
 			uint64_t virtual_address;
@@ -456,31 +464,21 @@ bool vmm_validate_higher_half_direct_map(const platform_t *platform)
 	return true;
 }
 
-void vmm_dump(void)
+void
+vmm_dump(void)
 {
-	kprintf(
-		"vmm: %s, kernel directory phys 0x%x, %u kernel table page(s)\n",
-		g_vmm_enabled ? "enabled" : "not initialised",
-		pmap_kernel_directory_physical(),
-		pmap_kernel_table_count()
-	);
-	kprintf(
-		"vmm: image 0x%x-0x%x, text 0x%x-0x%x, rodata 0x%x-0x%x, data 0x%x-0x%x, bss 0x%x-0x%x\n",
-		(uint32_t)(uintptr_t)__kernel_start,
-		(uint32_t)(uintptr_t)__kernel_end,
-		(uint32_t)(uintptr_t)__text_start,
-		(uint32_t)(uintptr_t)__text_end,
-		(uint32_t)(uintptr_t)__rodata_start,
-		(uint32_t)(uintptr_t)__rodata_end,
-		(uint32_t)(uintptr_t)__data_start,
-		(uint32_t)(uintptr_t)__data_end,
-		(uint32_t)(uintptr_t)__bss_start,
-		(uint32_t)(uintptr_t)__bss_end
-	);
+	kprintf("vmm: %s, kernel directory phys 0x%x, %u kernel table page(s)\n",
+			g_vmm_enabled ? "enabled" : "not initialised", pmap_kernel_directory_physical(), pmap_kernel_table_count());
+	kprintf("vmm: image 0x%x-0x%x, text 0x%x-0x%x, rodata 0x%x-0x%x, data 0x%x-0x%x, bss 0x%x-0x%x\n",
+			(uint32_t)(uintptr_t)__kernel_start, (uint32_t)(uintptr_t)__kernel_end, (uint32_t)(uintptr_t)__text_start,
+			(uint32_t)(uintptr_t)__text_end, (uint32_t)(uintptr_t)__rodata_start, (uint32_t)(uintptr_t)__rodata_end,
+			(uint32_t)(uintptr_t)__data_start, (uint32_t)(uintptr_t)__data_end, (uint32_t)(uintptr_t)__bss_start,
+			(uint32_t)(uintptr_t)__bss_end);
 	pmap_dump();
 }
 
-void vmm_dump_higher_half(void)
+void
+vmm_dump_higher_half(void)
 {
 	vmm_dump();
 }

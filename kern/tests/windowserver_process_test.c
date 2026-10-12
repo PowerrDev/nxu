@@ -57,7 +57,8 @@ windowserver_process_test(void)
 	proc_t proc_windowserver = 0;
 	proc_t proc_client = 0;
 
-	loader_status_t status_bootd = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/bootd", "bootd", &proc_bootd);
+	loader_status_t status_bootd =
+		loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/bootd", "bootd", &proc_bootd);
 	if (status_bootd != LOADER_STATUS_OK) {
 		kputs("windowserver_process_test: spawning bootd failed: ");
 		kputln(loader_status_name(status_bootd));
@@ -69,7 +70,9 @@ windowserver_process_test(void)
 		return false;
 	}
 
-	loader_status_t status_windowserver = loader_spawn_caps(proc_kernel(), "/disk/System/Library/CoreServices/windowserver_service", "windowserver_service", NXU_CAP_DISPLAY, &proc_windowserver);
+	loader_status_t status_windowserver =
+		loader_spawn_caps(proc_kernel(), "/disk/System/Library/CoreServices/windowserver_service",
+						  "windowserver_service", NXU_CAP_DISPLAY, &proc_windowserver);
 	if (status_windowserver != LOADER_STATUS_OK) {
 		kputs("windowserver_process_test: spawning windowserver_service failed: ");
 		kputln(loader_status_name(status_windowserver));
@@ -91,7 +94,8 @@ windowserver_process_test(void)
 		}
 	}
 
-	loader_status_t status_client = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/wstest_client", "wstest_client", &proc_client);
+	loader_status_t status_client =
+		loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/wstest_client", "wstest_client", &proc_client);
 	if (status_client != LOADER_STATUS_OK) {
 		kputs("windowserver_process_test: spawning wstest_client failed: ");
 		kputln(loader_status_name(status_client));
@@ -105,7 +109,8 @@ windowserver_process_test(void)
 	}
 
 	if (exit_client != 0ULL) {
-		kprintf("windowserver_process_test: wstest_client exited with nonzero status %llu\n", (unsigned long long)exit_client);
+		kprintf("windowserver_process_test: wstest_client exited with nonzero status %llu\n",
+				(unsigned long long)exit_client);
 		return false;
 	}
 
@@ -124,6 +129,7 @@ windowserver_process_test(void)
 		if (!sched_yield()) break;
 	}
 
-	kputln("windowserver_process_test: WindowServer served a real client over NXPC (spawn, discover by name, create window, render, present)");
+	kputln("windowserver_process_test: WindowServer served a real client over NXPC (spawn, discover by name, create "
+		   "window, render, present)");
 	return true;
 }

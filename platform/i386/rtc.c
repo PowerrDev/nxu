@@ -55,20 +55,23 @@ typedef struct {
 
 static bool g_rtc_ready;
 
-static uint8_t rtc_cmos_read(uint8_t reg)
+static uint8_t
+rtc_cmos_read(uint8_t reg)
 {
 	/* Bit 7 of the index port is the NMI mask; leave NMIs enabled. */
 	outb(CMOS_INDEX_PORT, reg);
 	return inb(CMOS_DATA_PORT);
 }
 
-static uint8_t rtc_bcd_to_binary(uint8_t value)
+static uint8_t
+rtc_bcd_to_binary(uint8_t value)
 {
 	return (uint8_t)((value & 0x0FU) + (value >> 4U) * 10U);
 }
 
 /* Days from 1970-01-01 to a proleptic Gregorian civil date (Hinnant). */
-static uint64_t rtc_days_from_civil(uint32_t year, uint32_t month, uint32_t day)
+static uint64_t
+rtc_days_from_civil(uint32_t year, uint32_t month, uint32_t day)
 {
 	uint32_t shifted_year = month <= 2U ? year - 1U : year;
 	uint32_t era = shifted_year / 400U;
@@ -79,7 +82,8 @@ static uint64_t rtc_days_from_civil(uint32_t year, uint32_t month, uint32_t day)
 	return (uint64_t)era * 146097ULL + day_of_era - 719468ULL;
 }
 
-static void rtc_read_raw(rtc_snapshot_t *snapshot)
+static void
+rtc_read_raw(rtc_snapshot_t *snapshot)
 {
 	for (uint32_t spin = 0U; spin < RTC_UIP_SPINS; spin++) {
 		if ((rtc_cmos_read(CMOS_STATUS_A) & CMOS_STATUS_A_UPDATE_IN_PROGRESS) == 0U) break;
@@ -94,12 +98,12 @@ static void rtc_read_raw(rtc_snapshot_t *snapshot)
 	snapshot->century = rtc_cmos_read(CMOS_CENTURY);
 }
 
-static bool rtc_snapshot_equal(const rtc_snapshot_t *left, const rtc_snapshot_t *right)
+static bool
+rtc_snapshot_equal(const rtc_snapshot_t *left, const rtc_snapshot_t *right)
 {
-	return left->second == right->second && left->minute == right->minute &&
-		left->hour == right->hour && left->day == right->day &&
-		left->month == right->month && left->year == right->year &&
-		left->century == right->century;
+	return left->second == right->second && left->minute == right->minute && left->hour == right->hour &&
+		   left->day == right->day && left->month == right->month && left->year == right->year &&
+		   left->century == right->century;
 }
 
 /*
@@ -108,7 +112,8 @@ static bool rtc_snapshot_equal(const rtc_snapshot_t *left, const rtc_snapshot_t 
  * One consistent reading of the clock, or 0 if the fields do not describe a
  * date (an unset or corrupted CMOS).
  */
-static uint64_t rtc_read_seconds(void)
+static uint64_t
+rtc_read_seconds(void)
 {
 	rtc_snapshot_t previous;
 	rtc_snapshot_t current;
@@ -156,7 +161,8 @@ static uint64_t rtc_read_seconds(void)
 	return days * 86400ULL + (uint64_t)hour * 3600ULL + (uint64_t)minute * 60ULL + second;
 }
 
-bool rtc_init(void)
+bool
+rtc_init(void)
 {
 	if (g_rtc_ready) return true;
 
@@ -167,7 +173,8 @@ bool rtc_init(void)
 	return true;
 }
 
-uint64_t rtc_unix_time(void)
+uint64_t
+rtc_unix_time(void)
 {
 	if (!g_rtc_ready) return 0ULL;
 

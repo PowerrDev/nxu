@@ -41,14 +41,14 @@
 #define TEP_TEST_SIZE(literal) ((uint32_t)sizeof(literal) - 1U)
 
 /* Fails the calling check unless call gives wanted; logs what for either outcome. */
-#define TEP_TEST_EXPECT(call, wanted, what) \
-	do { \
-		tep_result_t got_ = (call); \
-		if (got_ != (wanted)) { \
-			TEP_TEST_LOG("%s: got %s, expected %s\n", what, tep_result_name(got_), tep_result_name(wanted)); \
-			return false; \
-		} \
-		TEP_TEST_LOG("%s: %s\n", what, tep_result_name(got_)); \
+#define TEP_TEST_EXPECT(call, wanted, what)                                                                            \
+	do {                                                                                                               \
+		tep_result_t got_ = (call);                                                                                    \
+		if (got_ != (wanted)) {                                                                                        \
+			TEP_TEST_LOG("%s: got %s, expected %s\n", what, tep_result_name(got_), tep_result_name(wanted));           \
+			return false;                                                                                              \
+		}                                                                                                              \
+		TEP_TEST_LOG("%s: %s\n", what, tep_result_name(got_));                                                         \
 	} while (0)
 
 /* A key made before the harness restarts tepOS, checked again after it. */
@@ -56,7 +56,8 @@ static uint32_t g_key_handle;
 static uint8_t g_key_public[TEP_PUBLIC_KEY_SIZE];
 
 /* Runs on the boot thread before the periodic timer: wait by yielding to the monitor thread. */
-static bool tep_mailbox_test_wait_for(tep_link_state_t wanted, bool equal, uint64_t seconds)
+static bool
+tep_mailbox_test_wait_for(tep_link_state_t wanted, bool equal, uint64_t seconds)
 {
 	uint64_t deadline = timer_get_microseconds() + seconds * 1000000ULL;
 
@@ -67,7 +68,8 @@ static bool tep_mailbox_test_wait_for(tep_link_state_t wanted, bool equal, uint6
 	return false;
 }
 
-static void tep_mailbox_test_pause_ms(uint64_t milliseconds)
+static void
+tep_mailbox_test_pause_ms(uint64_t milliseconds)
 {
 	uint64_t deadline = timer_get_microseconds() + milliseconds * 1000ULL;
 
@@ -76,9 +78,11 @@ static void tep_mailbox_test_pause_ms(uint64_t milliseconds)
 	}
 }
 
-static bool tep_mailbox_test_expect(uint16_t command, uint16_t payload_len, tep_mb_status_t expected, tep_mailbox_response_t *response)
+static bool
+tep_mailbox_test_expect(uint16_t command, uint16_t payload_len, tep_mb_status_t expected,
+						tep_mailbox_response_t *response)
 {
-	static const uint8_t junk[2] = { 1U, 2U };
+	static const uint8_t junk[2] = {1U, 2U};
 	tep_request_result_t result = tep_mailbox_request(command, payload_len != 0U ? junk : 0, payload_len, response);
 
 	if (result != TEP_REQ_OK) {
@@ -86,13 +90,15 @@ static bool tep_mailbox_test_expect(uint16_t command, uint16_t payload_len, tep_
 		return false;
 	}
 	if (response->status != (uint16_t)expected) {
-		TEP_TEST_LOG("command 0x%x: status %u, expected %u\n", (unsigned)command, (unsigned)response->status, (unsigned)expected);
+		TEP_TEST_LOG("command 0x%x: status %u, expected %u\n", (unsigned)command, (unsigned)response->status,
+					 (unsigned)expected);
 		return false;
 	}
 	return true;
 }
 
-static bool tep_mailbox_test_protocol(void)
+static bool
+tep_mailbox_test_protocol(void)
 {
 	tep_mailbox_response_t response;
 	tep_mb_health_t health = TEP_MB_HEALTH_STARTING;
@@ -135,12 +141,12 @@ static bool tep_mailbox_test_protocol(void)
  * checked for size here; tepOS's own tests verify them with an independent
  * Ed25519 implementation.
  */
-static bool tep_mailbox_test_crypto(void)
+static bool
+tep_mailbox_test_crypto(void)
 {
 	static const uint8_t abc_digest[TEP_SHA256_SIZE] = {
 		0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23,
-		0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad
-	};
+		0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad};
 	uint8_t digest[TEP_SHA256_SIZE], random_a[32], random_b[32], signature[TEP_SIGNATURE_SIZE];
 	tep_result_t result;
 
@@ -173,7 +179,8 @@ static bool tep_mailbox_test_crypto(void)
 	return tep_key_public(g_key_handle, g_key_public) == TEP_OK;
 }
 
-static bool tep_mailbox_test_auth_status(tep_auth_status_t *status)
+static bool
+tep_mailbox_test_auth_status(tep_auth_status_t *status)
 {
 	tep_result_t result = tep_auth_status(status);
 
@@ -182,7 +189,7 @@ static bool tep_mailbox_test_auth_status(tep_auth_status_t *status)
 		return false;
 	}
 	TEP_TEST_LOG("passcode set %u, failures %u, locked %u, wait %u s\n", (unsigned)status->passcode_set,
-		(unsigned)status->failures, (unsigned)status->locked, (unsigned)status->wait_seconds);
+				 (unsigned)status->failures, (unsigned)status->locked, (unsigned)status->wait_seconds);
 	return true;
 }
 
@@ -191,7 +198,8 @@ static bool tep_mailbox_test_auth_status(tep_auth_status_t *status)
  * five failures in a row, which start tepOS's first delay (60 s). The
  * recovery check waits it out after tepOS restarts.
  */
-static bool tep_mailbox_test_auth(void)
+static bool
+tep_mailbox_test_auth(void)
 {
 	tep_auth_status_t status;
 	uint32_t wait = 0U;
@@ -202,14 +210,22 @@ static bool tep_mailbox_test_auth(void)
 		return false;
 	}
 
-	TEP_TEST_EXPECT(tep_auth_verify(TEP_TEST_PASSCODE, TEP_TEST_SIZE(TEP_TEST_PASSCODE), &wait), TEP_ERR_NOT_FOUND, "verify with no passcode set");
+	TEP_TEST_EXPECT(tep_auth_verify(TEP_TEST_PASSCODE, TEP_TEST_SIZE(TEP_TEST_PASSCODE), &wait), TEP_ERR_NOT_FOUND,
+					"verify with no passcode set");
 	TEP_TEST_EXPECT(tep_auth_verify("abc", 3U, &wait), TEP_ERR_INVALID, "3-byte passcode");
-	TEP_TEST_EXPECT(tep_auth_set(0, 0U, TEP_TEST_PASSCODE, TEP_TEST_SIZE(TEP_TEST_PASSCODE), &wait), TEP_OK, "set a passcode");
-	TEP_TEST_EXPECT(tep_auth_set(0, 0U, TEP_TEST_PASSCODE_2, TEP_TEST_SIZE(TEP_TEST_PASSCODE_2), &wait), TEP_ERR_DENIED, "replace it without the old one");
-	TEP_TEST_EXPECT(tep_auth_verify(TEP_TEST_PASSCODE, TEP_TEST_SIZE(TEP_TEST_PASSCODE), &wait), TEP_OK, "right passcode");
-	TEP_TEST_EXPECT(tep_auth_set(TEP_TEST_PASSCODE, TEP_TEST_SIZE(TEP_TEST_PASSCODE), TEP_TEST_PASSCODE_2, TEP_TEST_SIZE(TEP_TEST_PASSCODE_2), &wait), TEP_OK, "change it with the old one");
-	TEP_TEST_EXPECT(tep_auth_verify(TEP_TEST_PASSCODE, TEP_TEST_SIZE(TEP_TEST_PASSCODE), &wait), TEP_ERR_DENIED, "old passcode after the change");
-	TEP_TEST_EXPECT(tep_auth_verify(TEP_TEST_PASSCODE_2, TEP_TEST_SIZE(TEP_TEST_PASSCODE_2), &wait), TEP_OK, "new passcode");
+	TEP_TEST_EXPECT(tep_auth_set(0, 0U, TEP_TEST_PASSCODE, TEP_TEST_SIZE(TEP_TEST_PASSCODE), &wait), TEP_OK,
+					"set a passcode");
+	TEP_TEST_EXPECT(tep_auth_set(0, 0U, TEP_TEST_PASSCODE_2, TEP_TEST_SIZE(TEP_TEST_PASSCODE_2), &wait), TEP_ERR_DENIED,
+					"replace it without the old one");
+	TEP_TEST_EXPECT(tep_auth_verify(TEP_TEST_PASSCODE, TEP_TEST_SIZE(TEP_TEST_PASSCODE), &wait), TEP_OK,
+					"right passcode");
+	TEP_TEST_EXPECT(tep_auth_set(TEP_TEST_PASSCODE, TEP_TEST_SIZE(TEP_TEST_PASSCODE), TEP_TEST_PASSCODE_2,
+								 TEP_TEST_SIZE(TEP_TEST_PASSCODE_2), &wait),
+					TEP_OK, "change it with the old one");
+	TEP_TEST_EXPECT(tep_auth_verify(TEP_TEST_PASSCODE, TEP_TEST_SIZE(TEP_TEST_PASSCODE), &wait), TEP_ERR_DENIED,
+					"old passcode after the change");
+	TEP_TEST_EXPECT(tep_auth_verify(TEP_TEST_PASSCODE_2, TEP_TEST_SIZE(TEP_TEST_PASSCODE_2), &wait), TEP_OK,
+					"new passcode");
 
 	if (!tep_mailbox_test_auth_status(&status)) return false;
 	if (status.failures != 0U) {
@@ -218,9 +234,11 @@ static bool tep_mailbox_test_auth(void)
 	}
 
 	for (uint32_t attempt = 1U; attempt <= 5U; attempt++) {
-		TEP_TEST_EXPECT(tep_auth_verify(TEP_TEST_WRONG, TEP_TEST_SIZE(TEP_TEST_WRONG), &wait), TEP_ERR_DENIED, "wrong passcode");
+		TEP_TEST_EXPECT(tep_auth_verify(TEP_TEST_WRONG, TEP_TEST_SIZE(TEP_TEST_WRONG), &wait), TEP_ERR_DENIED,
+						"wrong passcode");
 	}
-	TEP_TEST_EXPECT(tep_auth_verify(TEP_TEST_PASSCODE_2, TEP_TEST_SIZE(TEP_TEST_PASSCODE_2), &wait), TEP_ERR_RETRY_LATER, "right passcode during the delay");
+	TEP_TEST_EXPECT(tep_auth_verify(TEP_TEST_PASSCODE_2, TEP_TEST_SIZE(TEP_TEST_PASSCODE_2), &wait),
+					TEP_ERR_RETRY_LATER, "right passcode during the delay");
 	if (wait == 0U || wait > 60U) {
 		TEP_TEST_LOG("delay after 5 failures is %u s, expected 1..60\n", (unsigned)wait);
 		return false;
@@ -240,7 +258,8 @@ static bool tep_mailbox_test_auth(void)
  * manifest changed after signing, something that is not a manifest, and an
  * older signed version, which tepOS must report as a rollback.
  */
-static bool tep_mailbox_test_boot(void)
+static bool
+tep_mailbox_test_boot(void)
 {
 	uint8_t manifest[TEP_BOOT_MANIFEST_SIZE], changed[TEP_BOOT_MANIFEST_SIZE], digest[TEP_SHA256_SIZE];
 	uint64_t deadline = timer_get_microseconds() + 60000000ULL;
@@ -252,12 +271,14 @@ static bool tep_mailbox_test_boot(void)
 		if (!sched_yield()) cpu_relax();
 	}
 	if (check != TEP_BOOT_CHECK_VERIFIED || version == 0U) {
-		TEP_TEST_LOG("kernel's bootd check: %s (detail %u), expected verified\n", tep_boot_check_name(check), (unsigned)version);
+		TEP_TEST_LOG("kernel's bootd check: %s (detail %u), expected verified\n", tep_boot_check_name(check),
+					 (unsigned)version);
 		return false;
 	}
 	TEP_TEST_LOG("kernel's bootd check: verified, version %u\n", (unsigned)version);
 
-	if (!tep_boot_read_manifest(TEP_BOOT_MANIFEST_PATH, manifest) || !tep_boot_measure(TEP_BOOT_IMAGE_PATH, digest, &size)) {
+	if (!tep_boot_read_manifest(TEP_BOOT_MANIFEST_PATH, manifest) ||
+		!tep_boot_measure(TEP_BOOT_IMAGE_PATH, digest, &size)) {
 		TEP_TEST_LOG("bootd or its manifest could not be read again\n");
 		return false;
 	}
@@ -280,7 +301,7 @@ static bool tep_mailbox_test_boot(void)
 	if (!tep_boot_measure(TEP_BOOT_IMAGE_PATH, digest, &size)) return false;
 
 	memcpy(changed, manifest, sizeof(changed));
-	changed[12] ^= 0x40U;	/* the signed version */
+	changed[12] ^= 0x40U; /* the signed version */
 	TEP_TEST_EXPECT(tep_boot_verify(changed, digest, &detail), TEP_ERR_DENIED, "manifest changed after signing");
 	if (detail != TEP_BOOT_BAD_SIGNATURE) {
 		TEP_TEST_LOG("changed manifest refused for %s, expected a bad signature\n", tep_boot_reason_name(detail));
@@ -307,7 +328,8 @@ static bool tep_mailbox_test_boot(void)
 	return true;
 }
 
-static bool tep_mailbox_test_fail_closed(void)
+static bool
+tep_mailbox_test_fail_closed(void)
 {
 	tep_mailbox_response_t response;
 	tep_mb_health_t health;
@@ -335,15 +357,17 @@ static bool tep_mailbox_test_fail_closed(void)
 		return false;
 	}
 
-	uint8_t manifest[TEP_BOOT_MANIFEST_SIZE] = { 0 };
+	uint8_t manifest[TEP_BOOT_MANIFEST_SIZE] = {0};
 	uint32_t wait = 0U;
 
-	TEP_TEST_EXPECT(tep_auth_verify(TEP_TEST_PASSCODE_2, TEP_TEST_SIZE(TEP_TEST_PASSCODE_2), &wait), TEP_ERR_UNAVAILABLE, "passcode while tepOS is away");
+	TEP_TEST_EXPECT(tep_auth_verify(TEP_TEST_PASSCODE_2, TEP_TEST_SIZE(TEP_TEST_PASSCODE_2), &wait),
+					TEP_ERR_UNAVAILABLE, "passcode while tepOS is away");
 	TEP_TEST_EXPECT(tep_boot_verify(manifest, digest, &wait), TEP_ERR_UNAVAILABLE, "boot manifest while tepOS is away");
 	return true;
 }
 
-static bool tep_mailbox_test_recovery(void)
+static bool
+tep_mailbox_test_recovery(void)
 {
 	tep_mailbox_response_t response;
 
@@ -376,11 +400,13 @@ static bool tep_mailbox_test_recovery(void)
 	TEP_TEST_LOG("passcode failures survived the tepOS restart\n");
 
 	if (status.wait_seconds != 0U) {
-		TEP_TEST_EXPECT(tep_auth_verify(TEP_TEST_PASSCODE_2, TEP_TEST_SIZE(TEP_TEST_PASSCODE_2), &wait), TEP_ERR_RETRY_LATER, "right passcode, delay not over");
+		TEP_TEST_EXPECT(tep_auth_verify(TEP_TEST_PASSCODE_2, TEP_TEST_SIZE(TEP_TEST_PASSCODE_2), &wait),
+						TEP_ERR_RETRY_LATER, "right passcode, delay not over");
 		TEP_TEST_LOG("waiting %u s for the delay\n", (unsigned)status.wait_seconds + 1U);
 		tep_mailbox_test_pause_ms(1000ULL * (status.wait_seconds + 1U));
 	}
-	TEP_TEST_EXPECT(tep_auth_verify(TEP_TEST_PASSCODE_2, TEP_TEST_SIZE(TEP_TEST_PASSCODE_2), &wait), TEP_OK, "right passcode after the delay");
+	TEP_TEST_EXPECT(tep_auth_verify(TEP_TEST_PASSCODE_2, TEP_TEST_SIZE(TEP_TEST_PASSCODE_2), &wait), TEP_OK,
+					"right passcode after the delay");
 
 	if (!tep_mailbox_test_auth_status(&status)) return false;
 	if (status.failures != 0U || status.wait_seconds != 0U) {
@@ -390,7 +416,8 @@ static bool tep_mailbox_test_recovery(void)
 	return true;
 }
 
-bool tep_mailbox_test_run(void)
+bool
+tep_mailbox_test_run(void)
 {
 	if (tep_mailbox_link_state() == TEP_LINK_ABSENT) {
 		TEP_TEST_LOG("no mailbox UART: boot QEMU with a second -serial connected to tepOS\n");
