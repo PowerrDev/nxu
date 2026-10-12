@@ -7,11 +7,7 @@
 
 typedef void (*triage_shell_write_fn)(void *context, const char *text);
 
-typedef enum {
-	TRIAGE_SHELL_OK = 0,
-	TRIAGE_SHELL_CLEAR,
-	TRIAGE_SHELL_EXIT
-} triage_shell_result_t;
+typedef enum { TRIAGE_SHELL_OK = 0, TRIAGE_SHELL_CLEAR, TRIAGE_SHELL_EXIT } triage_shell_result_t;
 
 typedef struct {
 	char cwd[TRIAGE_SHELL_CWD_MAX];

@@ -8,31 +8,33 @@
 static char g_boot_args[BOOT_ARGS_MAX + 1U];
 static bool g_boot_args_initialized;
 
-static bool boot_arg_separator(char character)
+static bool
+boot_arg_separator(char character)
 {
 	return character == ' ' || character == '\t';
 }
 
-static uint32_t boot_arg_string_length(const char *string)
+static uint32_t
+boot_arg_string_length(const char *string)
 {
 	uint32_t length = 0U;
-	if (string == 0)
-		return 0U;
+	if (string == 0) return 0U;
 	while (string[length] != '\0')
 		length++;
 	return length;
 }
 
-static bool boot_arg_token_equal(const char *token, uint32_t token_length, const char *argument)
+static bool
+boot_arg_token_equal(const char *token, uint32_t token_length, const char *argument)
 {
 	uint32_t argument_length = boot_arg_string_length(argument);
 	return token_length == argument_length && memcmp(token, argument, token_length) == 0;
 }
 
-bool boot_args_init(void)
+bool
+boot_args_init(void)
 {
-	if (g_boot_args_initialized)
-		return false;
+	if (g_boot_args_initialized) return false;
 
 	uint32_t length = 0U;
 	nvram_status_t status = nvram_get(NVRAM_BOOT_ARGS_NAME, g_boot_args, sizeof(g_boot_args), &length);
@@ -45,64 +47,59 @@ bool boot_args_init(void)
 
 	g_boot_args_initialized = true;
 	/* Share the default with userland services which recognize -v. */
-	if (boot_args_verbose())
-		(void)boot_args_append("-v");
+	if (boot_args_verbose()) (void)boot_args_append("-v");
 	kconsole_set_verbose(boot_args_verbose());
 	return true;
 }
 
-const char *boot_args_raw(void)
+const char *
+boot_args_raw(void)
 {
 	return g_boot_args_initialized ? g_boot_args : "";
 }
 
-bool boot_arg_present(const char *argument)
+bool
+boot_arg_present(const char *argument)
 {
-	if (!g_boot_args_initialized || argument == 0 || argument[0] == '\0')
-		return false;
+	if (!g_boot_args_initialized || argument == 0 || argument[0] == '\0') return false;
 
 	const char *cursor = g_boot_args;
 	while (*cursor != '\0') {
 		while (boot_arg_separator(*cursor))
 			cursor++;
-		if (*cursor == '\0')
-			break;
+		if (*cursor == '\0') break;
 
 		const char *token = cursor;
 		while (*cursor != '\0' && !boot_arg_separator(*cursor))
 			cursor++;
-		if (boot_arg_token_equal(token, (uint32_t)(cursor - token), argument))
-			return true;
+		if (boot_arg_token_equal(token, (uint32_t)(cursor - token), argument)) return true;
 	}
 
 	return false;
 }
 
-bool boot_args_append(const char *argument)
+bool
+boot_args_append(const char *argument)
 {
-	if (!g_boot_args_initialized || argument == 0 || argument[0] == '\0')
-		return false;
-	if (boot_arg_present(argument))
-		return true;
+	if (!g_boot_args_initialized || argument == 0 || argument[0] == '\0') return false;
+	if (boot_arg_present(argument)) return true;
 
 	uint32_t length = boot_arg_string_length(g_boot_args);
 	uint32_t argument_length = boot_arg_string_length(argument);
 	uint32_t separator = length != 0U ? 1U : 0U;
 
-	if (length + separator + argument_length > BOOT_ARGS_MAX)
-		return false;
+	if (length + separator + argument_length > BOOT_ARGS_MAX) return false;
 
-	if (separator != 0U)
-		g_boot_args[length] = ' ';
+	if (separator != 0U) g_boot_args[length] = ' ';
 	memcpy(g_boot_args + length + separator, argument, argument_length + 1U);
 	kconsole_set_verbose(boot_args_verbose());
 	return true;
 }
 
-bool boot_arg_value(const char *name, char *value, uint32_t capacity)
+bool
+boot_arg_value(const char *name, char *value, uint32_t capacity)
 {
-	if (!g_boot_args_initialized || name == 0 || value == 0 || capacity == 0U)
-		return false;
+	if (!g_boot_args_initialized || name == 0 || value == 0 || capacity == 0U) return false;
 
 	uint32_t name_length = boot_arg_string_length(name);
 	const char *cursor = g_boot_args;
@@ -110,8 +107,7 @@ bool boot_arg_value(const char *name, char *value, uint32_t capacity)
 	while (*cursor != '\0') {
 		while (boot_arg_separator(*cursor))
 			cursor++;
-		if (*cursor == '\0')
-			break;
+		if (*cursor == '\0') break;
 
 		const char *token = cursor;
 		while (*cursor != '\0' && !boot_arg_separator(*cursor))
@@ -120,8 +116,7 @@ bool boot_arg_value(const char *name, char *value, uint32_t capacity)
 
 		if (token_length > name_length && token[name_length] == '=' && memcmp(token, name, name_length) == 0) {
 			uint32_t result_length = token_length - name_length - 1U;
-			if (result_length + 1U > capacity)
-				return false;
+			if (result_length + 1U > capacity) return false;
 			memcpy(value, token + name_length + 1U, result_length);
 			value[result_length] = '\0';
 			return true;
@@ -131,46 +126,46 @@ bool boot_arg_value(const char *name, char *value, uint32_t capacity)
 	return false;
 }
 
-bool boot_arg_bool(const char *name, bool default_value)
+bool
+boot_arg_bool(const char *name, bool default_value)
 {
 	char value[8];
-	if (!boot_arg_value(name, value, sizeof(value)))
-		return default_value;
-	if (strcmp(value, "1") == 0 || strcmp(value, "true") == 0 || strcmp(value, "yes") == 0)
-		return true;
-	if (strcmp(value, "0") == 0 || strcmp(value, "false") == 0 || strcmp(value, "no") == 0)
-		return false;
+	if (!boot_arg_value(name, value, sizeof(value))) return default_value;
+	if (strcmp(value, "1") == 0 || strcmp(value, "true") == 0 || strcmp(value, "yes") == 0) return true;
+	if (strcmp(value, "0") == 0 || strcmp(value, "false") == 0 || strcmp(value, "no") == 0) return false;
 	return default_value;
 }
 
-uint32_t boot_arg_uint32(const char *name, uint32_t default_value)
+uint32_t
+boot_arg_uint32(const char *name, uint32_t default_value)
 {
 	char value[16];
-	if (!boot_arg_value(name, value, sizeof(value)))
-		return default_value;
+	if (!boot_arg_value(name, value, sizeof(value))) return default_value;
 
 	uint32_t result = 0U;
 	for (uint32_t index = 0U; value[index] != '\0'; index++) {
 		char character = value[index];
-		if (character < '0' || character > '9')
-			return default_value;
+		if (character < '0' || character > '9') return default_value;
 		result = result * 10U + (uint32_t)(character - '0');
 	}
 
 	return result;
 }
 
-bool boot_args_verbose(void)
+bool
+boot_args_verbose(void)
 {
 	return boot_arg_present("-v") || boot_arg_bool("log.verbose", true);
 }
 
-bool boot_args_safe_mode(void)
+bool
+boot_args_safe_mode(void)
 {
 	return boot_arg_present("-x");
 }
 
-bool boot_args_component_disabled(boot_component_t component)
+bool
+boot_args_component_disabled(boot_component_t component)
 {
 	switch (component) {
 	case BOOT_COMPONENT_GPU:
@@ -190,7 +185,8 @@ bool boot_args_component_disabled(boot_component_t component)
 	}
 }
 
-void boot_args_dump(void)
+void
+boot_args_dump(void)
 {
 	kputs("boot-args: ");
 	kputln(g_boot_args[0] != '\0' ? g_boot_args : "<none>");

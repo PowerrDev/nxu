@@ -8,18 +8,14 @@
 #include <stdint.h>
 
 bool
-startup_options_ui_canvas_init(startup_options_ui_canvas_t *canvas, uint32_t *pixels, uint32_t width, uint32_t height, uint32_t stride)
+startup_options_ui_canvas_init(startup_options_ui_canvas_t *canvas, uint32_t *pixels, uint32_t width, uint32_t height,
+							   uint32_t stride)
 {
 	if (canvas == 0 || pixels == 0 || width == 0U || height == 0U || stride < width) {
 		return false;
 	}
 
-	*canvas = (startup_options_ui_canvas_t) {
-		.pixels = pixels,
-		.width = width,
-		.height = height,
-		.stride = stride
-	};
+	*canvas = (startup_options_ui_canvas_t){.pixels = pixels, .width = width, .height = height, .stride = stride};
 	return true;
 }
 
@@ -37,13 +33,8 @@ startup_options_ui_channel(uint32_t color, uint32_t shift)
  * anti-aliasing routines is folded into the source alpha before compositing.
  */
 void
-startup_options_ui_canvas_blend_coverage(
-	startup_options_ui_canvas_t *canvas,
-	int32_t x,
-	int32_t y,
-	uint32_t color,
-	uint32_t coverage
-)
+startup_options_ui_canvas_blend_coverage(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y, uint32_t color,
+										 uint32_t coverage)
 {
 	if (canvas == 0 || canvas->pixels == 0 || x < 0 || y < 0) {
 		return;
@@ -66,9 +57,15 @@ startup_options_ui_canvas_blend_coverage(
 
 	uint32_t background = *destination;
 	uint32_t inverse = 255U - source_alpha;
-	uint32_t red = (startup_options_ui_channel(color, 16U) * source_alpha + startup_options_ui_channel(background, 16U) * inverse + 127U) / 255U;
-	uint32_t green = (startup_options_ui_channel(color, 8U) * source_alpha + startup_options_ui_channel(background, 8U) * inverse + 127U) / 255U;
-	uint32_t blue = (startup_options_ui_channel(color, 0U) * source_alpha + startup_options_ui_channel(background, 0U) * inverse + 127U) / 255U;
+	uint32_t red = (startup_options_ui_channel(color, 16U) * source_alpha +
+					startup_options_ui_channel(background, 16U) * inverse + 127U) /
+				   255U;
+	uint32_t green = (startup_options_ui_channel(color, 8U) * source_alpha +
+					  startup_options_ui_channel(background, 8U) * inverse + 127U) /
+					 255U;
+	uint32_t blue = (startup_options_ui_channel(color, 0U) * source_alpha +
+					 startup_options_ui_channel(background, 0U) * inverse + 127U) /
+					255U;
 	uint32_t alpha = source_alpha + startup_options_ui_channel(background, 24U) * inverse / 255U;
 	*destination = STARTUP_OPTIONS_UI_ARGB(alpha, red, green, blue);
 }
@@ -89,8 +86,12 @@ startup_options_ui_fill_words(uint32_t *pixels, uint64_t count, uint32_t color)
 	uint64_t pair = (uint64_t)color | ((uint64_t)color << 32U);
 	uint64_t *wide = (uint64_t *)pixels;
 	while (count >= 8ULL) {
-		wide[0] = pair; wide[1] = pair; wide[2] = pair; wide[3] = pair;
-		wide += 4; count -= 8ULL;
+		wide[0] = pair;
+		wide[1] = pair;
+		wide[2] = pair;
+		wide[3] = pair;
+		wide += 4;
+		count -= 8ULL;
 	}
 
 	while (count >= 2ULL) {
@@ -105,14 +106,8 @@ startup_options_ui_fill_words(uint32_t *pixels, uint64_t count, uint32_t color)
 }
 
 void
-startup_options_ui_canvas_replace_rect(
-	startup_options_ui_canvas_t *canvas,
-	int32_t x,
-	int32_t y,
-	uint32_t width,
-	uint32_t height,
-	uint32_t color
-)
+startup_options_ui_canvas_replace_rect(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y, uint32_t width,
+									   uint32_t height, uint32_t color)
 {
 	if (canvas == 0 || canvas->pixels == 0 || width == 0U || height == 0U) {
 		return;
@@ -160,14 +155,8 @@ startup_options_ui_canvas_clear(startup_options_ui_canvas_t *canvas, uint32_t co
 }
 
 void
-startup_options_ui_canvas_fill_rect(
-	startup_options_ui_canvas_t *canvas,
-	int32_t x,
-	int32_t y,
-	uint32_t width,
-	uint32_t height,
-	uint32_t color
-)
+startup_options_ui_canvas_fill_rect(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y, uint32_t width,
+									uint32_t height, uint32_t color)
 {
 	if (canvas == 0 || canvas->pixels == 0 || width == 0U || height == 0U) {
 		return;
@@ -203,8 +192,8 @@ startup_options_ui_canvas_fill_rect(
 	}
 
 	if (source_alpha == 255U) {
-		startup_options_ui_canvas_replace_rect(canvas, (int32_t)left, (int32_t)top,
-			(uint32_t)(right - left), (uint32_t)(bottom - top), color);
+		startup_options_ui_canvas_replace_rect(canvas, (int32_t)left, (int32_t)top, (uint32_t)(right - left),
+											   (uint32_t)(bottom - top), color);
 		return;
 	}
 
@@ -238,10 +227,15 @@ startup_options_ui_canvas_fill_vertical_gradient(startup_options_ui_canvas_t *ca
 	uint32_t denominator = canvas->height > 1U ? canvas->height - 1U : 1U;
 	for (uint32_t y = 0U; y < canvas->height; y++) {
 		uint32_t inverse = denominator - y;
-		uint32_t alpha = (startup_options_ui_channel(top, 24U) * inverse + startup_options_ui_channel(bottom, 24U) * y) / denominator;
-		uint32_t red = (startup_options_ui_channel(top, 16U) * inverse + startup_options_ui_channel(bottom, 16U) * y) / denominator;
-		uint32_t green = (startup_options_ui_channel(top, 8U) * inverse + startup_options_ui_channel(bottom, 8U) * y) / denominator;
-		uint32_t blue = (startup_options_ui_channel(top, 0U) * inverse + startup_options_ui_channel(bottom, 0U) * y) / denominator;
+		uint32_t alpha =
+			(startup_options_ui_channel(top, 24U) * inverse + startup_options_ui_channel(bottom, 24U) * y) /
+			denominator;
+		uint32_t red = (startup_options_ui_channel(top, 16U) * inverse + startup_options_ui_channel(bottom, 16U) * y) /
+					   denominator;
+		uint32_t green =
+			(startup_options_ui_channel(top, 8U) * inverse + startup_options_ui_channel(bottom, 8U) * y) / denominator;
+		uint32_t blue =
+			(startup_options_ui_channel(top, 0U) * inverse + startup_options_ui_channel(bottom, 0U) * y) / denominator;
 		uint32_t color = STARTUP_OPTIONS_UI_ARGB(alpha, red, green, blue);
 		uint32_t *pixels = canvas->pixels + (uint64_t)y * canvas->stride;
 		for (uint32_t x = 0U; x < canvas->width; x++) {
@@ -282,11 +276,9 @@ startup_options_ui_squircle_is_capsule(uint32_t width, uint32_t height, uint32_t
 static uint32_t
 startup_options_ui_squircle_corner_coverage(uint32_t pixel_x, uint32_t pixel_y, uint32_t radius, bool circular)
 {
-	static const uint32_t offsets[4] = { 1U, 3U, 5U, 7U };
+	static const uint32_t offsets[4] = {1U, 3U, 5U, 7U};
 	uint32_t radius_fixed = radius * 8U;
-	uint64_t limit = circular
-		? (uint64_t)radius_fixed * radius_fixed
-		: startup_options_ui_pow4(radius_fixed);
+	uint64_t limit = circular ? (uint64_t)radius_fixed * radius_fixed : startup_options_ui_pow4(radius_fixed);
 	uint32_t inside = 0U;
 
 	for (uint32_t sample_y = 0U; sample_y < 4U; sample_y++) {
@@ -307,13 +299,8 @@ startup_options_ui_squircle_corner_coverage(uint32_t pixel_x, uint32_t pixel_y, 
 }
 
 static void
-startup_options_ui_canvas_replace_coverage(
-	startup_options_ui_canvas_t *canvas,
-	int32_t x,
-	int32_t y,
-	uint32_t color,
-	uint32_t coverage
-)
+startup_options_ui_canvas_replace_coverage(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y, uint32_t color,
+										   uint32_t coverage)
 {
 	if (canvas == 0 || canvas->pixels == 0 || x < 0 || y < 0 || coverage == 0U) {
 		return;
@@ -331,23 +318,24 @@ startup_options_ui_canvas_replace_coverage(
 
 	uint32_t background = *destination;
 	uint32_t inverse = 255U - coverage;
-	uint32_t alpha = (startup_options_ui_channel(color, 24U) * coverage + startup_options_ui_channel(background, 24U) * inverse + 127U) / 255U;
-	uint32_t red = (startup_options_ui_channel(color, 16U) * coverage + startup_options_ui_channel(background, 16U) * inverse + 127U) / 255U;
-	uint32_t green = (startup_options_ui_channel(color, 8U) * coverage + startup_options_ui_channel(background, 8U) * inverse + 127U) / 255U;
-	uint32_t blue = (startup_options_ui_channel(color, 0U) * coverage + startup_options_ui_channel(background, 0U) * inverse + 127U) / 255U;
+	uint32_t alpha = (startup_options_ui_channel(color, 24U) * coverage +
+					  startup_options_ui_channel(background, 24U) * inverse + 127U) /
+					 255U;
+	uint32_t red = (startup_options_ui_channel(color, 16U) * coverage +
+					startup_options_ui_channel(background, 16U) * inverse + 127U) /
+				   255U;
+	uint32_t green = (startup_options_ui_channel(color, 8U) * coverage +
+					  startup_options_ui_channel(background, 8U) * inverse + 127U) /
+					 255U;
+	uint32_t blue = (startup_options_ui_channel(color, 0U) * coverage +
+					 startup_options_ui_channel(background, 0U) * inverse + 127U) /
+					255U;
 	*destination = STARTUP_OPTIONS_UI_ARGB(alpha, red, green, blue);
 }
 
 void
-startup_options_ui_canvas_replace_squircle(
-	startup_options_ui_canvas_t *canvas,
-	int32_t x,
-	int32_t y,
-	uint32_t width,
-	uint32_t height,
-	uint32_t radius,
-	uint32_t color
-)
+startup_options_ui_canvas_replace_squircle(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y, uint32_t width,
+										   uint32_t height, uint32_t radius, uint32_t color)
 {
 	if (canvas == 0 || canvas->pixels == 0 || width == 0U || height == 0U) {
 		return;
@@ -370,7 +358,8 @@ startup_options_ui_canvas_replace_squircle(
 
 	if (width > radius * 2U) {
 		startup_options_ui_canvas_replace_rect(canvas, x + (int32_t)radius, y, width - radius * 2U, radius, color);
-		startup_options_ui_canvas_replace_rect(canvas, x + (int32_t)radius, y + (int32_t)(height - radius), width - radius * 2U, radius, color);
+		startup_options_ui_canvas_replace_rect(canvas, x + (int32_t)radius, y + (int32_t)(height - radius),
+											   width - radius * 2U, radius, color);
 	}
 
 	for (uint32_t corner_y = 0U; corner_y < radius; corner_y++) {
@@ -380,24 +369,21 @@ startup_options_ui_canvas_replace_squircle(
 				continue;
 			}
 
-			startup_options_ui_canvas_replace_coverage(canvas, x + (int32_t)corner_x, y + (int32_t)corner_y, color, coverage);
-			startup_options_ui_canvas_replace_coverage(canvas, x + (int32_t)(width - 1U - corner_x), y + (int32_t)corner_y, color, coverage);
-			startup_options_ui_canvas_replace_coverage(canvas, x + (int32_t)corner_x, y + (int32_t)(height - 1U - corner_y), color, coverage);
-			startup_options_ui_canvas_replace_coverage(canvas, x + (int32_t)(width - 1U - corner_x), y + (int32_t)(height - 1U - corner_y), color, coverage);
+			startup_options_ui_canvas_replace_coverage(canvas, x + (int32_t)corner_x, y + (int32_t)corner_y, color,
+													   coverage);
+			startup_options_ui_canvas_replace_coverage(canvas, x + (int32_t)(width - 1U - corner_x),
+													   y + (int32_t)corner_y, color, coverage);
+			startup_options_ui_canvas_replace_coverage(canvas, x + (int32_t)corner_x,
+													   y + (int32_t)(height - 1U - corner_y), color, coverage);
+			startup_options_ui_canvas_replace_coverage(canvas, x + (int32_t)(width - 1U - corner_x),
+													   y + (int32_t)(height - 1U - corner_y), color, coverage);
 		}
 	}
 }
 
 void
-startup_options_ui_canvas_fill_squircle(
-	startup_options_ui_canvas_t *canvas,
-	int32_t x,
-	int32_t y,
-	uint32_t width,
-	uint32_t height,
-	uint32_t radius,
-	uint32_t color
-)
+startup_options_ui_canvas_fill_squircle(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y, uint32_t width,
+										uint32_t height, uint32_t radius, uint32_t color)
 {
 	if (canvas == 0 || width == 0U || height == 0U) {
 		return;
@@ -420,7 +406,8 @@ startup_options_ui_canvas_fill_squircle(
 
 	if (width > radius * 2U) {
 		startup_options_ui_canvas_fill_rect(canvas, x + (int32_t)radius, y, width - radius * 2U, radius, color);
-		startup_options_ui_canvas_fill_rect(canvas, x + (int32_t)radius, y + (int32_t)(height - radius), width - radius * 2U, radius, color);
+		startup_options_ui_canvas_fill_rect(canvas, x + (int32_t)radius, y + (int32_t)(height - radius),
+											width - radius * 2U, radius, color);
 	}
 
 	for (uint32_t corner_y = 0U; corner_y < radius; corner_y++) {
@@ -430,10 +417,14 @@ startup_options_ui_canvas_fill_squircle(
 				continue;
 			}
 
-			startup_options_ui_canvas_blend_coverage(canvas, x + (int32_t)corner_x, y + (int32_t)corner_y, color, coverage);
-			startup_options_ui_canvas_blend_coverage(canvas, x + (int32_t)(width - 1U - corner_x), y + (int32_t)corner_y, color, coverage);
-			startup_options_ui_canvas_blend_coverage(canvas, x + (int32_t)corner_x, y + (int32_t)(height - 1U - corner_y), color, coverage);
-			startup_options_ui_canvas_blend_coverage(canvas, x + (int32_t)(width - 1U - corner_x), y + (int32_t)(height - 1U - corner_y), color, coverage);
+			startup_options_ui_canvas_blend_coverage(canvas, x + (int32_t)corner_x, y + (int32_t)corner_y, color,
+													 coverage);
+			startup_options_ui_canvas_blend_coverage(canvas, x + (int32_t)(width - 1U - corner_x),
+													 y + (int32_t)corner_y, color, coverage);
+			startup_options_ui_canvas_blend_coverage(canvas, x + (int32_t)corner_x,
+													 y + (int32_t)(height - 1U - corner_y), color, coverage);
+			startup_options_ui_canvas_blend_coverage(canvas, x + (int32_t)(width - 1U - corner_x),
+													 y + (int32_t)(height - 1U - corner_y), color, coverage);
 		}
 	}
 }
@@ -445,24 +436,23 @@ static uint32_t
 startup_options_ui_mix(uint32_t start, uint32_t end, uint32_t amount)
 {
 	uint32_t inverse = 255U - amount;
-	uint32_t alpha = (startup_options_ui_channel(start, 24U) * inverse + startup_options_ui_channel(end, 24U) * amount + 127U) / 255U;
-	uint32_t red = (startup_options_ui_channel(start, 16U) * inverse + startup_options_ui_channel(end, 16U) * amount + 127U) / 255U;
-	uint32_t green = (startup_options_ui_channel(start, 8U) * inverse + startup_options_ui_channel(end, 8U) * amount + 127U) / 255U;
-	uint32_t blue = (startup_options_ui_channel(start, 0U) * inverse + startup_options_ui_channel(end, 0U) * amount + 127U) / 255U;
+	uint32_t alpha =
+		(startup_options_ui_channel(start, 24U) * inverse + startup_options_ui_channel(end, 24U) * amount + 127U) /
+		255U;
+	uint32_t red =
+		(startup_options_ui_channel(start, 16U) * inverse + startup_options_ui_channel(end, 16U) * amount + 127U) /
+		255U;
+	uint32_t green =
+		(startup_options_ui_channel(start, 8U) * inverse + startup_options_ui_channel(end, 8U) * amount + 127U) / 255U;
+	uint32_t blue =
+		(startup_options_ui_channel(start, 0U) * inverse + startup_options_ui_channel(end, 0U) * amount + 127U) / 255U;
 	return STARTUP_OPTIONS_UI_ARGB(alpha, red, green, blue);
 }
 
 void
-startup_options_ui_canvas_fill_squircle_gradient(
-	startup_options_ui_canvas_t *canvas,
-	int32_t x,
-	int32_t y,
-	uint32_t width,
-	uint32_t height,
-	uint32_t radius,
-	uint32_t top_color,
-	uint32_t bottom_color
-)
+startup_options_ui_canvas_fill_squircle_gradient(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y,
+												 uint32_t width, uint32_t height, uint32_t radius, uint32_t top_color,
+												 uint32_t bottom_color)
 {
 	if (canvas == 0 || width == 0U || height == 0U) {
 		return;
@@ -492,7 +482,8 @@ startup_options_ui_canvas_fill_squircle_gradient(
 		} else if (row >= height - radius) {
 			uint32_t mirrored = height - 1U - row;
 			inset = radius;
-			while (inset > 0U && startup_options_ui_squircle_corner_coverage(inset - 1U, mirrored, radius, capsule) != 0U) {
+			while (inset > 0U &&
+				   startup_options_ui_squircle_corner_coverage(inset - 1U, mirrored, radius, capsule) != 0U) {
 				inset--;
 			}
 		}
@@ -501,7 +492,8 @@ startup_options_ui_canvas_fill_squircle_gradient(
 			continue;
 		}
 
-		startup_options_ui_canvas_fill_rect(canvas, x + (int32_t)inset, y + (int32_t)row, width - inset * 2U, 1U, color);
+		startup_options_ui_canvas_fill_rect(canvas, x + (int32_t)inset, y + (int32_t)row, width - inset * 2U, 1U,
+											color);
 	}
 
 	/* Repaint the corners so their coverage ramp survives the row fills. */
@@ -514,30 +506,22 @@ startup_options_ui_canvas_fill_squircle_gradient(
 				continue;
 			}
 
-			startup_options_ui_canvas_blend_coverage(canvas, x + (int32_t)corner_x, y + (int32_t)corner_y, color, coverage);
-			startup_options_ui_canvas_blend_coverage(canvas, x + (int32_t)(width - 1U - corner_x), y + (int32_t)corner_y, color, coverage);
-			startup_options_ui_canvas_blend_coverage(
-				canvas, x + (int32_t)corner_x, y + (int32_t)(height - 1U - corner_y), mirror_color, coverage
-			);
-			startup_options_ui_canvas_blend_coverage(
-				canvas, x + (int32_t)(width - 1U - corner_x), y + (int32_t)(height - 1U - corner_y), mirror_color, coverage
-			);
+			startup_options_ui_canvas_blend_coverage(canvas, x + (int32_t)corner_x, y + (int32_t)corner_y, color,
+													 coverage);
+			startup_options_ui_canvas_blend_coverage(canvas, x + (int32_t)(width - 1U - corner_x),
+													 y + (int32_t)corner_y, color, coverage);
+			startup_options_ui_canvas_blend_coverage(canvas, x + (int32_t)corner_x,
+													 y + (int32_t)(height - 1U - corner_y), mirror_color, coverage);
+			startup_options_ui_canvas_blend_coverage(canvas, x + (int32_t)(width - 1U - corner_x),
+													 y + (int32_t)(height - 1U - corner_y), mirror_color, coverage);
 		}
 	}
 }
 
 void
-startup_options_ui_canvas_stroke_squircle(
-	startup_options_ui_canvas_t *canvas,
-	int32_t x,
-	int32_t y,
-	uint32_t width,
-	uint32_t height,
-	uint32_t radius,
-	uint32_t thickness,
-	uint32_t border_color,
-	uint32_t fill_color
-)
+startup_options_ui_canvas_stroke_squircle(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y, uint32_t width,
+										  uint32_t height, uint32_t radius, uint32_t thickness, uint32_t border_color,
+										  uint32_t fill_color)
 {
 	if (thickness == 0U || width <= thickness * 2U || height <= thickness * 2U) {
 		startup_options_ui_canvas_fill_squircle(canvas, x, y, width, height, radius, border_color);
@@ -545,29 +529,15 @@ startup_options_ui_canvas_stroke_squircle(
 	}
 
 	startup_options_ui_canvas_fill_squircle(canvas, x, y, width, height, radius, border_color);
-	startup_options_ui_canvas_fill_squircle(
-		canvas,
-		x + (int32_t)thickness,
-		y + (int32_t)thickness,
-		width - thickness * 2U,
-		height - thickness * 2U,
-		radius > thickness ? radius - thickness : 1U,
-		fill_color
-	);
+	startup_options_ui_canvas_fill_squircle(canvas, x + (int32_t)thickness, y + (int32_t)thickness,
+											width - thickness * 2U, height - thickness * 2U,
+											radius > thickness ? radius - thickness : 1U, fill_color);
 }
 
 void
-startup_options_ui_canvas_shadow_squircle(
-	startup_options_ui_canvas_t *canvas,
-	int32_t x,
-	int32_t y,
-	uint32_t width,
-	uint32_t height,
-	uint32_t radius,
-	uint32_t spread,
-	int32_t offset_y,
-	uint32_t alpha
-)
+startup_options_ui_canvas_shadow_squircle(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y, uint32_t width,
+										  uint32_t height, uint32_t radius, uint32_t spread, int32_t offset_y,
+										  uint32_t alpha)
 {
 	if (canvas == 0 || spread == 0U || alpha == 0U) {
 		return;
@@ -579,26 +549,21 @@ startup_options_ui_canvas_shadow_squircle(
 	}
 
 	for (uint32_t layer = spread; layer > 0U; layer--) {
-		startup_options_ui_canvas_fill_squircle(
-			canvas,
-			x - (int32_t)layer,
-			y + offset_y - (int32_t)layer,
-			width + layer * 2U,
-			height + layer * 2U,
-			radius + layer,
-			STARTUP_OPTIONS_UI_ARGB(layer_alpha, 0U, 0U, 0U)
-		);
+		startup_options_ui_canvas_fill_squircle(canvas, x - (int32_t)layer, y + offset_y - (int32_t)layer,
+												width + layer * 2U, height + layer * 2U, radius + layer,
+												STARTUP_OPTIONS_UI_ARGB(layer_alpha, 0U, 0U, 0U));
 	}
 }
 
 void
-startup_options_ui_canvas_fill_circle(startup_options_ui_canvas_t *canvas, int32_t center_x, int32_t center_y, uint32_t radius, uint32_t color)
+startup_options_ui_canvas_fill_circle(startup_options_ui_canvas_t *canvas, int32_t center_x, int32_t center_y,
+									  uint32_t radius, uint32_t color)
 {
 	if (canvas == 0 || radius == 0U) {
 		return;
 	}
 
-	static const int32_t offsets[4] = { 1, 3, 5, 7 };
+	static const int32_t offsets[4] = {1, 3, 5, 7};
 	int32_t radius_fixed = (int32_t)(radius * 8U);
 	uint64_t limit = (uint64_t)radius_fixed * (uint64_t)radius_fixed;
 	int32_t left = center_x - (int32_t)radius;
@@ -620,22 +585,16 @@ startup_options_ui_canvas_fill_circle(startup_options_ui_canvas_t *canvas, int32
 			}
 
 			if (inside != 0U) {
-				startup_options_ui_canvas_blend_coverage(canvas, left + (int32_t)px, top + (int32_t)py, color, inside * 255U / 16U);
+				startup_options_ui_canvas_blend_coverage(canvas, left + (int32_t)px, top + (int32_t)py, color,
+														 inside * 255U / 16U);
 			}
 		}
 	}
 }
 
 bool
-startup_options_ui_point_in_squircle(
-	int32_t point_x,
-	int32_t point_y,
-	int32_t x,
-	int32_t y,
-	uint32_t width,
-	uint32_t height,
-	uint32_t radius
-)
+startup_options_ui_point_in_squircle(int32_t point_x, int32_t point_y, int32_t x, int32_t y, uint32_t width,
+									 uint32_t height, uint32_t radius)
 {
 	if (width == 0U || height == 0U || point_x < x || point_y < y) {
 		return false;
@@ -676,7 +635,6 @@ startup_options_ui_point_in_squircle(
 	return startup_options_ui_pow4(dx) + startup_options_ui_pow4(dy) <= startup_options_ui_pow4(edge);
 }
 
-
 /* Preserve the bootstrap rasterizer's grayscale coverage for antialiased text. */
 static uint8_t
 startup_options_ui_font_coverage(uint8_t coverage)
@@ -711,14 +669,8 @@ startup_options_ui_text_width_face(const char *text, const startup_options_ui_fo
 }
 
 static void
-startup_options_ui_draw_text_face(
-	startup_options_ui_canvas_t *canvas,
-	int32_t x,
-	int32_t y,
-	const char *text,
-	uint32_t color,
-	const startup_options_ui_font_face_t *face
-)
+startup_options_ui_draw_text_face(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y, const char *text,
+								  uint32_t color, const startup_options_ui_font_face_t *face)
 {
 	if (canvas == 0 || text == 0 || face == 0) {
 		return;
@@ -738,18 +690,14 @@ startup_options_ui_draw_text_face(
 
 		for (uint32_t row = 0U; row < glyph->height; row++) {
 			for (uint32_t column = 0U; column < glyph->width; column++) {
-				uint8_t coverage = startup_options_ui_font_coverage(pixels[glyph->offset + row * glyph->width + column]);
+				uint8_t coverage =
+					startup_options_ui_font_coverage(pixels[glyph->offset + row * glyph->width + column]);
 				if (coverage == 0U) {
 					continue;
 				}
 
-				startup_options_ui_canvas_blend_coverage(
-					canvas,
-					pen_x + glyph->x_offset + (int32_t)column,
-					y + glyph->y_offset + (int32_t)row,
-					color,
-					coverage
-				);
+				startup_options_ui_canvas_blend_coverage(canvas, pen_x + glyph->x_offset + (int32_t)column,
+														 y + glyph->y_offset + (int32_t)row, color, coverage);
 			}
 		}
 
@@ -801,14 +749,8 @@ startup_options_ui_mono_line_height(uint32_t scale)
 }
 
 void
-startup_options_ui_draw_mono_text(
-	startup_options_ui_canvas_t *canvas,
-	int32_t x,
-	int32_t y,
-	const char *text,
-	uint32_t color,
-	uint32_t scale
-)
+startup_options_ui_draw_mono_text(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y, const char *text,
+								  uint32_t color, uint32_t scale)
 {
 	if (scale == 0U) {
 		return;
@@ -850,34 +792,17 @@ startup_options_ui_styled_text_width(const char *text, uint32_t scale, uint32_t 
 {
 	(void)italic;
 	if (text == 0 || scale == 0U) return 0U;
-	return startup_options_ui_text_width_face(
-		text,
-		startup_options_ui_font_face_for_weight(scale, weight)
-	);
+	return startup_options_ui_text_width_face(text, startup_options_ui_font_face_for_weight(scale, weight));
 }
 
 void
-startup_options_ui_draw_styled_text(
-	startup_options_ui_canvas_t *canvas,
-	int32_t x,
-	int32_t y,
-	const char *text,
-	uint32_t color,
-	uint32_t scale,
-	uint32_t weight,
-	bool italic
-)
+startup_options_ui_draw_styled_text(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y, const char *text,
+									uint32_t color, uint32_t scale, uint32_t weight, bool italic)
 {
 	(void)italic;
 	if (canvas == 0 || text == 0 || scale == 0U) return;
-	startup_options_ui_draw_text_face(
-		canvas,
-		x,
-		y,
-		text,
-		color,
-		startup_options_ui_font_face_for_weight(scale, weight)
-	);
+	startup_options_ui_draw_text_face(canvas, x, y, text, color,
+									  startup_options_ui_font_face_for_weight(scale, weight));
 }
 
 uint32_t
@@ -887,9 +812,11 @@ startup_options_ui_text_width(const char *text, uint32_t scale)
 }
 
 void
-startup_options_ui_draw_text(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y, const char *text, uint32_t color, uint32_t scale)
+startup_options_ui_draw_text(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y, const char *text,
+							 uint32_t color, uint32_t scale)
 {
-	startup_options_ui_draw_styled_text(canvas, x, y, text, color, scale, STARTUP_OPTIONS_UI_FONT_WEIGHT_REGULAR, false);
+	startup_options_ui_draw_styled_text(canvas, x, y, text, color, scale, STARTUP_OPTIONS_UI_FONT_WEIGHT_REGULAR,
+										false);
 }
 
 uint32_t
@@ -899,7 +826,9 @@ startup_options_ui_semibold_text_width(const char *text, uint32_t scale)
 }
 
 void
-startup_options_ui_draw_semibold_text(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y, const char *text, uint32_t color, uint32_t scale)
+startup_options_ui_draw_semibold_text(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y, const char *text,
+									  uint32_t color, uint32_t scale)
 {
-	startup_options_ui_draw_styled_text(canvas, x, y, text, color, scale, STARTUP_OPTIONS_UI_FONT_WEIGHT_SEMIBOLD, false);
+	startup_options_ui_draw_styled_text(canvas, x, y, text, color, scale, STARTUP_OPTIONS_UI_FONT_WEIGHT_SEMIBOLD,
+										false);
 }

@@ -40,7 +40,7 @@ void boot_chime_start(void);
 
 typedef enum {
 	BOOT_CHIME_IDLE,	/* not started: disabled, not armed, or the volume is not mounted yet */
-	BOOT_CHIME_PLAYING,	/* the thread is waiting for the device and the file, or streaming */
+	BOOT_CHIME_PLAYING, /* the thread is waiting for the device and the file, or streaming */
 	BOOT_CHIME_PLAYED,	/* played in full without an underrun */
 	BOOT_CHIME_FAILED	/* the thread ended and the chime did not play */
 } boot_chime_state_t;

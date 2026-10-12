@@ -1,8 +1,17 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/boot/splash.c
+ *
+ * Draw the firmware-independent startup splash and its status text.
+ */
 #include <kern/boot/splash.h>
 
 #include <kern/machine/timer.h>
 #include <kern/machine/barrier.h>
 #include <kern/boot/splash_asset.h>
+#include <kern/boot/status_font.h>
 #include <kern/console/console.h>
 #include <kern/console/font8x16.h>
 
@@ -37,7 +46,6 @@
 #define BOOT_SPLASH_FINISH_MIN_STEP 24U
 #define BOOT_SPLASH_STATUS_GAP 18U
 #define BOOT_SPLASH_STATUS_HEIGHT 18U
-#define BOOT_SPLASH_STATUS_SCALE 2U
 #define BOOT_SPLASH_STATUS_COLOR 0x00D8D8DEU
 #define BOOT_SPLASH_STATUS_MAX_LENGTH 63U
 
@@ -100,43 +108,20 @@ static bool g_text_row_dirty[BOOT_SPLASH_TEXT_MAX_ROWS];
 static uint32_t g_text_top;
 static bool g_text_all_dirty;
 
-static const uint8_t g_status_glyph_space[7] = { 0U, 0U, 0U, 0U, 0U, 0U, 0U };
-static const uint8_t g_status_glyph_dot[7] = { 0U, 0U, 0U, 0U, 0U, 0x0CU, 0x0CU };
-static const uint8_t g_status_glyph_l[7] = { 0x10U, 0x10U, 0x10U, 0x10U, 0x10U, 0x10U, 0x1FU };
-static const uint8_t g_status_glyph_a[7] = { 0U, 0x0EU, 0x01U, 0x0FU, 0x11U, 0x13U, 0x0DU };
-static const uint8_t g_status_glyph_d[7] = { 0x01U, 0x01U, 0x0DU, 0x13U, 0x11U, 0x13U, 0x0DU };
-static const uint8_t g_status_glyph_g[7] = { 0U, 0x0EU, 0x11U, 0x11U, 0x0FU, 0x01U, 0x0EU };
-static const uint8_t g_status_glyph_i[7] = { 0x04U, 0U, 0x0CU, 0x04U, 0x04U, 0x04U, 0x0EU };
-static const uint8_t g_status_glyph_n[7] = { 0U, 0U, 0x1EU, 0x11U, 0x11U, 0x11U, 0x11U };
-static const uint8_t g_status_glyph_o[7] = { 0U, 0U, 0x0EU, 0x11U, 0x11U, 0x11U, 0x0EU };
-static const uint8_t g_status_glyph_p[7] = { 0U, 0x1EU, 0x11U, 0x11U, 0x1EU, 0x10U, 0x10U };
-static const uint8_t g_status_glyph_r[7] = { 0U, 0U, 0x16U, 0x19U, 0x10U, 0x10U, 0x10U };
-static const uint8_t g_status_glyph_s[7] = { 0U, 0x0FU, 0x10U, 0x0EU, 0x01U, 0x01U, 0x1EU };
-static const uint8_t g_status_glyph_t[7] = { 0x04U, 0x04U, 0x0EU, 0x04U, 0x04U, 0x05U, 0x02U };
-static const uint8_t g_status_glyph_u[7] = { 0U, 0U, 0x11U, 0x11U, 0x11U, 0x13U, 0x0DU };
-
-static const uint8_t *boot_splash_status_glyph(char character)
+static const boot_status_glyph_t *
+boot_splash_status_glyph(char character)
 {
-	switch (character) {
-	case 'L': case 'l': return g_status_glyph_l;
-	case 'a': return g_status_glyph_a;
-	case 'd': return g_status_glyph_d;
-	case 'g': return g_status_glyph_g;
-	case 'i': return g_status_glyph_i;
-	case 'n': return g_status_glyph_n;
-	case 'o': return g_status_glyph_o;
-	case 'p': return g_status_glyph_p;
-	case 'r': return g_status_glyph_r;
-	case 's': return g_status_glyph_s;
-	case 't': return g_status_glyph_t;
-	case 'u': return g_status_glyph_u;
-	case '.': return g_status_glyph_dot;
-	case ' ': return g_status_glyph_space;
-	default: return g_status_glyph_space;
+	uint8_t code = (uint8_t)character;
+
+	if (code < 32U || code > 126U) {
+		code = '?';
 	}
+
+	return &g_boot_status_glyphs[code - 32U];
 }
 
-static uint32_t boot_splash_blend(uint32_t destination, uint32_t source)
+static uint32_t
+boot_splash_blend(uint32_t destination, uint32_t source)
 {
 	uint32_t alpha = source >> 24U;
 	if (alpha == 0U) return destination;
@@ -155,26 +140,30 @@ static uint32_t boot_splash_blend(uint32_t destination, uint32_t source)
 	return (red << 16U) | (green << 8U) | blue;
 }
 
-static uint64_t boot_splash_ticks_for_ms(uint64_t milliseconds)
+static uint64_t
+boot_splash_ticks_for_ms(uint64_t milliseconds)
 {
 	uint64_t frequency = timer_get_frequency();
 	return (milliseconds / 1000ULL) * frequency + (milliseconds % 1000ULL) * frequency / 1000ULL;
 }
 
-static bool boot_splash_bar_rect(uint32_t *left, uint32_t *top)
+static bool
+boot_splash_bar_rect(uint32_t *left, uint32_t *top)
 {
 	if (g_display == 0 || left == 0 || top == 0) return false;
 	uint32_t scaled_height = g_boot_splash_height * g_scale;
 	uint32_t center_x = g_display->width / 2U;
 	uint32_t bar_top = g_top + scaled_height + BOOT_SPLASH_BAR_GAP;
 	uint32_t half = BOOT_SPLASH_BAR_WIDTH / 2U;
-	if (center_x < half || center_x + half > g_display->width || bar_top + BOOT_SPLASH_BAR_HEIGHT > g_display->height) return false;
+	if (center_x < half || center_x + half > g_display->width || bar_top + BOOT_SPLASH_BAR_HEIGHT > g_display->height)
+		return false;
 	*left = center_x - half;
 	*top = bar_top;
 	return true;
 }
 
-static bool boot_splash_status_rect(uint32_t *top)
+static bool
+boot_splash_status_rect(uint32_t *top)
 {
 	uint32_t left;
 	uint32_t bar_top;
@@ -186,15 +175,18 @@ static bool boot_splash_status_rect(uint32_t *top)
 	return true;
 }
 
-static uint32_t boot_splash_status_width(const char *status)
+static uint32_t
+boot_splash_status_width(const char *status)
 {
-	if (status == 0) return 0U;
-	uint32_t count = 0U;
-	while (status[count] != '\0') count++;
-	if (count == 0U) return 0U;
-	uint32_t glyph_width = 5U * BOOT_SPLASH_STATUS_SCALE;
-	uint32_t spacing = BOOT_SPLASH_STATUS_SCALE;
-	return count * glyph_width + (count - 1U) * spacing;
+	uint32_t width = 0U;
+
+	if (status != 0) {
+		for (uint32_t index = 0U; status[index] != '\0'; index++) {
+			width += boot_splash_status_glyph(status[index])->advance;
+		}
+	}
+
+	return width;
 }
 
 /*
@@ -202,7 +194,8 @@ static uint32_t boot_splash_status_width(const char *status)
  * Reused both by boot_splash_set_status() and by the text-overlay scroll
  * handler, which must restore the caption after a full-screen scroll wipes it.
  */
-static bool boot_splash_paint_status(void)
+static bool
+boot_splash_paint_status(void)
 {
 	if (!g_status_active || g_display == 0) return false;
 	uint32_t top;
@@ -210,44 +203,54 @@ static bool boot_splash_paint_status(void)
 
 	for (uint32_t y = 0U; y < BOOT_SPLASH_STATUS_HEIGHT; y++) {
 		uint32_t *row = g_display->framebuffer + (uint64_t)(top + y) * g_display->stride;
-		for (uint32_t x = 0U; x < g_display->width; x++) row[x] = BOOT_SPLASH_BACKGROUND;
+		for (uint32_t x = 0U; x < g_display->width; x++)
+			row[x] = BOOT_SPLASH_BACKGROUND;
 	}
 
 	const char *status = g_status_text;
 	uint32_t width = boot_splash_status_width(status);
 	uint32_t cursor = width < g_display->width ? (g_display->width - width) / 2U : 0U;
-	uint32_t glyph_top = top + (BOOT_SPLASH_STATUS_HEIGHT - 7U * BOOT_SPLASH_STATUS_SCALE) / 2U;
+	uint32_t glyph_top = top + (BOOT_SPLASH_STATUS_HEIGHT - BOOT_STATUS_FONT_HEIGHT) / 2U;
 
 	for (uint32_t index = 0U; status[index] != '\0'; index++) {
-		const uint8_t *glyph = boot_splash_status_glyph(status[index]);
-		for (uint32_t row = 0U; row < 7U; row++) {
-			for (uint32_t column = 0U; column < 5U; column++) {
-				if ((glyph[row] & (1U << (4U - column))) == 0U) continue;
-				for (uint32_t dy = 0U; dy < BOOT_SPLASH_STATUS_SCALE; dy++) {
-					uint32_t *pixels = g_display->framebuffer + (uint64_t)(glyph_top + row * BOOT_SPLASH_STATUS_SCALE + dy) * g_display->stride;
-					for (uint32_t dx = 0U; dx < BOOT_SPLASH_STATUS_SCALE; dx++) {
-						uint32_t x = cursor + column * BOOT_SPLASH_STATUS_SCALE + dx;
-						if (x < g_display->width) pixels[x] = BOOT_SPLASH_STATUS_COLOR;
-					}
-				}
+		const boot_status_glyph_t *glyph = boot_splash_status_glyph(status[index]);
+
+		for (uint32_t row = 0U; row < glyph->height; row++) {
+			int32_t y = (int32_t)glyph_top + glyph->y_offset + (int32_t)row;
+
+			if (y < 0 || (uint32_t)y >= g_display->height) continue;
+
+			uint32_t *destination = g_display->framebuffer + (uint64_t)y * g_display->stride;
+
+			for (uint32_t column = 0U; column < glyph->width; column++) {
+				int32_t x = (int32_t)cursor + glyph->x_offset + (int32_t)column;
+
+				if (x < 0 || (uint32_t)x >= g_display->width) continue;
+
+				uint32_t alpha = g_boot_status_pixels[glyph->offset + row * glyph->width + column];
+				destination[x] = boot_splash_blend(destination[x], (alpha << 24U) | BOOT_SPLASH_STATUS_COLOR);
 			}
 		}
 
-		cursor += 6U * BOOT_SPLASH_STATUS_SCALE;
+		cursor += glyph->advance;
 	}
 
 	return true;
 }
 
-bool boot_splash_set_status(const char *status)
+bool
+boot_splash_set_status(const char *status)
 {
 	if (!g_visible || g_display == 0 || status == 0) return false;
+
 	uint32_t top;
 	if (!boot_splash_status_rect(&top)) return false;
 
 	uint32_t length = 0U;
-	while (status[length] != '\0' && length < BOOT_SPLASH_STATUS_MAX_LENGTH) length++;
-	for (uint32_t index = 0U; index < length; index++) g_status_text[index] = status[index];
+	while (status[length] != '\0' && length < BOOT_SPLASH_STATUS_MAX_LENGTH)
+		length++;
+	for (uint32_t index = 0U; index < length; index++)
+		g_status_text[index] = status[index];
 	g_status_text[length] = '\0';
 	g_status_active = true;
 
@@ -256,7 +259,8 @@ bool boot_splash_set_status(const char *status)
 }
 
 /* Paint the progress bar at its current fill level without presenting. */
-static bool boot_splash_paint_bar(void)
+static bool
+boot_splash_paint_bar(void)
 {
 	if (g_display == 0) return false;
 
@@ -284,7 +288,8 @@ static bool boot_splash_paint_bar(void)
 	return true;
 }
 
-static bool boot_splash_draw_bar(void)
+static bool
+boot_splash_draw_bar(void)
 {
 	if (!g_visible || g_display == 0) return false;
 
@@ -304,7 +309,8 @@ static uint32_t g_left;
  * the logo/bar (see boot_splash_text_init()), so nothing ever scrolls
  * through or overwrites this rect again after the initial paint.
  */
-static void boot_splash_paint_logo(void)
+static void
+boot_splash_paint_logo(void)
 {
 	if (g_display == 0) return;
 
@@ -316,8 +322,10 @@ static void boot_splash_paint_logo(void)
 			uint32_t destination_y = g_top + source_y * g_scale;
 
 			for (uint32_t dy = 0U; dy < g_scale; dy++) {
-				uint32_t *row = g_display->framebuffer + (uint64_t)(destination_y + dy) * g_display->stride + destination_x;
-				for (uint32_t dx = 0U; dx < g_scale; dx++) row[dx] = boot_splash_blend(row[dx], source);
+				uint32_t *row =
+					g_display->framebuffer + (uint64_t)(destination_y + dy) * g_display->stride + destination_x;
+				for (uint32_t dx = 0U; dx < g_scale; dx++)
+					row[dx] = boot_splash_blend(row[dx], source);
 			}
 		}
 	}
@@ -326,13 +334,11 @@ static void boot_splash_paint_logo(void)
 /*
  * Pixel Y of the header's bottom edge -- right below the logo, or below the
  * bar too when it fits -- used by boot_splash_text_init() as the point the
- * scrolling console resumes below the header. The status caption is
- * deliberately not reserved for -- it is rare (only shown while a recovery
- * key is held during the splash hold) and reserving space for it
- * unconditionally would leave a permanent dead gap in the far more common
- * case where it never appears.
+ * scrolling console resumes below the header, including the status caption
+ * while startup options are loading.
  */
-static uint32_t boot_splash_text_region_top(void)
+static uint32_t
+boot_splash_text_region_top(void)
 {
 	uint32_t top = g_top + g_boot_splash_height * g_scale;
 
@@ -343,20 +349,28 @@ static uint32_t boot_splash_text_region_top(void)
 		if (bar_bottom > top) top = bar_bottom;
 	}
 
+	uint32_t status_top;
+	if (boot_splash_status_rect(&status_top)) {
+		top = status_top + BOOT_SPLASH_STATUS_HEIGHT;
+	}
+
 	if (g_display != 0 && top > g_display->height) top = g_display->height;
 	return top;
 }
 
 /* Does the pixel rectangle [left, right) x [top, bottom) overlap the header? */
-static bool boot_splash_rect_hits_header(uint32_t left, uint32_t right, uint32_t top, uint32_t bottom)
+static bool
+boot_splash_rect_hits_header(uint32_t left, uint32_t right, uint32_t top, uint32_t bottom)
 {
 	return right > g_header_left && left < g_header_right && bottom > g_header_top && top < g_header_bottom;
 }
 
 /* Fill pixels [from, to) of one scanline with the background colour. */
-static void boot_splash_fill_span(uint32_t *pixels, uint32_t from, uint32_t to)
+static void
+boot_splash_fill_span(uint32_t *pixels, uint32_t from, uint32_t to)
 {
-	for (uint32_t x = from; x < to; x++) pixels[x] = BOOT_SPLASH_BACKGROUND;
+	for (uint32_t x = from; x < to; x++)
+		pixels[x] = BOOT_SPLASH_BACKGROUND;
 }
 
 /*
@@ -364,7 +378,8 @@ static void boot_splash_fill_span(uint32_t *pixels, uint32_t from, uint32_t to)
  * scanline falls inside its row range -- the logo and bar are never
  * overwritten and never need repainting afterwards.
  */
-static void boot_splash_clear_row(uint32_t y)
+static void
+boot_splash_clear_row(uint32_t y)
 {
 	uint32_t *row = g_display->framebuffer + (uint64_t)y * g_display->stride;
 
@@ -377,14 +392,17 @@ static void boot_splash_clear_row(uint32_t y)
 	boot_splash_fill_span(row, 0U, g_display->width);
 }
 
-static void boot_splash_text_draw_char(uint32_t column, uint32_t row, char character)
+static void
+boot_splash_text_draw_char(uint32_t column, uint32_t row, char character)
 {
 	if (character < 32 || character > 126) character = '?';
 
 	uint32_t start_x = column * BOOT_SPLASH_TEXT_CELL_WIDTH;
 	uint32_t start_y = row * BOOT_SPLASH_TEXT_CELL_HEIGHT;
 
-	if (boot_splash_rect_hits_header(start_x, start_x + BOOT_SPLASH_TEXT_CELL_WIDTH, start_y, start_y + BOOT_SPLASH_TEXT_CELL_HEIGHT)) return;
+	if (boot_splash_rect_hits_header(start_x, start_x + BOOT_SPLASH_TEXT_CELL_WIDTH, start_y,
+									 start_y + BOOT_SPLASH_TEXT_CELL_HEIGHT))
+		return;
 
 	const uint8_t *glyph = &g_font8x16[(uint32_t)(uint8_t)character * FONT8X16_HEIGHT];
 
@@ -401,10 +419,12 @@ static void boot_splash_text_draw_char(uint32_t column, uint32_t row, char chara
 }
 
 /* Blank visible row `row` on the scanout and paint its cells over it. */
-static void boot_splash_text_render_row(uint32_t row)
+static void
+boot_splash_text_render_row(uint32_t row)
 {
 	uint32_t start_y = row * BOOT_SPLASH_TEXT_CELL_HEIGHT;
-	for (uint32_t y = 0U; y < BOOT_SPLASH_TEXT_CELL_HEIGHT; y++) boot_splash_clear_row(start_y + y);
+	for (uint32_t y = 0U; y < BOOT_SPLASH_TEXT_CELL_HEIGHT; y++)
+		boot_splash_clear_row(start_y + y);
 
 	const char *cells = g_text_cells[(g_text_top + row) % g_text_rows];
 	for (uint32_t column = 0U; column < g_text_columns; column++) {
@@ -418,7 +438,8 @@ static void boot_splash_text_render_row(uint32_t row)
  * scroll), without presenting. The status caption lives inside the console's
  * rectangle, so put it back on top afterwards.
  */
-static void boot_splash_text_render(void)
+static void
+boot_splash_text_render(void)
 {
 	for (uint32_t row = 0U; row < g_text_rows; row++) {
 		if (!g_text_all_dirty && !g_text_row_dirty[row]) continue;
@@ -430,7 +451,8 @@ static void boot_splash_text_render(void)
 	if (g_status_active) (void)boot_splash_paint_status();
 }
 
-static void boot_splash_text_advance_line(void)
+static void
+boot_splash_text_advance_line(void)
 {
 	g_text_cursor_x = 0U;
 	g_text_cursor_y++;
@@ -455,7 +477,8 @@ static uint64_t g_text_last_present_ticks;
  * marked dirty and is picked up by the next one, whether that'''s the next
  * line'''s call here or the periodic tick in boot_splash_wait().
  */
-static bool boot_splash_text_flush(void)
+static bool
+boot_splash_text_flush(void)
 {
 	if (!g_text_dirty || g_display == 0) return true;
 
@@ -496,7 +519,8 @@ static bool boot_splash_text_flush(void)
  * everything the serial/UART sink also receives) onto the splash scanout as
  * scrolling monospace text, underneath the logo/bar/status overlay.
  */
-static void boot_splash_text_putc(char character, void *context)
+static void
+boot_splash_text_putc(char character, void *context)
 {
 	(void)context;
 	if (!g_text_active) return;
@@ -525,7 +549,8 @@ static void boot_splash_text_putc(char character, void *context)
 
 	if (character == '\t') {
 		uint32_t spaces = 4U - (g_text_cursor_x % 4U);
-		for (uint32_t index = 0U; index < spaces; index++) boot_splash_text_putc(' ', context);
+		for (uint32_t index = 0U; index < spaces; index++)
+			boot_splash_text_putc(' ', context);
 		return;
 	}
 
@@ -551,7 +576,8 @@ static void boot_splash_text_putc(char character, void *context)
 #define BOOT_SPLASH_REPLAY_MAX_MS 2500ULL
 
 /* Cheap probe: capacity 0 reads nothing but still clamps/advances *cursor. */
-static uint64_t boot_splash_history_oldest_cursor(void)
+static uint64_t
+boot_splash_history_oldest_cursor(void)
 {
 	uint64_t cursor = 0ULL;
 	uint64_t read_size;
@@ -561,7 +587,8 @@ static uint64_t boot_splash_history_oldest_cursor(void)
 }
 
 /* Cheap forward scan (no rendering): total newline count in retained history. */
-static uint64_t boot_splash_history_line_count(void)
+static uint64_t
+boot_splash_history_line_count(void)
 {
 	uint64_t cursor = boot_splash_history_oldest_cursor();
 	uint64_t total_lines = 0ULL;
@@ -569,7 +596,9 @@ static uint64_t boot_splash_history_line_count(void)
 	uint64_t scan_read_size;
 
 	for (;;) {
-		if (!kconsole_history_read(&cursor, scan_buffer, sizeof(scan_buffer), &scan_read_size) || scan_read_size == 0ULL) break;
+		if (!kconsole_history_read(&cursor, scan_buffer, sizeof(scan_buffer), &scan_read_size) ||
+			scan_read_size == 0ULL)
+			break;
 		for (uint64_t index = 0ULL; index < scan_read_size; index++) {
 			if (scan_buffer[index] == '\n') total_lines++;
 		}
@@ -591,16 +620,20 @@ static uint64_t boot_splash_history_line_count(void)
  * lines are fed into the grid without stepping and one final present catches
  * the screen up, so the replay can never turn into a stall.
  */
-static void boot_splash_replay_history(display_device_t *display)
+static void
+boot_splash_replay_history(display_device_t *display)
 {
 	uint64_t total_lines = boot_splash_history_line_count();
 	if (total_lines == 0ULL) return;
 
-	uint64_t lines_per_present = (total_lines + BOOT_SPLASH_REPLAY_TARGET_PRESENTS - 1ULL) / BOOT_SPLASH_REPLAY_TARGET_PRESENTS;
+	uint64_t lines_per_present =
+		(total_lines + BOOT_SPLASH_REPLAY_TARGET_PRESENTS - 1ULL) / BOOT_SPLASH_REPLAY_TARGET_PRESENTS;
 	uint64_t cursor = boot_splash_history_oldest_cursor();
 
 	uint64_t frequency = timer_get_frequency();
-	uint64_t step_ticks = frequency != 0ULL ? (frequency * BOOT_SPLASH_REPLAY_TARGET_MS) / (1000ULL * BOOT_SPLASH_REPLAY_TARGET_PRESENTS) : 0ULL;
+	uint64_t step_ticks =
+		frequency != 0ULL ? (frequency * BOOT_SPLASH_REPLAY_TARGET_MS) / (1000ULL * BOOT_SPLASH_REPLAY_TARGET_PRESENTS)
+						  : 0ULL;
 	uint64_t max_ticks = frequency != 0ULL ? (frequency * BOOT_SPLASH_REPLAY_MAX_MS) / 1000ULL : 0ULL;
 	uint64_t started = timer_get_ticks();
 	uint64_t deadline = started + max_ticks;
@@ -634,7 +667,8 @@ static void boot_splash_replay_history(display_device_t *display)
 				animate = false;
 			} else if (step_ticks != 0ULL) {
 				uint64_t next = started + steps * step_ticks;
-				while (timer_get_ticks() < next) ml_cpu_relax();
+				while (timer_get_ticks() < next)
+					ml_cpu_relax();
 			}
 		}
 	}
@@ -649,7 +683,8 @@ static void boot_splash_replay_history(display_device_t *display)
 	g_text_last_present_ticks = timer_get_ticks();
 }
 
-static void boot_splash_text_init(void)
+static void
+boot_splash_text_init(void)
 {
 	if (g_display == 0) {
 		g_text_active = false;
@@ -694,15 +729,19 @@ static void boot_splash_text_init(void)
 	g_text_active = g_text_columns != 0U && g_text_rows != 0U;
 }
 
-bool boot_splash_show(display_device_t *display)
+bool
+boot_splash_show(display_device_t *display)
 {
-	if (display == 0 || !display->registered || display->framebuffer == 0 || display->bytes_per_pixel != sizeof(uint32_t)) return false;
+	if (display == 0 || !display->registered || display->framebuffer == 0 ||
+		display->bytes_per_pixel != sizeof(uint32_t))
+		return false;
 	if (g_boot_splash_width == 0U || g_boot_splash_height == 0U || timer_get_frequency() == 0ULL) return false;
 	if (display->width < g_boot_splash_width || display->height < g_boot_splash_height) return false;
 
 	for (uint32_t y = 0U; y < display->height; y++) {
 		uint32_t *row = display->framebuffer + (uint64_t)y * display->stride;
-		for (uint32_t x = 0U; x < display->width; x++) row[x] = BOOT_SPLASH_BACKGROUND;
+		for (uint32_t x = 0U; x < display->width; x++)
+			row[x] = BOOT_SPLASH_BACKGROUND;
 	}
 
 	uint32_t scale_x = display->width / g_boot_splash_width;
@@ -746,7 +785,8 @@ bool boot_splash_show(display_device_t *display)
 	return true;
 }
 
-bool boot_splash_wait(uint64_t milliseconds, boot_splash_service_t service)
+bool
+boot_splash_wait(uint64_t milliseconds, boot_splash_service_t service)
 {
 	if (!g_visible || g_display == 0) return false;
 	uint64_t frequency = timer_get_frequency();
@@ -774,7 +814,8 @@ bool boot_splash_wait(uint64_t milliseconds, boot_splash_service_t service)
 	return true;
 }
 
-bool boot_splash_finish(void)
+bool
+boot_splash_finish(void)
 {
 	if (!g_visible || g_display == 0) return false;
 	uint64_t frequency = timer_get_frequency();
@@ -813,7 +854,8 @@ bool boot_splash_finish(void)
 		g_progress += step < remaining ? step : remaining;
 		if (!boot_splash_draw_bar()) return false;
 		uint64_t deadline = timer_get_ticks() + frame_interval;
-		while (timer_get_ticks() < deadline) ml_cpu_relax();
+		while (timer_get_ticks() < deadline)
+			ml_cpu_relax();
 	}
 
 	kputln("boot_splash_finish: progress complete");

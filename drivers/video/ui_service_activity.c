@@ -37,15 +37,15 @@ static nxu_spinlock_t g_activity_lock;
 static proc_snapshot_t g_activity_procs[PROC_MAX];
 static thread_snapshot_t g_activity_threads[THREAD_MAX];
 
-static uint32_t ui_service_activity_state(const proc_snapshot_t *proc, bool on_cpu, bool runnable)
+static uint32_t
+ui_service_activity_state(const proc_snapshot_t *proc, bool on_cpu, bool runnable)
 {
 	switch (proc->state) {
 	case PROC_STATE_STOPPED:
 		return UI_SERVICE_PROCESS_STATE_STOPPED;
 	case PROC_STATE_RUNNABLE:
 	case PROC_STATE_RUNNING:
-		if (on_cpu)
-			return UI_SERVICE_PROCESS_STATE_RUNNING;
+		if (on_cpu) return UI_SERVICE_PROCESS_STATE_RUNNING;
 		return runnable ? UI_SERVICE_PROCESS_STATE_RUNNABLE : UI_SERVICE_PROCESS_STATE_SLEEPING;
 	default:
 		return UI_SERVICE_PROCESS_STATE_OTHER;
@@ -57,30 +57,29 @@ static uint32_t ui_service_activity_state(const proc_snapshot_t *proc, bool on_c
  * daemons it starts; there are no user accounts, so "user" means anything
  * else: programs started from a program.
  */
-static uint32_t ui_service_activity_flags(const proc_snapshot_t *proc)
+static uint32_t
+ui_service_activity_flags(const proc_snapshot_t *proc)
 {
-	if (proc->pid == PROC_PID_KERNEL)
-		return UI_SERVICE_PROCESS_FLAG_KERNEL | UI_SERVICE_PROCESS_FLAG_SYSTEM;
+	if (proc->pid == PROC_PID_KERNEL) return UI_SERVICE_PROCESS_FLAG_KERNEL | UI_SERVICE_PROCESS_FLAG_SYSTEM;
 	if ((proc->flags & PROC_FLAG_SYSTEM) != 0U || proc->pid == 1U || proc->ppid == 1U)
 		return UI_SERVICE_PROCESS_FLAG_SYSTEM;
 	return 0U;
 }
 
-uint32_t ui_service_get_activity(void *context, UIServiceActivity *activity, UIServiceProcessInfo *processes,
-								 uint32_t capacity, uint32_t *count_out)
+uint32_t
+ui_service_get_activity(void *context, UIServiceActivity *activity, UIServiceProcessInfo *processes, uint32_t capacity,
+						uint32_t *count_out)
 {
 	(void)context;
 
 	if (activity == 0 || count_out == 0 || (processes == 0 && capacity != 0U))
 		return UI_SERVICE_STATUS_INVALID_ARGUMENT;
-	if (activity->struct_size < sizeof(UIServiceActivity))
-		return UI_SERVICE_STATUS_INVALID_ARGUMENT;
+	if (activity->struct_size < sizeof(UIServiceActivity)) return UI_SERVICE_STATUS_INVALID_ARGUMENT;
 
 	*count_out = 0U;
 
 	uint32_t cpus = processor_count();
-	if (cpus > UI_SERVICE_ACTIVITY_CPU_MAX)
-		cpus = UI_SERVICE_ACTIVITY_CPU_MAX;
+	if (cpus > UI_SERVICE_ACTIVITY_CPU_MAX) cpus = UI_SERVICE_ACTIVITY_CPU_MAX;
 
 	activity->cpu_count = cpus;
 	activity->uptime_us = kconsole_uptime_us();
@@ -109,8 +108,7 @@ uint32_t ui_service_get_activity(void *context, UIServiceActivity *activity, UIS
 	uint32_t live_threads = 0U;
 
 	for (uint32_t thread = 0U; thread < thread_count; thread++) {
-		if (!g_activity_threads[thread].idle)
-			live_threads++;
+		if (!g_activity_threads[thread].idle) live_threads++;
 	}
 
 	activity->process_count = proc_count;
@@ -132,21 +130,18 @@ uint32_t ui_service_get_activity(void *context, UIServiceActivity *activity, UIS
 		for (uint32_t thread = 0U; thread < thread_count; thread++) {
 			const thread_snapshot_t *snapshot = &g_activity_threads[thread];
 
-			if (snapshot->task_uniqueid != proc->uniqueid || snapshot->idle)
-				continue;
+			if (snapshot->task_uniqueid != proc->uniqueid || snapshot->idle) continue;
 
 			threads++;
 			ticks += snapshot->run_us;
-			if (snapshot->mlfq_level < level)
-				level = snapshot->mlfq_level;
+			if (snapshot->mlfq_level < level) level = snapshot->mlfq_level;
 			if (snapshot->on_cpu) {
 				on_cpu = true;
 				last_cpu = snapshot->last_cpu;
 			} else if (!on_cpu) {
 				last_cpu = snapshot->last_cpu;
 			}
-			if (!snapshot->waiting)
-				runnable = true;
+			if (!snapshot->waiting) runnable = true;
 		}
 
 		info->uniqueid = proc->uniqueid;

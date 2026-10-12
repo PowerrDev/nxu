@@ -22,7 +22,8 @@ typedef struct startup_options_ui_font_face {
 const startup_options_ui_font_face_t *startup_options_ui_font_face(uint32_t scale);
 const startup_options_ui_font_face_t *startup_options_ui_font_face_for_weight(uint32_t scale, uint32_t weight);
 bool startup_options_ui_font_has_weights(void);
-const startup_options_ui_font_glyph_t *startup_options_ui_font_lookup(const startup_options_ui_font_face_t *face, char character);
+const startup_options_ui_font_glyph_t *startup_options_ui_font_lookup(const startup_options_ui_font_face_t *face,
+																	  char character);
 const uint8_t *startup_options_ui_font_pixels(const startup_options_ui_font_face_t *face);
 uint32_t startup_options_ui_font_line_height(const startup_options_ui_font_face_t *face);
 

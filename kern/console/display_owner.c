@@ -9,32 +9,31 @@ static nxu_spinlock_t g_owner_lock;
 static proc_ident_t g_owner;
 static uint64_t g_next_epoch = 1;
 
-static bool same(proc_ident_t a, proc_ident_t b)
+static bool
+same(proc_ident_t a, proc_ident_t b)
 {
 	return a.pid == b.pid && a.uniqueid == b.uniqueid && a.idversion == b.idversion;
 }
 
-bool display_owner_claim(proc_id_t pid)
+bool
+display_owner_claim(proc_id_t pid)
 {
 	proc_t proc = proc_find(pid);
-	if (!proc || pid == PROC_PID_KERNEL || (proc->p_flag & PROC_FLAG_EXITING))
-		return false;
+	if (!proc || pid == PROC_PID_KERNEL || (proc->p_flag & PROC_FLAG_EXITING)) return false;
 	uint64_t irq = nxu_spin_lock_irqsave(&g_owner_lock);
 	bool allowed = g_owner.pid == PROC_PID_KERNEL || same(g_owner, proc->p_ident);
-	if (allowed)
-		g_owner = proc->p_ident;
+	if (allowed) g_owner = proc->p_ident;
 	nxu_spin_unlock_irqrestore(&g_owner_lock, irq);
 	return allowed;
 }
 
-bool display_owner_is(proc_id_t pid)
+bool
+display_owner_is(proc_id_t pid)
 {
-	if (pid == PROC_PID_KERNEL)
-		return false;
+	if (pid == PROC_PID_KERNEL) return false;
 
 	proc_t proc = proc_find(pid);
-	if (!proc)
-		return false;
+	if (!proc) return false;
 
 	proc_ident_t identity = proc->p_ident;
 	proc_rele(proc);
@@ -45,11 +44,11 @@ bool display_owner_is(proc_id_t pid)
 	return allowed;
 }
 
-void display_owner_release(proc_t proc)
+void
+display_owner_release(proc_t proc)
 {
 	uint64_t irq = nxu_spin_lock_irqsave(&g_owner_lock);
-	if (same(g_owner, proc->p_ident))
-		memset(&g_owner, 0, sizeof(g_owner));
+	if (same(g_owner, proc->p_ident)) memset(&g_owner, 0, sizeof(g_owner));
 	proc->p_gui_epoch = proc->p_gui_features = 0;
 	proc->p_gui_record_limit = 0;
 	proc->p_gui_minor = 0;
@@ -57,7 +56,8 @@ void display_owner_release(proc_t proc)
 	ui_bridge_host_release(proc);
 }
 
-int64_t display_owner_host(proc_t proc, const nxu_gui_host_hello_t *request, nxu_gui_host_hello_reply_t *reply)
+int64_t
+display_owner_host(proc_t proc, const nxu_gui_host_hello_t *request, nxu_gui_host_hello_reply_t *reply)
 {
 	const nxu_gui_host_header_t *h = &request->header;
 	memset(reply, 0, sizeof(*reply));
@@ -108,8 +108,7 @@ int64_t display_owner_host(proc_t proc, const nxu_gui_host_hello_t *request, nxu
 			h->session_epoch != proc->p_gui_epoch)
 			status = -NXU_SYS_E_INVALID_ARGUMENT;
 		else {
-			if (same(g_owner, proc->p_ident))
-				memset(&g_owner, 0, sizeof(g_owner));
+			if (same(g_owner, proc->p_ident)) memset(&g_owner, 0, sizeof(g_owner));
 			proc->p_gui_epoch = proc->p_gui_features = 0;
 			proc->p_gui_record_limit = 0;
 			proc->p_gui_minor = 0;
@@ -129,13 +128,13 @@ int64_t display_owner_host(proc_t proc, const nxu_gui_host_hello_t *request, nxu
 
 /* Desktop policy is process-local. Retire the old compositor together with
  * its desktop so a replacement cannot inherit orphaned window IDs. */
-void display_owner_restart(void)
+void
+display_owner_restart(void)
 {
 	uint64_t irq = nxu_spin_lock_irqsave(&g_owner_lock);
 	proc_ident_t owner = g_owner;
 	nxu_spin_unlock_irqrestore(&g_owner_lock, irq);
-	if (owner.pid == PROC_PID_KERNEL)
-		return;
+	if (owner.pid == PROC_PID_KERNEL) return;
 
 	proc_t compositor = proc_find_ident(&owner);
 

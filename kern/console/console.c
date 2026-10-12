@@ -32,16 +32,17 @@ static bool g_kconsole_clock_started;
 static uint64_t g_kconsole_boot_ticks;
 static uint64_t g_kconsole_counter_frequency;
 
-static void kconsole_history_append(char character)
+static void
+kconsole_history_append(char character)
 {
 	g_kconsole_history[g_kconsole_history_head] = character;
 	g_kconsole_history_head = (g_kconsole_history_head + 1U) % KCONSOLE_HISTORY_SIZE;
-	if (g_kconsole_history_count < KCONSOLE_HISTORY_SIZE)
-		g_kconsole_history_count++;
+	if (g_kconsole_history_count < KCONSOLE_HISTORY_SIZE) g_kconsole_history_count++;
 	__atomic_add_fetch(&g_kconsole_history_sequence, 1ULL, __ATOMIC_RELEASE);
 }
 
-static void kconsole_replay(kconsole_sink_t sink, void *context)
+static void
+kconsole_replay(kconsole_sink_t sink, void *context)
 {
 	uint32_t start =
 		(g_kconsole_history_head + KCONSOLE_HISTORY_SIZE - g_kconsole_history_count) % KCONSOLE_HISTORY_SIZE;
@@ -50,44 +51,38 @@ static void kconsole_replay(kconsole_sink_t sink, void *context)
 	}
 }
 
-bool kconsole_register_sink(kconsole_sink_t sink, void *context, bool replay_history)
+bool
+kconsole_register_sink(kconsole_sink_t sink, void *context, bool replay_history)
 {
-	if (sink == 0)
-		return false;
+	if (sink == 0) return false;
 
 	for (uint32_t index = 0U; index < KCONSOLE_MAX_SINKS; index++) {
-		if (!g_kconsole_sinks[index].active)
-			continue;
+		if (!g_kconsole_sinks[index].active) continue;
 
-		if (g_kconsole_sinks[index].sink == sink && g_kconsole_sinks[index].context == context)
-			return false;
+		if (g_kconsole_sinks[index].sink == sink && g_kconsole_sinks[index].context == context) return false;
 	}
 
 	for (uint32_t index = 0U; index < KCONSOLE_MAX_SINKS; index++) {
-		if (g_kconsole_sinks[index].active)
-			continue;
+		if (g_kconsole_sinks[index].active) continue;
 		g_kconsole_sinks[index].sink = sink;
 		g_kconsole_sinks[index].context = context;
 		g_kconsole_sinks[index].active = true;
-		if (replay_history)
-			kconsole_replay(sink, context);
+		if (replay_history) kconsole_replay(sink, context);
 		return true;
 	}
 
 	return false;
 }
 
-bool kconsole_unregister_sink(kconsole_sink_t sink, void *context)
+bool
+kconsole_unregister_sink(kconsole_sink_t sink, void *context)
 {
-	if (sink == 0)
-		return false;
+	if (sink == 0) return false;
 
 	for (uint32_t index = 0U; index < KCONSOLE_MAX_SINKS; index++) {
-		if (!g_kconsole_sinks[index].active)
-			continue;
+		if (!g_kconsole_sinks[index].active) continue;
 
-		if (g_kconsole_sinks[index].sink != sink || g_kconsole_sinks[index].context != context)
-			continue;
+		if (g_kconsole_sinks[index].sink != sink || g_kconsole_sinks[index].context != context) continue;
 		g_kconsole_sinks[index].active = false;
 		g_kconsole_sinks[index].sink = 0;
 		g_kconsole_sinks[index].context = 0;
@@ -101,13 +96,13 @@ bool kconsole_unregister_sink(kconsole_sink_t sink, void *context)
  * Emit one character without timestamp processing. Timestamp generation itself
  * uses this path so the console never recursively prefixes its own prefix.
  */
-static void kconsole_emit_raw(char character)
+static void
+kconsole_emit_raw(char character)
 {
 	uart_putc(character);
 
 	for (uint32_t index = 0U; index < KCONSOLE_MAX_SINKS; index++) {
-		if (!g_kconsole_sinks[index].active)
-			continue;
+		if (!g_kconsole_sinks[index].active) continue;
 		g_kconsole_sinks[index].sink(character, g_kconsole_sinks[index].context);
 	}
 
@@ -119,7 +114,8 @@ static void kconsole_emit_raw(char character)
  * intentionally small because it is used before exception handling and the VM
  * subsystem are fully online.
  */
-static void kconsole_emit_decimal_raw(uint64_t value)
+static void
+kconsole_emit_decimal_raw(uint64_t value)
 {
 	char digits[20];
 	uint32_t length = 0U;
@@ -142,7 +138,8 @@ static void kconsole_emit_decimal_raw(uint64_t value)
  * timestamp path free of padding buffers and optimizer-generated bulk stores
  * makes the first diagnostic line safe even as the linked kernel layout grows.
  */
-static void kconsole_emit_fraction_raw(uint64_t fraction)
+static void
+kconsole_emit_fraction_raw(uint64_t fraction)
 {
 	uint64_t divisor = 10000000ULL;
 
@@ -153,14 +150,12 @@ static void kconsole_emit_fraction_raw(uint64_t fraction)
 	}
 }
 
-uint64_t kconsole_uptime_us(void)
+uint64_t
+kconsole_uptime_us(void)
 {
-	if (!g_kconsole_clock_started)
-		return 0ULL;
-	if (g_kconsole_counter_frequency == 0ULL)
-		g_kconsole_counter_frequency = timer_get_frequency();
-	if (g_kconsole_counter_frequency == 0ULL)
-		return 0ULL;
+	if (!g_kconsole_clock_started) return 0ULL;
+	if (g_kconsole_counter_frequency == 0ULL) g_kconsole_counter_frequency = timer_get_frequency();
+	if (g_kconsole_counter_frequency == 0ULL) return 0ULL;
 
 	uint64_t elapsed = timer_get_ticks() - g_kconsole_boot_ticks;
 	uint64_t seconds = elapsed / g_kconsole_counter_frequency;
@@ -174,7 +169,8 @@ uint64_t kconsole_uptime_us(void)
  * console message. Eight fractional digits match NXU's XNU-inspired boot log
  * format while still deriving directly from the architectural counter.
  */
-static void kconsole_emit_timestamp(void)
+static void
+kconsole_emit_timestamp(void)
 {
 	if (!g_kconsole_clock_started) {
 		g_kconsole_boot_ticks = timer_get_ticks();
@@ -186,8 +182,7 @@ static void kconsole_emit_timestamp(void)
 	 * the TSC against the PIT (timer_calibrate) after the console is up.
 	 * Until then lines read 0; after, time since the first line.
 	 */
-	if (g_kconsole_counter_frequency == 0ULL)
-		g_kconsole_counter_frequency = timer_get_frequency();
+	if (g_kconsole_counter_frequency == 0ULL) g_kconsole_counter_frequency = timer_get_frequency();
 
 	uint64_t seconds = 0ULL;
 	uint64_t fraction = 0ULL;
@@ -209,7 +204,8 @@ static void kconsole_emit_timestamp(void)
 	kconsole_emit_raw(' ');
 }
 
-void kputc(char character)
+void
+kputc(char character)
 {
 	NXU_RLOCK_GUARD(&g_kconsole_lock);
 
@@ -225,17 +221,18 @@ void kputc(char character)
 	}
 }
 
-void kputs(const char *string)
+void
+kputs(const char *string)
 {
 	NXU_RLOCK_GUARD(&g_kconsole_lock);
 
-	if (string == 0)
-		string = "(null)";
+	if (string == 0) string = "(null)";
 	while (*string != '\0')
 		kputc(*string++);
 }
 
-void kputln(const char *string)
+void
+kputln(const char *string)
 {
 	NXU_RLOCK_GUARD(&g_kconsole_lock);
 
@@ -243,20 +240,22 @@ void kputln(const char *string)
 	kputc('\n');
 }
 
-void kputhex_digit(uint8_t value)
+void
+kputhex_digit(uint8_t value)
 {
-	if (value > 15U)
-		return;
+	if (value > 15U) return;
 	kputc(value < 10U ? (char)('0' + value) : (char)('A' + value - 10U));
 }
 
-void kputhex_byte(uint8_t byte)
+void
+kputhex_byte(uint8_t byte)
 {
 	kputhex_digit((uint8_t)((byte >> 4U) & 0x0FU));
 	kputhex_digit((uint8_t)(byte & 0x0FU));
 }
 
-static void kputhex_value(uint64_t value, uint32_t digits, bool uppercase)
+static void
+kputhex_value(uint64_t value, uint32_t digits, bool uppercase)
 {
 	for (uint32_t index = 0U; index < digits; index++) {
 		uint32_t shift = (digits - index - 1U) * 4U;
@@ -268,19 +267,22 @@ static void kputhex_value(uint64_t value, uint32_t digits, bool uppercase)
 	}
 }
 
-void kputhex32(uint32_t value)
+void
+kputhex32(uint32_t value)
 {
 	kputs("0x");
 	kputhex_value(value, 8U, true);
 }
 
-void kputhex64(uint64_t value)
+void
+kputhex64(uint64_t value)
 {
 	kputs("0x");
 	kputhex_value(value, 16U, true);
 }
 
-void kputu64(uint64_t value)
+void
+kputu64(uint64_t value)
 {
 	char digits[20];
 	uint32_t length = 0U;
@@ -298,7 +300,8 @@ void kputu64(uint64_t value)
 		kputc(digits[--length]);
 }
 
-void kputi64(int64_t value)
+void
+kputi64(int64_t value)
 {
 	if (value < 0) {
 		kputc('-');
@@ -309,7 +312,8 @@ void kputi64(int64_t value)
 	kputu64((uint64_t)value);
 }
 
-static int kprintf_unsigned(uint64_t value, uint32_t base, bool uppercase)
+static int
+kprintf_unsigned(uint64_t value, uint32_t base, bool uppercase)
 {
 	char digits[64];
 	uint32_t length = 0U;
@@ -329,21 +333,21 @@ static int kprintf_unsigned(uint64_t value, uint32_t base, bool uppercase)
 	return written;
 }
 
-static int kprintf_signed(int64_t value)
+static int
+kprintf_signed(int64_t value)
 {
-	if (value >= 0)
-		return kprintf_unsigned((uint64_t)value, 10U, false);
+	if (value >= 0) return kprintf_unsigned((uint64_t)value, 10U, false);
 	kputc('-');
 	uint64_t magnitude = (uint64_t)(-(value + 1LL)) + 1ULL;
 	return 1 + kprintf_unsigned(magnitude, 10U, false);
 }
 
-int kvprintf(const char *format, va_list arguments)
+int
+kvprintf(const char *format, va_list arguments)
 {
 	NXU_RLOCK_GUARD(&g_kconsole_lock);
 
-	if (format == 0)
-		return 0;
+	if (format == 0) return 0;
 
 	int written = 0;
 
@@ -373,8 +377,7 @@ int kvprintf(const char *format, va_list arguments)
 		}
 
 		char conversion = *format;
-		if (conversion == '\0')
-			break;
+		if (conversion == '\0') break;
 		format++;
 
 		switch (conversion) {
@@ -384,8 +387,7 @@ int kvprintf(const char *format, va_list arguments)
 			break;
 		case 's': {
 			const char *string = va_arg(arguments, const char *);
-			if (string == 0)
-				string = "(null)";
+			if (string == 0) string = "(null)";
 			while (*string != '\0') {
 				kputc(*string++);
 				written++;
@@ -436,7 +438,8 @@ int kvprintf(const char *format, va_list arguments)
 	return written;
 }
 
-int kprintf(const char *format, ...)
+int
+kprintf(const char *format, ...)
 {
 	va_list arguments;
 	va_start(arguments, format);
@@ -445,30 +448,32 @@ int kprintf(const char *format, ...)
 	return written;
 }
 
-void kconsole_set_verbose(bool verbose)
+void
+kconsole_set_verbose(bool verbose)
 {
 	g_kconsole_verbose = verbose;
 }
 
-bool kconsole_verbose(void)
+bool
+kconsole_verbose(void)
 {
 	return g_kconsole_verbose;
 }
 
-void kconsole_break_lock(void)
+void
+kconsole_break_lock(void)
 {
-	if (__atomic_load_n(&g_kconsole_lock.owner, __ATOMIC_RELAXED) == machine_cpu_id() + 1U)
-		return;
+	if (__atomic_load_n(&g_kconsole_lock.owner, __ATOMIC_RELAXED) == machine_cpu_id() + 1U) return;
 
 	g_kconsole_lock.owner = 0U;
 	g_kconsole_lock.depth = 0U;
 	__atomic_store_n(&g_kconsole_lock.lock.value, 0U, __ATOMIC_RELEASE);
 }
 
-int kverbosef(const char *format, ...)
+int
+kverbosef(const char *format, ...)
 {
-	if (!g_kconsole_verbose)
-		return 0;
+	if (!g_kconsole_verbose) return 0;
 
 	va_list arguments;
 	va_start(arguments, format);
@@ -477,22 +482,19 @@ int kverbosef(const char *format, ...)
 	return written;
 }
 
-bool kconsole_history_read(uint64_t *cursor, char *buffer, uint64_t capacity, uint64_t *read_size)
+bool
+kconsole_history_read(uint64_t *cursor, char *buffer, uint64_t capacity, uint64_t *read_size)
 {
-	if (cursor == 0 || read_size == 0)
-		return false;
-	if (capacity != 0ULL && buffer == 0)
-		return false;
+	if (cursor == 0 || read_size == 0) return false;
+	if (capacity != 0ULL && buffer == 0) return false;
 
 	*read_size = 0ULL;
 	uint64_t sequence = __atomic_load_n(&g_kconsole_history_sequence, __ATOMIC_ACQUIRE);
 	uint64_t retained = g_kconsole_history_count;
 	uint64_t oldest = sequence > retained ? sequence - retained : 0ULL;
 
-	if (*cursor < oldest)
-		*cursor = oldest;
-	if (*cursor > sequence)
-		*cursor = sequence;
+	if (*cursor < oldest) *cursor = oldest;
+	if (*cursor > sequence) *cursor = sequence;
 
 	uint64_t available = sequence - *cursor;
 	uint64_t count = available < capacity ? available : capacity;

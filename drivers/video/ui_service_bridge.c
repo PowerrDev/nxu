@@ -83,17 +83,18 @@ static uint32_t g_activation_count;
 static char g_launches[UI_BRIDGE_LAUNCH_MAX][NXU_UI_PATH_MAX];
 static uint32_t g_launch_count;
 
-static bool ui_bridge_same_process(const proc_ident_t *left, const proc_ident_t *right)
+static bool
+ui_bridge_same_process(const proc_ident_t *left, const proc_ident_t *right)
 {
 	return left->pid == right->pid && left->uniqueid == right->uniqueid && left->idversion == right->idversion;
 }
 
-static bool ui_bridge_owner_alive(const ui_bridge_connection_t *connection)
+static bool
+ui_bridge_owner_alive(const ui_bridge_connection_t *connection)
 {
 	proc_t proc = proc_find_ident(&connection->owner);
 
-	if (proc == 0)
-		return false;
+	if (proc == 0) return false;
 
 	bool alive = (proc->p_flag & (PROC_FLAG_EXITING | PROC_FLAG_REAPED)) == 0;
 
@@ -101,22 +102,20 @@ static bool ui_bridge_owner_alive(const ui_bridge_connection_t *connection)
 	return alive;
 }
 
-static void ui_bridge_free_locked(ui_bridge_connection_t *connection)
+static void
+ui_bridge_free_locked(ui_bridge_connection_t *connection)
 {
-	if (connection->info != 0)
-		(void)kfree(connection->info);
-	if (connection->queue != 0)
-		(void)kfree(connection->queue);
-	if (connection->frames[0] != 0)
-		(void)kfree(connection->frames[0]);
-	if (connection->frames[1] != 0)
-		(void)kfree(connection->frames[1]);
+	if (connection->info != 0) (void)kfree(connection->info);
+	if (connection->queue != 0) (void)kfree(connection->queue);
+	if (connection->frames[0] != 0) (void)kfree(connection->frames[0]);
+	if (connection->frames[1] != 0) (void)kfree(connection->frames[1]);
 
 	*connection = (ui_bridge_connection_t){.state = UI_BRIDGE_FREE};
 }
 
 /* Free the slots whose app is gone after the desktop let go of them. */
-static void ui_bridge_reap_locked(void)
+static void
+ui_bridge_reap_locked(void)
 {
 	for (uint32_t index = 0U; index < UI_BRIDGE_CONNECTION_MAX; index++) {
 		ui_bridge_connection_t *connection = &g_connections[index];
@@ -128,45 +127,43 @@ static void ui_bridge_reap_locked(void)
 }
 
 /* The caller's own connection `number` (1-based), or 0. */
-static ui_bridge_connection_t *ui_bridge_caller_connection(uint64_t number)
+static ui_bridge_connection_t *
+ui_bridge_caller_connection(uint64_t number)
 {
-	if (number == 0ULL || number > UI_BRIDGE_CONNECTION_MAX)
-		return 0;
+	if (number == 0ULL || number > UI_BRIDGE_CONNECTION_MAX) return 0;
 
 	ui_bridge_connection_t *connection = &g_connections[number - 1ULL];
 	proc_t proc = current_proc();
 
-	if (proc == 0 || connection->state == UI_BRIDGE_FREE)
-		return 0;
-	if (!ui_bridge_same_process(&connection->owner, &proc->p_ident))
-		return 0;
+	if (proc == 0 || connection->state == UI_BRIDGE_FREE) return 0;
+	if (!ui_bridge_same_process(&connection->owner, &proc->p_ident)) return 0;
 	return connection;
 }
 
-static void ui_bridge_terminate_string(char *text, size_t capacity)
+static void
+ui_bridge_terminate_string(char *text, size_t capacity)
 {
 	text[capacity - 1U] = '\0';
 }
 
 /* Wait (interruptibly) until the desktop is up. */
-static bool ui_bridge_wait_session(void)
+static bool
+ui_bridge_wait_session(void)
 {
 	for (;;) {
 		uint32_t sequence = waitq_seq(&g_session_wait);
 
-		if (g_session_running)
-			return true;
-		if (!waitq_block_seq(&g_session_wait, sequence, true))
-			return false;
+		if (g_session_running) return true;
+		if (!waitq_block_seq(&g_session_wait, sequence, true)) return false;
 	}
 }
 
-int64_t ui_bridge_syscall_connect(uint64_t user_info)
+int64_t
+ui_bridge_syscall_connect(uint64_t user_info)
 {
 	nxu_ui_connect_t *info = kmalloc(sizeof(*info));
 
-	if (info == 0)
-		return -NXU_SYS_E_NO_MEMORY;
+	if (info == 0) return -NXU_SYS_E_NO_MEMORY;
 
 	if (!vm_copy_from_user(info, user_info, sizeof(*info))) {
 		(void)kfree(info);
@@ -210,12 +207,9 @@ int64_t ui_bridge_syscall_connect(uint64_t user_info)
 	uint32_t *frame1 = kmalloc((size_t)capacity * sizeof(uint32_t));
 
 	if (queue == 0 || frame0 == 0 || frame1 == 0) {
-		if (queue != 0)
-			(void)kfree(queue);
-		if (frame0 != 0)
-			(void)kfree(frame0);
-		if (frame1 != 0)
-			(void)kfree(frame1);
+		if (queue != 0) (void)kfree(queue);
+		if (frame0 != 0) (void)kfree(frame0);
+		if (frame1 != 0) (void)kfree(frame1);
 		(void)kfree(info);
 		return -NXU_SYS_E_NO_MEMORY;
 	}
@@ -241,8 +235,7 @@ int64_t ui_bridge_syscall_connect(uint64_t user_info)
 		for (uint32_t index = 0U; index < UI_BRIDGE_CONNECTION_MAX; index++) {
 			ui_bridge_connection_t *connection = &g_connections[index];
 
-			if (connection->state != UI_BRIDGE_FREE)
-				continue;
+			if (connection->state != UI_BRIDGE_FREE) continue;
 
 			*connection = (ui_bridge_connection_t){.state = UI_BRIDGE_PENDING,
 												   .owner = current_proc()->p_ident,
@@ -275,13 +268,13 @@ int64_t ui_bridge_syscall_connect(uint64_t user_info)
 	return result;
 }
 
-int64_t ui_bridge_syscall_receive(uint64_t number, uint64_t user_message, uint64_t wait)
+int64_t
+ui_bridge_syscall_receive(uint64_t number, uint64_t user_message, uint64_t wait)
 {
 	ui_bridge_connection_t *connection = ui_bridge_caller_connection(number);
 	uint64_t deadline = 0ULL;
 
-	if (connection == 0)
-		return -NXU_SYS_E_NOT_FOUND;
+	if (connection == 0) return -NXU_SYS_E_NOT_FOUND;
 
 	for (;;) {
 		uint32_t sequence = waitq_seq(&connection->inbox);
@@ -300,20 +293,16 @@ int64_t ui_bridge_syscall_receive(uint64_t number, uint64_t user_message, uint64
 		nxu_spin_unlock(&connection->lock);
 
 		if (have) {
-			if (!vm_copy_to_user(user_message, &message, sizeof(message)))
-				return -NXU_SYS_E_BAD_ADDRESS;
+			if (!vm_copy_to_user(user_message, &message, sizeof(message))) return -NXU_SYS_E_BAD_ADDRESS;
 			return 1;
 		}
 
 		/* The desktop let go of this app: nothing will ever come again. */
-		if (closed)
-			return -NXU_SYS_E_NOT_FOUND;
-		if (wait == 0ULL)
-			return 0;
+		if (closed) return -NXU_SYS_E_NOT_FOUND;
+		if (wait == 0ULL) return 0;
 
 		if (wait == NXU_UI_WAIT_FOREVER) {
-			if (!waitq_block_seq(&connection->inbox, sequence, true))
-				return -NXU_SYS_E_INTERRUPTED;
+			if (!waitq_block_seq(&connection->inbox, sequence, true)) return -NXU_SYS_E_INTERRUPTED;
 			continue;
 		}
 
@@ -323,25 +312,22 @@ int64_t ui_bridge_syscall_receive(uint64_t number, uint64_t user_message, uint64
 		 */
 		uint64_t now = timer_get_microseconds();
 
-		if (deadline == 0ULL)
-			deadline = now + wait * 1000ULL;
-		if (now >= deadline)
-			return 0;
+		if (deadline == 0ULL) deadline = now + wait * 1000ULL;
+		if (now >= deadline) return 0;
 		(void)sched_sleep_us(UI_BRIDGE_POLL_US);
 	}
 }
 
-int64_t ui_bridge_syscall_submit(uint64_t number, uint64_t user_submit)
+int64_t
+ui_bridge_syscall_submit(uint64_t number, uint64_t user_submit)
 {
 	ui_bridge_connection_t *connection = ui_bridge_caller_connection(number);
 
-	if (connection == 0)
-		return -NXU_SYS_E_NOT_FOUND;
+	if (connection == 0) return -NXU_SYS_E_NOT_FOUND;
 
 	nxu_ui_submit_t submit;
 
-	if (!vm_copy_from_user(&submit, user_submit, sizeof(submit)))
-		return -NXU_SYS_E_BAD_ADDRESS;
+	if (!vm_copy_from_user(&submit, user_submit, sizeof(submit))) return -NXU_SYS_E_BAD_ADDRESS;
 	submit.label[NXU_UI_LABEL_MAX - 1U] = '\0';
 
 	bool has_frame = submit.pixels != 0ULL;
@@ -357,13 +343,11 @@ int64_t ui_bridge_syscall_submit(uint64_t number, uint64_t user_submit)
 
 	nxu_spin_lock(&connection->lock);
 	bool busy = connection->submitting || connection->state == UI_BRIDGE_CLOSED;
-	if (!busy)
-		connection->submitting = true;
+	if (!busy) connection->submitting = true;
 	uint32_t spare = connection->spare;
 	nxu_spin_unlock(&connection->lock);
 
-	if (busy)
-		return -NXU_SYS_E_BUSY;
+	if (busy) return -NXU_SYS_E_BUSY;
 
 	/* Only this call writes the spare buffer, so the copy needs no lock. */
 	bool copied = true;
@@ -390,12 +374,12 @@ int64_t ui_bridge_syscall_submit(uint64_t number, uint64_t user_submit)
 	nxu_spin_unlock(&connection->lock);
 
 	/* The desktop shows it now, not at its next tick. */
-	if (copied)
-		sched_kick_sleepers();
+	if (copied) sched_kick_sleepers();
 	return copied ? 0 : -NXU_SYS_E_BAD_ADDRESS;
 }
 
-static int64_t ui_bridge_control_activate(uint64_t pid)
+static int64_t
+ui_bridge_control_activate(uint64_t pid)
 {
 	proc_t proc = current_proc();
 	bool is_dock = false;
@@ -427,12 +411,12 @@ static int64_t ui_bridge_control_activate(uint64_t pid)
 	return result;
 }
 
-static int64_t ui_bridge_control_activity(uint64_t user_request)
+static int64_t
+ui_bridge_control_activity(uint64_t user_request)
 {
 	nxu_ui_activity_request_t request;
 
-	if (!vm_copy_from_user(&request, user_request, sizeof(request)))
-		return -NXU_SYS_E_BAD_ADDRESS;
+	if (!vm_copy_from_user(&request, user_request, sizeof(request))) return -NXU_SYS_E_BAD_ADDRESS;
 	if (request.activity_size != sizeof(UIServiceActivity) || request.process_size != sizeof(UIServiceProcessInfo)) {
 		return -NXU_SYS_E_INVALID_ARGUMENT;
 	}
@@ -443,10 +427,8 @@ static int64_t ui_bridge_control_activity(uint64_t user_request)
 	UIServiceProcessInfo *processes = capacity != 0U ? kcalloc(capacity, sizeof(UIServiceProcessInfo)) : 0;
 
 	if (activity == 0 || (capacity != 0U && processes == 0)) {
-		if (activity != 0)
-			(void)kfree(activity);
-		if (processes != 0)
-			(void)kfree(processes);
+		if (activity != 0) (void)kfree(activity);
+		if (processes != 0) (void)kfree(processes);
 		return -NXU_SYS_E_NO_MEMORY;
 	}
 
@@ -463,24 +445,21 @@ static int64_t ui_bridge_control_activity(uint64_t user_request)
 		result = -NXU_SYS_E_BAD_ADDRESS;
 	} else {
 		request.count = count;
-		if (!vm_copy_to_user(user_request, &request, sizeof(request)))
-			result = -NXU_SYS_E_BAD_ADDRESS;
+		if (!vm_copy_to_user(user_request, &request, sizeof(request))) result = -NXU_SYS_E_BAD_ADDRESS;
 	}
 
 	(void)kfree(activity);
-	if (processes != 0)
-		(void)kfree(processes);
+	if (processes != 0) (void)kfree(processes);
 	return result;
 }
 
-int64_t ui_bridge_syscall_control(uint64_t operation, uint64_t argument)
+int64_t
+ui_bridge_syscall_control(uint64_t operation, uint64_t argument)
 {
 	switch (operation) {
 	case NXU_UI_CONTROL_SESSION:
-		if (!ui_bridge_wait_session())
-			return -NXU_SYS_E_INTERRUPTED;
-		if (!vm_copy_to_user(argument, &g_session, sizeof(g_session)))
-			return -NXU_SYS_E_BAD_ADDRESS;
+		if (!ui_bridge_wait_session()) return -NXU_SYS_E_INTERRUPTED;
+		if (!vm_copy_to_user(argument, &g_session, sizeof(g_session))) return -NXU_SYS_E_BAD_ADDRESS;
 		return 0;
 
 	case NXU_UI_CONTROL_ACTIVATE:
@@ -492,8 +471,7 @@ int64_t ui_bridge_syscall_control(uint64_t operation, uint64_t argument)
 	case NXU_UI_CONTROL_LAUNCH: {
 		char path[NXU_UI_PATH_MAX];
 
-		if (!vm_copy_string_from_user(path, argument, sizeof(path)))
-			return -NXU_SYS_E_BAD_ADDRESS;
+		if (!vm_copy_string_from_user(path, argument, sizeof(path))) return -NXU_SYS_E_BAD_ADDRESS;
 
 		int64_t result = -NXU_SYS_E_AGAIN;
 
@@ -512,8 +490,8 @@ int64_t ui_bridge_syscall_control(uint64_t operation, uint64_t argument)
 	}
 }
 
-void ui_bridge_session_begin(uint32_t scale_permille, uint32_t screen_width, uint32_t screen_height,
-							 uint32_t menubar_height)
+void
+ui_bridge_session_begin(uint32_t scale_permille, uint32_t screen_width, uint32_t screen_height, uint32_t menubar_height)
 {
 	g_session = (nxu_ui_session_t){.scale_permille = scale_permille,
 								   .screen_width = screen_width,
@@ -525,7 +503,8 @@ void ui_bridge_session_begin(uint32_t scale_permille, uint32_t screen_width, uin
 			scale_permille);
 }
 
-int32_t ui_bridge_accept(void)
+int32_t
+ui_bridge_accept(void)
 {
 	int32_t accepted = -1;
 
@@ -533,8 +512,7 @@ int32_t ui_bridge_accept(void)
 	ui_bridge_reap_locked();
 
 	for (uint32_t index = 0U; index < UI_BRIDGE_CONNECTION_MAX; index++) {
-		if (g_connections[index].state != UI_BRIDGE_PENDING)
-			continue;
+		if (g_connections[index].state != UI_BRIDGE_PENDING) continue;
 
 		g_connections[index].state = UI_BRIDGE_LIVE;
 		accepted = (int32_t)index;
@@ -545,53 +523,56 @@ int32_t ui_bridge_accept(void)
 	return accepted;
 }
 
-static ui_bridge_connection_t *ui_bridge_live(uint32_t index)
+static ui_bridge_connection_t *
+ui_bridge_live(uint32_t index)
 {
-	if (index >= UI_BRIDGE_CONNECTION_MAX)
-		return 0;
+	if (index >= UI_BRIDGE_CONNECTION_MAX) return 0;
 
 	ui_bridge_connection_t *connection = &g_connections[index];
 	return connection->state == UI_BRIDGE_LIVE ? connection : 0;
 }
 
-const nxu_ui_connect_t *ui_bridge_info(uint32_t index)
+const nxu_ui_connect_t *
+ui_bridge_info(uint32_t index)
 {
 	ui_bridge_connection_t *connection = ui_bridge_live(index);
 	return connection != 0 ? connection->info : 0;
 }
 
-uint32_t ui_bridge_pid(uint32_t index)
+uint32_t
+ui_bridge_pid(uint32_t index)
 {
 	ui_bridge_connection_t *connection = ui_bridge_live(index);
 	return connection != 0 ? (uint32_t)connection->owner.pid : 0U;
 }
 
-bool ui_bridge_alive(uint32_t index)
+bool
+ui_bridge_alive(uint32_t index)
 {
 	ui_bridge_connection_t *connection = ui_bridge_live(index);
 	bool alive = connection != 0 && ui_bridge_owner_alive(connection);
 
 	if (!alive && index < UI_BRIDGE_CONNECTION_MAX && g_connections[index].info != 0 &&
 		g_connections[index].info->kind == NXU_UI_KIND_DOCK) {
-		kprintf("ui_bridge: Dock liveness check failed (connection %u, state %u, pid %u)\n",
-				(unsigned int)(index + 1U), (unsigned int)g_connections[index].state,
-				(unsigned int)g_connections[index].owner.pid);
+		kprintf("ui_bridge: Dock liveness check failed (connection %u, state %u, pid %u)\n", (unsigned int)(index + 1U),
+				(unsigned int)g_connections[index].state, (unsigned int)g_connections[index].owner.pid);
 	}
 
 	return alive;
 }
 
-static bool ui_bridge_is_pointer_move(const nxu_ui_message_t *message)
+static bool
+ui_bridge_is_pointer_move(const nxu_ui_message_t *message)
 {
 	return message->type == NXU_UI_MSG_EVENT && message->event == NXU_UI_EVENT_POINTER_MOVED;
 }
 
-bool ui_bridge_post(uint32_t index, const nxu_ui_message_t *message)
+bool
+ui_bridge_post(uint32_t index, const nxu_ui_message_t *message)
 {
 	ui_bridge_connection_t *connection = ui_bridge_live(index);
 
-	if (connection == 0 || message == 0)
-		return false;
+	if (connection == 0 || message == 0) return false;
 
 	nxu_ui_message_t stamped = *message;
 	stamped.time_us = timer_get_microseconds();
@@ -636,12 +617,12 @@ bool ui_bridge_post(uint32_t index, const nxu_ui_message_t *message)
 	return queued;
 }
 
-bool ui_bridge_state(uint32_t index, nxu_ui_submit_t *state, uint64_t *sequence)
+bool
+ui_bridge_state(uint32_t index, nxu_ui_submit_t *state, uint64_t *sequence)
 {
 	ui_bridge_connection_t *connection = ui_bridge_live(index);
 
-	if (connection == 0 || state == 0 || sequence == 0)
-		return false;
+	if (connection == 0 || state == 0 || sequence == 0) return false;
 
 	nxu_spin_lock(&connection->lock);
 	bool newer = connection->submitted_sequence != *sequence;
@@ -652,13 +633,13 @@ bool ui_bridge_state(uint32_t index, nxu_ui_submit_t *state, uint64_t *sequence)
 	return newer;
 }
 
-bool ui_bridge_take_frame(uint32_t index, uint32_t *destination, uint32_t destination_stride, uint32_t max_width,
-						  uint32_t max_height, uint32_t *width_out, uint32_t *height_out)
+bool
+ui_bridge_take_frame(uint32_t index, uint32_t *destination, uint32_t destination_stride, uint32_t max_width,
+					 uint32_t max_height, uint32_t *width_out, uint32_t *height_out)
 {
 	ui_bridge_connection_t *connection = ui_bridge_live(index);
 
-	if (connection == 0 || destination == 0)
-		return false;
+	if (connection == 0 || destination == 0) return false;
 
 	nxu_spin_lock(&connection->lock);
 
@@ -675,17 +656,16 @@ bool ui_bridge_take_frame(uint32_t index, uint32_t *destination, uint32_t destin
 		}
 
 		connection->ready_new = false;
-		if (width_out != 0)
-			*width_out = connection->ready_width;
-		if (height_out != 0)
-			*height_out = connection->ready_height;
+		if (width_out != 0) *width_out = connection->ready_width;
+		if (height_out != 0) *height_out = connection->ready_height;
 	}
 
 	nxu_spin_unlock(&connection->lock);
 	return taken;
 }
 
-bool ui_bridge_take_launch(char path[NXU_UI_PATH_MAX])
+bool
+ui_bridge_take_launch(char path[NXU_UI_PATH_MAX])
 {
 	bool taken = false;
 
@@ -703,7 +683,8 @@ bool ui_bridge_take_launch(char path[NXU_UI_PATH_MAX])
 	return taken;
 }
 
-uint32_t ui_bridge_take_activation(void)
+uint32_t
+ui_bridge_take_activation(void)
 {
 	uint32_t pid = 0U;
 
@@ -720,22 +701,22 @@ uint32_t ui_bridge_take_activation(void)
 	return pid;
 }
 
-void ui_bridge_terminate(uint32_t index)
+void
+ui_bridge_terminate(uint32_t index)
 {
 	ui_bridge_connection_t *connection = ui_bridge_live(index);
 
-	if (connection == 0)
-		return;
+	if (connection == 0) return;
 
 #if MACHINE_USER_CONTEXT
 	(void)signal_send(proc_kernel(), connection->owner.pid, NXU_SIGKILL);
 #endif
 }
 
-void ui_bridge_release(uint32_t index)
+void
+ui_bridge_release(uint32_t index)
 {
-	if (index >= UI_BRIDGE_CONNECTION_MAX)
-		return;
+	if (index >= UI_BRIDGE_CONNECTION_MAX) return;
 
 	ui_bridge_connection_t *connection = &g_connections[index];
 
@@ -757,7 +738,8 @@ static uint64_t g_desktop_epoch;
 static uint32_t g_host_generations[UI_BRIDGE_CONNECTION_MAX];
 static uint64_t g_host_quit_at[UI_BRIDGE_CONNECTION_MAX];
 
-bool ui_bridge_host_input(proc_t proc)
+bool
+ui_bridge_host_input(proc_t proc)
 {
 	nxu_spin_lock(&g_bridge_lock);
 	bool allowed = g_desktop_epoch && g_desktop_epoch == proc->p_gui_epoch &&
@@ -766,7 +748,8 @@ bool ui_bridge_host_input(proc_t proc)
 	return allowed;
 }
 
-bool ui_bridge_host_active(void)
+bool
+ui_bridge_host_active(void)
 {
 	nxu_spin_lock(&g_bridge_lock);
 	bool active = g_desktop_epoch != 0;
@@ -774,7 +757,8 @@ bool ui_bridge_host_active(void)
 	return active;
 }
 
-void ui_bridge_host_release(proc_t proc)
+void
+ui_bridge_host_release(proc_t proc)
 {
 	nxu_spin_lock(&g_bridge_lock);
 	bool released = ui_bridge_same_process(&g_desktop_owner, &proc->p_ident);
@@ -801,11 +785,11 @@ void ui_bridge_host_release(proc_t proc)
 
 	nxu_spin_unlock(&g_bridge_lock);
 
-	if (released)
-		display_owner_restart();
+	if (released) display_owner_restart();
 }
 
-int64_t ui_bridge_host(proc_t proc, nxu_gui_host_desktop_t *record)
+int64_t
+ui_bridge_host(proc_t proc, nxu_gui_host_desktop_t *record)
 {
 	nxu_gui_host_header_t *header = &record->header;
 
@@ -847,19 +831,15 @@ int64_t ui_bridge_host(proc_t proc, nxu_gui_host_desktop_t *record)
 
 		nxu_spin_unlock(&g_bridge_lock);
 
-		if (!owned)
-			return -NXU_SYS_E_DENIED;
+		if (!owned) return -NXU_SYS_E_DENIED;
 
-		if (!valid)
-			return -NXU_SYS_E_NOT_FOUND;
+		if (!valid) return -NXU_SYS_E_NOT_FOUND;
 
-		if (!ready)
-			return 0;
+		if (!ready) return 0;
 
 		frame = kcalloc(1, frame_bytes);
 
-		if (!frame)
-			return -NXU_SYS_E_NO_MEMORY;
+		if (!frame) return -NXU_SYS_E_NO_MEMORY;
 	}
 
 	int64_t status = 0;
@@ -889,8 +869,7 @@ int64_t ui_bridge_host(proc_t proc, nxu_gui_host_desktop_t *record)
 		ui_bridge_reap_locked();
 
 		for (uint32_t i = 0; i < UI_BRIDGE_CONNECTION_MAX; i++) {
-			if (g_connections[i].state != UI_BRIDGE_PENDING || g_host_generations[i] == UINT32_MAX)
-				continue;
+			if (g_connections[i].state != UI_BRIDGE_PENDING || g_host_generations[i] == UINT32_MAX) continue;
 
 			g_connections[i].state = UI_BRIDGE_LIVE;
 			g_host_generations[i]++;
@@ -965,8 +944,7 @@ int64_t ui_bridge_host(proc_t proc, nxu_gui_host_desktop_t *record)
 				else
 					terminate = g_connections[index].owner;
 			} else {
-				if (g_connections[index].info != 0 &&
-					g_connections[index].info->kind == NXU_UI_KIND_DOCK) {
+				if (g_connections[index].info != 0 && g_connections[index].info->kind == NXU_UI_KIND_DOCK) {
 					kprintf("ui_bridge: desktop released Dock connection %u (pid %u, alive=%u)\n",
 							(unsigned int)(index + 1U), (unsigned int)g_connections[index].owner.pid,
 							(unsigned int)ui_bridge_owner_alive(&g_connections[index]));
@@ -1024,7 +1002,8 @@ int64_t ui_bridge_host(proc_t proc, nxu_gui_host_desktop_t *record)
 	return status;
 }
 
-bool ui_bridge_session_ready(void)
+bool
+ui_bridge_session_ready(void)
 {
 	return __atomic_load_n(&g_session_running, __ATOMIC_ACQUIRE);
 }

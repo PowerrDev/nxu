@@ -17,7 +17,8 @@ nvram_string_length_bounded(const char *string, uint32_t limit)
 	if (string == 0) return 0U;
 
 	uint32_t length = 0U;
-	while (length < limit && string[length] != '\0') length++;
+	while (length < limit && string[length] != '\0')
+		length++;
 	return length;
 }
 
@@ -106,11 +107,17 @@ const char *
 nvram_status_name(nvram_status_t status)
 {
 	switch (status) {
-	case NVRAM_STATUS_OK: return "ok";
-	case NVRAM_STATUS_NOT_FOUND: return "not found";
-	case NVRAM_STATUS_INVALID: return "invalid";
-	case NVRAM_STATUS_NO_SPACE: return "no space";
-	case NVRAM_STATUS_READ_ONLY: return "read only";
-	default: return "unknown";
+	case NVRAM_STATUS_OK:
+		return "ok";
+	case NVRAM_STATUS_NOT_FOUND:
+		return "not found";
+	case NVRAM_STATUS_INVALID:
+		return "invalid";
+	case NVRAM_STATUS_NO_SPACE:
+		return "no space";
+	case NVRAM_STATUS_READ_ONLY:
+		return "read only";
+	default:
+		return "unknown";
 	}
 }

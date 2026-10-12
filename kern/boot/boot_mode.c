@@ -1,5 +1,14 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/boot/boot_mode.c
+ *
+ * Detect early boot key combinations and select the requested startup mode.
+ */
 #include <kern/boot/boot_mode.h>
 #include <kern/boot/boot_args.h>
+#include <kern/boot/splash.h>
 
 #include <drivers/input/input.h>
 #include <drivers/input/keyboard.h>
@@ -21,7 +30,8 @@ static bool g_r_down;
 static bool g_left_shift_down;
 static bool g_right_shift_down;
 
-void boot_mode_init(void)
+void
+boot_mode_init(void)
 {
 	g_boot_mode = boot_arg_bool("recovery", false) ? BOOT_MODE_TRIAGE_OS : BOOT_MODE_NORMAL;
 	g_r_down = false;
@@ -35,24 +45,30 @@ boot_mode_force_recovery(void)
 	g_boot_mode = BOOT_MODE_TRIAGE_OS;
 }
 
-static bool boot_mode_key_down(int32_t value)
+static bool
+boot_mode_key_down(int32_t value)
 {
 	return value == BOOT_MODE_KEY_PRESS || value == BOOT_MODE_KEY_REPEAT;
 }
 
-static bool boot_mode_chord_down(void)
+static bool
+boot_mode_chord_down(void)
 {
 	return g_r_down && (g_left_shift_down || g_right_shift_down);
 }
 
-bool boot_mode_poll(void)
+bool
+boot_mode_poll(void)
 {
 	if (g_boot_mode == BOOT_MODE_TRIAGE_OS || !keyboard_is_present()) return false;
 
 	input_event_t event;
 	while (input_read(&event)) {
 		if (event.device_class != INPUT_DEVICE_KEYBOARD || event.type != BOOT_MODE_EV_KEY) continue;
-		if (event.value != BOOT_MODE_KEY_RELEASE && event.value != BOOT_MODE_KEY_PRESS && event.value != BOOT_MODE_KEY_REPEAT) continue;
+
+		if (event.value != BOOT_MODE_KEY_RELEASE && event.value != BOOT_MODE_KEY_PRESS &&
+			event.value != BOOT_MODE_KEY_REPEAT)
+			continue;
 
 		bool down = boot_mode_key_down(event.value);
 
@@ -71,7 +87,9 @@ bool boot_mode_poll(void)
 		}
 
 		if (!boot_mode_chord_down()) continue;
+
 		g_boot_mode = BOOT_MODE_TRIAGE_OS;
+		(void)boot_splash_set_status("Loading startup options...");
 		kputln("boot: startup recovery options requested");
 		return true;
 	}
@@ -79,17 +97,20 @@ bool boot_mode_poll(void)
 	return false;
 }
 
-boot_mode_t boot_mode_current(void)
+boot_mode_t
+boot_mode_current(void)
 {
 	return g_boot_mode;
 }
 
-bool boot_mode_is_triage_os(void)
+bool
+boot_mode_is_triage_os(void)
 {
 	return g_boot_mode == BOOT_MODE_TRIAGE_OS;
 }
 
-const char *boot_mode_name(void)
+const char *
+boot_mode_name(void)
 {
 	return g_boot_mode == BOOT_MODE_TRIAGE_OS ? "triageOS" : "sevOS";
 }

@@ -5,13 +5,7 @@
 #include <stdint.h>
 
 typedef struct display_device display_device_t;
-typedef bool (*display_present_fn)(
-	display_device_t *display,
-	uint32_t x,
-	uint32_t y,
-	uint32_t width,
-	uint32_t height
-);
+typedef bool (*display_present_fn)(display_device_t *display, uint32_t x, uint32_t y, uint32_t width, uint32_t height);
 
 struct display_device {
 	uint32_t *framebuffer;
@@ -29,13 +23,7 @@ bool display_init(void);
 bool display_register(display_device_t *display);
 display_device_t *display_primary(void);
 
-bool display_present(
-	display_device_t *display,
-	uint32_t x,
-	uint32_t y,
-	uint32_t width,
-	uint32_t height
-);
+bool display_present(display_device_t *display, uint32_t x, uint32_t y, uint32_t width, uint32_t height);
 
 bool display_present_full(display_device_t *display);
 void display_dump(void);

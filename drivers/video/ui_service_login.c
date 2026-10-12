@@ -22,12 +22,14 @@
 
 #define UI_LOGIN_LOG(format, ...) kprintf("%s: " format, __func__, ##__VA_ARGS__)
 
-uint64_t ui_service_keyboard_capability(void)
+uint64_t
+ui_service_keyboard_capability(void)
 {
 	return keyboard_is_present() ? UI_SERVICE_HOST_CAP_KEYBOARD : 0ULL;
 }
 
-bool ui_service_poll_key(UIServiceHostEvent *event)
+bool
+ui_service_poll_key(UIServiceHostEvent *event)
 {
 	keyboard_key_t key;
 
@@ -40,21 +42,31 @@ bool ui_service_poll_key(UIServiceHostEvent *event)
 }
 
 /* tepOS's answer as a UI_SERVICE_AUTH_* code; anything unexpected is an error, never OK. */
-static uint32_t ui_login_result(tep_result_t result)
+static uint32_t
+ui_login_result(tep_result_t result)
 {
 	switch (result) {
-	case TEP_OK: return UI_SERVICE_AUTH_OK;
-	case TEP_ERR_DENIED: return UI_SERVICE_AUTH_DENIED;
-	case TEP_ERR_RETRY_LATER: return UI_SERVICE_AUTH_RETRY_LATER;
-	case TEP_ERR_LOCKED: return UI_SERVICE_AUTH_LOCKED;
-	case TEP_ERR_UNAVAILABLE: return UI_SERVICE_AUTH_UNAVAILABLE;
-	case TEP_ERR_NOT_FOUND: return UI_SERVICE_AUTH_NOT_SET;
-	case TEP_ERR_INVALID: return UI_SERVICE_AUTH_INVALID;
-	default: return UI_SERVICE_AUTH_ERROR;
+	case TEP_OK:
+		return UI_SERVICE_AUTH_OK;
+	case TEP_ERR_DENIED:
+		return UI_SERVICE_AUTH_DENIED;
+	case TEP_ERR_RETRY_LATER:
+		return UI_SERVICE_AUTH_RETRY_LATER;
+	case TEP_ERR_LOCKED:
+		return UI_SERVICE_AUTH_LOCKED;
+	case TEP_ERR_UNAVAILABLE:
+		return UI_SERVICE_AUTH_UNAVAILABLE;
+	case TEP_ERR_NOT_FOUND:
+		return UI_SERVICE_AUTH_NOT_SET;
+	case TEP_ERR_INVALID:
+		return UI_SERVICE_AUTH_INVALID;
+	default:
+		return UI_SERVICE_AUTH_ERROR;
 	}
 }
 
-static uint32_t ui_login_status(void *context, UIServiceAuthStatus *status)
+static uint32_t
+ui_login_status(void *context, UIServiceAuthStatus *status)
 {
 	(void)context;
 
@@ -73,7 +85,8 @@ static uint32_t ui_login_status(void *context, UIServiceAuthStatus *status)
 	return UI_SERVICE_AUTH_OK;
 }
 
-static uint32_t ui_login_verify(void *context, const uint8_t *passcode, uint32_t length, uint32_t *wait_seconds)
+static uint32_t
+ui_login_verify(void *context, const uint8_t *passcode, uint32_t length, uint32_t *wait_seconds)
 {
 	(void)context;
 
@@ -89,7 +102,9 @@ static uint32_t ui_login_verify(void *context, const uint8_t *passcode, uint32_t
 	return ui_login_result(result);
 }
 
-static uint32_t ui_login_set(void *context, const uint8_t *old_passcode, uint32_t old_length, const uint8_t *passcode, uint32_t length, uint32_t *wait_seconds)
+static uint32_t
+ui_login_set(void *context, const uint8_t *old_passcode, uint32_t old_length, const uint8_t *passcode, uint32_t length,
+			 uint32_t *wait_seconds)
 {
 	(void)context;
 
@@ -103,7 +118,8 @@ static uint32_t ui_login_set(void *context, const uint8_t *old_passcode, uint32_
 	return ui_login_result(result);
 }
 
-bool ui_service_login(const UIServiceHostV5 *host)
+bool
+ui_service_login(const UIServiceHostV5 *host)
 {
 	if (tep_mailbox_link_state() == TEP_LINK_ABSENT) {
 		UI_LOGIN_LOG("no Trusted Enclave link: no login screen\n");
@@ -111,19 +127,15 @@ bool ui_service_login(const UIServiceHostV5 *host)
 	}
 
 	UIServiceLoginHostV1 login = {
-		.header = {
-			.struct_size = sizeof(UIServiceLoginHostV1),
-			.abi_version = UI_SERVICE_LOGIN_ABI_VERSION_V1
-		},
+		.header = {.struct_size = sizeof(UIServiceLoginHostV1), .abi_version = UI_SERVICE_LOGIN_ABI_VERSION_V1},
 		.context = 0,
 		.auth_status = ui_login_status,
 		.auth_verify = ui_login_verify,
-		.auth_set = ui_login_set
-	};
+		.auth_set = ui_login_set};
 
 	if (UIServiceLoginHostV1Size() != sizeof(UIServiceLoginHostV1)) {
 		UI_LOGIN_LOG("login host table size mismatch (framework %u, kernel %u): the desktop stays locked\n",
-			(unsigned)UIServiceLoginHostV1Size(), (unsigned)sizeof(UIServiceLoginHostV1));
+					 (unsigned)UIServiceLoginHostV1Size(), (unsigned)sizeof(UIServiceLoginHostV1));
 		return false;
 	}
 

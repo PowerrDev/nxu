@@ -120,7 +120,7 @@ triage_device_index(const char *name, uint32_t *index_out)
 {
 	if (name == 0 || index_out == 0) return false;
 
-	for (uint32_t index = 0U; ; index++) {
+	for (uint32_t index = 0U;; index++) {
 		recovery_block_info_t info;
 		if (recovery_block_info(index, &info) < 0) break;
 		if (!triage_equal(info.name, name)) continue;
@@ -131,7 +131,6 @@ triage_device_index(const char *name, uint32_t *index_out)
 
 	return false;
 }
-
 
 static void
 triage_u64(char *buffer, uint32_t capacity, uint64_t value)
@@ -221,7 +220,8 @@ triage_background_color(const triage_ui_t *ui, uint32_t y)
 	uint32_t denominator = ui->canvas.height > 1U ? ui->canvas.height - 1U : 1U;
 	if (y >= ui->canvas.height) y = ui->canvas.height - 1U;
 	uint32_t inverse = denominator - y;
-	uint32_t alpha = (((TRIAGE_BG_TOP >> 24U) & 0xFFU) * inverse + ((TRIAGE_BG_BOTTOM >> 24U) & 0xFFU) * y) / denominator;
+	uint32_t alpha =
+		(((TRIAGE_BG_TOP >> 24U) & 0xFFU) * inverse + ((TRIAGE_BG_BOTTOM >> 24U) & 0xFFU) * y) / denominator;
 	uint32_t red = (((TRIAGE_BG_TOP >> 16U) & 0xFFU) * inverse + ((TRIAGE_BG_BOTTOM >> 16U) & 0xFFU) * y) / denominator;
 	uint32_t green = (((TRIAGE_BG_TOP >> 8U) & 0xFFU) * inverse + ((TRIAGE_BG_BOTTOM >> 8U) & 0xFFU) * y) / denominator;
 	uint32_t blue = ((TRIAGE_BG_TOP & 0xFFU) * inverse + (TRIAGE_BG_BOTTOM & 0xFFU) * y) / denominator;
@@ -232,7 +232,8 @@ static void
 triage_restore_background(triage_ui_t *ui, int32_t x, int32_t y, uint32_t width, uint32_t height)
 {
 	for (uint32_t row = 0U; row < height; row++) {
-		startup_options_ui_canvas_fill_rect(&ui->canvas, x, y + (int32_t)row, width, 1U, triage_background_color(ui, (uint32_t)(y + (int32_t)row)));
+		startup_options_ui_canvas_fill_rect(&ui->canvas, x, y + (int32_t)row, width, 1U,
+											triage_background_color(ui, (uint32_t)(y + (int32_t)row)));
 	}
 }
 
@@ -251,7 +252,8 @@ triage_terminal_zoom_percent(uint32_t zoom)
 }
 
 static void
-triage_center_text(startup_options_ui_canvas_t *canvas, int32_t center_x, int32_t y, const char *text, uint32_t color, uint32_t scale)
+triage_center_text(startup_options_ui_canvas_t *canvas, int32_t center_x, int32_t y, const char *text, uint32_t color,
+				   uint32_t scale)
 {
 	uint32_t width = startup_options_ui_text_width(text, scale);
 	startup_options_ui_draw_text(canvas, center_x - (int32_t)(width / 2U), y, text, color, scale);
@@ -307,7 +309,7 @@ triage_mark_full(triage_ui_t *ui)
 	ui->dirty_sheet = true;
 	ui->dirty_terminal_body = true;
 	ui->dirty_terminal_input = true;
-	ui->damage = (triage_damage_t) { 0, 0, ui->canvas.width, ui->canvas.height, true, true };
+	ui->damage = (triage_damage_t){0, 0, ui->canvas.width, ui->canvas.height, true, true};
 }
 
 static void
@@ -334,7 +336,8 @@ triage_mark_rect(triage_ui_t *ui, int32_t x, int32_t y, uint32_t width, uint32_t
 	}
 
 	if (!ui->damage.valid) {
-		ui->damage = (triage_damage_t) { (int32_t)left, (int32_t)top, (uint32_t)(right - left), (uint32_t)(bottom - top), false, true };
+		ui->damage = (triage_damage_t){(int32_t)left, (int32_t)top, (uint32_t)(right - left), (uint32_t)(bottom - top),
+									   false,		  true};
 		return;
 	}
 
@@ -378,7 +381,8 @@ static void
 triage_mark_continue(triage_ui_t *ui)
 {
 	ui->dirty_continue = true;
-	triage_mark_rect(ui, ui->continue_button_x, ui->continue_button_y, ui->continue_button_width, ui->continue_button_height);
+	triage_mark_rect(ui, ui->continue_button_x, ui->continue_button_y, ui->continue_button_width,
+					 ui->continue_button_height);
 }
 
 #define TRIAGE_DISK_BUTTON_RADIUS 10U
@@ -400,13 +404,13 @@ triage_disk_layout(triage_ui_t *ui)
 	uint32_t height;
 	triage_workspace(ui, &x, &y, &width, &height);
 
-	static const uint32_t widths[TRIAGE_DISK_BUTTON_COUNT] = { 86U, 86U, 86U, 108U, 100U };
+	static const uint32_t widths[TRIAGE_DISK_BUTTON_COUNT] = {86U, 86U, 86U, 108U, 100U};
 	int32_t right = x + (int32_t)width - 28;
 	int32_t row_y = y + (int32_t)height - 58;
 
-	for (uint32_t index = (uint32_t)TRIAGE_DISK_BUTTON_COUNT; index-- != 0U; ) {
+	for (uint32_t index = (uint32_t)TRIAGE_DISK_BUTTON_COUNT; index-- != 0U;) {
 		right -= (int32_t)widths[index];
-		ui->disk_buttons[index] = (triage_rect_t) { right, row_y, widths[index], 40U };
+		ui->disk_buttons[index] = (triage_rect_t){right, row_y, widths[index], 40U};
 		right -= 8;
 	}
 }
@@ -462,25 +466,26 @@ triage_layout(triage_ui_t *ui)
 	uint32_t row_height = 58U;
 	uint32_t gap = 8U;
 	int32_t first_y = ui->panel_y + 100;
-	static const triage_action_t actions[4] = { TRIAGE_ACTION_REINSTALL, TRIAGE_ACTION_DISK_UTILITY, TRIAGE_ACTION_TERMINAL, TRIAGE_ACTION_RESTART };
-	static const char *const titles[4] = { "Reinstall sevOS", "Disk Utility", "Terminal", "Restart" };
-	static const char *const details[4] = { "Install a system image", "Inspect storage", "Open a recovery shell", "Restart the system" };
+	static const triage_action_t actions[4] = {TRIAGE_ACTION_REINSTALL, TRIAGE_ACTION_DISK_UTILITY,
+											   TRIAGE_ACTION_TERMINAL, TRIAGE_ACTION_RESTART};
+	static const char *const titles[4] = {"Reinstall sevOS", "Disk Utility", "Terminal", "Restart"};
+	static const char *const details[4] = {"Install a system image", "Inspect storage", "Open a recovery shell",
+										   "Restart the system"};
 
 	for (uint32_t index = 0U; index < 4U; index++) {
-		ui->buttons[index] = (triage_button_t) {
-			.x = ui->panel_x + (int32_t)padding,
-			.y = first_y + (int32_t)(index * (row_height + gap)),
-			.width = row_width,
-			.height = row_height,
-			.action = actions[index],
-			.title = titles[index],
-			.detail = details[index]
-		};
+		ui->buttons[index] = (triage_button_t){.x = ui->panel_x + (int32_t)padding,
+											   .y = first_y + (int32_t)(index * (row_height + gap)),
+											   .width = row_width,
+											   .height = row_height,
+											   .action = actions[index],
+											   .title = titles[index],
+											   .detail = details[index]};
 	}
 
 	ui->continue_button_width = 95U;
 	ui->continue_button_height = 26U;
-	ui->continue_button_x = ui->panel_x + (int32_t)ui->panel_width - (int32_t)padding - (int32_t)ui->continue_button_width;
+	ui->continue_button_x =
+		ui->panel_x + (int32_t)ui->panel_width - (int32_t)padding - (int32_t)ui->continue_button_width;
 	ui->continue_button_y = ui->panel_y + (int32_t)ui->panel_height - 56;
 }
 
@@ -500,13 +505,15 @@ triage_hit_button(const triage_ui_t *ui, int32_t x, int32_t y)
 static bool
 triage_continue_hit(const triage_ui_t *ui, int32_t x, int32_t y)
 {
-	return startup_options_ui_point_in_squircle(x, y, ui->continue_button_x, ui->continue_button_y, ui->continue_button_width, ui->continue_button_height, 11U);
+	return startup_options_ui_point_in_squircle(x, y, ui->continue_button_x, ui->continue_button_y,
+												ui->continue_button_width, ui->continue_button_height, 11U);
 }
 
 static bool
 triage_modal_button_hit(const triage_ui_t *ui, int32_t x, int32_t y)
 {
-	return startup_options_ui_point_in_squircle(x, y, ui->modal_button_x, ui->modal_button_y, ui->modal_button_width, ui->modal_button_height, 11U);
+	return startup_options_ui_point_in_squircle(x, y, ui->modal_button_x, ui->modal_button_y, ui->modal_button_width,
+												ui->modal_button_height, 11U);
 }
 
 static void
@@ -517,17 +524,15 @@ triage_draw_static(triage_ui_t *ui)
 	int32_t bar_text_y = triage_text_y(0, TRIAGE_BAR_HEIGHT, 2U);
 	startup_options_ui_draw_text(&ui->canvas, 18, bar_text_y, "triageOS", TRIAGE_TEXT, 2U);
 	startup_options_ui_draw_text(&ui->canvas, 124, bar_text_y, "Recovery", TRIAGE_MUTED, 2U);
-	startup_options_ui_canvas_stroke_squircle(&ui->canvas, ui->panel_x, ui->panel_y, ui->panel_width, ui->panel_height, 20U, 1U, TRIAGE_BORDER, TRIAGE_PANEL);
-	triage_center_text(&ui->canvas, ui->panel_x + (int32_t)(ui->panel_width / 2U), ui->panel_y + 30, "sevOS Recovery", TRIAGE_TEXT, 3U);
-	triage_center_text(&ui->canvas, ui->panel_x + (int32_t)(ui->panel_width / 2U), ui->panel_y + 66, "Choose a recovery tool.", TRIAGE_MUTED, 2U);
-	startup_options_ui_draw_text(
-		&ui->canvas,
-		ui->panel_x + 38,
-		triage_text_y(ui->continue_button_y, ui->continue_button_height, 2U),
-		"Recovery",
-		TRIAGE_MUTED,
-		2U
-	);
+	startup_options_ui_canvas_stroke_squircle(&ui->canvas, ui->panel_x, ui->panel_y, ui->panel_width, ui->panel_height,
+											  20U, 1U, TRIAGE_BORDER, TRIAGE_PANEL);
+	triage_center_text(&ui->canvas, ui->panel_x + (int32_t)(ui->panel_width / 2U), ui->panel_y + 30, "sevOS Recovery",
+					   TRIAGE_TEXT, 3U);
+	triage_center_text(&ui->canvas, ui->panel_x + (int32_t)(ui->panel_width / 2U), ui->panel_y + 66,
+					   "Choose a recovery tool.", TRIAGE_MUTED, 2U);
+	startup_options_ui_draw_text(&ui->canvas, ui->panel_x + 38,
+								 triage_text_y(ui->continue_button_y, ui->continue_button_height, 2U), "Recovery",
+								 TRIAGE_MUTED, 2U);
 }
 
 static void
@@ -543,21 +548,16 @@ triage_draw_button(triage_ui_t *ui, uint32_t index)
 	}
 
 	startup_options_ui_canvas_fill_rect(&ui->canvas, button->x, button->y, button->width, button->height, TRIAGE_PANEL);
-	startup_options_ui_canvas_stroke_squircle(&ui->canvas, button->x, button->y, button->width, button->height, 12U, selected ? 2U : 1U, selected ? TRIAGE_ACCENT : TRIAGE_BORDER, fill);
+	startup_options_ui_canvas_stroke_squircle(&ui->canvas, button->x, button->y, button->width, button->height, 12U,
+											  selected ? 2U : 1U, selected ? TRIAGE_ACCENT : TRIAGE_BORDER, fill);
 	/* Title over detail: centre the pair as one block so the row is not bottom-heavy. */
 	uint32_t title_line = startup_options_ui_line_height(2U);
 	uint32_t detail_line = startup_options_ui_line_height(1U);
 	uint32_t block = title_line + TRIAGE_ROW_TEXT_GAP + detail_line;
 	int32_t title_y = button->y + (button->height > block ? (int32_t)((button->height - block) / 2U) : 0);
 	startup_options_ui_draw_text(&ui->canvas, button->x + 20, title_y, button->title, TRIAGE_TEXT, 2U);
-	startup_options_ui_draw_text(
-		&ui->canvas,
-		button->x + 20,
-		title_y + (int32_t)(title_line + TRIAGE_ROW_TEXT_GAP),
-		button->detail,
-		TRIAGE_MUTED,
-		1U
-	);
+	startup_options_ui_draw_text(&ui->canvas, button->x + 20, title_y + (int32_t)(title_line + TRIAGE_ROW_TEXT_GAP),
+								 button->detail, TRIAGE_MUTED, 1U);
 }
 
 static void
@@ -570,16 +570,13 @@ triage_draw_continue(triage_ui_t *ui)
 		color = TRIAGE_CONTINUE_HOVER;
 	}
 
-	startup_options_ui_canvas_fill_rect(&ui->canvas, ui->continue_button_x, ui->continue_button_y, ui->continue_button_width, ui->continue_button_height, TRIAGE_PANEL);
-	startup_options_ui_canvas_fill_squircle(&ui->canvas, ui->continue_button_x, ui->continue_button_y, ui->continue_button_width, ui->continue_button_height, 11U, color);
-	triage_center_text(
-		&ui->canvas,
-		ui->continue_button_x + (int32_t)(ui->continue_button_width / 2U),
-		triage_text_y(ui->continue_button_y, ui->continue_button_height, 2U),
-		"Continue",
-		TRIAGE_CONTINUE_TEXT,
-		2U
-	);
+	startup_options_ui_canvas_fill_rect(&ui->canvas, ui->continue_button_x, ui->continue_button_y,
+										ui->continue_button_width, ui->continue_button_height, TRIAGE_PANEL);
+	startup_options_ui_canvas_fill_squircle(&ui->canvas, ui->continue_button_x, ui->continue_button_y,
+											ui->continue_button_width, ui->continue_button_height, 11U, color);
+	triage_center_text(&ui->canvas, ui->continue_button_x + (int32_t)(ui->continue_button_width / 2U),
+					   triage_text_y(ui->continue_button_y, ui->continue_button_height, 2U), "Continue",
+					   TRIAGE_CONTINUE_TEXT, 2U);
 }
 
 static const char *
@@ -621,17 +618,14 @@ triage_modal_message(triage_action_t action)
 static void
 triage_draw_modal_button(triage_ui_t *ui)
 {
-	uint32_t color = ui->modal_button_pressed ? TRIAGE_ACCENT_PRESSED : (ui->modal_button_hovered ? TRIAGE_ACCENT_HOVER : TRIAGE_ACCENT);
-	startup_options_ui_canvas_fill_rect(&ui->canvas, ui->modal_button_x, ui->modal_button_y, ui->modal_button_width, ui->modal_button_height, TRIAGE_MODAL);
-	startup_options_ui_canvas_fill_squircle(&ui->canvas, ui->modal_button_x, ui->modal_button_y, ui->modal_button_width, ui->modal_button_height, 10U, color);
-	triage_center_text(
-		&ui->canvas,
-		ui->modal_button_x + (int32_t)(ui->modal_button_width / 2U),
-		triage_text_y(ui->modal_button_y, ui->modal_button_height, 2U),
-		"Done",
-		TRIAGE_TEXT,
-		2U
-	);
+	uint32_t color = ui->modal_button_pressed ? TRIAGE_ACCENT_PRESSED
+											  : (ui->modal_button_hovered ? TRIAGE_ACCENT_HOVER : TRIAGE_ACCENT);
+	startup_options_ui_canvas_fill_rect(&ui->canvas, ui->modal_button_x, ui->modal_button_y, ui->modal_button_width,
+										ui->modal_button_height, TRIAGE_MODAL);
+	startup_options_ui_canvas_fill_squircle(&ui->canvas, ui->modal_button_x, ui->modal_button_y, ui->modal_button_width,
+											ui->modal_button_height, 10U, color);
+	triage_center_text(&ui->canvas, ui->modal_button_x + (int32_t)(ui->modal_button_width / 2U),
+					   triage_text_y(ui->modal_button_y, ui->modal_button_height, 2U), "Done", TRIAGE_TEXT, 2U);
 }
 
 static void
@@ -723,19 +717,32 @@ triage_key_character(uint32_t code, uint32_t modifiers)
 	}
 
 	switch (code) {
-	case 12U: return shift ? '_' : '-';
-	case 13U: return shift ? '+' : '=';
-	case 26U: return shift ? '{' : '[';
-	case 27U: return shift ? '}' : ']';
-	case 39U: return shift ? ':' : ';';
-	case 40U: return shift ? '"' : '\'';
-	case 41U: return shift ? '~' : '`';
-	case 43U: return shift ? '|' : '\\';
-	case 51U: return shift ? '<' : ',';
-	case 52U: return shift ? '>' : '.';
-	case 53U: return shift ? '?' : '/';
-	case 57U: return ' ';
-	default: return '\0';
+	case 12U:
+		return shift ? '_' : '-';
+	case 13U:
+		return shift ? '+' : '=';
+	case 26U:
+		return shift ? '{' : '[';
+	case 27U:
+		return shift ? '}' : ']';
+	case 39U:
+		return shift ? ':' : ';';
+	case 40U:
+		return shift ? '"' : '\'';
+	case 41U:
+		return shift ? '~' : '`';
+	case 43U:
+		return shift ? '|' : '\\';
+	case 51U:
+		return shift ? '<' : ',';
+	case 52U:
+		return shift ? '>' : '.';
+	case 53U:
+		return shift ? '?' : '/';
+	case 57U:
+		return ' ';
+	default:
+		return '\0';
 	}
 }
 
@@ -786,7 +793,8 @@ triage_terminal_history_move(triage_ui_t *ui, int32_t direction)
 		}
 	}
 
-	triage_copy(ui->terminal_input, sizeof(ui->terminal_input), ui->terminal_history[(uint32_t)ui->terminal_history_index]);
+	triage_copy(ui->terminal_input, sizeof(ui->terminal_input),
+				ui->terminal_history[(uint32_t)ui->terminal_history_index]);
 	ui->terminal_input_length = triage_length(ui->terminal_input);
 	ui->dirty_terminal_input = true;
 }
@@ -798,7 +806,9 @@ triage_terminal_execute(triage_ui_t *ui)
 	triage_copy(command, sizeof(command), ui->terminal_input);
 	if (command[0] != '\0') {
 		char prompt[TRIAGE_TERMINAL_LINE_MAX];
-		prompt[0] = '#'; prompt[1] = ' '; prompt[2] = '\0';
+		prompt[0] = '#';
+		prompt[1] = ' ';
+		prompt[2] = '\0';
 		uint32_t out = 2U;
 		for (uint32_t i = 0U; command[i] != '\0' && out + 1U < sizeof(prompt); i++) {
 			prompt[out++] = command[i];
@@ -863,7 +873,8 @@ triage_draw_terminal_body(triage_ui_t *ui)
 	triage_workspace(ui, &x, &y, &width, &height);
 
 	startup_options_ui_canvas_fill_rect(&ui->canvas, x, y, width, height, TRIAGE_TERMINAL);
-	startup_options_ui_canvas_stroke_squircle(&ui->canvas, x, y, width, height, 10U, 1U, TRIAGE_TERMINAL_BORDER, TRIAGE_TERMINAL);
+	startup_options_ui_canvas_stroke_squircle(&ui->canvas, x, y, width, height, 10U, 1U, TRIAGE_TERMINAL_BORDER,
+											  TRIAGE_TERMINAL);
 	/*
 	 * Title over hint, centred as one block in the band above the divider, with
 	 * the zoom readout sharing the title's baseline.
@@ -871,35 +882,21 @@ triage_draw_terminal_body(triage_ui_t *ui)
 	uint32_t title_line = startup_options_ui_line_height(2U);
 	uint32_t hint_line = startup_options_ui_line_height(1U);
 	uint32_t header_block = title_line + TRIAGE_TERMINAL_HEADER_GAP + hint_line;
-	int32_t title_y = y
-		+ (TRIAGE_TERMINAL_HEADER_HEIGHT > header_block
-			? (int32_t)((TRIAGE_TERMINAL_HEADER_HEIGHT - header_block) / 2U)
-			: 0);
+	int32_t title_y = y + (TRIAGE_TERMINAL_HEADER_HEIGHT > header_block
+							   ? (int32_t)((TRIAGE_TERMINAL_HEADER_HEIGHT - header_block) / 2U)
+							   : 0);
 	startup_options_ui_draw_text(&ui->canvas, x + 20, title_y, "Terminal", TRIAGE_TERMINAL_TEXT, 2U);
 
 	char zoom[16];
 	triage_u64(zoom, sizeof(zoom), triage_terminal_zoom_percent(ui->terminal_zoom));
 	triage_append(zoom, sizeof(zoom), "%");
 	uint32_t zoom_width = startup_options_ui_text_width(zoom, 1U);
-	startup_options_ui_draw_text(
-		&ui->canvas,
-		x + (int32_t)width - 20 - (int32_t)zoom_width,
-		triage_text_y_aligned(title_y, 1U, 2U),
-		zoom,
-		TRIAGE_TERMINAL_MUTED,
-		1U
-	);
-	startup_options_ui_draw_text(
-		&ui->canvas,
-		x + 20,
-		title_y + (int32_t)(title_line + TRIAGE_TERMINAL_HEADER_GAP),
-		"Wheel / PgUp / PgDn: scroll    Ctrl+- / Ctrl++: zoom",
-		TRIAGE_TERMINAL_MUTED,
-		1U
-	);
-	startup_options_ui_canvas_fill_rect(
-		&ui->canvas, x + 18, y + (int32_t)TRIAGE_TERMINAL_HEADER_HEIGHT, width - 36U, 1U, TRIAGE_TERMINAL_BORDER
-	);
+	startup_options_ui_draw_text(&ui->canvas, x + (int32_t)width - 20 - (int32_t)zoom_width,
+								 triage_text_y_aligned(title_y, 1U, 2U), zoom, TRIAGE_TERMINAL_MUTED, 1U);
+	startup_options_ui_draw_text(&ui->canvas, x + 20, title_y + (int32_t)(title_line + TRIAGE_TERMINAL_HEADER_GAP),
+								 "Wheel / PgUp / PgDn: scroll    Ctrl+- / Ctrl++: zoom", TRIAGE_TERMINAL_MUTED, 1U);
+	startup_options_ui_canvas_fill_rect(&ui->canvas, x + 18, y + (int32_t)TRIAGE_TERMINAL_HEADER_HEIGHT, width - 36U,
+										1U, TRIAGE_TERMINAL_BORDER);
 
 	uint32_t line_height = startup_options_ui_mono_line_height(ui->terminal_zoom);
 	if (line_height == 0U) {
@@ -919,14 +916,8 @@ triage_draw_terminal_body(triage_ui_t *ui)
 	uint32_t start = end > visible ? end - visible : 0U;
 	uint32_t row = 0U;
 	for (uint32_t line = start; line < end; line++, row++) {
-		startup_options_ui_draw_mono_text(
-			&ui->canvas,
-			x + 20,
-			y + 78 + (int32_t)(row * line_height),
-			ui->terminal_lines[line],
-			TRIAGE_TERMINAL_TEXT,
-			ui->terminal_zoom
-		);
+		startup_options_ui_draw_mono_text(&ui->canvas, x + 20, y + 78 + (int32_t)(row * line_height),
+										  ui->terminal_lines[line], TRIAGE_TERMINAL_TEXT, ui->terminal_zoom);
 	}
 
 	ui->dirty_terminal_input = true;
@@ -952,20 +943,23 @@ triage_draw_terminal_input(triage_ui_t *ui)
 	startup_options_ui_canvas_fill_rect(&ui->canvas, x + 18, input_y, width - 36U, 1U, TRIAGE_TERMINAL_BORDER);
 	startup_options_ui_draw_mono_text(&ui->canvas, x + 20, input_y + 9, "# ", TRIAGE_TERMINAL_TEXT, ui->terminal_zoom);
 	uint32_t prompt_width = startup_options_ui_mono_text_width("# ", ui->terminal_zoom);
-	startup_options_ui_draw_mono_text(&ui->canvas, x + 20 + (int32_t)prompt_width, input_y + 9, ui->terminal_input, TRIAGE_TERMINAL_TEXT, ui->terminal_zoom);
-	int32_t cursor_x = x + 20 + (int32_t)prompt_width + (int32_t)startup_options_ui_mono_text_width(ui->terminal_input, ui->terminal_zoom);
-	startup_options_ui_canvas_fill_rect(&ui->canvas, cursor_x, input_y + 9, 2U, line_height > 4U ? line_height - 4U : line_height, TRIAGE_TERMINAL_TEXT);
+	startup_options_ui_draw_mono_text(&ui->canvas, x + 20 + (int32_t)prompt_width, input_y + 9, ui->terminal_input,
+									  TRIAGE_TERMINAL_TEXT, ui->terminal_zoom);
+	int32_t cursor_x = x + 20 + (int32_t)prompt_width +
+					   (int32_t)startup_options_ui_mono_text_width(ui->terminal_input, ui->terminal_zoom);
+	startup_options_ui_canvas_fill_rect(&ui->canvas, cursor_x, input_y + 9, 2U,
+										line_height > 4U ? line_height - 4U : line_height, TRIAGE_TERMINAL_TEXT);
 	triage_mark_rect(ui, x + 18, input_y, width - 36U, input_height);
 }
 
 static void
 triage_disk_refresh(triage_ui_t *ui)
 {
-	ui->disk_info = (recovery_block_info_t) { 0 };
-	ui->disk_health = (recovery_block_health_info_t) { 0 };
+	ui->disk_info = (recovery_block_info_t){0};
+	ui->disk_health = (recovery_block_health_info_t){0};
 	ui->disk_health_valid = false;
-	ui->disk_layout = (recovery_block_layout_info_t) { 0 };
-	ui->disk_space = (recovery_fs_space_info_t) { 0 };
+	ui->disk_layout = (recovery_block_layout_info_t){0};
+	ui->disk_space = (recovery_fs_space_info_t){0};
 	ui->disk_space_valid = false;
 	ui->disk_mounted = false;
 	ui->disk_mount_path[0] = '\0';
@@ -975,7 +969,7 @@ triage_disk_refresh(triage_ui_t *ui)
 		return;
 	}
 
-	for (uint32_t index = 0U; ; index++) {
+	for (uint32_t index = 0U;; index++) {
 		recovery_fs_mount_info_t mount;
 		if (recovery_fs_mount_info(index, &mount) < 0) break;
 		if (mount.device_index != 0U && !triage_equal(mount.device, ui->disk_info.name)) continue;
@@ -1261,9 +1255,7 @@ triage_sheet_place(const triage_ui_t *ui, uint64_t requested, uint64_t *start_ou
 		count++;
 	}
 
-	uint64_t reserve = ui->disk_layout.scheme == RECOVERY_BLOCK_LAYOUT_GPT
-		? TRIAGE_SHEET_GPT_RESERVE_SECTORS
-		: 1ULL;
+	uint64_t reserve = ui->disk_layout.scheme == RECOVERY_BLOCK_LAYOUT_GPT ? TRIAGE_SHEET_GPT_RESERVE_SECTORS : 1ULL;
 	if (sheet->disk_sectors <= reserve) {
 		return false;
 	}
@@ -1386,14 +1378,15 @@ static void
 triage_mark_sheet(triage_ui_t *ui)
 {
 	ui->dirty_sheet = true;
-	triage_mark_rect(ui, ui->disk_sheet.frame.x, ui->disk_sheet.frame.y, ui->disk_sheet.frame.width, ui->disk_sheet.frame.height);
+	triage_mark_rect(ui, ui->disk_sheet.frame.x, ui->disk_sheet.frame.y, ui->disk_sheet.frame.width,
+					 ui->disk_sheet.frame.height);
 }
 
 static void
 triage_sheet_open(triage_ui_t *ui)
 {
 	triage_disk_sheet_t *sheet = &ui->disk_sheet;
-	*sheet = (triage_disk_sheet_t) { 0 };
+	*sheet = (triage_disk_sheet_t){0};
 	sheet->active = true;
 	sheet->sector_size = ui->disk_info.sector_size != 0U ? ui->disk_info.sector_size : 512ULL;
 	sheet->disk_sectors = ui->disk_info.sector_count;
@@ -1452,13 +1445,9 @@ triage_sheet_apply(triage_ui_t *ui)
 	}
 
 	recovery_block_partition_info_t partition;
-	int64_t result = recovery_block_partition_create(
-		0U,
-		sheet->use_all ? 0ULL : triage_sheet_requested_sectors(sheet),
-		sheet->name[0] != '\0' ? sheet->name : "Untitled",
-		(recovery_block_partition_role_t)sheet->role,
-		&partition
-	);
+	int64_t result = recovery_block_partition_create(0U, sheet->use_all ? 0ULL : triage_sheet_requested_sectors(sheet),
+													 sheet->name[0] != '\0' ? sheet->name : "Untitled",
+													 (recovery_block_partition_role_t)sheet->role, &partition);
 
 	if (result < 0) {
 		sheet->message[0] = '\0';
@@ -1488,7 +1477,7 @@ triage_sheet_apply(triage_ui_t *ui)
 static triage_rect_t
 triage_rect(int32_t x, int32_t y, uint32_t width, uint32_t height)
 {
-	return (triage_rect_t) { x, y, width, height };
+	return (triage_rect_t){x, y, width, height};
 }
 
 static bool
@@ -1501,8 +1490,10 @@ static void
 triage_sheet_layout(triage_ui_t *ui)
 {
 	triage_disk_sheet_t *sheet = &ui->disk_sheet;
-	uint32_t width = triage_min_u32(TRIAGE_SHEET_WIDTH, ui->canvas.width > 40U ? ui->canvas.width - 40U : ui->canvas.width);
-	uint32_t height = triage_min_u32(TRIAGE_SHEET_HEIGHT, ui->canvas.height > 40U ? ui->canvas.height - 40U : ui->canvas.height);
+	uint32_t width =
+		triage_min_u32(TRIAGE_SHEET_WIDTH, ui->canvas.width > 40U ? ui->canvas.width - 40U : ui->canvas.width);
+	uint32_t height =
+		triage_min_u32(TRIAGE_SHEET_HEIGHT, ui->canvas.height > 40U ? ui->canvas.height - 40U : ui->canvas.height);
 	int32_t x = (int32_t)((ui->canvas.width - width) / 2U);
 	int32_t y = (int32_t)TRIAGE_BAR_HEIGHT + 18;
 	sheet->frame = triage_rect(x, y, width, height);
@@ -1523,8 +1514,10 @@ triage_sheet_layout(triage_ui_t *ui)
 	uint32_t size_width = column_width > unit_width + 12U ? column_width - unit_width - 12U : column_width / 2U;
 	int32_t size_y = top + 142;
 	sheet->size_field = triage_rect(column, size_y, size_width, TRIAGE_SHEET_FIELD_HEIGHT);
-	sheet->unit_mib = triage_rect(column + (int32_t)(column_width - unit_width), size_y, unit_width / 2U, TRIAGE_SHEET_FIELD_HEIGHT);
-	sheet->unit_gib = triage_rect(sheet->unit_mib.x + (int32_t)(unit_width / 2U), size_y, unit_width - unit_width / 2U, TRIAGE_SHEET_FIELD_HEIGHT);
+	sheet->unit_mib =
+		triage_rect(column + (int32_t)(column_width - unit_width), size_y, unit_width / 2U, TRIAGE_SHEET_FIELD_HEIGHT);
+	sheet->unit_gib = triage_rect(sheet->unit_mib.x + (int32_t)(unit_width / 2U), size_y, unit_width - unit_width / 2U,
+								  TRIAGE_SHEET_FIELD_HEIGHT);
 
 	sheet->slider = triage_rect(column, top + 190, column_width, 22U);
 	sheet->use_all_box = triage_rect(column, top + 226, 18U, 18U);
@@ -1662,17 +1655,8 @@ triage_turn(int32_t dx, int32_t dy)
  * outer and inner edges into the material behind them.
  */
 static void
-triage_draw_donut(
-	triage_ui_t *ui,
-	int32_t center_x,
-	int32_t center_y,
-	uint32_t outer,
-	uint32_t inner,
-	const uint32_t *bounds,
-	const uint32_t *colors,
-	uint32_t count,
-	uint32_t background
-)
+triage_draw_donut(triage_ui_t *ui, int32_t center_x, int32_t center_y, uint32_t outer, uint32_t inner,
+				  const uint32_t *bounds, const uint32_t *colors, uint32_t count, uint32_t background)
 {
 	startup_options_ui_canvas_t *canvas = &ui->canvas;
 	int64_t outer_squared = (int64_t)(outer * 4U) * (int64_t)(outer * 4U);
@@ -1724,26 +1708,12 @@ triage_draw_donut(
 }
 
 static void
-triage_draw_sheet_field(
-	triage_ui_t *ui,
-	const triage_rect_t *rect,
-	const char *text,
-	bool focused,
-	bool enabled
-)
+triage_draw_sheet_field(triage_ui_t *ui, const triage_rect_t *rect, const char *text, bool focused, bool enabled)
 {
 	uint32_t border = focused ? TRIAGE_ACCENT : TRIAGE_SHEET_FIELD_BORDER;
-	startup_options_ui_canvas_stroke_squircle(
-		&ui->canvas,
-		rect->x,
-		rect->y,
-		rect->width,
-		rect->height,
-		TRIAGE_SHEET_CONTROL_RADIUS,
-		focused ? 2U : 1U,
-		border,
-		TRIAGE_SHEET_FIELD
-	);
+	startup_options_ui_canvas_stroke_squircle(&ui->canvas, rect->x, rect->y, rect->width, rect->height,
+											  TRIAGE_SHEET_CONTROL_RADIUS, focused ? 2U : 1U, border,
+											  TRIAGE_SHEET_FIELD);
 
 	int32_t text_x = rect->x + 10;
 	int32_t text_y = triage_text_y(rect->y, rect->height, 1U);
@@ -1756,19 +1726,10 @@ triage_draw_sheet_field(
 }
 
 static void
-triage_draw_sheet_segment(
-	triage_ui_t *ui,
-	const triage_rect_t *rect,
-	const char *title,
-	bool selected,
-	bool hovered,
-	bool first,
-	bool last
-)
+triage_draw_sheet_segment(triage_ui_t *ui, const triage_rect_t *rect, const char *title, bool selected, bool hovered,
+						  bool first, bool last)
 {
-	uint32_t fill = selected
-		? TRIAGE_SHEET_SEGMENT_ON
-		: (hovered ? TRIAGE_SHEET_SEGMENT_HOVER : TRIAGE_SHEET_SEGMENT);
+	uint32_t fill = selected ? TRIAGE_SHEET_SEGMENT_ON : (hovered ? TRIAGE_SHEET_SEGMENT_HOVER : TRIAGE_SHEET_SEGMENT);
 
 	/*
 	 * Interior segments keep square edges so the group reads as one control:
@@ -1781,29 +1742,17 @@ triage_draw_sheet_segment(
 	startup_options_ui_canvas_fill_squircle(&ui->canvas, x, rect->y, width, rect->height, radius, fill);
 
 	if (!last) {
-		startup_options_ui_canvas_fill_rect(&ui->canvas, rect->x + (int32_t)rect->width - 1, rect->y + 5, 1U, rect->height - 10U, TRIAGE_SHEET_BORDER);
+		startup_options_ui_canvas_fill_rect(&ui->canvas, rect->x + (int32_t)rect->width - 1, rect->y + 5, 1U,
+											rect->height - 10U, TRIAGE_SHEET_BORDER);
 	}
 
-	triage_center_text(
-		&ui->canvas,
-		rect->x + (int32_t)(rect->width / 2U),
-		triage_text_y(rect->y, rect->height, 1U),
-		title,
-		selected ? TRIAGE_TEXT : TRIAGE_MUTED,
-		1U
-	);
+	triage_center_text(&ui->canvas, rect->x + (int32_t)(rect->width / 2U), triage_text_y(rect->y, rect->height, 1U),
+					   title, selected ? TRIAGE_TEXT : TRIAGE_MUTED, 1U);
 }
 
 static void
-triage_draw_sheet_button(
-	triage_ui_t *ui,
-	const triage_rect_t *rect,
-	const char *title,
-	bool accent,
-	bool hovered,
-	bool pressed,
-	bool enabled
-)
+triage_draw_sheet_button(triage_ui_t *ui, const triage_rect_t *rect, const char *title, bool accent, bool hovered,
+						 bool pressed, bool enabled)
 {
 	uint32_t fill;
 	if (!enabled) {
@@ -1814,15 +1763,10 @@ triage_draw_sheet_button(
 		fill = pressed ? TRIAGE_ROW_PRESSED : (hovered ? TRIAGE_SHEET_SEGMENT_HOVER : TRIAGE_SHEET_SEGMENT);
 	}
 
-	startup_options_ui_canvas_fill_squircle(&ui->canvas, rect->x, rect->y, rect->width, rect->height, TRIAGE_SHEET_BUTTON_RADIUS, fill);
-	triage_center_text(
-		&ui->canvas,
-		rect->x + (int32_t)(rect->width / 2U),
-		triage_text_y(rect->y, rect->height, 1U),
-		title,
-		enabled ? TRIAGE_TEXT : TRIAGE_MUTED,
-		1U
-	);
+	startup_options_ui_canvas_fill_squircle(&ui->canvas, rect->x, rect->y, rect->width, rect->height,
+											TRIAGE_SHEET_BUTTON_RADIUS, fill);
+	triage_center_text(&ui->canvas, rect->x + (int32_t)(rect->width / 2U), triage_text_y(rect->y, rect->height, 1U),
+					   title, enabled ? TRIAGE_TEXT : TRIAGE_MUTED, 1U);
 }
 
 /*
@@ -1836,17 +1780,8 @@ triage_draw_sheet_backdrop(triage_ui_t *ui)
 {
 	const triage_disk_sheet_t *sheet = &ui->disk_sheet;
 	startup_options_ui_canvas_fill_rect(&ui->canvas, 0, 0, ui->canvas.width, ui->canvas.height, TRIAGE_MODAL_DIM);
-	startup_options_ui_canvas_shadow_squircle(
-		&ui->canvas,
-		sheet->frame.x,
-		sheet->frame.y,
-		sheet->frame.width,
-		sheet->frame.height,
-		TRIAGE_SHEET_RADIUS,
-		26U,
-		12,
-		150U
-	);
+	startup_options_ui_canvas_shadow_squircle(&ui->canvas, sheet->frame.x, sheet->frame.y, sheet->frame.width,
+											  sheet->frame.height, TRIAGE_SHEET_RADIUS, 26U, 12, 150U);
 }
 
 static void
@@ -1861,11 +1796,14 @@ triage_draw_sheet_body(triage_ui_t *ui, bool redraw_frame)
 	uint32_t height = sheet->frame.height;
 
 	if (redraw_frame) {
-		startup_options_ui_canvas_stroke_squircle(&ui->canvas, x, y, width, height, TRIAGE_SHEET_RADIUS, 1U, TRIAGE_SHEET_BORDER, TRIAGE_SHEET);
+		startup_options_ui_canvas_stroke_squircle(&ui->canvas, x, y, width, height, TRIAGE_SHEET_RADIUS, 1U,
+												  TRIAGE_SHEET_BORDER, TRIAGE_SHEET);
 	} else {
 		uint32_t inset = TRIAGE_SHEET_RADIUS;
-		startup_options_ui_canvas_fill_rect(&ui->canvas, x + (int32_t)inset, y + 1, width - inset * 2U, height - 2U, TRIAGE_SHEET);
-		startup_options_ui_canvas_fill_rect(&ui->canvas, x + 1, y + (int32_t)inset, width - 2U, height - inset * 2U, TRIAGE_SHEET);
+		startup_options_ui_canvas_fill_rect(&ui->canvas, x + (int32_t)inset, y + 1, width - inset * 2U, height - 2U,
+											TRIAGE_SHEET);
+		startup_options_ui_canvas_fill_rect(&ui->canvas, x + 1, y + (int32_t)inset, width - 2U, height - inset * 2U,
+											TRIAGE_SHEET);
 	}
 
 	int32_t left = x + (int32_t)TRIAGE_SHEET_PADDING;
@@ -1891,7 +1829,7 @@ triage_draw_sheet_body(triage_ui_t *ui, bool redraw_frame)
 	uint32_t bounds[TRIAGE_DISK_PARTITIONS_MAX + 3U];
 	uint32_t colors[TRIAGE_DISK_PARTITIONS_MAX + 2U];
 	/* The accent is reserved for the proposed partition, so existing ones never use it. */
-	static const uint32_t palette[4] = { TRIAGE_DISK_ALT1, TRIAGE_DISK_ALT2, TRIAGE_DISK_ALT3, TRIAGE_DISK_EXISTING };
+	static const uint32_t palette[4] = {TRIAGE_DISK_ALT1, TRIAGE_DISK_ALT2, TRIAGE_DISK_ALT3, TRIAGE_DISK_EXISTING};
 	uint32_t slices = 0U;
 	uint64_t total = sheet->disk_sectors != 0ULL ? sheet->disk_sectors : 1ULL;
 	uint64_t consumed = 0ULL;
@@ -1935,42 +1873,18 @@ triage_draw_sheet_body(triage_ui_t *ui, bool redraw_frame)
 	bool named = ui->disk_layout.scheme != RECOVERY_BLOCK_LAYOUT_MBR;
 
 	startup_options_ui_draw_text(&ui->canvas, column, sheet->name_field.y - 20, "Name", TRIAGE_MUTED, 1U);
-	triage_draw_sheet_field(
-		ui,
-		&sheet->name_field,
-		named ? sheet->name : "Unnamed on MBR",
-		named && sheet->focus == TRIAGE_SHEET_CONTROL_NAME,
-		named
-	);
+	triage_draw_sheet_field(ui, &sheet->name_field, named ? sheet->name : "Unnamed on MBR",
+							named && sheet->focus == TRIAGE_SHEET_CONTROL_NAME, named);
 
 	startup_options_ui_draw_text(&ui->canvas, column, sheet->role_data.y - 20, "Format", TRIAGE_MUTED, 1U);
-	triage_draw_sheet_segment(
-		ui,
-		&sheet->role_data,
-		"Data",
-		sheet->role == (uint32_t)RECOVERY_BLOCK_PARTITION_ROLE_DATA,
-		sheet->hovered == TRIAGE_SHEET_CONTROL_ROLE_DATA,
-		true,
-		false
-	);
-	triage_draw_sheet_segment(
-		ui,
-		&sheet->role_system,
-		"System",
-		sheet->role == (uint32_t)RECOVERY_BLOCK_PARTITION_ROLE_SYSTEM,
-		sheet->hovered == TRIAGE_SHEET_CONTROL_ROLE_SYSTEM,
-		false,
-		false
-	);
-	triage_draw_sheet_segment(
-		ui,
-		&sheet->role_efi,
-		"EFI",
-		sheet->role == (uint32_t)RECOVERY_BLOCK_PARTITION_ROLE_EFI,
-		sheet->hovered == TRIAGE_SHEET_CONTROL_ROLE_EFI,
-		false,
-		true
-	);
+	triage_draw_sheet_segment(ui, &sheet->role_data, "Data",
+							  sheet->role == (uint32_t)RECOVERY_BLOCK_PARTITION_ROLE_DATA,
+							  sheet->hovered == TRIAGE_SHEET_CONTROL_ROLE_DATA, true, false);
+	triage_draw_sheet_segment(ui, &sheet->role_system, "System",
+							  sheet->role == (uint32_t)RECOVERY_BLOCK_PARTITION_ROLE_SYSTEM,
+							  sheet->hovered == TRIAGE_SHEET_CONTROL_ROLE_SYSTEM, false, false);
+	triage_draw_sheet_segment(ui, &sheet->role_efi, "EFI", sheet->role == (uint32_t)RECOVERY_BLOCK_PARTITION_ROLE_EFI,
+							  sheet->hovered == TRIAGE_SHEET_CONTROL_ROLE_EFI, false, true);
 
 	startup_options_ui_draw_text(&ui->canvas, column, sheet->size_field.y - 20, "Size", TRIAGE_MUTED, 1U);
 	char size_display[TRIAGE_SHEET_SIZE_MAX + 8U];
@@ -1981,56 +1895,45 @@ triage_draw_sheet_body(triage_ui_t *ui, bool redraw_frame)
 		triage_copy(size_display, sizeof(size_display), sheet->size_text);
 	}
 
-	triage_draw_sheet_field(
-		ui,
-		&sheet->size_field,
-		size_display,
-		!sheet->use_all && sheet->focus == TRIAGE_SHEET_CONTROL_SIZE,
-		!sheet->use_all
-	);
-	triage_draw_sheet_segment(ui, &sheet->unit_mib, "MiB", !sheet->gibibytes, sheet->hovered == TRIAGE_SHEET_CONTROL_UNIT_MIB, true, false);
-	triage_draw_sheet_segment(ui, &sheet->unit_gib, "GiB", sheet->gibibytes, sheet->hovered == TRIAGE_SHEET_CONTROL_UNIT_GIB, false, true);
+	triage_draw_sheet_field(ui, &sheet->size_field, size_display,
+							!sheet->use_all && sheet->focus == TRIAGE_SHEET_CONTROL_SIZE, !sheet->use_all);
+	triage_draw_sheet_segment(ui, &sheet->unit_mib, "MiB", !sheet->gibibytes,
+							  sheet->hovered == TRIAGE_SHEET_CONTROL_UNIT_MIB, true, false);
+	triage_draw_sheet_segment(ui, &sheet->unit_gib, "GiB", sheet->gibibytes,
+							  sheet->hovered == TRIAGE_SHEET_CONTROL_UNIT_GIB, false, true);
 
 	int32_t track_y = sheet->slider.y + (int32_t)(sheet->slider.height / 2U) - 2;
-	startup_options_ui_canvas_fill_squircle(&ui->canvas, sheet->slider.x, track_y, sheet->slider.width, 4U, 2U, TRIAGE_SHEET_TRACK);
+	startup_options_ui_canvas_fill_squircle(&ui->canvas, sheet->slider.x, track_y, sheet->slider.width, 4U, 2U,
+											TRIAGE_SHEET_TRACK);
 	int32_t knob_x = triage_sheet_knob_x(sheet);
 	uint32_t filled = (uint32_t)(knob_x - sheet->slider.x);
 	if (filled != 0U) {
 		startup_options_ui_canvas_fill_squircle(&ui->canvas, sheet->slider.x, track_y, filled, 4U, 2U, TRIAGE_ACCENT);
 	}
 
-	startup_options_ui_canvas_fill_circle(&ui->canvas, knob_x, sheet->slider.y + (int32_t)(sheet->slider.height / 2U), 9U, TRIAGE_SHEET_KNOB);
+	startup_options_ui_canvas_fill_circle(&ui->canvas, knob_x, sheet->slider.y + (int32_t)(sheet->slider.height / 2U),
+										  9U, TRIAGE_SHEET_KNOB);
 
-	startup_options_ui_canvas_stroke_squircle(
-		&ui->canvas,
-		sheet->use_all_box.x,
-		sheet->use_all_box.y,
-		sheet->use_all_box.width,
-		sheet->use_all_box.height,
-		7U,
-		1U,
-		sheet->use_all ? TRIAGE_ACCENT : TRIAGE_SHEET_FIELD_BORDER,
-		sheet->use_all ? TRIAGE_ACCENT : TRIAGE_SHEET_FIELD
-	);
+	startup_options_ui_canvas_stroke_squircle(&ui->canvas, sheet->use_all_box.x, sheet->use_all_box.y,
+											  sheet->use_all_box.width, sheet->use_all_box.height, 7U, 1U,
+											  sheet->use_all ? TRIAGE_ACCENT : TRIAGE_SHEET_FIELD_BORDER,
+											  sheet->use_all ? TRIAGE_ACCENT : TRIAGE_SHEET_FIELD);
 	if (sheet->use_all) {
 		/* Checkmark: two strokes, drawn as stepped pixels so it stays crisp. */
 		for (uint32_t step = 0U; step < 4U; step++) {
-			startup_options_ui_canvas_fill_rect(&ui->canvas, sheet->use_all_box.x + 4 + (int32_t)step, sheet->use_all_box.y + 8 + (int32_t)step, 2U, 2U, TRIAGE_TEXT);
+			startup_options_ui_canvas_fill_rect(&ui->canvas, sheet->use_all_box.x + 4 + (int32_t)step,
+												sheet->use_all_box.y + 8 + (int32_t)step, 2U, 2U, TRIAGE_TEXT);
 		}
 
 		for (uint32_t step = 0U; step < 6U; step++) {
-			startup_options_ui_canvas_fill_rect(&ui->canvas, sheet->use_all_box.x + 7 + (int32_t)step, sheet->use_all_box.y + 11 - (int32_t)step, 2U, 2U, TRIAGE_TEXT);
+			startup_options_ui_canvas_fill_rect(&ui->canvas, sheet->use_all_box.x + 7 + (int32_t)step,
+												sheet->use_all_box.y + 11 - (int32_t)step, 2U, 2U, TRIAGE_TEXT);
 		}
 	}
 
-	startup_options_ui_draw_text(
-		&ui->canvas,
-		sheet->use_all_box.x + (int32_t)sheet->use_all_box.width + 9,
-		triage_text_y(sheet->use_all_box.y, sheet->use_all_box.height, 1U),
-		"Use all available space",
-		TRIAGE_TEXT,
-		1U
-	);
+	startup_options_ui_draw_text(&ui->canvas, sheet->use_all_box.x + (int32_t)sheet->use_all_box.width + 9,
+								 triage_text_y(sheet->use_all_box.y, sheet->use_all_box.height, 1U),
+								 "Use all available space", TRIAGE_TEXT, 1U);
 
 	/*
 	 * The footer explains why Add Partition is dimmed.  A size the disk
@@ -2048,28 +1951,15 @@ triage_draw_sheet_body(triage_ui_t *ui, bool redraw_frame)
 	}
 
 	if (message[0] != '\0') {
-		startup_options_ui_draw_text(&ui->canvas, left, triage_text_y(sheet->cancel.y, sheet->cancel.height, 1U), message, TRIAGE_MUTED, 1U);
+		startup_options_ui_draw_text(&ui->canvas, left, triage_text_y(sheet->cancel.y, sheet->cancel.height, 1U),
+									 message, TRIAGE_MUTED, 1U);
 	}
 
 	bool can_apply = sheet->free_sectors != 0ULL && (sheet->use_all || triage_sheet_size_valid(sheet));
-	triage_draw_sheet_button(
-		ui,
-		&sheet->cancel,
-		"Cancel",
-		false,
-		sheet->hovered == TRIAGE_SHEET_CONTROL_CANCEL,
-		sheet->pressed == TRIAGE_SHEET_CONTROL_CANCEL,
-		true
-	);
-	triage_draw_sheet_button(
-		ui,
-		&sheet->apply,
-		"Add Partition",
-		true,
-		sheet->hovered == TRIAGE_SHEET_CONTROL_APPLY,
-		sheet->pressed == TRIAGE_SHEET_CONTROL_APPLY,
-		can_apply
-	);
+	triage_draw_sheet_button(ui, &sheet->cancel, "Cancel", false, sheet->hovered == TRIAGE_SHEET_CONTROL_CANCEL,
+							 sheet->pressed == TRIAGE_SHEET_CONTROL_CANCEL, true);
+	triage_draw_sheet_button(ui, &sheet->apply, "Add Partition", true, sheet->hovered == TRIAGE_SHEET_CONTROL_APPLY,
+							 sheet->pressed == TRIAGE_SHEET_CONTROL_APPLY, can_apply);
 }
 
 static void
@@ -2201,9 +2091,8 @@ triage_sheet_key(triage_ui_t *ui, uint32_t code, uint32_t modifiers)
 	}
 
 	if (code == TRIAGE_KEY_TAB) {
-		sheet->focus = sheet->focus == TRIAGE_SHEET_CONTROL_NAME
-			? TRIAGE_SHEET_CONTROL_SIZE
-			: TRIAGE_SHEET_CONTROL_NAME;
+		sheet->focus =
+			sheet->focus == TRIAGE_SHEET_CONTROL_NAME ? TRIAGE_SHEET_CONTROL_SIZE : TRIAGE_SHEET_CONTROL_NAME;
 		triage_mark_sheet(ui);
 		return true;
 	}
@@ -2296,7 +2185,8 @@ triage_disk_add(triage_ui_t *ui)
 
 	if (ui->disk_layout.scheme == RECOVERY_BLOCK_LAYOUT_RAW) {
 		ui->disk_initialize_armed = false;
-		triage_disk_set_status(ui, "Partition-map editing is not available yet; inspection and verification are safe to use.");
+		triage_disk_set_status(
+			ui, "Partition-map editing is not available yet; inspection and verification are safe to use.");
 		triage_mark_disk(ui);
 		return;
 	}
@@ -2383,11 +2273,16 @@ static const char *
 triage_disk_button_title(const triage_ui_t *ui, uint32_t index)
 {
 	switch (index) {
-	case TRIAGE_DISK_BUTTON_REFRESH: return "Refresh";
-	case TRIAGE_DISK_BUTTON_VERIFY: return "Verify";
-	case TRIAGE_DISK_BUTTON_DELETE: return "Delete";
-	case TRIAGE_DISK_BUTTON_ADD: return ui->disk_layout.scheme == RECOVERY_BLOCK_LAYOUT_RAW ? "Initialize" : "Add";
-	default: return ui->disk_mounted ? "Unmount" : "Mount";
+	case TRIAGE_DISK_BUTTON_REFRESH:
+		return "Refresh";
+	case TRIAGE_DISK_BUTTON_VERIFY:
+		return "Verify";
+	case TRIAGE_DISK_BUTTON_DELETE:
+		return "Delete";
+	case TRIAGE_DISK_BUTTON_ADD:
+		return ui->disk_layout.scheme == RECOVERY_BLOCK_LAYOUT_RAW ? "Initialize" : "Add";
+	default:
+		return ui->disk_mounted ? "Unmount" : "Mount";
 	}
 }
 
@@ -2419,15 +2314,10 @@ triage_draw_disk_button(triage_ui_t *ui, uint32_t index)
 	 * darken a little on every hover.
 	 */
 	startup_options_ui_canvas_fill_rect(&ui->canvas, rect->x, rect->y, rect->width, rect->height, TRIAGE_PANEL);
-	startup_options_ui_canvas_fill_squircle(&ui->canvas, rect->x, rect->y, rect->width, rect->height, TRIAGE_DISK_BUTTON_RADIUS, fill);
-	triage_center_text(
-		&ui->canvas,
-		rect->x + (int32_t)(rect->width / 2U),
-		triage_text_y(rect->y, rect->height, 1U),
-		triage_disk_button_title(ui, index),
-		TRIAGE_TEXT,
-		1U
-	);
+	startup_options_ui_canvas_fill_squircle(&ui->canvas, rect->x, rect->y, rect->width, rect->height,
+											TRIAGE_DISK_BUTTON_RADIUS, fill);
+	triage_center_text(&ui->canvas, rect->x + (int32_t)(rect->width / 2U), triage_text_y(rect->y, rect->height, 1U),
+					   triage_disk_button_title(ui, index), TRIAGE_TEXT, 1U);
 }
 
 static int32_t
@@ -2435,7 +2325,8 @@ triage_disk_button_at(const triage_ui_t *ui, int32_t x, int32_t y)
 {
 	for (uint32_t index = 0U; index < (uint32_t)TRIAGE_DISK_BUTTON_COUNT; index++) {
 		const triage_rect_t *rect = &ui->disk_buttons[index];
-		if (startup_options_ui_point_in_squircle(x, y, rect->x, rect->y, rect->width, rect->height, TRIAGE_DISK_BUTTON_RADIUS)) {
+		if (startup_options_ui_point_in_squircle(x, y, rect->x, rect->y, rect->width, rect->height,
+												 TRIAGE_DISK_BUTTON_RADIUS)) {
 			return (int32_t)index;
 		}
 	}
@@ -2456,14 +2347,17 @@ triage_draw_disk_utility(triage_ui_t *ui)
 	if (!ui->disk_sheet.active) triage_restore_background(ui, x, y, width, height);
 	startup_options_ui_canvas_stroke_squircle(&ui->canvas, x, y, width, height, 14U, 1U, TRIAGE_BORDER, TRIAGE_PANEL);
 	startup_options_ui_draw_text(&ui->canvas, x + 28, y + 22, "Disk Utility", TRIAGE_TEXT, 3U);
-	startup_options_ui_draw_text(&ui->canvas, x + 28, y + 58, "Esc returns  |  Select a partition before deleting", TRIAGE_MUTED, 1U);
+	startup_options_ui_draw_text(&ui->canvas, x + 28, y + 58, "Esc returns  |  Select a partition before deleting",
+								 TRIAGE_MUTED, 1U);
 
 	char capacity[32] = "Unavailable";
 	if (ui->disk_info.sector_count != 0ULL && ui->disk_info.sector_size != 0U) {
-		triage_format_bytes(capacity, sizeof(capacity), ui->disk_info.sector_count * (uint64_t)ui->disk_info.sector_size);
+		triage_format_bytes(capacity, sizeof(capacity),
+							ui->disk_info.sector_count * (uint64_t)ui->disk_info.sector_size);
 	}
 
-	startup_options_ui_draw_text(&ui->canvas, x + 28, y + 102, ui->disk_info.name[0] != '\0' ? ui->disk_info.name : "disk0", TRIAGE_TEXT, 2U);
+	startup_options_ui_draw_text(&ui->canvas, x + 28, y + 102,
+								 ui->disk_info.name[0] != '\0' ? ui->disk_info.name : "disk0", TRIAGE_TEXT, 2U);
 	startup_options_ui_draw_text(&ui->canvas, x + 28, y + 130, capacity, TRIAGE_MUTED, 1U);
 
 	char layout[64] = "Partition map: ";
@@ -2474,16 +2368,20 @@ triage_draw_disk_utility(triage_ui_t *ui)
 	if (ui->disk_health_valid) {
 		health_line[0] = '\0';
 		triage_append(health_line, sizeof(health_line), "Health: ");
-		triage_append(health_line, sizeof(health_line), ui->disk_health.healthy != 0U ? "Healthy" : "Attention required");
+		triage_append(health_line, sizeof(health_line),
+					  ui->disk_health.healthy != 0U ? "Healthy" : "Attention required");
 
 		if (ui->disk_health.read_only != 0U) {
 			triage_append(health_line, sizeof(health_line), "  |  Read only");
 		}
 
-		triage_append(health_line, sizeof(health_line), ui->disk_health.flush_supported != 0U ? "  |  Flush supported" : "  |  No flush feature");
+		triage_append(health_line, sizeof(health_line),
+					  ui->disk_health.flush_supported != 0U ? "  |  Flush supported" : "  |  No flush feature");
 	}
 
-	startup_options_ui_draw_text(&ui->canvas, x + 28, y + 180, health_line, ui->disk_health_valid && ui->disk_health.healthy != 0U ? TRIAGE_TEXT : TRIAGE_MUTED, 1U);
+	startup_options_ui_draw_text(&ui->canvas, x + 28, y + 180, health_line,
+								 ui->disk_health_valid && ui->disk_health.healthy != 0U ? TRIAGE_TEXT : TRIAGE_MUTED,
+								 1U);
 
 	if (ui->disk_health_valid) {
 		uint64_t errors = ui->disk_health.read_errors + ui->disk_health.write_errors + ui->disk_health.flush_errors;
@@ -2501,7 +2399,7 @@ triage_draw_disk_utility(triage_ui_t *ui)
 	startup_options_ui_canvas_fill_squircle(&ui->canvas, bar_x, bar_y, bar_width, bar_height, 8U, TRIAGE_DISK_FREE);
 
 	if (ui->disk_partition_count != 0U && ui->disk_info.sector_count != 0ULL) {
-		static const uint32_t colors[4] = { TRIAGE_DISK_USED, TRIAGE_DISK_ALT1, TRIAGE_DISK_ALT2, TRIAGE_DISK_ALT3 };
+		static const uint32_t colors[4] = {TRIAGE_DISK_USED, TRIAGE_DISK_ALT1, TRIAGE_DISK_ALT2, TRIAGE_DISK_ALT3};
 
 		for (uint32_t index = 0U; index < ui->disk_partition_count; index++) {
 			const recovery_block_partition_info_t *partition = &ui->disk_partitions[index];
@@ -2515,28 +2413,36 @@ triage_draw_disk_utility(triage_ui_t *ui)
 			if (segment_x >= bar_width) continue;
 			if (segment > bar_width - segment_x) segment = bar_width - segment_x;
 
-			startup_options_ui_canvas_fill_rect(&ui->canvas, bar_x + (int32_t)segment_x, bar_y, segment, bar_height, colors[index % 4U]);
+			startup_options_ui_canvas_fill_rect(&ui->canvas, bar_x + (int32_t)segment_x, bar_y, segment, bar_height,
+												colors[index % 4U]);
 		}
 	} else if (ui->disk_space_valid && ui->disk_space.total_bytes != 0ULL) {
 		uint64_t used = ui->disk_space.total_bytes > ui->disk_space.free_bytes
-			? ui->disk_space.total_bytes - ui->disk_space.free_bytes
-			: 0ULL;
+							? ui->disk_space.total_bytes - ui->disk_space.free_bytes
+							: 0ULL;
 		uint32_t used_width = (uint32_t)((used * bar_width) / ui->disk_space.total_bytes);
 		if (used_width > bar_width) used_width = bar_width;
 
 		if (used_width != 0U) {
-			startup_options_ui_canvas_fill_squircle(&ui->canvas, bar_x, bar_y, used_width, bar_height, 8U, TRIAGE_DISK_USED);
+			startup_options_ui_canvas_fill_squircle(&ui->canvas, bar_x, bar_y, used_width, bar_height, 8U,
+													TRIAGE_DISK_USED);
 		}
 	}
 
 	int32_t detail_y = y + 286;
 	if (ui->disk_partition_count == 0U) {
-		startup_options_ui_draw_text(&ui->canvas, x + 28, detail_y, ui->disk_layout.scheme == RECOVERY_BLOCK_LAYOUT_RAW ? "sevOS Volume" : "No partitions", TRIAGE_TEXT, 2U);
+		startup_options_ui_draw_text(
+			&ui->canvas, x + 28, detail_y,
+			ui->disk_layout.scheme == RECOVERY_BLOCK_LAYOUT_RAW ? "sevOS Volume" : "No partitions", TRIAGE_TEXT, 2U);
 
 		if (ui->disk_layout.scheme == RECOVERY_BLOCK_LAYOUT_RAW) {
-			startup_options_ui_draw_text(&ui->canvas, x + 28, detail_y + 28, "Raw ext4 occupies the whole block device. Initialize GPT is destructive.", TRIAGE_MUTED, 1U);
+			startup_options_ui_draw_text(&ui->canvas, x + 28, detail_y + 28,
+										 "Raw ext4 occupies the whole block device. Initialize GPT is destructive.",
+										 TRIAGE_MUTED, 1U);
 		} else {
-			startup_options_ui_draw_text(&ui->canvas, x + 28, detail_y + 28, "The partition map is empty. Add creates a partition in the largest free region.", TRIAGE_MUTED, 1U);
+			startup_options_ui_draw_text(
+				&ui->canvas, x + 28, detail_y + 28,
+				"The partition map is empty. Add creates a partition in the largest free region.", TRIAGE_MUTED, 1U);
 		}
 
 		if (ui->disk_space_valid) {
@@ -2544,8 +2450,8 @@ triage_draw_disk_utility(triage_ui_t *ui)
 			char free_line[32];
 			char used_bytes[32];
 			uint64_t used = ui->disk_space.total_bytes > ui->disk_space.free_bytes
-				? ui->disk_space.total_bytes - ui->disk_space.free_bytes
-				: 0ULL;
+								? ui->disk_space.total_bytes - ui->disk_space.free_bytes
+								: 0ULL;
 			triage_format_bytes(free_line, sizeof(free_line), ui->disk_space.free_bytes);
 			triage_format_bytes(used_bytes, sizeof(used_bytes), used);
 			triage_append(used_line, sizeof(used_line), used_bytes);
@@ -2569,7 +2475,8 @@ triage_draw_disk_utility(triage_ui_t *ui)
 			int32_t row_y = detail_y + (int32_t)(index * 34U) - 5;
 
 			if (index == ui->disk_selected_partition) {
-				startup_options_ui_canvas_fill_squircle(&ui->canvas, x + 22, row_y, width - 44U, 30U, 7U, TRIAGE_ROW_SELECTED);
+				startup_options_ui_canvas_fill_squircle(&ui->canvas, x + 22, row_y, width - 44U, 30U, 7U,
+														TRIAGE_ROW_SELECTED);
 			}
 
 			char size[32];
@@ -2589,7 +2496,8 @@ triage_draw_disk_utility(triage_ui_t *ui)
 
 	if (ui->disk_status[0] != '\0') {
 		const triage_rect_t *primary = &ui->disk_buttons[TRIAGE_DISK_BUTTON_PRIMARY];
-		startup_options_ui_draw_text(&ui->canvas, x + 28, triage_text_y(primary->y, primary->height, 1U), ui->disk_status, TRIAGE_MUTED, 1U);
+		startup_options_ui_draw_text(&ui->canvas, x + 28, triage_text_y(primary->y, primary->height, 1U),
+									 ui->disk_status, TRIAGE_MUTED, 1U);
 	}
 
 	if (ui->disk_sheet.active) {
@@ -2650,9 +2558,9 @@ triage_ui_init(triage_ui_t *ui, uint32_t *pixels, uint32_t width, uint32_t heigh
 	ui->terminal_active = false;
 	ui->terminal_zoom = 2U;
 	ui->disk_active = false;
-	ui->disk_sheet = (triage_disk_sheet_t) { 0 };
+	ui->disk_sheet = (triage_disk_sheet_t){0};
 	for (uint32_t index = 0U; index < (uint32_t)TRIAGE_DISK_BUTTON_COUNT; index++) {
-		ui->disk_buttons[index] = (triage_rect_t) { 0, 0, 0U, 0U };
+		ui->disk_buttons[index] = (triage_rect_t){0, 0, 0U, 0U};
 		ui->disk_button_hovered[index] = false;
 		ui->disk_button_pressed[index] = false;
 	}
@@ -2665,7 +2573,7 @@ triage_ui_init(triage_ui_t *ui, uint32_t *pixels, uint32_t width, uint32_t heigh
 	ui->terminal_scroll_offset = 0U;
 	ui->terminal_history_count = 0U;
 	ui->terminal_history_index = -1;
-	ui->damage = (triage_damage_t) { 0 };
+	ui->damage = (triage_damage_t){0};
 	triage_shell_init(&ui->shell, triage_shell_output, ui);
 	triage_layout(ui);
 	triage_mark_full(ui);
@@ -2718,7 +2626,10 @@ triage_ui_render(triage_ui_t *ui)
 	if (ui->terminal_active) {
 		if (ui->dirty_terminal_body) {
 			triage_draw_terminal_body(ui);
-			int32_t x; int32_t y; uint32_t width; uint32_t height;
+			int32_t x;
+			int32_t y;
+			uint32_t width;
+			uint32_t height;
 			triage_workspace(ui, &x, &y, &width, &height);
 			triage_mark_rect(ui, x, y, width, height);
 			ui->dirty_terminal_body = false;
@@ -2934,7 +2845,8 @@ triage_ui_pointer_up(triage_ui_t *ui, int32_t x, int32_t y)
 			changed = true;
 
 			const triage_rect_t *rect = &ui->disk_buttons[index];
-			if (startup_options_ui_point_in_squircle(x, y, rect->x, rect->y, rect->width, rect->height, TRIAGE_DISK_BUTTON_RADIUS)) {
+			if (startup_options_ui_point_in_squircle(x, y, rect->x, rect->y, rect->width, rect->height,
+													 TRIAGE_DISK_BUTTON_RADIUS)) {
 				activated = (int32_t)index;
 			}
 		}
@@ -2975,7 +2887,8 @@ triage_ui_pointer_up(triage_ui_t *ui, int32_t x, int32_t y)
 			triage_mark_full(ui);
 		} else if (changed) {
 			ui->dirty_modal = true;
-			triage_mark_rect(ui, ui->modal_button_x, ui->modal_button_y, ui->modal_button_width, ui->modal_button_height);
+			triage_mark_rect(ui, ui->modal_button_x, ui->modal_button_y, ui->modal_button_width,
+							 ui->modal_button_height);
 		}
 
 		return changed || activate;
@@ -3130,9 +3043,8 @@ triage_ui_key(triage_ui_t *ui, uint32_t code, int32_t value, uint32_t modifiers)
 
 		if (code == TRIAGE_KEY_UP && ui->disk_partition_count != 0U) {
 			triage_disk_cancel_destructive(ui);
-			ui->disk_selected_partition = ui->disk_selected_partition == 0U
-				? ui->disk_partition_count - 1U
-				: ui->disk_selected_partition - 1U;
+			ui->disk_selected_partition =
+				ui->disk_selected_partition == 0U ? ui->disk_partition_count - 1U : ui->disk_selected_partition - 1U;
 			triage_mark_disk(ui);
 			return true;
 		}
@@ -3190,7 +3102,7 @@ triage_ui_take_damage(triage_ui_t *ui, triage_damage_t *damage)
 	}
 
 	*damage = ui->damage;
-	ui->damage = (triage_damage_t) { 0 };
+	ui->damage = (triage_damage_t){0};
 	return true;
 }
 

@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define STARTUP_OPTIONS_UI_ARGB(a, r, g, b) \
+#define STARTUP_OPTIONS_UI_ARGB(a, r, g, b)                                                                            \
 	((((uint32_t)(a)) << 24U) | (((uint32_t)(r)) << 16U) | (((uint32_t)(g)) << 8U) | (uint32_t)(b))
 
 /* Software drawing primitives for application-owned ARGB surfaces. */
@@ -54,7 +54,8 @@ bool startup_options_ui_font_preload_mono(void);
 bool startup_options_ui_font_sans_has_weights(void);
 bool startup_options_ui_font_sans_has_italic(void);
 
-bool startup_options_ui_canvas_init(startup_options_ui_canvas_t *canvas, uint32_t *pixels, uint32_t width, uint32_t height, uint32_t stride);
+bool startup_options_ui_canvas_init(startup_options_ui_canvas_t *canvas, uint32_t *pixels, uint32_t width,
+									uint32_t height, uint32_t stride);
 void startup_options_ui_canvas_clear(startup_options_ui_canvas_t *canvas, uint32_t color);
 /*
  *	Routine:	startup_options_ui_canvas_replace_rect
@@ -65,24 +66,20 @@ void startup_options_ui_canvas_clear(startup_options_ui_canvas_t *canvas, uint32
  *		recovery surface retains its source alpha instead of flattening it
  *		onto pixels from an earlier frame.
  */
-void startup_options_ui_canvas_replace_rect(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y, uint32_t width, uint32_t height, uint32_t color);
+void startup_options_ui_canvas_replace_rect(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y, uint32_t width,
+											uint32_t height, uint32_t color);
 /*
  *	Routine:	startup_options_ui_canvas_replace_squircle
  *	Purpose:
  *		Replace a rounded material without flattening its alpha into the
  *		backing pixels.
  */
-void startup_options_ui_canvas_replace_squircle(
-	startup_options_ui_canvas_t *canvas,
-	int32_t x,
-	int32_t y,
-	uint32_t width,
-	uint32_t height,
-	uint32_t radius,
-	uint32_t color
-);
-void startup_options_ui_canvas_fill_rect(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y, uint32_t width, uint32_t height, uint32_t color);
-void startup_options_ui_canvas_fill_vertical_gradient(startup_options_ui_canvas_t *canvas, uint32_t top, uint32_t bottom);
+void startup_options_ui_canvas_replace_squircle(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y,
+												uint32_t width, uint32_t height, uint32_t radius, uint32_t color);
+void startup_options_ui_canvas_fill_rect(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y, uint32_t width,
+										 uint32_t height, uint32_t color);
+void startup_options_ui_canvas_fill_vertical_gradient(startup_options_ui_canvas_t *canvas, uint32_t top,
+													  uint32_t bottom);
 
 /*
  *	Routine:	startup_options_ui_canvas_fill_squircle
@@ -94,15 +91,8 @@ void startup_options_ui_canvas_fill_vertical_gradient(startup_options_ui_canvas_
  *		as rounded rather than as a rectangle with quarter circles
  *		pasted on.
  */
-void startup_options_ui_canvas_fill_squircle(
-	startup_options_ui_canvas_t *canvas,
-	int32_t x,
-	int32_t y,
-	uint32_t width,
-	uint32_t height,
-	uint32_t radius,
-	uint32_t color
-);
+void startup_options_ui_canvas_fill_squircle(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y, uint32_t width,
+											 uint32_t height, uint32_t radius, uint32_t color);
 
 /*
  *	Routine:	startup_options_ui_canvas_fill_squircle_gradient
@@ -113,58 +103,23 @@ void startup_options_ui_canvas_fill_squircle(
  *		as a colored rectangle; the vertical ramp is what makes the same
  *		shape read as a physical surface.
  */
-void startup_options_ui_canvas_fill_squircle_gradient(
-	startup_options_ui_canvas_t *canvas,
-	int32_t x,
-	int32_t y,
-	uint32_t width,
-	uint32_t height,
-	uint32_t radius,
-	uint32_t top_color,
-	uint32_t bottom_color
-);
+void startup_options_ui_canvas_fill_squircle_gradient(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y,
+													  uint32_t width, uint32_t height, uint32_t radius,
+													  uint32_t top_color, uint32_t bottom_color);
 
-void startup_options_ui_canvas_stroke_squircle(
-	startup_options_ui_canvas_t *canvas,
-	int32_t x,
-	int32_t y,
-	uint32_t width,
-	uint32_t height,
-	uint32_t radius,
-	uint32_t thickness,
-	uint32_t border_color,
-	uint32_t fill_color
-);
+void startup_options_ui_canvas_stroke_squircle(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y,
+											   uint32_t width, uint32_t height, uint32_t radius, uint32_t thickness,
+											   uint32_t border_color, uint32_t fill_color);
 
-void startup_options_ui_canvas_shadow_squircle(
-	startup_options_ui_canvas_t *canvas,
-	int32_t x,
-	int32_t y,
-	uint32_t width,
-	uint32_t height,
-	uint32_t radius,
-	uint32_t spread,
-	int32_t offset_y,
-	uint32_t alpha
-);
+void startup_options_ui_canvas_shadow_squircle(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y,
+											   uint32_t width, uint32_t height, uint32_t radius, uint32_t spread,
+											   int32_t offset_y, uint32_t alpha);
 
-void startup_options_ui_canvas_fill_circle(
-	startup_options_ui_canvas_t *canvas,
-	int32_t center_x,
-	int32_t center_y,
-	uint32_t radius,
-	uint32_t color
-);
+void startup_options_ui_canvas_fill_circle(startup_options_ui_canvas_t *canvas, int32_t center_x, int32_t center_y,
+										   uint32_t radius, uint32_t color);
 
-bool startup_options_ui_point_in_squircle(
-	int32_t point_x,
-	int32_t point_y,
-	int32_t x,
-	int32_t y,
-	uint32_t width,
-	uint32_t height,
-	uint32_t radius
-);
+bool startup_options_ui_point_in_squircle(int32_t point_x, int32_t point_y, int32_t x, int32_t y, uint32_t width,
+										  uint32_t height, uint32_t radius);
 
 uint32_t startup_options_ui_text_width(const char *text, uint32_t scale);
 /*
@@ -173,14 +128,8 @@ uint32_t startup_options_ui_text_width(const char *text, uint32_t scale);
  * control means subtracting this rather than the visible height of the glyphs.
  */
 uint32_t startup_options_ui_line_height(uint32_t scale);
-void startup_options_ui_draw_text(
-	startup_options_ui_canvas_t *canvas,
-	int32_t x,
-	int32_t y,
-	const char *text,
-	uint32_t color,
-	uint32_t scale
-);
+void startup_options_ui_draw_text(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y, const char *text,
+								  uint32_t color, uint32_t scale);
 
 /*
  *	Routine:	startup_options_ui_styled_text_width, startup_options_ui_draw_styled_text
@@ -192,16 +141,8 @@ void startup_options_ui_draw_text(
  *		requests fall back to upright when no italic file is installed.
  */
 uint32_t startup_options_ui_styled_text_width(const char *text, uint32_t scale, uint32_t weight, bool italic);
-void startup_options_ui_draw_styled_text(
-	startup_options_ui_canvas_t *canvas,
-	int32_t x,
-	int32_t y,
-	const char *text,
-	uint32_t color,
-	uint32_t scale,
-	uint32_t weight,
-	bool italic
-);
+void startup_options_ui_draw_styled_text(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y, const char *text,
+										 uint32_t color, uint32_t scale, uint32_t weight, bool italic);
 
 /*
  *	Routine:	startup_options_ui_semibold_text_width, startup_options_ui_draw_semibold_text
@@ -213,25 +154,12 @@ void startup_options_ui_draw_styled_text(
  *		this one weight constantly.
  */
 uint32_t startup_options_ui_semibold_text_width(const char *text, uint32_t scale);
-void startup_options_ui_draw_semibold_text(
-	startup_options_ui_canvas_t *canvas,
-	int32_t x,
-	int32_t y,
-	const char *text,
-	uint32_t color,
-	uint32_t scale
-);
-
+void startup_options_ui_draw_semibold_text(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y, const char *text,
+										   uint32_t color, uint32_t scale);
 
 uint32_t startup_options_ui_mono_text_width(const char *text, uint32_t scale);
 uint32_t startup_options_ui_mono_line_height(uint32_t scale);
-void startup_options_ui_draw_mono_text(
-	startup_options_ui_canvas_t *canvas,
-	int32_t x,
-	int32_t y,
-	const char *text,
-	uint32_t color,
-	uint32_t scale
-);
+void startup_options_ui_draw_mono_text(startup_options_ui_canvas_t *canvas, int32_t x, int32_t y, const char *text,
+									   uint32_t color, uint32_t scale);
 
 #endif

@@ -30,12 +30,14 @@ static bool g_boot_chime_started;
 static volatile boot_chime_state_t g_boot_chime_state = BOOT_CHIME_IDLE;
 static uint64_t g_boot_chime_display_us;
 
-static uint64_t boot_chime_ms(uint64_t microseconds)
+static uint64_t
+boot_chime_ms(uint64_t microseconds)
 {
 	return microseconds / 1000ULL;
 }
 
-void boot_chime_arm(void)
+void
+boot_chime_arm(void)
 {
 	if (g_boot_chime_armed) return;
 
@@ -53,7 +55,8 @@ void boot_chime_arm(void)
 }
 
 /* Whether path names something in the VFS. */
-static bool boot_chime_exists(const char *path)
+static bool
+boot_chime_exists(const char *path)
 {
 	vnode_t vnode;
 
@@ -69,7 +72,8 @@ static bool boot_chime_exists(const char *path)
  * The whole of a file into a fresh allocation the caller frees; 0 when it is
  * missing, empty, does not fit or cannot be read.
  */
-static uint8_t *boot_chime_read(const char *path, size_t *size)
+static uint8_t *
+boot_chime_read(const char *path, size_t *size)
 {
 	filedesc_t filedesc = &proc_kernel()->p_fd;
 	vnode_t vnode;
@@ -130,7 +134,8 @@ static uint8_t *boot_chime_read(const char *path, size_t *size)
  * one of them shows up late, and for the log to say which was missing when
  * it gives up.
  */
-static bool boot_chime_wait_ready(void)
+static bool
+boot_chime_wait_ready(void)
 {
 	uint64_t deadline = timer_get_microseconds() + BOOT_CHIME_WAIT_US;
 
@@ -147,7 +152,9 @@ static bool boot_chime_wait_ready(void)
 		}
 
 		if (timer_get_microseconds() > deadline) {
-			BOOT_CHIME_LOG("gave up after %llu s: %s\n", (unsigned long long)(BOOT_CHIME_WAIT_US / 1000000ULL), !device ? "the sound device has no playback stream" : "Boot_Audio.wav is not in the system volume");
+			BOOT_CHIME_LOG("gave up after %llu s: %s\n", (unsigned long long)(BOOT_CHIME_WAIT_US / 1000000ULL),
+						   !device ? "the sound device has no playback stream"
+								   : "Boot_Audio.wav is not in the system volume");
 			return false;
 		}
 
@@ -156,7 +163,8 @@ static bool boot_chime_wait_ready(void)
 }
 
 /* Say what the MP3 is, from its own headers. */
-static void boot_chime_describe_mp3(void)
+static void
+boot_chime_describe_mp3(void)
 {
 	size_t size;
 	uint8_t *bytes = boot_chime_read(BOOT_CHIME_MP3_PATH, &size);
@@ -179,12 +187,20 @@ static void boot_chime_describe_mp3(void)
 	if (info.id3v2) BOOT_CHIME_LOG("Boot_Audio.mp3: ID3v2.%u tag, %u bytes\n", info.id3_major, info.id3_bytes);
 
 	BOOT_CHIME_LOG("Boot_Audio.mp3: MPEG audio frame header at byte %llu\n", (unsigned long long)info.frame_offset);
-	BOOT_CHIME_LOG("Boot_Audio.mp3: MPEG-%s Layer %s\n", info.mpeg == 1U ? "1" : info.mpeg == 2U ? "2" : "2.5", info.layer == 3U ? "III" : info.layer == 2U ? "II" : "I");
-	BOOT_CHIME_LOG("Boot_Audio.mp3: %u kbps, %u Hz, %s\n", info.bitrate_kbps, info.sample_rate, info.channels == 1U ? "mono" : "stereo");
+	BOOT_CHIME_LOG("Boot_Audio.mp3: MPEG-%s Layer %s\n",
+				   info.mpeg == 1U	 ? "1"
+				   : info.mpeg == 2U ? "2"
+									 : "2.5",
+				   info.layer == 3U	  ? "III"
+				   : info.layer == 2U ? "II"
+									  : "I");
+	BOOT_CHIME_LOG("Boot_Audio.mp3: %u kbps, %u Hz, %s\n", info.bitrate_kbps, info.sample_rate,
+				   info.channels == 1U ? "mono" : "stereo");
 	(void)kfree(bytes);
 }
 
-bool boot_chime_play(void)
+bool
+boot_chime_play(void)
 {
 	if (!boot_chime_wait_ready()) return false;
 
@@ -210,8 +226,10 @@ bool boot_chime_play(void)
 
 	uint64_t duration_ms = wav.frames * 1000ULL / wav.sample_rate;
 
-	BOOT_CHIME_LOG("Boot_Audio.wav: %u-bit %s, %u channel(s), %u Hz\n", wav.bits_per_sample, wav_encoding_name(wav.encoding), wav.channels, wav.sample_rate);
-	BOOT_CHIME_LOG("Boot_Audio.wav: %llu frames, %llu ms\n", (unsigned long long)wav.frames, (unsigned long long)duration_ms);
+	BOOT_CHIME_LOG("Boot_Audio.wav: %u-bit %s, %u channel(s), %u Hz\n", wav.bits_per_sample,
+				   wav_encoding_name(wav.encoding), wav.channels, wav.sample_rate);
+	BOOT_CHIME_LOG("Boot_Audio.wav: %llu frames, %llu ms\n", (unsigned long long)wav.frames,
+				   (unsigned long long)duration_ms);
 
 	filedesc_t filedesc = &proc_kernel()->p_fd;
 	uint32_t descriptor;
@@ -223,7 +241,7 @@ bool boot_chime_play(void)
 		return false;
 	}
 
-	nxu_audio_params_t params = { .rate = wav.sample_rate, .channels = 2U, .format = NXU_AUDIO_FORMAT_S16 };
+	nxu_audio_params_t params = {.rate = wav.sample_rate, .channels = 2U, .format = NXU_AUDIO_FORMAT_S16};
 
 	status = vfs_ioctl(filedesc, descriptor, NXU_AUDIO_SET_PARAMS, &params);
 
@@ -234,7 +252,9 @@ bool boot_chime_play(void)
 		return false;
 	}
 
-	if (params.rate != wav.sample_rate) BOOT_CHIME_LOG("the device runs at %u Hz, the chime is %u Hz: it is not resampled\n", params.rate, wav.sample_rate);
+	if (params.rate != wav.sample_rate)
+		BOOT_CHIME_LOG("the device runs at %u Hz, the chime is %u Hz: it is not resampled\n", params.rate,
+					   wav.sample_rate);
 
 	static int16_t chunk[2U * BOOT_CHIME_CHUNK_FRAMES];
 	uint64_t frame = 0ULL;
@@ -250,7 +270,8 @@ bool boot_chime_play(void)
 			BOOT_CHIME_LOG("playback started at %llu ms\n", (unsigned long long)boot_chime_ms(started_us));
 
 			if (g_boot_chime_armed && started_us >= g_boot_chime_display_us) {
-				BOOT_CHIME_LOG("%llu ms after display output started\n", (unsigned long long)boot_chime_ms(started_us - g_boot_chime_display_us));
+				BOOT_CHIME_LOG("%llu ms after display output started\n",
+							   (unsigned long long)boot_chime_ms(started_us - g_boot_chime_display_us));
 			}
 		}
 
@@ -279,28 +300,35 @@ bool boot_chime_play(void)
 	(void)kfree(bytes);
 
 	BOOT_CHIME_LOG("playback ended at %llu ms\n", (unsigned long long)boot_chime_ms(ended_us));
-	BOOT_CHIME_LOG("playback lasted %llu ms for %llu ms of audio\n", (unsigned long long)boot_chime_ms(ended_us - started_us), (unsigned long long)duration_ms);
-	BOOT_CHIME_LOG("%llu frame(s) written, %llu underrun(s), %llu I/O error(s)\n", (unsigned long long)frame, (unsigned long long)info.xruns, (unsigned long long)info.io_errors);
+	BOOT_CHIME_LOG("playback lasted %llu ms for %llu ms of audio\n",
+				   (unsigned long long)boot_chime_ms(ended_us - started_us), (unsigned long long)duration_ms);
+	BOOT_CHIME_LOG("%llu frame(s) written, %llu underrun(s), %llu I/O error(s)\n", (unsigned long long)frame,
+				   (unsigned long long)info.xruns, (unsigned long long)info.io_errors);
 
 	return ok && frame == wav.frames && info.xruns == 0ULL && info.io_errors == 0ULL;
 }
 
-static void boot_chime_thread(void *parameter)
+static void
+boot_chime_thread(void *parameter)
 {
 	(void)parameter;
 
 	bool ok = boot_chime_play();
 
-	BOOT_CHIME_LOG("boot chime %s\n", ok ? "finished" : "did not finish cleanly (an underrun, a write error or no sound device: see the lines above)");
+	BOOT_CHIME_LOG("boot chime %s\n",
+				   ok ? "finished"
+					  : "did not finish cleanly (an underrun, a write error or no sound device: see the lines above)");
 	g_boot_chime_state = ok ? BOOT_CHIME_PLAYED : BOOT_CHIME_FAILED;
 }
 
-boot_chime_state_t boot_chime_state(void)
+boot_chime_state_t
+boot_chime_state(void)
 {
 	return g_boot_chime_state;
 }
 
-void boot_chime_start(void)
+void
+boot_chime_start(void)
 {
 	if (g_boot_chime_started) return;
 
@@ -320,5 +348,6 @@ void boot_chime_start(void)
 		return;
 	}
 
-	BOOT_CHIME_LOG("system volume mounted: boot chime thread started, %llu ms after display output started\n", (unsigned long long)boot_chime_ms(timer_get_microseconds() - g_boot_chime_display_us));
+	BOOT_CHIME_LOG("system volume mounted: boot chime thread started, %llu ms after display output started\n",
+				   (unsigned long long)boot_chime_ms(timer_get_microseconds() - g_boot_chime_display_us));
 }

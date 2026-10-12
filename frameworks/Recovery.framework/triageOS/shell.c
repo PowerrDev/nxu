@@ -162,7 +162,6 @@ shell_u64_parse(const char *text, uint64_t *value_out)
 	return true;
 }
 
-
 static char
 shell_hex_digit(uint32_t value)
 {
@@ -367,7 +366,7 @@ shell_ls(triage_shell_t *shell, const char *argument)
 		return;
 	}
 
-	for (uint32_t index = 0U; ; index++) {
+	for (uint32_t index = 0U;; index++) {
 		recovery_fs_dirent_t entry;
 		result = recovery_fs_readdir(path, index, &entry);
 		if (result == -(int64_t)RECOVERY_ERROR_NOT_FOUND) {
@@ -485,7 +484,7 @@ shell_cat(triage_shell_t *shell, const char *argument)
 static void
 shell_mounts(triage_shell_t *shell)
 {
-	for (uint32_t index = 0U; ; index++) {
+	for (uint32_t index = 0U;; index++) {
 		recovery_fs_mount_info_t info;
 		int64_t result = recovery_fs_mount_info(index, &info);
 		if (result == -(int64_t)RECOVERY_ERROR_NOT_FOUND) {
@@ -515,7 +514,7 @@ shell_mounts(triage_shell_t *shell)
 static void
 shell_disks(triage_shell_t *shell)
 {
-	for (uint32_t index = 0U; ; index++) {
+	for (uint32_t index = 0U;; index++) {
 		recovery_block_info_t info;
 		int64_t result = recovery_block_info(index, &info);
 		if (result == -(int64_t)RECOVERY_ERROR_NOT_FOUND) {
@@ -543,7 +542,6 @@ shell_disks(triage_shell_t *shell)
 	}
 }
 
-
 static const char *
 shell_layout_name(uint32_t scheme)
 {
@@ -561,7 +559,7 @@ shell_layout_name(uint32_t scheme)
 static void
 shell_partitions(triage_shell_t *shell)
 {
-	for (uint32_t device = 0U; ; device++) {
+	for (uint32_t device = 0U;; device++) {
 		recovery_block_info_t disk;
 		int64_t result = recovery_block_info(device, &disk);
 		if (result == -(int64_t)RECOVERY_ERROR_NOT_FOUND) {
@@ -691,13 +689,8 @@ shell_gpt_initialize(triage_shell_t *shell, const char *device_name, bool force)
 }
 
 static void
-shell_partition_create(
-	triage_shell_t *shell,
-	const char *device_name,
-	const char *size_text,
-	const char *name,
-	const char *role_text
-)
+shell_partition_create(triage_shell_t *shell, const char *device_name, const char *size_text, const char *name,
+					   const char *role_text)
 {
 	if (device_name == 0 || size_text == 0) {
 		shell_write(shell, "usage: partition-create DEVICE SECTORS|all [NAME] [data|system|efi]");
@@ -729,13 +722,7 @@ shell_partition_create(
 	}
 
 	recovery_block_partition_info_t partition;
-	int64_t result = recovery_block_partition_create(
-		device,
-		sectors,
-		name != 0 ? name : "Untitled",
-		role,
-		&partition
-	);
+	int64_t result = recovery_block_partition_create(device, sectors, name != 0 ? name : "Untitled", role, &partition);
 	if (result < 0) {
 		shell_error(shell, "partition-create", result);
 		return;
@@ -756,12 +743,7 @@ shell_partition_create(
 }
 
 static void
-shell_partition_delete(
-	triage_shell_t *shell,
-	const char *device_name,
-	const char *index_text,
-	bool force
-)
+shell_partition_delete(triage_shell_t *shell, const char *device_name, const char *index_text, bool force)
 {
 	if (device_name == 0 || index_text == 0) {
 		shell_write(shell, "usage: partition-delete DEVICE INDEX --force");
@@ -825,7 +807,6 @@ shell_df(triage_shell_t *shell, const char *argument)
 	shell_write(shell, line);
 }
 
-
 static void
 shell_hexdump(triage_shell_t *shell, const char *argument)
 {
@@ -861,7 +842,7 @@ shell_hexdump(triage_shell_t *shell, const char *argument)
 			}
 
 			for (uint32_t i = base; i < end; i++) {
-				char byte[4] = { shell_hex_digit(buffer[i] >> 4U), shell_hex_digit(buffer[i] & 0xFU), ' ', '\0' };
+				char byte[4] = {shell_hex_digit(buffer[i] >> 4U), shell_hex_digit(buffer[i] & 0xFU), ' ', '\0'};
 				(void)shell_append(line, sizeof(line), byte);
 			}
 
@@ -880,7 +861,7 @@ shell_tree_path(triage_shell_t *shell, const char *path, uint32_t depth)
 		return;
 	}
 
-	for (uint32_t index = 0U; ; index++) {
+	for (uint32_t index = 0U;; index++) {
 		recovery_fs_dirent_t entry;
 		int64_t result = recovery_fs_readdir(path, index, &entry);
 		if (result == -(int64_t)RECOVERY_ERROR_NOT_FOUND) {
@@ -977,7 +958,7 @@ shell_device_index(const char *name, uint32_t *index_out)
 		return true;
 	}
 
-	for (uint32_t index = 0U; ; index++) {
+	for (uint32_t index = 0U;; index++) {
 		recovery_block_info_t info;
 		int64_t result = recovery_block_info(index, &info);
 		if (result < 0) {
@@ -996,7 +977,7 @@ shell_device_index(const char *name, uint32_t *index_out)
 static int64_t
 shell_mount_system_volume(void)
 {
-	for (uint32_t index = 0U; ; index++) {
+	for (uint32_t index = 0U;; index++) {
 		recovery_fs_mount_info_t mount;
 		if (recovery_fs_mount_info(index, &mount) < 0) break;
 		if (shell_equal(mount.device, "disk0p2")) return 0;
@@ -1012,11 +993,10 @@ static bool
 shell_protected_path(const char *path)
 {
 	return shell_equal(path, "/") || shell_equal(path, "/System") || shell_prefix(path, "/System/") ||
-		shell_equal(path, "/init") || shell_prefix(path, "/init/") || shell_equal(path, "/recovery") ||
-		shell_prefix(path, "/recovery/") || shell_equal(path, "/disk") ||
-		shell_equal(path, "/disk/System") || shell_prefix(path, "/disk/System/") ||
-		shell_equal(path, "/disk/Library") || shell_prefix(path, "/disk/Library/") ||
-		shell_equal(path, "/disk/init") || shell_prefix(path, "/disk/init/");
+		   shell_equal(path, "/init") || shell_prefix(path, "/init/") || shell_equal(path, "/recovery") ||
+		   shell_prefix(path, "/recovery/") || shell_equal(path, "/disk") || shell_equal(path, "/disk/System") ||
+		   shell_prefix(path, "/disk/System/") || shell_equal(path, "/disk/Library") ||
+		   shell_prefix(path, "/disk/Library/") || shell_equal(path, "/disk/init") || shell_prefix(path, "/disk/init/");
 }
 
 /* Create each missing component, matching mkdir -p in the normal userspace. */
@@ -1028,7 +1008,7 @@ shell_mkdir_parents(const char *path)
 		return -(int64_t)RECOVERY_ERROR_INVALID_ARGUMENT;
 	}
 
-	for (uint32_t index = 1U; ; index++) {
+	for (uint32_t index = 1U;; index++) {
 		if (component[index] != '/' && component[index] != '\0') {
 			continue;
 		}
@@ -1082,8 +1062,10 @@ shell_remove_recursive(const char *path)
 			result = recovery_fs_rmdir(current);
 			if (result < 0 || shell_equal(current, path)) return result;
 			uint32_t length = 0U;
-			while (current[length] != '\0') length++;
-			while (length > 1U && current[length - 1U] != '/') length--;
+			while (current[length] != '\0')
+				length++;
+			while (length > 1U && current[length - 1U] != '/')
+				length--;
 			current[length > 1U ? length - 1U : 1U] = '\0';
 			continue;
 		}
@@ -1147,7 +1129,8 @@ triage_shell_execute(triage_shell_t *shell, const char *command)
 	}
 
 	if (shell_equal(argv[0], "echo")) {
-		char line[SHELL_LINE_MAX]; line[0] = '\0';
+		char line[SHELL_LINE_MAX];
+		line[0] = '\0';
 		for (uint32_t i = 1U; i < argc; i++) {
 			if (i != 1U) {
 				(void)shell_append(line, sizeof(line), " ");
@@ -1239,7 +1222,8 @@ triage_shell_execute(triage_shell_t *shell, const char *command)
 			return TRIAGE_SHELL_OK;
 		}
 
-		int64_t result = shell_equal(argv[0], "mkdir") ? (parents ? shell_mkdir_parents(path) : recovery_fs_mkdir(path)) : recovery_fs_touch(path);
+		int64_t result = shell_equal(argv[0], "mkdir") ? (parents ? shell_mkdir_parents(path) : recovery_fs_mkdir(path))
+													   : recovery_fs_touch(path);
 		if (result < 0) {
 			shell_error(shell, argv[0], result);
 		}
@@ -1268,7 +1252,8 @@ triage_shell_execute(triage_shell_t *shell, const char *command)
 			return TRIAGE_SHELL_OK;
 		}
 
-		char data[RECOVERY_FS_READ_MAX]; data[0] = '\0';
+		char data[RECOVERY_FS_READ_MAX];
+		data[0] = '\0';
 		for (uint32_t i = text_index; i < argc; i++) {
 			if (i != text_index) {
 				(void)shell_append(data, sizeof(data), " ");
@@ -1409,32 +1394,19 @@ triage_shell_execute(triage_shell_t *shell, const char *command)
 	}
 
 	if (shell_equal(argv[0], "gpt-init")) {
-		shell_gpt_initialize(
-			shell,
-			argc > 1U ? argv[1] : 0,
-			argc > 2U && shell_equal(argv[2], "--force")
-		);
+		shell_gpt_initialize(shell, argc > 1U ? argv[1] : 0, argc > 2U && shell_equal(argv[2], "--force"));
 		return TRIAGE_SHELL_OK;
 	}
 
 	if (shell_equal(argv[0], "partition-create")) {
-		shell_partition_create(
-			shell,
-			argc > 1U ? argv[1] : 0,
-			argc > 2U ? argv[2] : 0,
-			argc > 3U ? argv[3] : 0,
-			argc > 4U ? argv[4] : 0
-		);
+		shell_partition_create(shell, argc > 1U ? argv[1] : 0, argc > 2U ? argv[2] : 0, argc > 3U ? argv[3] : 0,
+							   argc > 4U ? argv[4] : 0);
 		return TRIAGE_SHELL_OK;
 	}
 
 	if (shell_equal(argv[0], "partition-delete")) {
-		shell_partition_delete(
-			shell,
-			argc > 1U ? argv[1] : 0,
-			argc > 2U ? argv[2] : 0,
-			argc > 3U && shell_equal(argv[3], "--force")
-		);
+		shell_partition_delete(shell, argc > 1U ? argv[1] : 0, argc > 2U ? argv[2] : 0,
+							   argc > 3U && shell_equal(argv[3], "--force"));
 		return TRIAGE_SHELL_OK;
 	}
 
@@ -1442,63 +1414,63 @@ triage_shell_execute(triage_shell_t *shell, const char *command)
 		shell_df(shell, argc > 1U ? argv[1] : ".");
 		return TRIAGE_SHELL_OK;
 	}
-		if (shell_equal(argv[0], "fsinfo")) {
-			shell_fsinfo(shell);
+	if (shell_equal(argv[0], "fsinfo")) {
+		shell_fsinfo(shell);
+		return TRIAGE_SHELL_OK;
+	}
+	if (shell_equal(argv[0], "rmdir")) {
+		if (argc != 2) {
+			shell_write(shell, "usage: rmdir PATH");
 			return TRIAGE_SHELL_OK;
 		}
-		if (shell_equal(argv[0], "rmdir")) {
-			if (argc != 2) {
-				shell_write(shell, "usage: rmdir PATH");
-				return TRIAGE_SHELL_OK;
-			}
-			int64_t result = recovery_fs_rmdir(argv[1]);
-			if (result < 0) {
-				shell_error(shell, "rmdir", result);
-			}
-			return TRIAGE_SHELL_OK;
+		int64_t result = recovery_fs_rmdir(argv[1]);
+		if (result < 0) {
+			shell_error(shell, "rmdir", result);
 		}
-		if (shell_equal(argv[0], "nsw")) {
-			if (argc == 3 && shell_equal(argv[1], "install")) {
-				if (nsw_schedule(argv[2])) {
-					shell_write(shell, "installation queued; restarting...");
-					int64_t result = recovery_system_reset();
-					if (result < 0) {
-						shell_error(shell, "reboot", result);
-					}
-				} else {
-					shell_write(shell, "installation request rejected");
+		return TRIAGE_SHELL_OK;
+	}
+	if (shell_equal(argv[0], "nsw")) {
+		if (argc == 3 && shell_equal(argv[1], "install")) {
+			if (nsw_schedule(argv[2])) {
+				shell_write(shell, "installation queued; restarting...");
+				int64_t result = recovery_system_reset();
+				if (result < 0) {
+					shell_error(shell, "reboot", result);
 				}
-				return TRIAGE_SHELL_OK;
-			}
-			if (argc != 3 || !shell_equal(argv[1], "prepare")) {
-				shell_write(shell, "usage: nsw prepare PACKAGE.nsw | nsw install BUILD");
-				return TRIAGE_SHELL_OK;
-			}
-			shell_write(shell, "verifying and extracting NSW images...");
-			bool success = nsw_prepare(argv[2], NSW_PREPARED_ROOT);
-			shell_write(shell, success ? "NSW prepared; system volume unchanged"
-									   : "NSW preparation failed; no ready build published");
-			return TRIAGE_SHELL_OK;
-		}
-		if (shell_equal(argv[0], "reinstall")) {
-			shell_write(shell, "restoring system files...");
-			int64_t result = shell_mount_system_volume();
-			if (result >= 0) {
-				result = recovery_fs_copy("/recovery/System/Recovery/BaseSystem/launchd", "/disk/init/launchd");
-			}
-
-			if (result >= 0) {
-				result = recovery_fs_sync();
-			}
-
-			if (result < 0) {
-				shell_error(shell, "reinstall", result);
 			} else {
-				shell_write(shell, "sevOS restored; reboot to continue");
+				shell_write(shell, "installation request rejected");
 			}
-
 			return TRIAGE_SHELL_OK;
 		}
+		if (argc != 3 || !shell_equal(argv[1], "prepare")) {
+			shell_write(shell, "usage: nsw prepare PACKAGE.nsw | nsw install BUILD");
+			return TRIAGE_SHELL_OK;
+		}
+		shell_write(shell, "verifying and extracting NSW images...");
+		bool success = nsw_prepare(argv[2], NSW_PREPARED_ROOT);
+		shell_write(shell, success ? "NSW prepared; system volume unchanged"
+								   : "NSW preparation failed; no ready build published");
+		return TRIAGE_SHELL_OK;
+	}
+	if (shell_equal(argv[0], "reinstall")) {
+		shell_write(shell, "restoring system files...");
+		int64_t result = shell_mount_system_volume();
+		if (result >= 0) {
+			result = recovery_fs_copy("/recovery/System/Recovery/BaseSystem/launchd", "/disk/init/launchd");
+		}
+
+		if (result >= 0) {
+			result = recovery_fs_sync();
+		}
+
+		if (result < 0) {
+			shell_error(shell, "reinstall", result);
+		} else {
+			shell_write(shell, "sevOS restored; reboot to continue");
+		}
+
+		return TRIAGE_SHELL_OK;
+	}
 
 	if (shell_equal(argv[0], "version") || shell_equal(argv[0], "uname")) {
 		char version[64];

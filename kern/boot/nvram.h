@@ -18,11 +18,7 @@ typedef enum {
 	NVRAM_STATUS_READ_ONLY
 } nvram_status_t;
 
-typedef enum {
-	NVRAM_BACKEND_NONE,
-	NVRAM_BACKEND_DEVICE_TREE,
-	NVRAM_BACKEND_BOOTLOADER
-} nvram_backend_t;
+typedef enum { NVRAM_BACKEND_NONE, NVRAM_BACKEND_DEVICE_TREE, NVRAM_BACKEND_BOOTLOADER } nvram_backend_t;
 
 /*
  * Raw QEMU -kernel boot does not expose UEFI Runtime Services. NXU therefore

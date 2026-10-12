@@ -22,7 +22,8 @@ typedef struct {
 	int32_t carry_y;
 } ui_pointer_motion_t;
 
-static inline int32_t ui_pointer_scale_axis(int32_t delta, uint32_t scale_permille, int32_t *carry)
+static inline int32_t
+ui_pointer_scale_axis(int32_t delta, uint32_t scale_permille, int32_t *carry)
 {
 	int64_t total = (int64_t)delta * (int64_t)scale_permille + *carry;
 	int64_t pixels = total / 1000;
@@ -31,7 +32,8 @@ static inline int32_t ui_pointer_scale_axis(int32_t delta, uint32_t scale_permil
 	return (int32_t)pixels;
 }
 
-static inline void ui_pointer_scale(ui_pointer_motion_t *motion, uint32_t scale_permille, int32_t *dx, int32_t *dy)
+static inline void
+ui_pointer_scale(ui_pointer_motion_t *motion, uint32_t scale_permille, int32_t *dx, int32_t *dy)
 {
 	if (scale_permille == 0U) scale_permille = 1000U;
 	*dx = ui_pointer_scale_axis(*dx, scale_permille, &motion->carry_x);

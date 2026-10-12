@@ -129,10 +129,12 @@ int64_t recovery_fs_copy(const char *source, const char *destination);
 int64_t recovery_block_info(uint32_t index, recovery_block_info_t *info);
 int64_t recovery_fs_space_info(const char *path, recovery_fs_space_info_t *info);
 int64_t recovery_block_layout_info(uint32_t index, recovery_block_layout_info_t *info);
-int64_t recovery_block_partition_info(uint32_t device_index, uint32_t partition_index, recovery_block_partition_info_t *info);
+int64_t recovery_block_partition_info(uint32_t device_index, uint32_t partition_index,
+									  recovery_block_partition_info_t *info);
 int64_t recovery_block_health_info(uint32_t device_index, recovery_block_health_info_t *info);
 int64_t recovery_block_gpt_initialize(uint32_t device_index);
-int64_t recovery_block_partition_create(uint32_t device_index, uint64_t sector_count, const char *name, recovery_block_partition_role_t role, recovery_block_partition_info_t *info);
+int64_t recovery_block_partition_create(uint32_t device_index, uint64_t sector_count, const char *name,
+										recovery_block_partition_role_t role, recovery_block_partition_info_t *info);
 int64_t recovery_block_partition_delete(uint32_t device_index, uint32_t partition_index);
 int64_t recovery_block_verify(uint32_t device_index);
 

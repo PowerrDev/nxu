@@ -3,10 +3,7 @@
 
 #include <stdbool.h>
 
-typedef enum {
-	BOOT_MODE_NORMAL = 0,
-	BOOT_MODE_TRIAGE_OS = 1
-} boot_mode_t;
+typedef enum { BOOT_MODE_NORMAL = 0, BOOT_MODE_TRIAGE_OS = 1 } boot_mode_t;
 
 void boot_mode_init(void);
 void boot_mode_force_recovery(void);
