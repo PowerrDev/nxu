@@ -54,6 +54,14 @@ fake them.
 What does exist is a capability mask on each process that gates the system calls
 that change the machine: writing the filesystem, claiming the display and
 resetting. Only PID 1 holds all of them; bootd grants each service what its plist
-asks for, so `logd` and `patchd` can write and nothing else can. It is
+asks for, so `logd` can write and `patchd` can write and reset for queued installations. It is
 default-deny and per process, not per file. See
 [Capabilities](kern/process-control.md#capabilities).
+
+Patchd also prepares NSW update/recovery packages; see [Software updates](software-update.md) for the manifest, recovery-volume layout and preparation commands.
+
+Patchd installs explicitly selected prepared NSW builds through `--install BUILD`
+or the newline-terminated `/disk/var/db/patchd/install-update` request. It queues
+and reboots; the boot installer logs each changed path, journals originals on
+the recovery volume and rolls back unconfirmed boots. See
+[software-update.md](software-update.md) for the complete workflow.

@@ -133,6 +133,8 @@ static uint64_t bootd_job_capabilities(const bootd_job_t *job)
 
 	if (job->config.allow_filesystem_write)
 		caps |= NXU_CAP_FS_WRITE;
+	if (job->config.allow_reset)
+		caps |= NXU_CAP_RESET;
 	if (job->config.allow_display)
 		caps |= NXU_CAP_DISPLAY;
 	if (job->config.allow_crash_reports)

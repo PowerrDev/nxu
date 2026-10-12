@@ -168,9 +168,19 @@ static bool service_apply_value(service_config_t *config, const plist_event_t *k
 		return true;
 	}
 
-	if (service_key_is(key, "AllowFilesystemWrite")) {
-		if (value->type != PLIST_EVENT_BOOLEAN)
+	if (service_key_is(key, "AllowReset")) {
+		if (value->type != PLIST_EVENT_BOOLEAN) {
 			return false;
+		}
+
+		config->allow_reset = value->boolean;
+		return true;
+	}
+
+	if (service_key_is(key, "AllowFilesystemWrite")) {
+		if (value->type != PLIST_EVENT_BOOLEAN) {
+			return false;
+		}
 
 		config->allow_filesystem_write = value->boolean;
 		return true;
@@ -237,12 +247,14 @@ static service_config_status_t service_parse(const char *data, uint64_t length, 
 						  service_key_is(&key, "RequiredBootArgument") || service_key_is(&key, "RunAtLoad") ||
 						  service_key_is(&key, "KeepAlive") || service_key_is(&key, "Disabled") ||
 						  service_key_is(&key, "DisabledInSafeMode") || service_key_is(&key, "StartOnLogin") ||
-						  service_key_is(&key, "AllowFilesystemWrite") || service_key_is(&key, "AllowDisplay") ||
-						  service_key_is(&key, "AllowCrashReports") || service_key_is(&key, "AllowCrashNotifications");
+						  service_key_is(&key, "AllowReset") || service_key_is(&key, "AllowFilesystemWrite") ||
+						  service_key_is(&key, "AllowDisplay") || service_key_is(&key, "AllowCrashReports") ||
+						  service_key_is(&key, "AllowCrashNotifications");
 
 		if (recognized) {
-			if (!service_apply_value(config, &key, &value))
+			if (!service_apply_value(config, &key, &value)) {
 				return SERVICE_CONFIG_BAD_SCHEMA;
+			}
 		} else {
 			status = service_skip_value(&parser, &value);
 			if (status != PLIST_STATUS_OK)

@@ -23,6 +23,7 @@ typedef struct {
 
 	/* Capabilities bootd hands the job's process at spawn (default: none). */
 	bool allow_filesystem_write;
+	bool allow_reset;
 	bool allow_display;
 	bool allow_crash_reports;
 	bool allow_crash_notifications;
