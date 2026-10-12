@@ -335,7 +335,24 @@ CoreFoundation.framework and Runtime.framework. WindowServer's implementation
 and allocator are no longer embedded in that service executable. The build
 stages WindowServer.so in `/System/Library/Frameworks/WindowServer.framework/`.
 The service negotiates host ABI 1.0 and claims the display lease before
-initializing the compositor. Its idle IPC loop sleeps rather than spinning.
+initializing the compositor. Its idle IPC loop waits on an event sequence sampled
+before inspecting IPC/input, so an enqueue between checking and sleeping cannot
+be lost. Active requests yield after replying instead of sleeping for a timer
+tick. CoreGraphics waits for each reply with a bounded IPC receive, which wakes
+on enqueue and retains the five-second failure deadline.
+
+The dynamic desktop host forwards signed wheel events and uses the same
+render-before-idle-wait behavior as the legacy host. Raw input packets retain
+position, button and modifier snapshots, preserving transitions queued between
+userspace reads. The ARM64 boot supervisor blocks after handing off to userspace,
+matching i386, so it no longer consumes kernel-task CPU by yielding forever.
+
+`tools/check_desktop_input.py` checks ordered input, scrolling and idle waits.
+The ARM64 desktop service test and i386 frame test also exercise real timed IPC,
+wakeup races, kernel-task idle accounting, window dragging and signed scroll
+routing on private QEMU disks. Recovery Terminal retains 256 output lines with
+wheel and Page Up/Page Down navigation; `tools/check_recovery_terminal.py`
+checks retention and scroll bounds.
 
 Run `python3 tools/check_gui_service.py` after building the default ARM64 kernel.
 The test creates a private disk and uses a PID 1 fixture linked against the
