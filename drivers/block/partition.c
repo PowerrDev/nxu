@@ -333,13 +333,26 @@ static uint32_t partition_gpt_count(block_device_t device, const partition_gpt_h
 	return count;
 }
 
-bool block_layout_inspect(block_device_t device, block_layout_info_t *info)
+/* Read the backup map if the primary GPT header/table was interrupted. */
+static bool
+partition_gpt_read_layout(block_device_t device, partition_gpt_header_t *header)
 {
-	if (device == 0 || info == 0) return false;
+	return partition_gpt_header_valid(device, GPT_HEADER_LBA, header) ||
+		   (device->sector_count > 1 && partition_gpt_header_valid(device, device->sector_count - 1, header));
+}
 
-	*info = (block_layout_info_t) { .scheme = BLOCK_LAYOUT_RAW, .partition_count = 0U };
+bool
+block_layout_inspect(block_device_t device, block_layout_info_t *info)
+{
+	if (device == 0 || info == 0) {
+		return false;
+	}
+
+	*info = (block_layout_info_t){.scheme = BLOCK_LAYOUT_RAW, .partition_count = 0U};
 	uint8_t sector[PARTITION_SECTOR_SIZE];
-	if (!partition_sector(device, 0ULL, sector)) return false;
+	if (!partition_sector(device, 0ULL, sector)) {
+		return false;
+	}
 	if (!partition_mbr_valid(sector)) return true;
 
 	bool protective = false;
@@ -365,7 +378,7 @@ bool block_layout_inspect(block_device_t device, block_layout_info_t *info)
 	}
 
 	partition_gpt_header_t header;
-	if (!partition_gpt_header_valid(device, GPT_HEADER_LBA, &header)) {
+	if (!partition_gpt_read_layout(device, &header)) {
 		info->scheme = BLOCK_LAYOUT_MBR;
 		info->partition_count = mbr_count;
 		return true;
@@ -406,7 +419,7 @@ static bool block_mbr_partition_get(block_device_t device, uint32_t wanted, bloc
 static bool block_gpt_partition_get(block_device_t device, uint32_t wanted, block_partition_info_t *info)
 {
 	partition_gpt_header_t header;
-	if (!partition_gpt_header_valid(device, GPT_HEADER_LBA, &header)) return false;
+	if (!partition_gpt_read_layout(device, &header)) return false;
 
 	uint8_t entry[GPT_ENTRY_MAX_SIZE];
 	uint32_t current = 0U;
@@ -418,7 +431,7 @@ static bool block_gpt_partition_get(block_device_t device, uint32_t wanted, bloc
 
 		uint64_t first = partition_le64(entry + 32U);
 		uint64_t last = partition_le64(entry + 40U);
-		if (last < first) return false;
+		if (last < first || first < header.first_usable_lba || last > header.last_usable_lba) return false;
 
 		*info = (block_partition_info_t) {
 			.scheme = BLOCK_LAYOUT_GPT,
@@ -837,17 +850,27 @@ static block_partition_status_t block_mbr_partition_create(
 	partition_store_le32(entry + 8U, (uint32_t)start);
 	partition_store_le32(entry + 12U, (uint32_t)count);
 
-	if (!partition_sector_write(device, 0ULL, sector)) return BLOCK_PARTITION_STATUS_IO_ERROR;
-	if (!block_device_flush(device)) return BLOCK_PARTITION_STATUS_IO_ERROR;
+	if (!partition_sector_write(device, 0ULL, sector)) {
+		return BLOCK_PARTITION_STATUS_IO_ERROR;
+	}
+	if (!block_device_flush(device)) {
+		return BLOCK_PARTITION_STATUS_IO_ERROR;
+	}
 
 	if (info != 0) {
 		block_layout_info_t layout;
-		if (!block_layout_inspect(device, &layout) || layout.partition_count == 0U) return BLOCK_PARTITION_STATUS_IO_ERROR;
+		if (!block_layout_inspect(device, &layout) || layout.partition_count == 0U) {
+			return BLOCK_PARTITION_STATUS_IO_ERROR;
+		}
 
 		for (uint32_t index = 0U; index < layout.partition_count; index++) {
 			block_partition_info_t candidate;
-			if (!block_partition_get(device, index, &candidate)) return BLOCK_PARTITION_STATUS_IO_ERROR;
-			if (candidate.start_sector != start) continue;
+			if (!block_partition_get(device, index, &candidate)) {
+				return BLOCK_PARTITION_STATUS_IO_ERROR;
+			}
+			if (candidate.start_sector != start) {
+				continue;
+			}
 			*info = candidate;
 			break;
 		}
@@ -856,38 +879,53 @@ static block_partition_status_t block_mbr_partition_create(
 	return BLOCK_PARTITION_STATUS_OK;
 }
 
-block_partition_status_t block_partition_create(
-	block_device_t device,
-	uint64_t sector_count,
-	const char *name,
-	block_partition_role_t role,
-	block_partition_info_t *info
-)
+block_partition_status_t
+block_partition_create(block_device_t device, uint64_t sector_count, const char *name, block_partition_role_t role,
+					   block_partition_info_t *info)
 {
-	if (device == 0 || device->sector_size != PARTITION_SECTOR_SIZE) return BLOCK_PARTITION_STATUS_INVALID;
-	if (device->read_only) return BLOCK_PARTITION_STATUS_READ_ONLY;
+	if (device == 0 || device->sector_size != PARTITION_SECTOR_SIZE) {
+		return BLOCK_PARTITION_STATUS_INVALID;
+	}
+	if (device->read_only) {
+		return BLOCK_PARTITION_STATUS_READ_ONLY;
+	}
 
 	block_layout_info_t layout;
-	if (!block_layout_inspect(device, &layout)) return BLOCK_PARTITION_STATUS_IO_ERROR;
-	if (layout.scheme == BLOCK_LAYOUT_GPT) return block_gpt_partition_create(device, sector_count, name, role, info);
-	if (layout.scheme == BLOCK_LAYOUT_MBR) return block_mbr_partition_create(device, sector_count, role, info);
+	if (!block_layout_inspect(device, &layout)) {
+		return BLOCK_PARTITION_STATUS_IO_ERROR;
+	}
+	if (layout.scheme == BLOCK_LAYOUT_GPT) {
+		return block_gpt_partition_create(device, sector_count, name, role, info);
+	}
+	if (layout.scheme == BLOCK_LAYOUT_MBR) {
+		return block_mbr_partition_create(device, sector_count, role, info);
+	}
 
 	return BLOCK_PARTITION_STATUS_NOT_SUPPORTED;
 }
 
-static block_partition_status_t block_gpt_partition_delete(block_device_t device, uint32_t wanted)
+static block_partition_status_t
+block_gpt_partition_delete(block_device_t device, uint32_t wanted)
 {
 	partition_gpt_header_t primary;
 	partition_gpt_header_t backup;
-	if (!partition_gpt_pair(device, &primary, &backup)) return BLOCK_PARTITION_STATUS_IO_ERROR;
+	if (!partition_gpt_pair(device, &primary, &backup)) {
+		return BLOCK_PARTITION_STATUS_IO_ERROR;
+	}
 
 	uint8_t entry[GPT_ENTRY_MAX_SIZE];
 	uint32_t current = 0U;
 
 	for (uint32_t slot = 0U; slot < primary.entry_count; slot++) {
-		if (!partition_gpt_entry_read(device, &primary, slot, entry)) return BLOCK_PARTITION_STATUS_IO_ERROR;
-		if (!partition_guid_nonzero(entry)) continue;
-		if (current++ != wanted) continue;
+		if (!partition_gpt_entry_read(device, &primary, slot, entry)) {
+			return BLOCK_PARTITION_STATUS_IO_ERROR;
+		}
+		if (!partition_guid_nonzero(entry)) {
+			continue;
+		}
+		if (current++ != wanted) {
+			continue;
+		}
 
 		memset(entry, 0, sizeof(entry));
 		return partition_gpt_commit_entry(device, &primary, &backup, slot, entry);
@@ -896,38 +934,140 @@ static block_partition_status_t block_gpt_partition_delete(block_device_t device
 	return BLOCK_PARTITION_STATUS_INVALID;
 }
 
-static block_partition_status_t block_mbr_partition_delete(block_device_t device, uint32_t wanted)
+static block_partition_status_t
+block_mbr_partition_delete(block_device_t device, uint32_t wanted)
 {
 	uint8_t sector[PARTITION_SECTOR_SIZE];
-	if (!partition_sector(device, 0ULL, sector) || !partition_mbr_valid(sector)) return BLOCK_PARTITION_STATUS_IO_ERROR;
+	if (!partition_sector(device, 0ULL, sector) || !partition_mbr_valid(sector)) {
+		return BLOCK_PARTITION_STATUS_IO_ERROR;
+	}
 
 	uint32_t current = 0U;
 
 	for (uint32_t slot = 0U; slot < MBR_ENTRY_COUNT; slot++) {
 		uint8_t *entry = sector + MBR_ENTRY_OFFSET + slot * MBR_ENTRY_SIZE;
 		uint32_t count = partition_le32(entry + 12U);
-		if (entry[4] == 0U || count == 0U || entry[4] == MBR_GPT_PROTECTIVE_TYPE) continue;
-		if (current++ != wanted) continue;
+		if (entry[4] == 0U || count == 0U || entry[4] == MBR_GPT_PROTECTIVE_TYPE) {
+			continue;
+		}
+		if (current++ != wanted) {
+			continue;
+		}
 
 		memset(entry, 0, MBR_ENTRY_SIZE);
-		if (!partition_sector_write(device, 0ULL, sector)) return BLOCK_PARTITION_STATUS_IO_ERROR;
-		if (!block_device_flush(device)) return BLOCK_PARTITION_STATUS_IO_ERROR;
+		if (!partition_sector_write(device, 0ULL, sector)) {
+			return BLOCK_PARTITION_STATUS_IO_ERROR;
+		}
+		if (!block_device_flush(device)) {
+			return BLOCK_PARTITION_STATUS_IO_ERROR;
+		}
 		return BLOCK_PARTITION_STATUS_OK;
 	}
 
 	return BLOCK_PARTITION_STATUS_INVALID;
 }
 
-block_partition_status_t block_partition_delete(block_device_t device, uint32_t index)
+block_partition_status_t
+block_partition_delete(block_device_t device, uint32_t index)
 {
-	if (device == 0 || device->sector_size != PARTITION_SECTOR_SIZE) return BLOCK_PARTITION_STATUS_INVALID;
-	if (device->read_only) return BLOCK_PARTITION_STATUS_READ_ONLY;
+	if (device == 0 || device->sector_size != PARTITION_SECTOR_SIZE) {
+		return BLOCK_PARTITION_STATUS_INVALID;
+	}
+	if (device->read_only) {
+		return BLOCK_PARTITION_STATUS_READ_ONLY;
+	}
 
 	block_layout_info_t layout;
-	if (!block_layout_inspect(device, &layout)) return BLOCK_PARTITION_STATUS_IO_ERROR;
-	if (index >= layout.partition_count) return BLOCK_PARTITION_STATUS_INVALID;
-	if (layout.scheme == BLOCK_LAYOUT_GPT) return block_gpt_partition_delete(device, index);
-	if (layout.scheme == BLOCK_LAYOUT_MBR) return block_mbr_partition_delete(device, index);
+	if (!block_layout_inspect(device, &layout)) {
+		return BLOCK_PARTITION_STATUS_IO_ERROR;
+	}
+	if (index >= layout.partition_count) {
+		return BLOCK_PARTITION_STATUS_INVALID;
+	}
+	if (layout.scheme == BLOCK_LAYOUT_GPT) {
+		return block_gpt_partition_delete(device, index);
+	}
+	if (layout.scheme == BLOCK_LAYOUT_MBR) {
+		return block_mbr_partition_delete(device, index);
+	}
 
 	return BLOCK_PARTITION_STATUS_NOT_SUPPORTED;
+}
+
+static struct block_device g_partition_devices[BLOCK_DEVICE_MAX];
+static uint32_t g_partition_device_count;
+
+static bool
+partition_device_read(block_device_t device, uint64_t sector, uint32_t count, void *bytes)
+{
+	return block_device_read(device->parent, device->parent_start_sector + sector, count, bytes);
+}
+
+static bool
+partition_device_write(block_device_t device, uint64_t sector, uint32_t count, const void *bytes)
+{
+	return block_device_write(device->parent, device->parent_start_sector + sector, count, bytes);
+}
+
+static bool
+partition_device_flush(block_device_t device)
+{
+	return block_device_flush(device->parent);
+}
+
+static const block_device_ops_t g_partition_device_ops = {
+	.read = partition_device_read, .write = partition_device_write, .flush = partition_device_flush};
+
+block_device_t
+block_partition_device(block_device_t parent, const block_partition_info_t *info)
+{
+	if (parent == 0 || parent->parent != 0 || info == 0 || info->sector_count == 0 ||
+		info->start_sector > parent->sector_count || info->sector_count > parent->sector_count - info->start_sector) {
+		return 0;
+	}
+	for (uint32_t index = 0; index < g_partition_device_count; index++) {
+		block_device_t device = &g_partition_devices[index];
+		if (device->parent == parent && device->parent_start_sector == info->start_sector &&
+			device->sector_count == info->sector_count) {
+			return device;
+		}
+	}
+	if (g_partition_device_count == BLOCK_DEVICE_MAX || block_device_count() == BLOCK_DEVICE_MAX) {
+		return 0;
+	}
+	block_device_t device = &g_partition_devices[g_partition_device_count];
+	memset(device, 0, sizeof(*device));
+	device->parent = parent;
+	device->parent_start_sector = info->start_sector;
+	device->sector_count = info->sector_count;
+	device->sector_size = parent->sector_size;
+	device->logical_block_size = parent->logical_block_size;
+	device->read_only = parent->read_only;
+	device->flush_supported = parent->flush_supported;
+	device->ops = &g_partition_device_ops;
+	memcpy(device->name, parent->name, strlen(parent->name) + 1);
+	uint32_t offset = strlen(device->name);
+	char digits[10];
+	uint32_t count = 0;
+	if (info->index == UINT32_MAX) {
+		return 0;
+	}
+	uint32_t number = info->index + 1;
+	do {
+		digits[count++] = '0' + number % 10;
+		number /= 10;
+	} while (number != 0);
+	if (offset + count + 2 > sizeof(device->name)) {
+		return 0;
+	}
+	device->name[offset++] = 's';
+	while (count != 0) {
+		device->name[offset++] = digits[--count];
+	}
+	device->name[offset] = 0;
+	if (!block_device_register(device)) {
+		return 0;
+	}
+	g_partition_device_count++;
+	return device;
 }

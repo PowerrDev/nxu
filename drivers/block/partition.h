@@ -50,6 +50,8 @@ typedef struct {
 	char name[BLOCK_PARTITION_NAME_MAX + 1U];
 } block_partition_info_t;
 
+block_device_t block_partition_device(block_device_t parent, const block_partition_info_t *info);
+
 bool block_layout_inspect(block_device_t device, block_layout_info_t *info);
 bool block_partition_get(block_device_t device, uint32_t index, block_partition_info_t *info);
 block_partition_status_t block_layout_initialize_gpt(block_device_t device);

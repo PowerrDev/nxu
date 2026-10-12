@@ -213,3 +213,23 @@ void block_device_dump(void)
 		kverbosef("VirtIOBlockFamily: %s: read-only: %s\n", device->name, device->read_only ? "yes" : "no");
 	}
 }
+
+/* Sibling partitions may mount together; whole-device access overlaps both. */
+bool
+block_device_overlaps(block_device_t left, block_device_t right)
+{
+	if (left == 0 || right == 0) {
+		return false;
+	}
+	uint64_t left_start = 0, right_start = 0;
+	uint64_t left_size = left->sector_count, right_size = right->sector_count;
+	while (left->parent != 0) {
+		left_start += left->parent_start_sector;
+		left = left->parent;
+	}
+	while (right->parent != 0) {
+		right_start += right->parent_start_sector;
+		right = right->parent;
+	}
+	return left == right && left_start < right_start + right_size && right_start < left_start + left_size;
+}

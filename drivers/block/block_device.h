@@ -43,6 +43,9 @@ typedef struct {
  * filesystem code must use this interface rather than reaching into VirtIO.
  */
 struct block_device {
+	/* Partition views retain their physical parent and sector offset. */
+	block_device_t parent;
+	uint64_t parent_start_sector;
 	uint32_t device_id;
 	char name[BLOCK_DEVICE_NAME_MAX + 1U];
 
@@ -85,6 +88,7 @@ bool block_device_register(block_device_t device);
 uint32_t block_device_count(void);
 block_device_t block_device_get(uint32_t index);
 block_device_t block_device_first(void);
+bool block_device_overlaps(block_device_t left, block_device_t right);
 
 /*
  * block_device_read:
