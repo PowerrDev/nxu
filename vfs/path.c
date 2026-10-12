@@ -1,4 +1,6 @@
 #include <vfs/vfs_internal.h>
+#include <kern/memory/heap.h>
+#include <libk/string.h>
 
 #include <stdint.h>
 
@@ -217,4 +219,129 @@ vfs_status_t vfs_unlink_held(const char *path, vnode_t *expected)
 vfs_status_t vfs_unlink(const char *path)
 {
 	return vfs_unlink_held(path, 0);
+}
+
+/* Empty directory removal is separate from regular-file unlink. */
+vfs_status_t vfs_rmdir(const char *path)
+{
+	vnode_t target;
+	vfs_status_t status = vfs_lookup(path, &target);
+	if (status != VFS_STATUS_OK) return status;
+	if (target->v_type != VNODE_TYPE_DIRECTORY) status = VFS_STATUS_NOT_DIRECTORY;
+	else if (target->v_mount == 0 || target == target->v_mount->m_root) status = VFS_STATUS_BUSY;
+	vnode_rele(target);
+	if (status != VFS_STATUS_OK) return status;
+	vnode_t parent;
+	char name[VFS_NAME_MAX + 1U];
+	status = vfs_lookup_parent(path, &parent, name);
+	if (status != VFS_STATUS_OK) return status;
+	status = parent->v_ops != 0 && parent->v_ops->rmdir != 0
+		? parent->v_ops->rmdir(parent, name) : VFS_STATUS_NOT_SUPPORTED;
+	vnode_rele(parent);
+	return status;
+}
+
+/* SAP holds every directory on the current branch. No pathname replacement
+ * can substitute a different directory while approval or traversal is active. */
+typedef struct {
+	vnode_t directory;
+	char name[VFS_NAME_MAX + 1U];
+	uint32_t parent_length;
+} vfs_tree_frame_t;
+
+static bool vfs_tree_contains_mount(const char *path)
+{
+	size_t length = strlen(path);
+	vfs_mount_info_t mount;
+	for (uint32_t index = 0; vfs_mount_get(index, &mount); index++)
+		if (strlen(mount.path) >= length && memcmp(mount.path, path, length) == 0 && (mount.path[length] == '/' || mount.path[length] == 0))
+			return true;
+	return false;
+}
+
+vfs_status_t vfs_remove_tree_held(const char *path, vnode_t *expected, bool (*cancelled)(void))
+{
+	if (path == 0 || expected == 0 || *expected == 0) return VFS_STATUS_INVALID;
+	if (strlen(path) >= VFS_PATH_MAX) return VFS_STATUS_PATH_TOO_LONG;
+	vnode_t root = *expected;
+	if (root->v_type != VNODE_TYPE_DIRECTORY) return VFS_STATUS_NOT_DIRECTORY;
+	if (root->v_mount == 0 || root == root->v_mount->m_root || vfs_tree_contains_mount(path)) return VFS_STATUS_BUSY;
+	vnode_t current;
+	vfs_status_t status = vfs_lookup(path, &current);
+	if (status != VFS_STATUS_OK) return status;
+	bool matches = current == root;
+	vnode_rele(current);
+	if (!matches) return VFS_STATUS_BUSY;
+
+	vnode_t parent;
+	char name[VFS_NAME_MAX + 1U];
+	status = vfs_lookup_parent(path, &parent, name);
+	if (status != VFS_STATUS_OK) return status;
+	/* Allocate the bounded traversal stack off the kernel thread's stack. */
+	const uint32_t maximum = VFS_PATH_MAX / 2U;
+	vfs_tree_frame_t *frames = kmalloc(sizeof(*frames) * maximum);
+	if (frames == 0) { vnode_rele(parent); return VFS_STATUS_NO_MEMORY; }
+	uint32_t depth = 1U;
+	frames[0] = (vfs_tree_frame_t){.directory = root};
+	memcpy(frames[0].name, name, strlen(name) + 1U);
+	*expected = 0;
+	char current_path[VFS_PATH_MAX];
+	memcpy(current_path, path, strlen(path) + 1U);
+	while (depth != 0U) {
+		if (cancelled != 0 && cancelled()) { status = VFS_STATUS_INTERRUPTED; break; }
+		if (vfs_tree_contains_mount(path)) { status = VFS_STATUS_BUSY; break; }
+		vfs_tree_frame_t *frame = &frames[depth - 1U];
+		vnode_t directory = frame->directory;
+		uint64_t offset = 0;
+		vfs_dirent_t entry;
+		do {
+			status = vnode_readdir(directory, &offset, &entry);
+		} while (status == VFS_STATUS_OK &&
+			(strcmp(entry.name, ".") == 0 || strcmp(entry.name, "..") == 0));
+		if (status == VFS_STATUS_END_OF_DIRECTORY) {
+			vnode_t owner = depth == 1U ? parent : frames[depth - 2U].directory;
+			status = owner->v_ops != 0 && owner->v_ops->rmdir_held != 0
+				? owner->v_ops->rmdir_held(owner, frame->name, &frame->directory) : VFS_STATUS_NOT_SUPPORTED;
+			if (status != VFS_STATUS_OK) break;
+			current_path[frame->parent_length] = 0;
+			depth--;
+			continue;
+		}
+		if (status != VFS_STATUS_OK) break;
+		if (entry.name_length == 0U || entry.name_length > VFS_NAME_MAX ||
+			entry.name[entry.name_length] != 0) {
+			status = VFS_STATUS_NAME_TOO_LONG; break;
+		}
+		bool slash = false;
+		for (uint32_t index = 0; index < entry.name_length; index++)
+			if (entry.name[index] == '/') slash = true;
+		if (slash) { status = VFS_STATUS_INVALID; break; }
+		uint32_t length = (uint32_t)strlen(current_path);
+		if (length + 1U + entry.name_length >= VFS_PATH_MAX || depth == maximum) {
+			status = VFS_STATUS_PATH_TOO_LONG; break;
+		}
+		vnode_t child;
+		status = vnode_lookup(directory, entry.name, &child);
+		if (status != VFS_STATUS_OK) break;
+		if (child->v_mount != root->v_mount || child == child->v_mount->m_root) {
+			vnode_rele(child); status = VFS_STATUS_BUSY; break;
+		}
+		if (child->v_type == VNODE_TYPE_DIRECTORY) {
+			frames[depth] = (vfs_tree_frame_t){.directory = child, .parent_length = length};
+			memcpy(frames[depth].name, entry.name, entry.name_length + 1U);
+			current_path[length] = '/';
+			memcpy(current_path + length + 1U, entry.name, entry.name_length + 1U);
+			depth++;
+		} else {
+			status = child->v_type == VNODE_TYPE_REGULAR && directory->v_ops != 0 && directory->v_ops->unlink_held != 0
+				? directory->v_ops->unlink_held(directory, entry.name, &child) : VFS_STATUS_NOT_SUPPORTED;
+			if (child != 0) vnode_rele(child);
+			if (status != VFS_STATUS_OK) break;
+		}
+	}
+	for (uint32_t index = 0; index < depth; index++)
+		if (frames[index].directory != 0) vnode_rele(frames[index].directory);
+	vnode_rele(parent);
+	(void)kfree(frames);
+	return status;
 }

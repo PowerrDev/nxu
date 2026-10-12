@@ -103,6 +103,7 @@ static const vnode_operations_t g_btrfs_vnode_operations = {
 	.lookup = btrfs_lookup,
 	.create = btrfs_create,
 	.unlink = btrfs_unlink,
+	.rmdir = btrfs_unlink,
 	.readdir = btrfs_readdir,
 	.read = btrfs_read,
 	.write = btrfs_write,

@@ -171,6 +171,10 @@ vfs_status_t vfs_mount(const char *filesystem_name, block_device_t device, const
 
 	for (uint32_t index = 0U; index < VFS_MOUNT_MAX; index++) {
 		if (g_mounts[index].m_active) {
+			if (block_device_overlaps(device, g_mounts[index].m_device)) {
+				vfs_unlock(&g_vfs_lock);
+				return VFS_STATUS_BUSY;
+			}
 			uint32_t existing_length = vfs_string_length(g_mounts[index].m_path, VFS_PATH_MAX);
 			if (existing_length == path_length) {
 				bool equal = true;
@@ -472,6 +476,8 @@ const char *vfs_status_name(vfs_status_t status)
 		return "interrupted";
 	case VFS_STATUS_DENIED:
 		return "denied";
+	case VFS_STATUS_NOT_EMPTY:
+		return "directory not empty";
 	default:
 		return "unknown";
 	}

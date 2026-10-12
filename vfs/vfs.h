@@ -86,6 +86,9 @@ vfs_status_t vfs_lookup(const char *path, vnode_t *result);
 vfs_status_t vfs_create(const char *path, vnode_type_t type, vnode_t *result);
 vfs_status_t vfs_mkdir(const char *path);
 vfs_status_t vfs_unlink(const char *path);
+vfs_status_t vfs_rmdir(const char *path);
+/* Consumes expected once traversal starts. Does not cross mounts or follow symlinks. */
+vfs_status_t vfs_remove_tree_held(const char *path, vnode_t *expected, bool (*cancelled)(void));
 /* Held target is consumed only by a filesystem that can unlink it atomically. */
 vfs_status_t vfs_unlink_held(const char *path, vnode_t *expected);
 

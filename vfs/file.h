@@ -94,6 +94,8 @@ bool file_reference(file_t file);
 void file_rele(file_t file);
 
 vfs_status_t filedesc_install(filedesc_t filedesc, file_t file, uint32_t *descriptor);
+vfs_status_t filedesc_dup2(filedesc_t filedesc, uint32_t source, uint32_t destination);
+
 vfs_status_t filedesc_get(filedesc_t filedesc, uint32_t descriptor, file_t *result);
 vfs_status_t filedesc_remove(filedesc_t filedesc, uint32_t descriptor, file_t *result);
 

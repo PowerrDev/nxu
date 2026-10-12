@@ -42,7 +42,8 @@ typedef enum {
 	VFS_STATUS_END_OF_DIRECTORY,
 	VFS_STATUS_WOULD_BLOCK,
 	VFS_STATUS_INTERRUPTED,
-	VFS_STATUS_DENIED
+	VFS_STATUS_DENIED,
+	VFS_STATUS_NOT_EMPTY
 } vfs_status_t;
 
 typedef struct {
@@ -102,6 +103,8 @@ typedef struct {
 	vfs_status_t (*open)(vnode_t vnode, uint32_t flags);
 	void (*close)(vnode_t vnode, uint32_t flags);
 	vfs_status_t (*ioctl)(vnode_t vnode, uint32_t command, void *argument);
+	vfs_status_t (*rmdir)(vnode_t directory, const char *name);
+	vfs_status_t (*rmdir_held)(vnode_t directory, const char *name, vnode_t *expected);
 } vnode_operations_t;
 
 /*

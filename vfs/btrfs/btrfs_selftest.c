@@ -684,7 +684,8 @@ static bool st_run_refusal(const char *token, uint32_t device_index)
 
 	if (status == VFS_STATUS_OK) (void)vfs_unmount(path);
 
-	kprintf("btrfs_selftest: %s !%s: vfs status \"%s\", btrfs status \"%s\", mounts %u -> %u; kernel still running\n", ok ? "PASS" : "FAIL", name, vfs_status_name(status), btrfs_last_mount_status_name(), mounts_before, btrfs_mount_count());
+	kprintf("btrfs_selftest: %s !%s: vfs status \"%s\", btrfs status \"%s\", mounts %u -> %u\n", ok ? "PASS" : "FAIL", name, vfs_status_name(status), btrfs_last_mount_status_name(), mounts_before, btrfs_mount_count());
+	kputln("btrfs_selftest: kernel still running");
 	return ok;
 }
 

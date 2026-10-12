@@ -256,6 +256,52 @@ vfs_status_t filedesc_install(filedesc_t filedesc, file_t file, uint32_t *descri
 	return VFS_STATUS_NO_SPACE;
 }
 
+/* Duplicate under one table lock; release the replaced file after unlocking. */
+vfs_status_t
+filedesc_dup2(filedesc_t filedesc, uint32_t source, uint32_t destination)
+{
+	if (filedesc == 0 || source >= VFS_FD_MAX || destination >= VFS_FD_MAX) {
+		return VFS_STATUS_BAD_FD;
+	}
+
+	filedesc_lock(filedesc);
+	file_t file = filedesc->fd_ofiles[source];
+
+	if (file == 0) {
+		filedesc_unlock(filedesc);
+		return VFS_STATUS_BAD_FD;
+	}
+
+	if (source == destination) {
+		filedesc_unlock(filedesc);
+		return VFS_STATUS_OK;
+	}
+
+	if (!file_reference(file)) {
+		filedesc_unlock(filedesc);
+		return VFS_STATUS_BAD_FD;
+	}
+
+	file_t previous = filedesc->fd_ofiles[destination];
+	filedesc->fd_ofiles[destination] = file;
+
+	if (previous == 0) {
+		filedesc->fd_open_count++;
+	}
+
+	while (filedesc->fd_freefile < VFS_FD_MAX && filedesc->fd_ofiles[filedesc->fd_freefile] != 0) {
+		filedesc->fd_freefile++;
+	}
+
+	filedesc_unlock(filedesc);
+
+	if (previous != 0) {
+		file_rele(previous);
+	}
+
+	return VFS_STATUS_OK;
+}
+
 vfs_status_t filedesc_get(filedesc_t filedesc, uint32_t descriptor, file_t *result)
 {
 	if (result != 0) *result = 0;
