@@ -324,6 +324,7 @@ C_SOURCES := \
     platform/arm64/services/ui_service.c \
     drivers/video/ui_service_login.c \
     drivers/video/trusted_login.c \
+    drivers/video/login_wallpaper.c \
     drivers/video/ui_service_activity.c \
     drivers/video/ui_service_bridge.c \
     kern/aqua/window_server.c \
@@ -462,6 +463,7 @@ C_SOURCES := \
 
 
 ASM_SOURCES := \
+    drivers/video/login_wallpaper_asset.S \
     kern/arm64/start.S \
     kern/arm64/smp_entry.S \
     kern/arm64/context_switch.S \
@@ -657,8 +659,8 @@ USER_APP_dock_ICON :=
 
 # Apps read their text face from here when they start (it is not embedded).
 USER_SYSTEM_FONTS := \
-    $(UISERVICE_DIR)/assets/fonts/Inter-Regular.ttf \
-    $(UISERVICE_DIR)/assets/fonts/Inter-SemiBold.ttf
+    tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Regular.otf \
+    tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Medium.otf
 
 
 USER_STAGE_STAMP := $(USER_BUILD)/.staged
@@ -735,6 +737,13 @@ $(BUILD)/%.o: %.S
 
 	$(Q)$(CC) $(ASFLAGS) -c $< -o $@
 
+$(BUILD)/login_wallpaper.qoi: tools/UI/Backgrounds/Sonoma.jpg tools/make_login_wallpaper.py
+	$(Q)python3 tools/make_login_wallpaper.py --source $< --output $@
+
+$(BUILD)/drivers/video/login_wallpaper_asset.o: drivers/video/login_wallpaper_asset.S $(BUILD)/login_wallpaper.qoi $(BUILD)/.kernel-flags
+	@mkdir -p $(dir $@)
+	$(Q)$(CC) $(ASFLAGS) '-DNXU_LOGIN_WALLPAPER_QOI="$(BUILD)/login_wallpaper.qoi"' -c $< -o $@
+
 
 $(USER_BUILD)/%.o: %.c Makefile
 
@@ -806,7 +815,10 @@ $(USER_BUILD)/WindowServer.so: $(WINDOWSERVER_PIC_SOURCES) frameworks/Runtime.fr
 
 COREGRAPHICS_PIC_DIR := $(USER_BUILD)/coregraphics-pic
 COREGRAPHICS_PIC_SOURCES := $(shell rg --files $(UISERVICE_DIR)/crates -g '*.rs' -g '*.toml')
-COREGRAPHICS_PIC_ASSETS := $(shell rg --files $(UISERVICE_DIR)/assets)
+COREGRAPHICS_PIC_ASSETS := $(shell rg --files $(UISERVICE_DIR)/assets) \
+	tools/UI/Backgrounds/Sonoma.jpg \
+	tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Regular.otf \
+	tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Medium.otf
 
 $(USER_BUILD)/CoreGraphics.so: $(COREGRAPHICS_PIC_SOURCES) $(COREGRAPHICS_PIC_ASSETS) $(UISERVICE_DIR)/Cargo.lock \
 	frameworks/DesktopService.framework/lib/session.c frameworks/DesktopService.framework/lib/host.c \
@@ -853,8 +865,16 @@ $(USER_BUILD)/dyrld-runtime: $(USER_COMMON_OBJECTS) \
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 $(USER_BUILD)/reporter_fonts.h: tools/generate_reporter_fonts.py tools/generate_recovery_fonts.py \
-	tools/DiskRoot/System/Library/Fonts/Inter-Regular.ttf tools/DiskRoot/System/Library/Fonts/Inter-SemiBold.ttf
+	tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Regular.otf tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Medium.otf
 	$(Q)python3 tools/generate_reporter_fonts.py --output $@
+
+kern/boot/status_font.h: tools/generate_boot_status_font.py tools/generate_recovery_fonts.py \
+	tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Regular.otf
+	$(Q)python3 tools/generate_boot_status_font.py
+
+drivers/video/login_font.h: tools/generate_login_font.py tools/generate_recovery_fonts.py \
+	tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Medium.otf
+	$(Q)python3 tools/generate_login_font.py
 
 $(BUILD)/drivers/video/trusted_login.o: $(USER_BUILD)/reporter_fonts.h
 $(BUILD)/drivers/video/trusted_login.o: CFLAGS += -I$(USER_BUILD)
@@ -1020,7 +1040,7 @@ $(USER_BUILD)/apps/%: $(USER_COMMON_OBJECTS) $(USER_APPKIT_OBJECTS) $(UISERVICE_
 userland: $(USER_DAEMONS) $(USER_APPS)
 
 
-$(USER_STAGE_STAMP): frameworks/Terminal.framework/Info.plist $(USER_DAEMONS) $(USER_APPS) $(USER_SERVICE_PLISTS) $(USER_SYSTEM_FONTS) tools/crash_symbols.py
+$(USER_STAGE_STAMP): frameworks/Terminal.framework/Info.plist tools/UI/Icons/Terminal.png $(USER_DAEMONS) $(USER_APPS) $(USER_SERVICE_PLISTS) $(USER_SYSTEM_FONTS) tools/crash_symbols.py
 
 	@mkdir -p $(DISK_ROOT)/System/Library/CoreServices $(DISK_ROOT)/System/Library/BootDaemons \
 		$(DISK_ROOT)/System/Library/Fonts $(DISK_ROOT)/System/Recovery $(DISK_ROOT)/var/log \
@@ -1065,6 +1085,8 @@ $(USER_STAGE_STAMP): frameworks/Terminal.framework/Info.plist $(USER_DAEMONS) $(
 	$(Q)mkdir -p "$(DISK_ROOT)/Applications/Terminal.app/Contents/SevOS"
 	$(Q)cp $(USER_BUILD)/terminal "$(DISK_ROOT)/Applications/Terminal.app/Contents/SevOS/Terminal"
 	$(Q)cp frameworks/Terminal.framework/Info.plist "$(DISK_ROOT)/Applications/Terminal.app/Contents/Info.plist"
+	$(Q)mkdir -p "$(DISK_ROOT)/Applications/Terminal.app/Contents/Resources"
+	$(Q)cp tools/UI/Icons/Terminal.png "$(DISK_ROOT)/Applications/Terminal.app/Contents/Resources/Terminal.png"
 
 	$(Q)cp $(USER_BUILD)/faulttest $(DISK_ROOT)/System/Library/CoreServices/faulttest
 
@@ -1098,7 +1120,10 @@ $(USER_STAGE_STAMP): frameworks/Terminal.framework/Info.plist $(USER_DAEMONS) $(
 
 	$(Q)cp $(USER_SERVICE_PLISTS) $(DISK_ROOT)/System/Library/BootDaemons/
 
-	$(Q)cp $(USER_SYSTEM_FONTS) $(DISK_ROOT)/System/Library/Fonts/
+	$(Q)for font in $(USER_SYSTEM_FONTS); do \
+		destination="$(DISK_ROOT)/System/Library/Fonts/$$(basename "$$font")"; \
+		if [ ! "$$font" -ef "$$destination" ]; then cp "$$font" "$$destination"; fi; \
+	done
 
 	$(foreach app,$(USER_APP_BUNDLES),$(call stage_app,$(app),$(USER_BUILD)/apps/$(app),$(DISK_ROOT)))
 
@@ -1193,11 +1218,16 @@ recovery-assets:
 
 uiservice-build:
 
-	$(MAKE) -C $(UISERVICE_DIR) BUILD_JOBS=$(BUILD_JOBS) nxu
+	$(MAKE) -C $(UISERVICE_DIR) BUILD_JOBS=$(BUILD_JOBS) \
+		INTER_REGULAR="$(abspath tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Regular.otf)" \
+		INTER_SEMIBOLD="$(abspath tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Medium.otf)" \
+		BACKGROUND="$(abspath tools/UI/Backgrounds/Sonoma.jpg)" nxu
 
 uiservice-apps-build:
 
-	$(MAKE) -C $(UISERVICE_DIR) BUILD_JOBS=$(BUILD_JOBS) nxu-apps
+	$(MAKE) -C $(UISERVICE_DIR) BUILD_JOBS=$(BUILD_JOBS) \
+		INTER_REGULAR="$(abspath tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Regular.otf)" \
+		INTER_SEMIBOLD="$(abspath tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Medium.otf)" nxu-apps
 
 
 windowserver-build:

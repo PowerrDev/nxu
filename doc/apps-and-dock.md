@@ -17,7 +17,7 @@ WindowServer) still runs in the kernel, but no app is linked into it any more.
 /System/Library/CoreServices/About sevOS.app/Contents/...
 /System/Library/Preferences/com.nxu.dock.plist   what the Dock keeps
 /System/Library/BootDaemons/com.nxu.dock.plist   bootd starts the Dock
-/System/Library/Fonts/Inter-{Regular,SemiBold}.ttf   read by every app at start
+/System/Library/Fonts/SF-Pro-Display-{Regular,Medium}.otf   read by every app at start
 /System/Library/Resources/Images/*.icns          the icons' source copies
 ```
 
@@ -127,7 +127,7 @@ largest size, which a whole screen each at 2x would not fit on i386.
 ## An app's process
 
 UIService's `crates/ui-app-nxu` runs any `ui_app::App` as a process: it waits
-for the desktop, reads Inter from `/System/Library/Fonts`, connects with the
+for the desktop, reads SF Pro from `/System/Library/Fonts`, connects with the
 app's `INFO`, `WINDOW` and `MENUS`, and turns messages into `App::event`,
 `draw`, `tick` and `menu_command`, applying everything already queued before one
 redraw. Directory listings (Voyager) come from the file system calls, the process

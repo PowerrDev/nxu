@@ -8,18 +8,19 @@
 static uint32_t calls, fail_at;
 static uint64_t source_begin, source_size;
 
-bool vm_copy_from_user(void *destination, uint64_t address, uint64_t bytes)
+bool
+vm_copy_from_user(void *destination, uint64_t address, uint64_t bytes)
 {
 	calls++;
-	if (calls == fail_at)
-		return false;
+	if (calls == fail_at) return false;
 	assert(address >= source_begin && bytes <= source_size);
 	assert(address - source_begin <= source_size - bytes);
 	memcpy(destination, (const void *)(uintptr_t)address, (size_t)bytes);
 	return true;
 }
 
-int main(void)
+int
+main(void)
 {
 	uint32_t *source = malloc(1920ULL * 1080 * 4);
 	uint32_t *output = malloc(1920ULL * 1080 * 4);

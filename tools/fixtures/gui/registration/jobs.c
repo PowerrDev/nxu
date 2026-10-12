@@ -4,24 +4,28 @@
 #include <assert.h>
 #include <stdio.h>
 
-int64_t nxu_open(const char *path, uint64_t flags)
+int64_t
+nxu_open(const char *path, uint64_t flags)
 {
 	(void)flags;
 	FILE *file = fopen(path, "rb");
 	return file ? (int64_t)(uintptr_t)file : -NXU_SYS_E_NOT_FOUND;
 }
 
-int64_t nxu_read(uint64_t descriptor, void *buffer, uint64_t length)
+int64_t
+nxu_read(uint64_t descriptor, void *buffer, uint64_t length)
 {
 	return (int64_t)fread(buffer, 1, length, (FILE *)(uintptr_t)descriptor);
 }
 
-int64_t nxu_close(uint64_t descriptor)
+int64_t
+nxu_close(uint64_t descriptor)
 {
 	return fclose((FILE *)(uintptr_t)descriptor);
 }
 
-static service_config_t load(const char *root, const char *name)
+static service_config_t
+load(const char *root, const char *name)
 {
 	char path[1024];
 	snprintf(path, sizeof(path), "%s/frameworks/BootDaemons.framework/Services/com.nxu.%s.plist", root, name);
@@ -30,7 +34,8 @@ static service_config_t load(const char *root, const char *name)
 	return config;
 }
 
-int main(int argc, char **argv)
+int
+main(int argc, char **argv)
 {
 	assert(argc == 2);
 	service_config_t patchd = load(argv[1], "patchd");

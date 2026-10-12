@@ -11,36 +11,42 @@ static bool fail_send, fail_map, fail_create, reject, timeout;
 static wsmsg_reply_t response;
 static uint64_t clock_us;
 
-bool bootstrap_client_lookup(const char *label, uint32_t *port)
+bool
+bootstrap_client_lookup(const char *label, uint32_t *port)
 {
 	(void)label;
 	*port = 1;
 	return true;
 }
 
-int64_t nxu_ipc_port_allocate(void)
+int64_t
+nxu_ipc_port_allocate(void)
 {
 	return 2;
 }
 
-int64_t nxu_ipc_port_deallocate(uint32_t port)
+int64_t
+nxu_ipc_port_deallocate(uint32_t port)
 {
 	(void)port;
 	return 0;
 }
 
-int64_t nxu_uptime_us(void)
+int64_t
+nxu_uptime_us(void)
 {
 	return clock_us;
 }
 
-int64_t nxu_sleep_us(uint64_t delay)
+int64_t
+nxu_sleep_us(uint64_t delay)
 {
 	clock_us += delay;
 	return 0;
 }
 
-int64_t nxu_ipc_send(uint32_t port, const void *bytes, uint64_t size, uint32_t reply)
+int64_t
+nxu_ipc_send(uint32_t port, const void *bytes, uint64_t size, uint32_t reply)
 {
 	(void)port;
 	(void)size;
@@ -59,7 +65,9 @@ int64_t nxu_ipc_send(uint32_t port, const void *bytes, uint64_t size, uint32_t r
 	return fail_send ? -1 : 0;
 }
 
-int64_t nxu_ipc_receive_timed(uint32_t port, void *buffer, uint64_t size, uint32_t *transfer, uint32_t *type, uint32_t timeout_us)
+int64_t
+nxu_ipc_receive_timed(uint32_t port, void *buffer, uint64_t size, uint32_t *transfer, uint32_t *type,
+					  uint32_t timeout_us)
 {
 	(void)port;
 	(void)size;
@@ -74,24 +82,26 @@ int64_t nxu_ipc_receive_timed(uint32_t port, void *buffer, uint64_t size, uint32
 	return sizeof(response);
 }
 
-int64_t nxu_shm_create(uint64_t bytes)
+int64_t
+nxu_shm_create(uint64_t bytes)
 {
 	creates++;
-	if (fail_create)
-		return -1;
+	if (fail_create) return -1;
 	memory = malloc(bytes);
 	assert(memory);
 	return ++next_id;
 }
 
-int64_t nxu_shm_map(uint64_t id)
+int64_t
+nxu_shm_map(uint64_t id)
 {
 	(void)id;
 	maps++;
 	return fail_map ? -1 : (int64_t)(uintptr_t)memory;
 }
 
-int64_t nxu_shm_withdraw(uint64_t id)
+int64_t
+nxu_shm_withdraw(uint64_t id)
 {
 	(void)id;
 	withdrawals++;
@@ -102,7 +112,8 @@ int64_t nxu_shm_withdraw(uint64_t id)
 	return 0;
 }
 
-int64_t nxu_shm_unmap(uint64_t address)
+int64_t
+nxu_shm_unmap(uint64_t address)
 {
 	assert(address == (uint64_t)(uintptr_t)memory);
 	unmaps++;
@@ -111,7 +122,8 @@ int64_t nxu_shm_unmap(uint64_t address)
 	return 0;
 }
 
-int main(void)
+int
+main(void)
 {
 	uint32_t pixels[32 * 32];
 	for (uint32_t y = 0; y < 32; y++)

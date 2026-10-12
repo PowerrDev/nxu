@@ -3,7 +3,8 @@
 #include <nxu/string.h>
 #include <nxu/syscall.h>
 
-int main(void)
+int
+main(void)
 {
 	bool blocked = false;
 	uint32_t pixel = 0xffff0000;

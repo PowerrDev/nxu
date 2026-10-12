@@ -71,46 +71,70 @@ static const uint32_t g_sha_k[64] = {
 	0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
 	0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
 	0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-	0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
-};
+	0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
 
 #define ROR(x, n) (((x) >> (n)) | ((x) << (32 - (n))))
 
-static void sha256_block(sha256_t *s, const uint8_t *p)
+static void
+sha256_block(sha256_t *s, const uint8_t *p)
 {
 	uint32_t w[64];
 	uint32_t a, b, c, d, e, f, g, h;
 
-	for (int i = 0; i < 16; i++) w[i] = ((uint32_t)p[i * 4] << 24) | ((uint32_t)p[i * 4 + 1] << 16) | ((uint32_t)p[i * 4 + 2] << 8) | p[i * 4 + 3];
+	for (int i = 0; i < 16; i++)
+		w[i] =
+			((uint32_t)p[i * 4] << 24) | ((uint32_t)p[i * 4 + 1] << 16) | ((uint32_t)p[i * 4 + 2] << 8) | p[i * 4 + 3];
 	for (int i = 16; i < 64; i++) {
 		uint32_t s0 = ROR(w[i - 15], 7) ^ ROR(w[i - 15], 18) ^ (w[i - 15] >> 3);
 		uint32_t s1 = ROR(w[i - 2], 17) ^ ROR(w[i - 2], 19) ^ (w[i - 2] >> 10);
 		w[i] = w[i - 16] + s0 + w[i - 7] + s1;
 	}
 
-	a = s->state[0]; b = s->state[1]; c = s->state[2]; d = s->state[3];
-	e = s->state[4]; f = s->state[5]; g = s->state[6]; h = s->state[7];
+	a = s->state[0];
+	b = s->state[1];
+	c = s->state[2];
+	d = s->state[3];
+	e = s->state[4];
+	f = s->state[5];
+	g = s->state[6];
+	h = s->state[7];
 
 	for (int i = 0; i < 64; i++) {
 		uint32_t t1 = h + (ROR(e, 6) ^ ROR(e, 11) ^ ROR(e, 25)) + ((e & f) ^ (~e & g)) + g_sha_k[i] + w[i];
 		uint32_t t2 = (ROR(a, 2) ^ ROR(a, 13) ^ ROR(a, 22)) + ((a & b) ^ (a & c) ^ (b & c));
-		h = g; g = f; f = e; e = d + t1; d = c; c = b; b = a; a = t1 + t2;
+		h = g;
+		g = f;
+		f = e;
+		e = d + t1;
+		d = c;
+		c = b;
+		b = a;
+		a = t1 + t2;
 	}
 
-	s->state[0] += a; s->state[1] += b; s->state[2] += c; s->state[3] += d;
-	s->state[4] += e; s->state[5] += f; s->state[6] += g; s->state[7] += h;
+	s->state[0] += a;
+	s->state[1] += b;
+	s->state[2] += c;
+	s->state[3] += d;
+	s->state[4] += e;
+	s->state[5] += f;
+	s->state[6] += g;
+	s->state[7] += h;
 }
 
-static void sha256_init(sha256_t *s)
+static void
+sha256_init(sha256_t *s)
 {
-	static const uint32_t init[8] = { 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 };
+	static const uint32_t init[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+									 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
 
 	memcpy(s->state, init, sizeof(init));
 	s->length = 0;
 	s->used = 0;
 }
 
-static void sha256_update(sha256_t *s, const uint8_t *data, size_t length)
+static void
+sha256_update(sha256_t *s, const uint8_t *data, size_t length)
 {
 	s->length += length;
 
@@ -129,20 +153,24 @@ static void sha256_update(sha256_t *s, const uint8_t *data, size_t length)
 	}
 }
 
-static void sha256_hex(sha256_t *s, char out[65])
+static void
+sha256_hex(sha256_t *s, char out[65])
 {
 	uint64_t bits = s->length * 8;
 	uint8_t pad = 0x80;
 
 	sha256_update(s, &pad, 1);
 	pad = 0;
-	while (s->used != 56) sha256_update(s, &pad, 1);
+	while (s->used != 56)
+		sha256_update(s, &pad, 1);
 
 	uint8_t tail[8];
-	for (int i = 0; i < 8; i++) tail[i] = (uint8_t)(bits >> (56 - 8 * i));
+	for (int i = 0; i < 8; i++)
+		tail[i] = (uint8_t)(bits >> (56 - 8 * i));
 	sha256_update(s, tail, 8);
 
-	for (int i = 0; i < 8; i++) snprintf(out + i * 8, 9, "%08x", s->state[i]);
+	for (int i = 0; i < 8; i++)
+		snprintf(out + i * 8, 9, "%08x", s->state[i]);
 }
 
 /* ---- an image with damage ------------------------------------------------------------------ */
@@ -156,7 +184,7 @@ typedef struct {
 typedef struct {
 	uint64_t offset;
 	size_t length;
-	int tag;                 /* 1: data of a NODATASUM file (nothing can protect it) */
+	int tag; /* 1: data of a NODATASUM file (nothing can protect it) */
 } range_t;
 
 #define MAX_PATCHES 16
@@ -164,13 +192,13 @@ typedef struct {
 typedef struct {
 	btrfs_host_file_reader_t file;
 	btrfs_reader_t base;
-	uint64_t size;           /* effective size (truncation) */
+	uint64_t size; /* effective size (truncation) */
 	patch_t patches[MAX_PATCHES];
 	int patch_count;
 
 	uint64_t reads;
-	uint64_t read_budget;    /* 0: unlimited */
-	uint64_t fail_read_at;   /* fail the Nth read (1-based), 0: never */
+	uint64_t read_budget;  /* 0: unlimited */
+	uint64_t fail_read_at; /* fail the Nth read (1-based), 0: never */
 	bool budget_exceeded;
 
 	bool record;
@@ -180,7 +208,8 @@ typedef struct {
 	int tag;
 } image_t;
 
-static bool image_read(void *ctx, uint64_t offset, void *buffer, size_t length)
+static bool
+image_read(void *ctx, uint64_t offset, void *buffer, size_t length)
 {
 	image_t *image = ctx;
 
@@ -198,7 +227,7 @@ static bool image_read(void *ctx, uint64_t offset, void *buffer, size_t length)
 			image->ranges = realloc(image->ranges, image->range_capacity * sizeof(range_t));
 			if (image->ranges == NULL) abort();
 		}
-		image->ranges[image->range_count++] = (range_t){ offset, length, image->tag };
+		image->ranges[image->range_count++] = (range_t){offset, length, image->tag};
 	}
 
 	if (!btrfs_reader_read(&image->base, offset, buffer, length)) return false;
@@ -208,13 +237,15 @@ static bool image_read(void *ctx, uint64_t offset, void *buffer, size_t length)
 		uint64_t start = offset > p->offset ? offset : p->offset;
 		uint64_t end = offset + length < p->offset + p->length ? offset + length : p->offset + p->length;
 
-		if (start < end) memcpy((uint8_t *)buffer + (start - offset), p->data + (start - p->offset), (size_t)(end - start));
+		if (start < end)
+			memcpy((uint8_t *)buffer + (start - offset), p->data + (start - p->offset), (size_t)(end - start));
 	}
 
 	return true;
 }
 
-static bool image_open(image_t *image, btrfs_reader_t *reader, const char *path)
+static bool
+image_open(image_t *image, btrfs_reader_t *reader, const char *path)
 {
 	memset(image, 0, sizeof(*image));
 
@@ -227,9 +258,11 @@ static bool image_open(image_t *image, btrfs_reader_t *reader, const char *path)
 	return true;
 }
 
-static void image_reset_damage(image_t *image, btrfs_reader_t *reader)
+static void
+image_reset_damage(image_t *image, btrfs_reader_t *reader)
 {
-	for (int i = 0; i < image->patch_count; i++) free(image->patches[i].data);
+	for (int i = 0; i < image->patch_count; i++)
+		free(image->patches[i].data);
 	image->patch_count = 0;
 	image->size = image->file.size;
 	reader->size = image->size;
@@ -240,7 +273,8 @@ static void image_reset_damage(image_t *image, btrfs_reader_t *reader)
 	image->record = false;
 }
 
-static void image_patch(image_t *image, uint64_t offset, const uint8_t *bytes, size_t length)
+static void
+image_patch(image_t *image, uint64_t offset, const uint8_t *bytes, size_t length)
 {
 	if (image->patch_count == MAX_PATCHES) return;
 
@@ -252,7 +286,8 @@ static void image_patch(image_t *image, uint64_t offset, const uint8_t *bytes, s
 	memcpy(p->data, bytes, length);
 }
 
-static void image_close(image_t *image, btrfs_reader_t *reader)
+static void
+image_close(image_t *image, btrfs_reader_t *reader)
 {
 	image_reset_damage(image, reader);
 	btrfs_host_file_reader_close(&image->file);
@@ -281,12 +316,14 @@ typedef struct {
 	size_t count;
 } manifest_t;
 
-static int record_compare(const void *a, const void *b)
+static int
+record_compare(const void *a, const void *b)
 {
 	return strcmp(((const record_t *)a)->path, ((const record_t *)b)->path);
 }
 
-static bool manifest_load(manifest_t *m, const char *path)
+static bool
+manifest_load(manifest_t *m, const char *path)
 {
 	FILE *f = fopen(path, "rb");
 	if (f == NULL) return false;
@@ -315,7 +352,10 @@ static bool manifest_load(manifest_t *m, const char *path)
 			cursor = tab + 1;
 		}
 
-		if (n != 14) { fprintf(stderr, "manifest %s: bad line\n", path); return false; }
+		if (n != 14) {
+			fprintf(stderr, "manifest %s: bad line\n", path);
+			return false;
+		}
 
 		if (m->count == capacity) {
 			capacity *= 2;
@@ -352,13 +392,15 @@ static bool manifest_load(manifest_t *m, const char *path)
 	return true;
 }
 
-static record_t *manifest_find(manifest_t *m, const char *path)
+static record_t *
+manifest_find(manifest_t *m, const char *path)
 {
-	record_t key = { .path = (char *)path };
+	record_t key = {.path = (char *)path};
 	return bsearch(&key, m->records, m->count, sizeof(record_t), record_compare);
 }
 
-static void manifest_free(manifest_t *m)
+static void
+manifest_free(manifest_t *m)
 {
 	for (size_t i = 0; i < m->count; i++) {
 		free(m->records[i].path);
@@ -370,9 +412,12 @@ static void manifest_free(manifest_t *m)
 
 /* ---- deterministic randomness ----------------------------------------------------------------------- */
 
-typedef struct { uint64_t state; } rng_t;
+typedef struct {
+	uint64_t state;
+} rng_t;
 
-static uint64_t rng_next(rng_t *r)
+static uint64_t
+rng_next(rng_t *r)
 {
 	uint64_t x = r->state;
 	x ^= x >> 12;
@@ -382,7 +427,8 @@ static uint64_t rng_next(rng_t *r)
 	return x * 0x2545F4914F6CDD1DULL;
 }
 
-static uint64_t rng_below(rng_t *r, uint64_t bound)
+static uint64_t
+rng_below(rng_t *r, uint64_t bound)
 {
 	return bound == 0 ? 0 : rng_next(r) % bound;
 }
@@ -392,12 +438,12 @@ static uint64_t rng_below(rng_t *r, uint64_t bound)
 typedef struct {
 	btrfs_fs_t *fs;
 	image_t *image;
-	manifest_t *manifest;    /* NULL: no comparison (sweeps) */
-	bool sweep;              /* stop at the first error, print nothing */
+	manifest_t *manifest; /* NULL: no comparison (sweeps) */
+	bool sweep;			  /* stop at the first error, print nothing */
 	bool verbose;
 	rng_t rng;
 
-	uint64_t digest;         /* over everything observed */
+	uint64_t digest; /* over everything observed */
 	uint64_t entries, files, bytes, subvol_crossings, placeholders, partial_reads, lookups;
 	uint64_t node_budget;
 	int failures;
@@ -407,7 +453,8 @@ typedef struct {
 #define MAX_PATH 4096
 #define MAX_READ (32ULL * 1024 * 1024)
 
-static void digest_mix(walk_t *w, const void *data, size_t length)
+static void
+digest_mix(walk_t *w, const void *data, size_t length)
 {
 	const uint8_t *p = data;
 
@@ -417,14 +464,17 @@ static void digest_mix(walk_t *w, const void *data, size_t length)
 	}
 }
 
-static void digest_u64(walk_t *w, uint64_t v)
+static void
+digest_u64(walk_t *w, uint64_t v)
 {
 	uint8_t b[8];
-	for (int i = 0; i < 8; i++) b[i] = (uint8_t)(v >> (8 * i));
+	for (int i = 0; i < 8; i++)
+		b[i] = (uint8_t)(v >> (8 * i));
 	digest_mix(w, b, 8);
 }
 
-static void fail(walk_t *w, const char *path, const char *format, ...)
+static void
+fail(walk_t *w, const char *path, const char *format, ...)
 {
 	w->failures++;
 
@@ -438,45 +488,72 @@ static void fail(walk_t *w, const char *path, const char *format, ...)
 	va_end(args);
 }
 
-static const char *type_name(uint32_t t)
+static const char *
+type_name(uint32_t t)
 {
 	switch (t) {
-	case BTRFS_S_IFREG: return "file";
-	case BTRFS_S_IFDIR: return "dir";
-	case BTRFS_S_IFLNK: return "symlink";
-	case BTRFS_S_IFCHR: return "chardev";
-	case BTRFS_S_IFBLK: return "blockdev";
-	case BTRFS_S_IFIFO: return "fifo";
-	case BTRFS_S_IFSOCK: return "socket";
-	default: return "?";
+	case BTRFS_S_IFREG:
+		return "file";
+	case BTRFS_S_IFDIR:
+		return "dir";
+	case BTRFS_S_IFLNK:
+		return "symlink";
+	case BTRFS_S_IFCHR:
+		return "chardev";
+	case BTRFS_S_IFBLK:
+		return "blockdev";
+	case BTRFS_S_IFIFO:
+		return "fifo";
+	case BTRFS_S_IFSOCK:
+		return "socket";
+	default:
+		return "?";
 	}
 }
 
-static char type_char(uint32_t t)
+static char
+type_char(uint32_t t)
 {
 	switch (t) {
-	case BTRFS_S_IFREG: return 'f';
-	case BTRFS_S_IFDIR: return 'd';
-	case BTRFS_S_IFLNK: return 'l';
-	case BTRFS_S_IFCHR: return 'c';
-	case BTRFS_S_IFBLK: return 'b';
-	case BTRFS_S_IFIFO: return 'p';
-	case BTRFS_S_IFSOCK: return 's';
-	default: return '?';
+	case BTRFS_S_IFREG:
+		return 'f';
+	case BTRFS_S_IFDIR:
+		return 'd';
+	case BTRFS_S_IFLNK:
+		return 'l';
+	case BTRFS_S_IFCHR:
+		return 'c';
+	case BTRFS_S_IFBLK:
+		return 'b';
+	case BTRFS_S_IFIFO:
+		return 'p';
+	case BTRFS_S_IFSOCK:
+		return 's';
+	default:
+		return '?';
 	}
 }
 
-static uint8_t expected_ft(uint32_t t)
+static uint8_t
+expected_ft(uint32_t t)
 {
 	switch (t) {
-	case BTRFS_S_IFREG: return BTRFS_FT_REG_FILE;
-	case BTRFS_S_IFDIR: return BTRFS_FT_DIR;
-	case BTRFS_S_IFLNK: return BTRFS_FT_SYMLINK;
-	case BTRFS_S_IFCHR: return BTRFS_FT_CHRDEV;
-	case BTRFS_S_IFBLK: return BTRFS_FT_BLKDEV;
-	case BTRFS_S_IFIFO: return BTRFS_FT_FIFO;
-	case BTRFS_S_IFSOCK: return BTRFS_FT_SOCK;
-	default: return BTRFS_FT_UNKNOWN;
+	case BTRFS_S_IFREG:
+		return BTRFS_FT_REG_FILE;
+	case BTRFS_S_IFDIR:
+		return BTRFS_FT_DIR;
+	case BTRFS_S_IFLNK:
+		return BTRFS_FT_SYMLINK;
+	case BTRFS_S_IFCHR:
+		return BTRFS_FT_CHRDEV;
+	case BTRFS_S_IFBLK:
+		return BTRFS_FT_BLKDEV;
+	case BTRFS_S_IFIFO:
+		return BTRFS_FT_FIFO;
+	case BTRFS_S_IFSOCK:
+		return BTRFS_FT_SOCK;
+	default:
+		return BTRFS_FT_UNKNOWN;
 	}
 }
 
@@ -485,7 +562,8 @@ typedef struct {
 	uint32_t seen;
 } refs_check_t;
 
-static bool count_ref(void *context, const btrfs_inode_ref_t *ref)
+static bool
+count_ref(void *context, const btrfs_inode_ref_t *ref)
 {
 	refs_check_t *check = context;
 
@@ -495,7 +573,9 @@ static bool count_ref(void *context, const btrfs_inode_ref_t *ref)
 }
 
 /* Read [offset, offset+length) and compare with the full read `whole`. */
-static bool partial_read(walk_t *w, const btrfs_tree_t *tree, const btrfs_inode_t *inode, const uint8_t *whole, uint64_t offset, uint64_t length, const char *path)
+static bool
+partial_read(walk_t *w, const btrfs_tree_t *tree, const btrfs_inode_t *inode, const uint8_t *whole, uint64_t offset,
+			 uint64_t length, const char *path)
 {
 	uint8_t *buffer = malloc(length ? length : 1);
 	uint64_t done = 0;
@@ -507,14 +587,18 @@ static bool partial_read(walk_t *w, const btrfs_tree_t *tree, const btrfs_inode_
 	uint64_t want = offset >= size ? 0 : (offset + length > size ? size - offset : length);
 	bool ok = status == BTRFS_OK && done == want && (want == 0 || memcmp(buffer, whole + offset, (size_t)want) == 0);
 
-	if (!ok) fail(w, path, "partial read [%llu,+%llu) status %s done %llu want %llu", (unsigned long long)offset, (unsigned long long)length, btrfs_status_name(status), (unsigned long long)done, (unsigned long long)want);
+	if (!ok)
+		fail(w, path, "partial read [%llu,+%llu) status %s done %llu want %llu", (unsigned long long)offset,
+			 (unsigned long long)length, btrfs_status_name(status), (unsigned long long)done, (unsigned long long)want);
 
 	w->partial_reads++;
 	free(buffer);
 	return ok;
 }
 
-static void check_file_contents(walk_t *w, const btrfs_tree_t *tree, const btrfs_inode_t *inode, const record_t *rec, const char *path)
+static void
+check_file_contents(walk_t *w, const btrfs_tree_t *tree, const btrfs_inode_t *inode, const record_t *rec,
+					const char *path)
 {
 	uint64_t size = inode->item.size;
 
@@ -540,7 +624,8 @@ static void check_file_contents(walk_t *w, const btrfs_tree_t *tree, const btrfs
 	}
 
 	if (status != BTRFS_OK || done != size) {
-		fail(w, path, "read failed: %s (%llu of %llu bytes)", btrfs_status_name(status), (unsigned long long)done, (unsigned long long)size);
+		fail(w, path, "read failed: %s (%llu of %llu bytes)", btrfs_status_name(status), (unsigned long long)done,
+			 (unsigned long long)size);
 		free(whole);
 		return;
 	}
@@ -586,11 +671,16 @@ static void check_file_contents(walk_t *w, const btrfs_tree_t *tree, const btrfs
 			while (position < size) {
 				uint64_t got = 0;
 				btrfs_status_t s = btrfs_file_read(w->fs, tree, inode, position, stitched + position, 4097, &got);
-				if (s != BTRFS_OK || got == 0) { fail(w, path, "stepped read stalled at %llu: %s", (unsigned long long)position, btrfs_status_name(s)); break; }
+				if (s != BTRFS_OK || got == 0) {
+					fail(w, path, "stepped read stalled at %llu: %s", (unsigned long long)position,
+						 btrfs_status_name(s));
+					break;
+				}
 				position += got;
 			}
 
-			if (position == size && memcmp(stitched, whole, (size_t)size) != 0) fail(w, path, "stepped read differs from the full read");
+			if (position == size && memcmp(stitched, whole, (size_t)size) != 0)
+				fail(w, path, "stepped read differs from the full read");
 			free(stitched);
 		}
 	}
@@ -598,7 +688,9 @@ static void check_file_contents(walk_t *w, const btrfs_tree_t *tree, const btrfs
 	free(whole);
 }
 
-static void check_node(walk_t *w, const btrfs_tree_t *tree, const btrfs_inode_t *inode, const char *path, uint8_t dirent_type, uint64_t dirent_ino)
+static void
+check_node(walk_t *w, const btrfs_tree_t *tree, const btrfs_inode_t *inode, const char *path, uint8_t dirent_type,
+		   uint64_t dirent_ino)
 {
 	uint32_t type = btrfs_inode_type(inode->item.mode);
 	record_t *rec = w->manifest != NULL ? manifest_find(w->manifest, path) : NULL;
@@ -611,7 +703,8 @@ static void check_node(walk_t *w, const btrfs_tree_t *tree, const btrfs_inode_t 
 	digest_u64(w, inode->item.uid);
 	digest_u64(w, inode->item.gid);
 
-	if (dirent_type != expected_ft(type)) fail(w, path, "directory entry type %u does not match inode mode %o", dirent_type, inode->item.mode);
+	if (dirent_type != expected_ft(type))
+		fail(w, path, "directory entry type %u does not match inode mode %o", dirent_type, inode->item.mode);
 	(void)dirent_ino;
 
 	if (w->manifest != NULL) {
@@ -621,27 +714,37 @@ static void check_node(walk_t *w, const btrfs_tree_t *tree, const btrfs_inode_t 
 			rec->visited = true;
 			if (rec->type != type_char(type)) fail(w, path, "type %s, Linux says '%c'", type_name(type), rec->type);
 			if (rec->mode != inode->item.mode) fail(w, path, "mode %o, Linux says %o", inode->item.mode, rec->mode);
-			if (rec->uid != inode->item.uid || rec->gid != inode->item.gid) fail(w, path, "owner %u:%u, Linux says %u:%u", inode->item.uid, inode->item.gid, rec->uid, rec->gid);
-			if (rec->has_size && rec->size != inode->item.size) fail(w, path, "size %llu, Linux says %llu", (unsigned long long)inode->item.size, (unsigned long long)rec->size);
-			if (rec->has_nlink && rec->nlink != inode->item.nlink) fail(w, path, "nlink %u, Linux says %u", inode->item.nlink, rec->nlink);
-			if (rec->has_ino && rec->ino != inode->ino) fail(w, path, "inode %llu, Linux says %llu", (unsigned long long)inode->ino, (unsigned long long)rec->ino);
-			if (rec->has_mtime && rec->mtime != inode->item.mtime.sec) fail(w, path, "mtime %llu, Linux says %llu", (unsigned long long)inode->item.mtime.sec, (unsigned long long)rec->mtime);
+			if (rec->uid != inode->item.uid || rec->gid != inode->item.gid)
+				fail(w, path, "owner %u:%u, Linux says %u:%u", inode->item.uid, inode->item.gid, rec->uid, rec->gid);
+			if (rec->has_size && rec->size != inode->item.size)
+				fail(w, path, "size %llu, Linux says %llu", (unsigned long long)inode->item.size,
+					 (unsigned long long)rec->size);
+			if (rec->has_nlink && rec->nlink != inode->item.nlink)
+				fail(w, path, "nlink %u, Linux says %u", inode->item.nlink, rec->nlink);
+			if (rec->has_ino && rec->ino != inode->ino)
+				fail(w, path, "inode %llu, Linux says %llu", (unsigned long long)inode->ino,
+					 (unsigned long long)rec->ino);
+			if (rec->has_mtime && rec->mtime != inode->item.mtime.sec)
+				fail(w, path, "mtime %llu, Linux says %llu", (unsigned long long)inode->item.mtime.sec,
+					 (unsigned long long)rec->mtime);
 
 			if (type == BTRFS_S_IFCHR || type == BTRFS_S_IFBLK) {
 				uint64_t rdev = inode->item.rdev;
 				/* Btrfs stores the kernel's dev_t: major << 20 | minor. */
 				uint32_t major = (uint32_t)(rdev >> 20);
 				uint32_t minor = (uint32_t)(rdev & 0xfffffU);
-				if (!rec->has_rdev || rec->rdev_major != major || rec->rdev_minor != minor) fail(w, path, "device %u:%u, Linux says %u:%u", major, minor, rec->rdev_major, rec->rdev_minor);
+				if (!rec->has_rdev || rec->rdev_major != major || rec->rdev_minor != minor)
+					fail(w, path, "device %u:%u, Linux says %u:%u", major, minor, rec->rdev_major, rec->rdev_minor);
 			}
 		}
 	}
 
 	/* Names: the way back from the inode. Hard links must match nlink. */
 	if (!w->sweep && type != BTRFS_S_IFDIR && inode->item.nlink > 1) {
-		refs_check_t check = { inode->item.nlink, 0 };
+		refs_check_t check = {inode->item.nlink, 0};
 		btrfs_status_t s = btrfs_inode_refs(w->fs, tree, inode->ino, count_ref, &check, NULL);
-		if (s != BTRFS_OK || check.seen != check.expected) fail(w, path, "%u names found (%s), nlink is %u", check.seen, btrfs_status_name(s), check.expected);
+		if (s != BTRFS_OK || check.seen != check.expected)
+			fail(w, path, "%u names found (%s), nlink is %u", check.seen, btrfs_status_name(s), check.expected);
 	}
 
 	if (type == BTRFS_S_IFREG) {
@@ -656,7 +759,9 @@ static void check_node(walk_t *w, const btrfs_tree_t *tree, const btrfs_inode_t 
 		} else {
 			target[length] = '\0';
 			digest_mix(w, target, length);
-			if (rec != NULL && (rec->target == NULL || strlen(rec->target) != length || memcmp(rec->target, target, length) != 0)) fail(w, path, "symlink target differs from Linux's");
+			if (rec != NULL &&
+				(rec->target == NULL || strlen(rec->target) != length || memcmp(rec->target, target, length) != 0))
+				fail(w, path, "symlink target differs from Linux's");
 		}
 	}
 }
@@ -664,7 +769,8 @@ static void check_node(walk_t *w, const btrfs_tree_t *tree, const btrfs_inode_t 
 static void walk_directory(walk_t *w, const btrfs_tree_t *tree, uint64_t dir, const char *path, int depth);
 
 /* Descend into one entry (a file, directory or subvolume point) of `tree`. */
-static void walk_entry(walk_t *w, const btrfs_tree_t *tree, uint64_t dir, const btrfs_dirent_t *entry, const char *path, int depth)
+static void
+walk_entry(walk_t *w, const btrfs_tree_t *tree, uint64_t dir, const btrfs_dirent_t *entry, const char *path, int depth)
 {
 	btrfs_inode_t inode;
 	btrfs_subvol_t sub;
@@ -672,7 +778,8 @@ static void walk_entry(walk_t *w, const btrfs_tree_t *tree, uint64_t dir, const 
 	uint64_t ino;
 
 	if (btrfs_dirent_is_subvol(entry)) {
-		btrfs_status_t s = btrfs_root_resolve_point(w->fs, tree->objectid, dir, entry->name, entry->name_len, entry->location.objectid, &sub);
+		btrfs_status_t s = btrfs_root_resolve_point(w->fs, tree->objectid, dir, entry->name, entry->name_len,
+													entry->location.objectid, &sub);
 
 		if (s == BTRFS_ERR_NOT_FOUND) {
 			/* A placeholder from a snapshot: an empty directory, as Linux shows it. */
@@ -705,12 +812,17 @@ static void walk_entry(walk_t *w, const btrfs_tree_t *tree, uint64_t dir, const 
 
 	check_node(w, child_tree, &inode, path, entry->type, ino);
 
-	if (btrfs_inode_type(inode.item.mode) == BTRFS_S_IFDIR && (!w->sweep || w->failures == 0)) walk_directory(w, child_tree, ino, path, depth + 1);
+	if (btrfs_inode_type(inode.item.mode) == BTRFS_S_IFDIR && (!w->sweep || w->failures == 0))
+		walk_directory(w, child_tree, ino, path, depth + 1);
 }
 
-static void walk_directory(walk_t *w, const btrfs_tree_t *tree, uint64_t dir, const char *path, int depth)
+static void
+walk_directory(walk_t *w, const btrfs_tree_t *tree, uint64_t dir, const char *path, int depth)
 {
-	if (depth > MAX_DEPTH) { fail(w, path, "directory nesting too deep (a loop?)"); return; }
+	if (depth > MAX_DEPTH) {
+		fail(w, path, "directory nesting too deep (a loop?)");
+		return;
+	}
 
 	uint64_t cursor = 0;
 	uint64_t count = 0;
@@ -721,22 +833,35 @@ static void walk_directory(walk_t *w, const btrfs_tree_t *tree, uint64_t dir, co
 		btrfs_status_t s = btrfs_dir_next(w->fs, tree, dir, &cursor, &entry);
 
 		if (s == BTRFS_ERR_END) break;
-		if (s != BTRFS_OK) { fail(w, path, "readdir: %s", btrfs_status_name(s)); return; }
+		if (s != BTRFS_OK) {
+			fail(w, path, "readdir: %s", btrfs_status_name(s));
+			return;
+		}
 
-		if (w->node_budget-- == 0) { fail(w, path, "node budget exhausted (a directory loop?)"); return; }
-		if (count != 0 && entry.index <= previous_index) { fail(w, path, "DIR_INDEX did not advance"); return; }
+		if (w->node_budget-- == 0) {
+			fail(w, path, "node budget exhausted (a directory loop?)");
+			return;
+		}
+		if (count != 0 && entry.index <= previous_index) {
+			fail(w, path, "DIR_INDEX did not advance");
+			return;
+		}
 		previous_index = entry.index;
 		count++;
 
 		char child[MAX_PATH];
 		int n = snprintf(child, sizeof(child), "%s%s%s", path, strcmp(path, "/") == 0 ? "" : "/", entry.name);
-		if (n < 0 || n >= (int)sizeof(child)) { fail(w, path, "path too long"); return; }
+		if (n < 0 || n >= (int)sizeof(child)) {
+			fail(w, path, "path too long");
+			return;
+		}
 
 		/* The name must also be found by hash, and must lead to the same place. */
 		btrfs_dirent_t found;
 		s = btrfs_dir_lookup(w->fs, tree, dir, entry.name, entry.name_len, &found);
 		w->lookups++;
-		if (s != BTRFS_OK || found.location.objectid != entry.location.objectid || found.location.type != entry.location.type || found.type != entry.type) {
+		if (s != BTRFS_OK || found.location.objectid != entry.location.objectid ||
+			found.location.type != entry.location.type || found.type != entry.type) {
 			fail(w, child, "lookup by name: %s", btrfs_status_name(s));
 			return;
 		}
@@ -769,7 +894,9 @@ static void walk_directory(walk_t *w, const btrfs_tree_t *tree, uint64_t dir, co
 			uint64_t ca = saved_cursor, cb = saved_cursor;
 			s = btrfs_dir_next(w->fs, tree, dir, &ca, &next_a);
 			btrfs_status_t s2 = btrfs_dir_next(w->fs, tree, dir, &cb, &next_b);
-			if (s != BTRFS_OK || s2 != BTRFS_OK || next_a.index != next_b.index || next_a.index <= index || strcmp((char *)next_a.name, (char *)next_b.name) != 0) fail(w, path, "readdir cursor resume is not stable");
+			if (s != BTRFS_OK || s2 != BTRFS_OK || next_a.index != next_b.index || next_a.index <= index ||
+				strcmp((char *)next_a.name, (char *)next_b.name) != 0)
+				fail(w, path, "readdir cursor resume is not stable");
 
 			/* Resuming at an index past the last entry ends the directory. */
 			uint64_t beyond = previous_index + 1;
@@ -780,18 +907,28 @@ static void walk_directory(walk_t *w, const btrfs_tree_t *tree, uint64_t dir, co
 }
 
 /* Walk the mounted subvolume from its root inode. */
-static void walk_mount(walk_t *w)
+static void
+walk_mount(walk_t *w)
 {
 	btrfs_subvol_t root;
 	btrfs_status_t s = btrfs_root_lookup(w->fs, w->fs->mount_subvol, &root);
 
-	if (s != BTRFS_OK) { fail(w, "/", "mount subvolume: %s", btrfs_status_name(s)); return; }
+	if (s != BTRFS_OK) {
+		fail(w, "/", "mount subvolume: %s", btrfs_status_name(s));
+		return;
+	}
 
 	btrfs_inode_t inode;
 	s = btrfs_inode_read(w->fs, &root.tree, root.item.root_dirid, &inode);
-	if (s != BTRFS_OK) { fail(w, "/", "root inode: %s", btrfs_status_name(s)); return; }
+	if (s != BTRFS_OK) {
+		fail(w, "/", "root inode: %s", btrfs_status_name(s));
+		return;
+	}
 
-	if (btrfs_inode_type(inode.item.mode) != BTRFS_S_IFDIR) { fail(w, "/", "the root is not a directory"); return; }
+	if (btrfs_inode_type(inode.item.mode) != BTRFS_S_IFDIR) {
+		fail(w, "/", "the root is not a directory");
+		return;
+	}
 
 	check_node(w, &root.tree, &inode, "/", BTRFS_FT_DIR, root.item.root_dirid);
 	walk_directory(w, &root.tree, root.item.root_dirid, "/", 0);
@@ -804,9 +941,9 @@ typedef struct {
 	bool verbose;
 	uint64_t seed;
 	uint64_t iterations;
-	uint64_t offset;         /* read: first byte */
-	uint64_t length;         /* read: bytes (0: to the end of the file) */
-	const char *devs[BTRFS_MAX_DEVICES - 1];   /* --dev PATH: further devices of a multi-device filesystem */
+	uint64_t offset;						 /* read: first byte */
+	uint64_t length;						 /* read: bytes (0: to the end of the file) */
+	const char *devs[BTRFS_MAX_DEVICES - 1]; /* --dev PATH: further devices of a multi-device filesystem */
 	int ndevs;
 } options_t;
 
@@ -815,7 +952,8 @@ static image_t g_extra_image[BTRFS_MAX_DEVICES - 1];
 static btrfs_reader_t g_extra_reader[BTRFS_MAX_DEVICES - 1];
 static int g_extra_open;
 
-static btrfs_fs_t *open_fs(image_t *image, btrfs_reader_t *reader, btrfs_env_t *env, const options_t *opt, btrfs_status_t *status)
+static btrfs_fs_t *
+open_fs(image_t *image, btrfs_reader_t *reader, btrfs_env_t *env, const options_t *opt, btrfs_status_t *status)
 {
 	(void)image;
 
@@ -831,11 +969,13 @@ static btrfs_fs_t *open_fs(image_t *image, btrfs_reader_t *reader, btrfs_env_t *
 	}
 
 	readers[0] = *reader;
-	for (int i = 0; i < opt->ndevs; i++) readers[1 + i] = g_extra_reader[i];
+	for (int i = 0; i < opt->ndevs; i++)
+		readers[1 + i] = g_extra_reader[i];
 	return btrfs_fs_open_devices(env, readers, (uint32_t)opt->ndevs + 1U, &opt->options, status);
 }
 
-static int cmd_info(const char *path, const options_t *opt)
+static int
+cmd_info(const char *path, const options_t *opt)
 {
 	image_t image;
 	btrfs_reader_t reader;
@@ -843,12 +983,19 @@ static int cmd_info(const char *path, const options_t *opt)
 	btrfs_host_env_t host;
 	btrfs_status_t status;
 
-	if (!image_open(&image, &reader, path)) { fprintf(stderr, "cannot open %s\n", path); return 2; }
+	if (!image_open(&image, &reader, path)) {
+		fprintf(stderr, "cannot open %s\n", path);
+		return 2;
+	}
 	btrfs_host_env_init(&host, &env);
 	host.verbose = opt->verbose;
 
 	btrfs_fs_t *fs = open_fs(&image, &reader, &env, opt, &status);
-	if (fs == NULL) { printf("open=%s\n", btrfs_status_name(status)); image_close(&image, &reader); return 3; }
+	if (fs == NULL) {
+		printf("open=%s\n", btrfs_status_name(status));
+		image_close(&image, &reader);
+		return 3;
+	}
 
 	char features[128];
 	btrfs_feature_names(fs->super.incompat_flags, fs->super.compat_ro_flags, features, sizeof(features));
@@ -857,31 +1004,46 @@ static int cmd_info(const char *path, const options_t *opt)
 	printf("generation=%llu\n", (unsigned long long)fs->super.generation);
 	printf("root=%llu\nroot_level=%u\n", (unsigned long long)fs->super.root, fs->super.root_level);
 	printf("log_root=%llu\n", (unsigned long long)fs->super.log_root);
-	printf("chunk_root=%llu\nchunk_root_level=%u\n", (unsigned long long)fs->super.chunk_root, fs->super.chunk_root_level);
-	printf("total_bytes=%llu\nbytes_used=%llu\n", (unsigned long long)fs->super.total_bytes, (unsigned long long)fs->super.bytes_used);
-	printf("sectorsize=%u\nnodesize=%u\nstripesize=%u\n", fs->super.sectorsize, fs->super.nodesize, fs->super.stripesize);
-	printf("csum_type=%u\nnum_devices=%llu\ndev_id=%llu\n", fs->super.csum_type, (unsigned long long)fs->super.num_devices, (unsigned long long)fs->super.dev_id);
-	printf("incompat=%llx\ncompat_ro=%llx\nfeatures=%s\n", (unsigned long long)fs->super.incompat_flags, (unsigned long long)fs->super.compat_ro_flags, features);
-	printf("chunks=%u\ndefault_subvol=%llu\nmount_subvol=%llu\nsuper_copies_valid=%u\n", fs->chunks.count, (unsigned long long)fs->default_subvol, (unsigned long long)fs->mount_subvol, fs->super_copies_valid);
+	printf("chunk_root=%llu\nchunk_root_level=%u\n", (unsigned long long)fs->super.chunk_root,
+		   fs->super.chunk_root_level);
+	printf("total_bytes=%llu\nbytes_used=%llu\n", (unsigned long long)fs->super.total_bytes,
+		   (unsigned long long)fs->super.bytes_used);
+	printf("sectorsize=%u\nnodesize=%u\nstripesize=%u\n", fs->super.sectorsize, fs->super.nodesize,
+		   fs->super.stripesize);
+	printf("csum_type=%u\nnum_devices=%llu\ndev_id=%llu\n", fs->super.csum_type,
+		   (unsigned long long)fs->super.num_devices, (unsigned long long)fs->super.dev_id);
+	printf("incompat=%llx\ncompat_ro=%llx\nfeatures=%s\n", (unsigned long long)fs->super.incompat_flags,
+		   (unsigned long long)fs->super.compat_ro_flags, features);
+	printf("chunks=%u\ndefault_subvol=%llu\nmount_subvol=%llu\nsuper_copies_valid=%u\n", fs->chunks.count,
+		   (unsigned long long)fs->default_subvol, (unsigned long long)fs->mount_subvol, fs->super_copies_valid);
 
 	btrfs_subvol_t sub;
-	if (btrfs_root_lookup(fs, fs->mount_subvol, &sub) == BTRFS_OK) printf("mount_tree_level=%u\nmount_tree_bytenr=%llu\n", sub.tree.level, (unsigned long long)sub.tree.bytenr);
+	if (btrfs_root_lookup(fs, fs->mount_subvol, &sub) == BTRFS_OK)
+		printf("mount_tree_level=%u\nmount_tree_bytenr=%llu\n", sub.tree.level, (unsigned long long)sub.tree.bytenr);
 
 	for (uint32_t i = 0; i < fs->chunks.count; i++) {
 		const btrfs_chunk_t *c = &fs->chunks.chunks[i];
-		printf("chunk=%llu,%llu,%s,%s", (unsigned long long)c->logical, (unsigned long long)c->length, btrfs_profile_name(c->type), (c->type & BTRFS_BLOCK_GROUP_DATA) ? ((c->type & BTRFS_BLOCK_GROUP_METADATA) ? "data+metadata" : "data") : ((c->type & BTRFS_BLOCK_GROUP_SYSTEM) ? "system" : "metadata"));
-		for (uint32_t st = 0; st < c->num_stripes; st++) printf(",%llu", (unsigned long long)c->stripes[st].offset);
+		printf("chunk=%llu,%llu,%s,%s", (unsigned long long)c->logical, (unsigned long long)c->length,
+			   btrfs_profile_name(c->type),
+			   (c->type & BTRFS_BLOCK_GROUP_DATA) ? ((c->type & BTRFS_BLOCK_GROUP_METADATA) ? "data+metadata" : "data")
+												  : ((c->type & BTRFS_BLOCK_GROUP_SYSTEM) ? "system" : "metadata"));
+		for (uint32_t st = 0; st < c->num_stripes; st++)
+			printf(",%llu", (unsigned long long)c->stripes[st].offset);
 		printf("\n");
 	}
 
 	btrfs_fs_close(fs);
 	int leaks = (int)host.live_allocations;
 	image_close(&image, &reader);
-	if (leaks != 0) { fprintf(stderr, "LEAK: %d allocations live after close\n", leaks); return 1; }
+	if (leaks != 0) {
+		fprintf(stderr, "LEAK: %d allocations live after close\n", leaks);
+		return 1;
+	}
 	return 0;
 }
 
-static int cmd_open(const char *path, const options_t *opt)
+static int
+cmd_open(const char *path, const options_t *opt)
 {
 	image_t image;
 	btrfs_reader_t reader;
@@ -889,7 +1051,10 @@ static int cmd_open(const char *path, const options_t *opt)
 	btrfs_host_env_t host;
 	btrfs_status_t status;
 
-	if (!image_open(&image, &reader, path)) { fprintf(stderr, "cannot open %s\n", path); return 2; }
+	if (!image_open(&image, &reader, path)) {
+		fprintf(stderr, "cannot open %s\n", path);
+		return 2;
+	}
 	btrfs_host_env_init(&host, &env);
 	host.verbose = opt->verbose;
 
@@ -899,18 +1064,23 @@ static int cmd_open(const char *path, const options_t *opt)
 
 	int leaks = (int)host.live_allocations;
 	image_close(&image, &reader);
-	if (leaks != 0) { fprintf(stderr, "LEAK: %d allocations live after open/close\n", leaks); return 1; }
+	if (leaks != 0) {
+		fprintf(stderr, "LEAK: %d allocations live after open/close\n", leaks);
+		return 1;
+	}
 	return fs != NULL ? 0 : 3;
 }
 
-static const char *base_name(const char *path)
+static const char *
+base_name(const char *path)
 {
 	const char *slash = strrchr(path, '/');
 	return slash != NULL ? slash + 1 : path;
 }
 
 /* Walk the tree without a manifest; failures print their status on stderr. */
-static int cmd_walk(const char *path, const options_t *opt)
+static int
+cmd_walk(const char *path, const options_t *opt)
 {
 	image_t image;
 	btrfs_reader_t reader;
@@ -918,14 +1088,21 @@ static int cmd_walk(const char *path, const options_t *opt)
 	btrfs_host_env_t host;
 	btrfs_status_t status;
 
-	if (!image_open(&image, &reader, path)) { fprintf(stderr, "cannot open %s\n", path); return 2; }
+	if (!image_open(&image, &reader, path)) {
+		fprintf(stderr, "cannot open %s\n", path);
+		return 2;
+	}
 	btrfs_host_env_init(&host, &env);
 	host.verbose = opt->verbose;
 
-	image.fail_read_at = opt->offset;   /* walk --offset N: fail the Nth device read (debugging aid) */
+	image.fail_read_at = opt->offset; /* walk --offset N: fail the Nth device read (debugging aid) */
 
 	btrfs_fs_t *fs = open_fs(&image, &reader, &env, opt, &status);
-	if (fs == NULL) { printf("open=%s\n", btrfs_status_name(status)); image_close(&image, &reader); return 3; }
+	if (fs == NULL) {
+		printf("open=%s\n", btrfs_status_name(status));
+		image_close(&image, &reader);
+		return 3;
+	}
 
 	walk_t w;
 	memset(&w, 0, sizeof(w));
@@ -937,17 +1114,23 @@ static int cmd_walk(const char *path, const options_t *opt)
 	walk_mount(&w);
 
 	printf("digest=%016llx reads=%llu\n", (unsigned long long)w.digest, (unsigned long long)image.reads);
-	printf("walk=%s entries=%llu files=%llu mirror_fallbacks=%llu csum_failures=%llu\n", w.failures == 0 ? "ok" : "fail", (unsigned long long)w.entries, (unsigned long long)w.files, (unsigned long long)fs->stats.mirror_fallbacks, (unsigned long long)fs->stats.csum_failures);
+	printf("walk=%s entries=%llu files=%llu mirror_fallbacks=%llu csum_failures=%llu\n",
+		   w.failures == 0 ? "ok" : "fail", (unsigned long long)w.entries, (unsigned long long)w.files,
+		   (unsigned long long)fs->stats.mirror_fallbacks, (unsigned long long)fs->stats.csum_failures);
 	btrfs_fs_close(fs);
 
 	int leaks = (int)host.live_allocations;
 	image_close(&image, &reader);
-	if (leaks != 0) { fprintf(stderr, "LEAK: %d allocations live after close\n", leaks); return 1; }
+	if (leaks != 0) {
+		fprintf(stderr, "LEAK: %d allocations live after close\n", leaks);
+		return 1;
+	}
 	return w.failures == 0 ? 0 : 1;
 }
 
 /* Resolve a path below the mounted subvolume's root directory to its inode number. */
-static btrfs_status_t resolve_path(btrfs_fs_t *fs, const char *file, btrfs_subvol_t *root, uint64_t *out_ino)
+static btrfs_status_t
+resolve_path(btrfs_fs_t *fs, const char *file, btrfs_subvol_t *root, uint64_t *out_ino)
 {
 	uint64_t ino = 0;
 	btrfs_status_t status = btrfs_root_lookup(fs, fs->mount_subvol, root);
@@ -955,10 +1138,12 @@ static btrfs_status_t resolve_path(btrfs_fs_t *fs, const char *file, btrfs_subvo
 
 	const char *p = file;
 	while (status == BTRFS_OK && *p != '\0') {
-		while (*p == '/') p++;
+		while (*p == '/')
+			p++;
 		if (*p == '\0') break;
 		const char *end = p;
-		while (*end != '\0' && *end != '/') end++;
+		while (*end != '\0' && *end != '/')
+			end++;
 
 		btrfs_dirent_t entry;
 		status = btrfs_dir_lookup(fs, &root->tree, ino, (const uint8_t *)p, (size_t)(end - p), &entry);
@@ -975,7 +1160,8 @@ static btrfs_status_t resolve_path(btrfs_fs_t *fs, const char *file, btrfs_subvo
  * each followed by "extentdev=FILEOFF,DEVID..." naming the device of every copy in the same order.
  * corrupt.py uses it to damage the data of a chosen file (kinds data-extent:...).
  */
-static int cmd_extents(const char *path, const char *file, const options_t *opt)
+static int
+cmd_extents(const char *path, const char *file, const options_t *opt)
 {
 	image_t image;
 	btrfs_reader_t reader;
@@ -984,12 +1170,19 @@ static int cmd_extents(const char *path, const char *file, const options_t *opt)
 	btrfs_status_t status;
 	int rc = 1;
 
-	if (!image_open(&image, &reader, path)) { fprintf(stderr, "cannot open %s\n", path); return 2; }
+	if (!image_open(&image, &reader, path)) {
+		fprintf(stderr, "cannot open %s\n", path);
+		return 2;
+	}
 	btrfs_host_env_init(&host, &env);
 	host.verbose = opt->verbose;
 
 	btrfs_fs_t *fs = open_fs(&image, &reader, &env, opt, &status);
-	if (fs == NULL) { printf("open=%s\n", btrfs_status_name(status)); image_close(&image, &reader); return 3; }
+	if (fs == NULL) {
+		printf("open=%s\n", btrfs_status_name(status));
+		image_close(&image, &reader);
+		return 3;
+	}
 
 	btrfs_subvol_t root;
 	uint64_t ino = 0;
@@ -1008,7 +1201,9 @@ static int cmd_extents(const char *path, const char *file, const options_t *opt)
 			uint32_t size;
 			btrfs_key_t ikey;
 
-			if (btrfs_path_item(&bp, &ikey, &item, &size)) printf("inode_leaf=%llu,%u\n", (unsigned long long)bp.blocks[0]->bytenr, (unsigned)(item - bp.blocks[0]->data));
+			if (btrfs_path_item(&bp, &ikey, &item, &size))
+				printf("inode_leaf=%llu,%u\n", (unsigned long long)bp.blocks[0]->bytenr,
+					   (unsigned)(item - bp.blocks[0]->data));
 		}
 
 		key = btrfs_key_make(ino, BTRFS_EXTENT_DATA_KEY, 0);
@@ -1019,21 +1214,29 @@ static int cmd_extents(const char *path, const char *file, const options_t *opt)
 			uint32_t size;
 			btrfs_file_extent_t e;
 
-			if (!btrfs_path_item(&bp, &key, &item, &size) || key.objectid != ino || key.type != BTRFS_EXTENT_DATA_KEY) break;
+			if (!btrfs_path_item(&bp, &key, &item, &size) || key.objectid != ino || key.type != BTRFS_EXTENT_DATA_KEY)
+				break;
 			if (!btrfs_file_extent_parse(item, size, &e)) break;
 
 			if (e.type == BTRFS_FILE_EXTENT_INLINE) {
-				printf("extent=%llu,inline,%u,0,0,%llu\n", (unsigned long long)key.offset, e.compression, (unsigned long long)e.ram_bytes);
+				printf("extent=%llu,inline,%u,0,0,%llu\n", (unsigned long long)key.offset, e.compression,
+					   (unsigned long long)e.ram_bytes);
 			} else if (e.disk_bytenr != 0) {
 				btrfs_mapping_t m;
-				printf("extent=%llu,%s,%u,%llu,%llu,%llu", (unsigned long long)key.offset, e.type == BTRFS_FILE_EXTENT_PREALLOC ? "prealloc" : "regular", e.compression, (unsigned long long)e.disk_bytenr, (unsigned long long)e.disk_num_bytes, (unsigned long long)e.ram_bytes);
-				if (btrfs_map_logical(fs, e.disk_bytenr, &m) == BTRFS_OK) for (uint32_t c = 0; c < m.copies; c++) printf(",%llu", (unsigned long long)m.physical[c]);
+				printf("extent=%llu,%s,%u,%llu,%llu,%llu", (unsigned long long)key.offset,
+					   e.type == BTRFS_FILE_EXTENT_PREALLOC ? "prealloc" : "regular", e.compression,
+					   (unsigned long long)e.disk_bytenr, (unsigned long long)e.disk_num_bytes,
+					   (unsigned long long)e.ram_bytes);
+				if (btrfs_map_logical(fs, e.disk_bytenr, &m) == BTRFS_OK)
+					for (uint32_t c = 0; c < m.copies; c++)
+						printf(",%llu", (unsigned long long)m.physical[c]);
 				printf("\n");
 
 				/* Which device holds each of those copies, in the same order (multi-device filesystems). */
 				if (btrfs_map_logical(fs, e.disk_bytenr, &m) == BTRFS_OK) {
 					printf("extentdev=%llu", (unsigned long long)key.offset);
-					for (uint32_t c = 0; c < m.copies; c++) printf(",%llu", (unsigned long long)m.devid[c]);
+					for (uint32_t c = 0; c < m.copies; c++)
+						printf(",%llu", (unsigned long long)m.devid[c]);
 					printf("\n");
 				}
 			}
@@ -1048,7 +1251,10 @@ static int cmd_extents(const char *path, const char *file, const options_t *opt)
 	btrfs_fs_close(fs);
 	int leaks = (int)host.live_allocations;
 	image_close(&image, &reader);
-	if (leaks != 0) { fprintf(stderr, "LEAK: %d allocations live after close\n", leaks); return 1; }
+	if (leaks != 0) {
+		fprintf(stderr, "LEAK: %d allocations live after close\n", leaks);
+		return 1;
+	}
 	return rc;
 }
 
@@ -1058,7 +1264,8 @@ static int cmd_extents(const char *path, const char *file, const options_t *opt)
  * checked=.. device_reads=.. cache_misses=..".
  * Exit status 0 when the read succeeded, 1 when it failed cleanly.
  */
-static int cmd_read(const char *path, const char *file, const options_t *opt, uint64_t offset, uint64_t length)
+static int
+cmd_read(const char *path, const char *file, const options_t *opt, uint64_t offset, uint64_t length)
 {
 	image_t image;
 	btrfs_reader_t reader;
@@ -1067,12 +1274,19 @@ static int cmd_read(const char *path, const char *file, const options_t *opt, ui
 	btrfs_status_t status;
 	int rc = 1;
 
-	if (!image_open(&image, &reader, path)) { fprintf(stderr, "cannot open %s\n", path); return 2; }
+	if (!image_open(&image, &reader, path)) {
+		fprintf(stderr, "cannot open %s\n", path);
+		return 2;
+	}
 	btrfs_host_env_init(&host, &env);
 	host.verbose = opt->verbose;
 
 	btrfs_fs_t *fs = open_fs(&image, &reader, &env, opt, &status);
-	if (fs == NULL) { printf("open=%s\n", btrfs_status_name(status)); image_close(&image, &reader); return 3; }
+	if (fs == NULL) {
+		printf("open=%s\n", btrfs_status_name(status));
+		image_close(&image, &reader);
+		return 3;
+	}
 
 	btrfs_subvol_t root;
 	uint64_t ino;
@@ -1093,23 +1307,33 @@ static int cmd_read(const char *path, const char *file, const options_t *opt, ui
 		status = btrfs_file_read(fs, &root.tree, &inode, offset, buffer, want, &done);
 
 		/* A failed read must never leave verified-looking bytes behind as a result: done is 0. */
-		printf("read=%s done=%llu crc=%08x csum_failures=%llu csum_missing=%llu mirror_fallbacks=%llu checked=%llu device_reads=%llu cache_misses=%llu\n", btrfs_status_name(status), (unsigned long long)done, btrfs_csum_crc32c(buffer, (size_t)done),
-			(unsigned long long)fs->stats.csum_failures, (unsigned long long)fs->stats.data_csum_missing, (unsigned long long)fs->stats.mirror_fallbacks,
-			(unsigned long long)fs->stats.data_csum_checked, (unsigned long long)fs->stats.device_reads, (unsigned long long)fs->cache.misses);
+		printf("read=%s done=%llu crc=%08x csum_failures=%llu csum_missing=%llu mirror_fallbacks=%llu checked=%llu "
+			   "device_reads=%llu cache_misses=%llu\n",
+			   btrfs_status_name(status), (unsigned long long)done, btrfs_csum_crc32c(buffer, (size_t)done),
+			   (unsigned long long)fs->stats.csum_failures, (unsigned long long)fs->stats.data_csum_missing,
+			   (unsigned long long)fs->stats.mirror_fallbacks, (unsigned long long)fs->stats.data_csum_checked,
+			   (unsigned long long)fs->stats.device_reads, (unsigned long long)fs->cache.misses);
 		rc = status == BTRFS_OK ? 0 : 1;
-		if (status != BTRFS_OK && done != 0) { fprintf(stderr, "a failed read reported %llu bytes\n", (unsigned long long)done); rc = 4; }
+		if (status != BTRFS_OK && done != 0) {
+			fprintf(stderr, "a failed read reported %llu bytes\n", (unsigned long long)done);
+			rc = 4;
+		}
 		free(buffer);
 	}
 
 	btrfs_fs_close(fs);
 	int leaks = (int)host.live_allocations;
 	image_close(&image, &reader);
-	if (leaks != 0) { fprintf(stderr, "LEAK: %d allocations live after close\n", leaks); return 1; }
+	if (leaks != 0) {
+		fprintf(stderr, "LEAK: %d allocations live after close\n", leaks);
+		return 1;
+	}
 	return rc;
 }
 
 /* List every subvolume with its parent and name (ROOT_BACKREF), for comparison with `btrfs subvolume list`. */
-static int cmd_subvols(const char *path, const options_t *opt)
+static int
+cmd_subvols(const char *path, const options_t *opt)
 {
 	image_t image;
 	btrfs_reader_t reader;
@@ -1117,12 +1341,19 @@ static int cmd_subvols(const char *path, const options_t *opt)
 	btrfs_host_env_t host;
 	btrfs_status_t status;
 
-	if (!image_open(&image, &reader, path)) { fprintf(stderr, "cannot open %s\n", path); return 2; }
+	if (!image_open(&image, &reader, path)) {
+		fprintf(stderr, "cannot open %s\n", path);
+		return 2;
+	}
 	btrfs_host_env_init(&host, &env);
 	host.verbose = opt->verbose;
 
 	btrfs_fs_t *fs = open_fs(&image, &reader, &env, opt, &status);
-	if (fs == NULL) { printf("open=%s\n", btrfs_status_name(status)); image_close(&image, &reader); return 3; }
+	if (fs == NULL) {
+		printf("open=%s\n", btrfs_status_name(status));
+		image_close(&image, &reader);
+		return 3;
+	}
 
 	uint64_t cursor = 0;
 	uint64_t id;
@@ -1132,12 +1363,16 @@ static int cmd_subvols(const char *path, const options_t *opt)
 		btrfs_root_ref_info_t ref;
 		btrfs_subvol_t sub;
 
-		if (btrfs_root_lookup(fs, id, &sub) != BTRFS_OK) { rc = 1; break; }
+		if (btrfs_root_lookup(fs, id, &sub) != BTRFS_OK) {
+			rc = 1;
+			break;
+		}
 
 		if (id == BTRFS_FS_TREE_OBJECTID) {
 			printf("subvol id=%llu parent=0 name=- readonly=%d\n", (unsigned long long)id, sub.read_only);
 		} else if (btrfs_root_backref(fs, id, &ref) == BTRFS_OK) {
-			printf("subvol id=%llu parent=%llu name=%s readonly=%d\n", (unsigned long long)id, (unsigned long long)ref.parent_id, ref.name, sub.read_only);
+			printf("subvol id=%llu parent=%llu name=%s readonly=%d\n", (unsigned long long)id,
+				   (unsigned long long)ref.parent_id, ref.name, sub.read_only);
 		} else {
 			printf("subvol id=%llu parent=? name=? readonly=%d\n", (unsigned long long)id, sub.read_only);
 		}
@@ -1147,11 +1382,15 @@ static int cmd_subvols(const char *path, const options_t *opt)
 	btrfs_fs_close(fs);
 	int leaks = (int)host.live_allocations;
 	image_close(&image, &reader);
-	if (leaks != 0) { fprintf(stderr, "LEAK: %d allocations live after close\n", leaks); return 1; }
+	if (leaks != 0) {
+		fprintf(stderr, "LEAK: %d allocations live after close\n", leaks);
+		return 1;
+	}
 	return rc;
 }
 
-static int cmd_check(const char *path, const char *manifest_path, const options_t *opt)
+static int
+cmd_check(const char *path, const char *manifest_path, const options_t *opt)
 {
 	image_t image;
 	btrfs_reader_t reader;
@@ -1160,8 +1399,14 @@ static int cmd_check(const char *path, const char *manifest_path, const options_
 	btrfs_status_t status;
 	manifest_t manifest;
 
-	if (!image_open(&image, &reader, path)) { fprintf(stderr, "cannot open %s\n", path); return 2; }
-	if (!manifest_load(&manifest, manifest_path)) { fprintf(stderr, "cannot read manifest %s\n", manifest_path); return 2; }
+	if (!image_open(&image, &reader, path)) {
+		fprintf(stderr, "cannot open %s\n", path);
+		return 2;
+	}
+	if (!manifest_load(&manifest, manifest_path)) {
+		fprintf(stderr, "cannot read manifest %s\n", manifest_path);
+		return 2;
+	}
 
 	btrfs_host_env_init(&host, &env);
 	host.verbose = opt->verbose;
@@ -1200,21 +1445,26 @@ static int cmd_check(const char *path, const char *manifest_path, const options_
 		w.failures++;
 	}
 
-	printf("%s %s: %llu entries, %llu files, %llu bytes, %llu subvolume crossings, %llu placeholders, %llu lookups, %llu partial reads, %llu data sectors verified, %llu csum failures, %llu mirror fallbacks\n",
-		w.failures == 0 ? "PASS" : "FAIL", base_name(path), (unsigned long long)w.entries, (unsigned long long)w.files, (unsigned long long)w.bytes,
-		(unsigned long long)w.subvol_crossings, (unsigned long long)w.placeholders, (unsigned long long)w.lookups, (unsigned long long)w.partial_reads, (unsigned long long)verified, (unsigned long long)csum_failures, (unsigned long long)mirror_fallbacks);
+	printf("%s %s: %llu entries, %llu files, %llu bytes, %llu subvolume crossings, %llu placeholders, %llu lookups, "
+		   "%llu partial reads, %llu data sectors verified, %llu csum failures, %llu mirror fallbacks\n",
+		   w.failures == 0 ? "PASS" : "FAIL", base_name(path), (unsigned long long)w.entries,
+		   (unsigned long long)w.files, (unsigned long long)w.bytes, (unsigned long long)w.subvol_crossings,
+		   (unsigned long long)w.placeholders, (unsigned long long)w.lookups, (unsigned long long)w.partial_reads,
+		   (unsigned long long)verified, (unsigned long long)csum_failures, (unsigned long long)mirror_fallbacks);
 
 	manifest_free(&manifest);
 	image_close(&image, &reader);
 	return w.failures == 0 ? 0 : 1;
 }
 
-/* ---- the corruption sweep ------------------------------------------------------------------------------------------------- */
+/* ---- the corruption sweep
+ * ------------------------------------------------------------------------------------------------- */
 
 static volatile sig_atomic_t g_alarm_fired;
 static const char *g_sweep_case = "";
 
-static void on_alarm(int sig)
+static void
+on_alarm(int sig)
 {
 	(void)sig;
 	g_alarm_fired = 1;
@@ -1230,15 +1480,18 @@ typedef struct {
 	uint64_t bad;
 } sweep_stats_t;
 
-static const char *g_kind_names[8] = { "bitflip", "zero", "scribble", "truncate", "super-semantic", "block-semantic", "read-error", "alloc-failure" };
+static const char *g_kind_names[8] = {"bitflip",		"zero",			  "scribble",	"truncate",
+									  "super-semantic", "block-semantic", "read-error", "alloc-failure"};
 
 /* Recompute a tree block's checksum in a patch buffer. */
-static void fix_block_csum(uint8_t *block, size_t size)
+static void
+fix_block_csum(uint8_t *block, size_t size)
 {
 	btrfs_put_le32(block, btrfs_csum_crc32c(block + BTRFS_CSUM_SIZE, size - BTRFS_CSUM_SIZE));
 }
 
-static int cmd_sweep(const char *path, const options_t *opt)
+static int
+cmd_sweep(const char *path, const options_t *opt)
 {
 	image_t image;
 	btrfs_reader_t reader;
@@ -1247,14 +1500,20 @@ static int cmd_sweep(const char *path, const options_t *opt)
 	btrfs_status_t status;
 	options_t local = *opt;
 
-	if (!image_open(&image, &reader, path)) { fprintf(stderr, "cannot open %s\n", path); return 2; }
+	if (!image_open(&image, &reader, path)) {
+		fprintf(stderr, "cannot open %s\n", path);
+		return 2;
+	}
 	btrfs_host_env_init(&host, &env);
 	local.options.skip_data_csums = false;
 
 	/* Baseline: what the good image produces, and which bytes it depends on. */
 	image.record = true;
 	btrfs_fs_t *fs = open_fs(&image, &reader, &env, &local, &status);
-	if (fs == NULL) { printf("FAIL %s: the baseline does not open: %s\n", base_name(path), btrfs_status_name(status)); return 1; }
+	if (fs == NULL) {
+		printf("FAIL %s: the baseline does not open: %s\n", base_name(path), btrfs_status_name(status));
+		return 1;
+	}
 
 	walk_t base;
 	memset(&base, 0, sizeof(base));
@@ -1267,10 +1526,13 @@ static int cmd_sweep(const char *path, const options_t *opt)
 
 	uint32_t nodesize = fs->nodesize;
 	bool baseline_has_log = fs->super.log_root != 0ULL;
-	uint64_t super_offsets[3] = { BTRFS_SUPER_INFO_OFFSET, 64ULL << 20, 0 };
+	uint64_t super_offsets[3] = {BTRFS_SUPER_INFO_OFFSET, 64ULL << 20, 0};
 	btrfs_fs_close(fs);
 
-	if (base.failures != 0) { printf("FAIL %s: the baseline walk failed\n", base_name(path)); return 1; }
+	if (base.failures != 0) {
+		printf("FAIL %s: the baseline walk failed\n", base_name(path));
+		return 1;
+	}
 
 	uint64_t baseline_reads = image.reads;
 	uint64_t baseline_allocs = host.total_allocations;
@@ -1294,7 +1556,7 @@ static int cmd_sweep(const char *path, const options_t *opt)
 
 	sweep_stats_t stats;
 	memset(&stats, 0, sizeof(stats));
-	rng_t rng = { opt->seed * 0x9E3779B97F4A7C15ULL + 1 };
+	rng_t rng = {opt->seed * 0x9E3779B97F4A7C15ULL + 1};
 	uint64_t file_size = image.file.size;
 
 	signal(SIGALRM, on_alarm);
@@ -1304,7 +1566,7 @@ static int cmd_sweep(const char *path, const options_t *opt)
 		host.fail_after = 0;
 
 		int kind = (int)rng_below(&rng, 8);
-		bool exact = true;   /* must the result equal the baseline if the mount succeeds? */
+		bool exact = true; /* must the result equal the baseline if the mount succeeds? */
 
 		stats.by_kind[kind]++;
 
@@ -1317,7 +1579,10 @@ static int cmd_sweep(const char *path, const options_t *opt)
 			for (int h = 0; h < hits; h++) {
 				uint64_t pick = rng_below(&rng, sample_total);
 				size_t r = 0;
-				while (r + 1 < sample_count && pick >= samples[r].length) { pick -= samples[r].length; r++; }
+				while (r + 1 < sample_count && pick >= samples[r].length) {
+					pick -= samples[r].length;
+					r++;
+				}
 
 				uint64_t at = samples[r].offset + pick;
 				uint8_t bytes[64];
@@ -1332,7 +1597,8 @@ static int cmd_sweep(const char *path, const options_t *opt)
 					memset(bytes, 0, length);
 				} else {
 					length = 1 + (size_t)rng_below(&rng, 8);
-					for (size_t b = 0; b < length; b++) bytes[b] = (uint8_t)rng_next(&rng);
+					for (size_t b = 0; b < length; b++)
+						bytes[b] = (uint8_t)rng_next(&rng);
 				}
 
 				if (at + length > file_size) length = (size_t)(file_size - at);
@@ -1361,7 +1627,8 @@ static int cmd_sweep(const char *path, const options_t *opt)
 
 				for (int e = 0; e < edits; e++) {
 					uint32_t position = BTRFS_CSUM_SIZE + (uint32_t)rng_below(&again, 900);
-					if (rng_below(&again, 4) == 0) position = 811 + (uint32_t)rng_below(&again, 140);   /* the sys_chunk_array */
+					if (rng_below(&again, 4) == 0)
+						position = 811 + (uint32_t)rng_below(&again, 140); /* the sys_chunk_array */
 					raw[position] = (uint8_t)rng_next(&again);
 				}
 
@@ -1384,7 +1651,8 @@ static int cmd_sweep(const char *path, const options_t *opt)
 			int edits = 1 + (int)rng_below(&rng, 4);
 
 			for (int e = 0; e < edits; e++) {
-				uint32_t position = BTRFS_CSUM_SIZE + (uint32_t)rng_below(&rng, rng_below(&rng, 2) ? 160 : nodesize - BTRFS_CSUM_SIZE);
+				uint32_t position =
+					BTRFS_CSUM_SIZE + (uint32_t)rng_below(&rng, rng_below(&rng, 2) ? 160 : nodesize - BTRFS_CSUM_SIZE);
 				raw[position] = (uint8_t)rng_next(&rng);
 			}
 
@@ -1426,7 +1694,8 @@ static int cmd_sweep(const char *path, const options_t *opt)
 			 * an image with an unreplayed log whose primary is damaged mounts from a mirror
 			 * that predates the log: the last commit, which is what Linux mounts too.
 			 */
-			bool mirror_before_log = baseline_has_log && fs->super.log_root == 0ULL && fs->super_offset != BTRFS_SUPER_INFO_OFFSET;
+			bool mirror_before_log =
+				baseline_has_log && fs->super.log_root == 0ULL && fs->super_offset != BTRFS_SUPER_INFO_OFFSET;
 
 			btrfs_fs_close(fs);
 
@@ -1435,10 +1704,11 @@ static int cmd_sweep(const char *path, const options_t *opt)
 			} else if (w.digest == baseline_digest || mirror_before_log) {
 				stats.healed_or_unharmed++;
 			} else if (exact) {
-				printf("FAIL %s: iteration %llu (%s) succeeded with DIFFERENT data than the good image\n", base_name(path), (unsigned long long)iteration, g_kind_names[kind]);
+				printf("FAIL %s: iteration %llu (%s) succeeded with DIFFERENT data than the good image\n",
+					   base_name(path), (unsigned long long)iteration, g_kind_names[kind]);
 				stats.bad++;
 			} else {
-				stats.healed_or_unharmed++;   /* a lying-but-checksummed structure: only safety is required */
+				stats.healed_or_unharmed++; /* a lying-but-checksummed structure: only safety is required */
 			}
 		}
 
@@ -1446,7 +1716,8 @@ static int cmd_sweep(const char *path, const options_t *opt)
 		host.fail_after = 0;
 
 		if (host.live_allocations != 0) {
-			printf("FAIL %s: iteration %llu (%s) leaked %llu allocations\n", base_name(path), (unsigned long long)iteration, g_kind_names[kind], (unsigned long long)host.live_allocations);
+			printf("FAIL %s: iteration %llu (%s) leaked %llu allocations\n", base_name(path),
+				   (unsigned long long)iteration, g_kind_names[kind], (unsigned long long)host.live_allocations);
 			stats.bad++;
 			host.live_allocations = 0;
 			host.live_bytes = 0;
@@ -1454,15 +1725,19 @@ static int cmd_sweep(const char *path, const options_t *opt)
 
 		if (image.budget_exceeded) {
 			/* A walk that keeps reading far beyond the good image's needs is a runaway loop. */
-			printf("FAIL %s: iteration %llu (%s) exceeded its read budget (%llu reads)\n", base_name(path), (unsigned long long)iteration, g_kind_names[kind], (unsigned long long)image.reads);
+			printf("FAIL %s: iteration %llu (%s) exceeded its read budget (%llu reads)\n", base_name(path),
+				   (unsigned long long)iteration, g_kind_names[kind], (unsigned long long)image.reads);
 			stats.bad++;
 		}
 	}
 
-	printf("%s %s sweep: %llu iterations (", stats.bad == 0 ? "PASS" : "FAIL", base_name(path), (unsigned long long)opt->iterations);
-	for (int k = 0; k < 8; k++) printf("%s%s %llu", k ? ", " : "", g_kind_names[k], (unsigned long long)stats.by_kind[k]);
+	printf("%s %s sweep: %llu iterations (", stats.bad == 0 ? "PASS" : "FAIL", base_name(path),
+		   (unsigned long long)opt->iterations);
+	for (int k = 0; k < 8; k++)
+		printf("%s%s %llu", k ? ", " : "", g_kind_names[k], (unsigned long long)stats.by_kind[k]);
 	printf("); mount refused %llu, walk failed cleanly %llu, healed or unharmed %llu, bad %llu\n",
-		(unsigned long long)stats.open_failures, (unsigned long long)stats.walk_failures, (unsigned long long)stats.healed_or_unharmed, (unsigned long long)stats.bad);
+		   (unsigned long long)stats.open_failures, (unsigned long long)stats.walk_failures,
+		   (unsigned long long)stats.healed_or_unharmed, (unsigned long long)stats.bad);
 
 	free(samples);
 	free(blocks);
@@ -1470,9 +1745,10 @@ static int cmd_sweep(const char *path, const options_t *opt)
 	return stats.bad == 0 ? 0 : 1;
 }
 
-int codec_main(int argc, char **argv);   /* btrfs_codec_test.c */
+int codec_main(int argc, char **argv); /* btrfs_codec_test.c */
 
-int main(int argc, char **argv)
+int
+main(int argc, char **argv)
 {
 	options_t opt;
 	const char *positional[4];
@@ -1485,17 +1761,28 @@ int main(int argc, char **argv)
 	opt.seed = 1;
 
 	for (int i = 2; i < argc; i++) {
-		if (strcmp(argv[i], "--subvol") == 0 && i + 1 < argc) opt.options.subvol_id = strtoull(argv[++i], NULL, 10);
-		else if (strcmp(argv[i], "--verify-data") == 0) opt.options.skip_data_csums = false;
-		else if (strcmp(argv[i], "--noverify") == 0) opt.options.skip_data_csums = true;
-		else if (strcmp(argv[i], "--ignore-log") == 0) opt.options.ignore_log_tree = true;
-		else if (strcmp(argv[i], "--offset") == 0 && i + 1 < argc) opt.offset = strtoull(argv[++i], NULL, 10);
-		else if (strcmp(argv[i], "--length") == 0 && i + 1 < argc) opt.length = strtoull(argv[++i], NULL, 10);
-		else if (strcmp(argv[i], "--dev") == 0 && i + 1 < argc && opt.ndevs < (int)BTRFS_MAX_DEVICES - 1) opt.devs[opt.ndevs++] = argv[++i];
-		else if (strcmp(argv[i], "--seed") == 0 && i + 1 < argc) opt.seed = strtoull(argv[++i], NULL, 10);
-		else if (strcmp(argv[i], "--iters") == 0 && i + 1 < argc) opt.iterations = strtoull(argv[++i], NULL, 10);
-		else if (strcmp(argv[i], "-v") == 0) opt.verbose = true;
-		else if (npos < 4) positional[npos++] = argv[i];
+		if (strcmp(argv[i], "--subvol") == 0 && i + 1 < argc)
+			opt.options.subvol_id = strtoull(argv[++i], NULL, 10);
+		else if (strcmp(argv[i], "--verify-data") == 0)
+			opt.options.skip_data_csums = false;
+		else if (strcmp(argv[i], "--noverify") == 0)
+			opt.options.skip_data_csums = true;
+		else if (strcmp(argv[i], "--ignore-log") == 0)
+			opt.options.ignore_log_tree = true;
+		else if (strcmp(argv[i], "--offset") == 0 && i + 1 < argc)
+			opt.offset = strtoull(argv[++i], NULL, 10);
+		else if (strcmp(argv[i], "--length") == 0 && i + 1 < argc)
+			opt.length = strtoull(argv[++i], NULL, 10);
+		else if (strcmp(argv[i], "--dev") == 0 && i + 1 < argc && opt.ndevs < (int)BTRFS_MAX_DEVICES - 1)
+			opt.devs[opt.ndevs++] = argv[++i];
+		else if (strcmp(argv[i], "--seed") == 0 && i + 1 < argc)
+			opt.seed = strtoull(argv[++i], NULL, 10);
+		else if (strcmp(argv[i], "--iters") == 0 && i + 1 < argc)
+			opt.iterations = strtoull(argv[++i], NULL, 10);
+		else if (strcmp(argv[i], "-v") == 0)
+			opt.verbose = true;
+		else if (npos < 4)
+			positional[npos++] = argv[i];
 	}
 
 	if (argc >= 3 && strcmp(argv[1], "info") == 0 && npos == 1) return cmd_info(positional[0], &opt);
@@ -1504,9 +1791,12 @@ int main(int argc, char **argv)
 	if (argc >= 3 && strcmp(argv[1], "sweep") == 0 && npos == 1) return cmd_sweep(positional[0], &opt);
 	if (argc >= 3 && strcmp(argv[1], "walk") == 0 && npos == 1) return cmd_walk(positional[0], &opt);
 	if (argc >= 3 && strcmp(argv[1], "subvols") == 0 && npos == 1) return cmd_subvols(positional[0], &opt);
-	if (argc >= 4 && strcmp(argv[1], "read") == 0 && npos == 2) return cmd_read(positional[0], positional[1], &opt, opt.offset, opt.length);
-	if (argc >= 4 && strcmp(argv[1], "extents") == 0 && npos == 2) return cmd_extents(positional[0], positional[1], &opt);
+	if (argc >= 4 && strcmp(argv[1], "read") == 0 && npos == 2)
+		return cmd_read(positional[0], positional[1], &opt, opt.offset, opt.length);
+	if (argc >= 4 && strcmp(argv[1], "extents") == 0 && npos == 2)
+		return cmd_extents(positional[0], positional[1], &opt);
 
-	fprintf(stderr, "usage: btrfs_host info|open|walk|subvols|extents|read|check|sweep IMAGE [MANIFEST] [--subvol N] [--verify-data|--noverify] [--ignore-log] [--seed N] [--iters N] [-v]\n");
+	fprintf(stderr, "usage: btrfs_host info|open|walk|subvols|extents|read|check|sweep IMAGE [MANIFEST] [--subvol N] "
+					"[--verify-data|--noverify] [--ignore-log] [--seed N] [--iters N] [-v]\n");
 	return 2;
 }

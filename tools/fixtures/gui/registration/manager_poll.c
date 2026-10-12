@@ -9,24 +9,28 @@ static uint32_t registry_polls, job_polls;
 static bool transition;
 static nxu_ipc_peer_t bound;
 
-int64_t nxu_uptime_us(void)
+int64_t
+nxu_uptime_us(void)
 {
 	return 1000000;
 }
 
-void bootd_registry_bind_compositor(bootd_registry_t *registry, const nxu_ipc_peer_t *identity)
+void
+bootd_registry_bind_compositor(bootd_registry_t *registry, const nxu_ipc_peer_t *identity)
 {
 	(void)registry;
 	bound = *identity;
 }
 
-void bootd_registry_poll(bootd_registry_t *registry)
+void
+bootd_registry_poll(bootd_registry_t *registry)
 {
 	(void)registry;
 	registry_polls++;
 }
 
-void bootd_job_poll(bootd_job_t *job, uint64_t now_us)
+void
+bootd_job_poll(bootd_job_t *job, uint64_t now_us)
 {
 	assert(now_us == 1000000);
 	job_polls++;
@@ -36,7 +40,8 @@ void bootd_job_poll(bootd_job_t *job, uint64_t now_us)
 	}
 }
 
-int main(void)
+int
+main(void)
 {
 	bootd_manager_t manager = {0};
 	manager.job_count = BOOTD_MAX_JOBS;

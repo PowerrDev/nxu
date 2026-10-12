@@ -10,12 +10,14 @@ extern int optional_function(void) __attribute__((weak));
 static int app_initialized;
 static int (*result_pointer)(void) = nxu_math_result;
 
-__attribute__((constructor)) static void initialize(void)
+__attribute__((constructor)) static void
+initialize(void)
 {
 	app_initialized = nxu_math_initializations() == 1;
 }
 
-static void output(const char *text)
+static void
+output(const char *text)
 {
 	uint64_t size = 0;
 	while (text[size])
@@ -25,7 +27,8 @@ static void output(const char *text)
 	__asm__ volatile("svc #0" : "+r"(x0) : "r"(x1), "r"(x2), "r"(x8) : "memory");
 }
 
-int main(void)
+int
+main(void)
 {
 	void *allocation = nxu_alloc(127, 65536);
 	if (!allocation || ((uintptr_t)allocation & 65535)) {

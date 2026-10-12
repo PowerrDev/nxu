@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Build isolated userland GUI PIC archives and run reachable ELF link audits.
+"""Copyright (c) 2026 NXU Project. All rights reserved.
+
+Build isolated userland GUI PIC archives and run reachable ELF link audits.
 
 Never changes sibling repositories or installed frameworks. --freestanding-sysroot
 builds only core/alloc/compiler_builtins from installed nightly rust-src, avoiding
@@ -306,10 +308,10 @@ def main():
             if name == 'CoreGraphics':
                 assets = sources / 'UIService.framework/assets'
                 defaults = {
-                    'INTER_REGULAR': 'fonts/Inter-Regular.ttf',
-                    'INTER_SEMIBOLD': 'fonts/Inter-SemiBold.ttf',
+                    'INTER_REGULAR': str(ROOT / 'tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Regular.otf'),
+                    'INTER_SEMIBOLD': str(ROOT / 'tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Medium.otf'),
                     'BOREL_REGULAR': 'fonts/Borel-Regular.ttf',
-                    'BACKGROUND': 'Backgrounds/DefaultWallpaper.jpg',
+                    'BACKGROUND': str(ROOT / 'tools/UI/Backgrounds/Sonoma.jpg'),
                     'MENUBAR_LOGO': 'Branding/logo.png',
                 }
                 for cursor in ('arrow', 'hand', 'move', 'resize-ew', 'resize-ns',

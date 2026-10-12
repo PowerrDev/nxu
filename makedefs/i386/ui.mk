@@ -5,9 +5,12 @@ I386_C_SOURCES += \
     kern/aqua/window_server.c \
     drivers/video/ui_service_login.c \
     drivers/video/trusted_login.c \
+    drivers/video/login_wallpaper.c \
     drivers/video/ui_service_activity.c \
     drivers/video/ui_service_bridge.c \
     platform/i386/services/ui_service.c
+
+I386_ASM_SOURCES += drivers/video/login_wallpaper_asset.S
 
 UISERVICE_I386_INCLUDE := $(UISERVICE_DIR)/build-i386
 UISERVICE_I386_LIB := $(UISERVICE_I386_INCLUDE)/libUIService.a

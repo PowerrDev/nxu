@@ -69,7 +69,7 @@ source locations. Inline call chains and DWARF CFI unwinding are not implemented
 ## Desktop presentation and permissions
 
 `com.nxu.problemreporter` blocks on a separate saved-report notification queue.
-It presents a compact application window using antialiased Inter, with Ignore,
+It presents a compact application window using antialiased SF Pro, with Ignore,
 Report and Reopen (for application bundles). Report displays the first 8 KiB and
 supports scrolling. Reopen goes through the existing Dock launch mechanism;
 it does not silently restart the failed process. No network upload occurs.

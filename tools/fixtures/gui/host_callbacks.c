@@ -3,7 +3,8 @@
 #include <nxu/string.h>
 #include <nxu/syscall.h>
 
-int main(void)
+int
+main(void)
 {
 	CoreGraphicsDirEntry entries[128];
 	uint32_t count = 0;
@@ -50,11 +51,9 @@ int main(void)
 	found = false;
 
 	for (uint32_t i = 0; i < count; i++)
-		if (processes[i].pid == (uint32_t)nxu_getpid() && processes[i].uniqueid)
-			found = true;
+		if (processes[i].pid == (uint32_t)nxu_getpid() && processes[i].uniqueid) found = true;
 
-	if (!found)
-		return 6;
+	if (!found) return 6;
 
 	activity.struct_size = 0;
 

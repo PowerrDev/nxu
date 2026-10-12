@@ -31,7 +31,9 @@ I386_USER_APPKIT_OBJECTS := \
 
 uiservice-apps-i386-build:
 
-	$(MAKE) -C $(UISERVICE_DIR) BUILD_JOBS=$(BUILD_JOBS) nxu-apps-i386
+	$(MAKE) -C $(UISERVICE_DIR) BUILD_JOBS=$(BUILD_JOBS) \
+		INTER_REGULAR="$(abspath tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Regular.otf)" \
+		INTER_SEMIBOLD="$(abspath tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Medium.otf)" nxu-apps-i386
 
 $(UISERVICE_I386_APPS_DIR)/lib%.a: | uiservice-apps-i386-build ;
 
@@ -44,12 +46,14 @@ $(I386_USER_BUILD)/apps/%: $(I386_USER_COMMON_OBJECTS) $(I386_USER_APPKIT_OBJECT
 	$(Q)$(LD) $(I386_USER_LDFLAGS) --gc-sections --strip-debug $(I386_USER_COMMON_OBJECTS) $(I386_USER_APPKIT_OBJECTS) $(UISERVICE_I386_APPS_DIR)/lib$*.a $(I386_USER_RUNTIME) -o $@
 
 # Extra prerequisites for the staging rule in userland.mk, and what it runs.
-$(I386_USER_STAMP): $(I386_USER_BUILD)/terminal frameworks/Terminal.framework/Info.plist $(I386_USER_APPS) $(USER_SYSTEM_FONTS) frameworks/BootDaemons.framework/Services/com.nxu.dock.plist
+$(I386_USER_STAMP): $(I386_USER_BUILD)/terminal frameworks/Terminal.framework/Info.plist tools/UI/Icons/Terminal.png $(I386_USER_APPS) $(USER_SYSTEM_FONTS) frameworks/BootDaemons.framework/Services/com.nxu.dock.plist
 
 define I386_USER_EXTRA_STAGE
 	$(Q)mkdir -p "$(I386_DISKROOT)/Applications/Terminal.app/Contents/SevOS"
 	$(Q)cp $(I386_USER_BUILD)/terminal "$(I386_DISKROOT)/Applications/Terminal.app/Contents/SevOS/Terminal"
 	$(Q)cp frameworks/Terminal.framework/Info.plist "$(I386_DISKROOT)/Applications/Terminal.app/Contents/Info.plist"
+	$(Q)mkdir -p "$(I386_DISKROOT)/Applications/Terminal.app/Contents/Resources"
+	$(Q)cp tools/UI/Icons/Terminal.png "$(I386_DISKROOT)/Applications/Terminal.app/Contents/Resources/Terminal.png"
 	$(Q)mkdir -p $(I386_DISKROOT)/System/Library/Fonts $(I386_DISKROOT)/System/Library/Preferences $(I386_DISKROOT)/System/Library/Resources/Images
 	$(Q)cp $(USER_SYSTEM_FONTS) $(I386_DISKROOT)/System/Library/Fonts/
 	$(Q)cp frameworks/BootDaemons.framework/Services/com.nxu.dock.plist $(I386_DISKROOT)/System/Library/BootDaemons/

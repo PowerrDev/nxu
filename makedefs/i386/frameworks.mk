@@ -29,6 +29,10 @@ I386_COREGRAPHICS_PIC = $(I386_USER_BUILD)/coregraphics-pic
 I386_GUI_BUILD_TOOLS := tools/build_gui_pic.py tools/audit_gui_frameworks.py tools/gui_elf.py \
 	frameworks/Runtime.framework/rust/allocator.rs frameworks/Runtime.framework/rust/panic.rs
 
+COREGRAPHICS_PIC_ASSETS += tools/UI/Backgrounds/Sonoma.jpg \
+	tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Regular.otf \
+	tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Medium.otf
+
 $(I386_USER_BUILD)/WindowServer.so: $(WINDOWSERVER_PIC_SOURCES) $(I386_GUI_BUILD_TOOLS) \
 	frameworks/WindowServer.framework/exports.map $(I386_USER_BUILD)/Runtime.so
 	$(Q)python3 tools/build_gui_pic.py --arch i386 --offline --freestanding-sysroot --framework WindowServer \

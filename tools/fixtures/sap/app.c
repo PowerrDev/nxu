@@ -6,12 +6,14 @@ static uint32_t pixels[200 * 150];
 static const char *keep = "/disk/System/Library/Frameworks/SAPTest.framework/keep.txt";
 static const char *remove_path = "/disk/System/Library/Frameworks/SAPTest.framework/remove.txt";
 
-static void output(const char *text)
+static void
+output(const char *text)
 {
 	(void)nxu_write(1, text, nxu_strlen(text));
 }
 
-static void probe(void *unused)
+static void
+probe(void *unused)
 {
 	(void)unused;
 	nxu_ui_connect_t info = {.struct_size = sizeof(info),
@@ -52,60 +54,49 @@ static void probe(void *unused)
 			return;
 		}
 
-		if (message.type == NXU_UI_MSG_FRAME)
-			__atomic_store_n(&presented, 1, __ATOMIC_RELEASE);
+		if (message.type == NXU_UI_MSG_FRAME) __atomic_store_n(&presented, 1, __ATOMIC_RELEASE);
 		if (message.type == NXU_UI_MSG_EVENT && message.event == NXU_UI_EVENT_KEY_DOWN && message.character &&
 			__atomic_load_n(&active, __ATOMIC_ACQUIRE))
 			__atomic_add_fetch(&leaked, 1, __ATOMIC_RELAXED);
 	}
 }
 
-int main(void)
+int
+main(void)
 {
 	nxu_ui_session_t session;
-	if (nxu_ui_control(NXU_UI_CONTROL_SESSION, (uint64_t)&session) < 0)
-		return 1;
+	if (nxu_ui_control(NXU_UI_CONTROL_SESSION, (uint64_t)&session) < 0) return 1;
 	int64_t stack = nxu_mmap(16384, 0);
-	if (stack < 0 || nxu_thread_create(probe, (void *)(uintptr_t)(stack + 16384), 0) < 0)
-		return 2;
+	if (stack < 0 || nxu_thread_create(probe, (void *)(uintptr_t)(stack + 16384), 0) < 0) return 2;
 	while (__atomic_load_n(&ready, __ATOMIC_ACQUIRE) == 0)
 		nxu_sleep_us(10000);
-	if (ready != 1)
-		return 3;
+	if (ready != 1) return 3;
 	for (uint32_t poll = 0; poll < 500 && !__atomic_load_n(&presented, __ATOMIC_ACQUIRE); poll++)
 		nxu_sleep_us(10000);
 
-	if (!__atomic_load_n(&presented, __ATOMIC_ACQUIRE))
-		return 10;
+	if (!__atomic_load_n(&presented, __ATOMIC_ACQUIRE)) return 10;
 
 	__atomic_store_n(&active, 1, __ATOMIC_RELEASE);
 	output("saptest: cancel phase\n");
-	if (nxu_sap_delete(keep) != -NXU_SYS_E_DENIED)
-		return 4;
+	if (nxu_sap_delete(keep) != -NXU_SYS_E_DENIED) return 4;
 	nxu_stat_t stat;
-	if (nxu_stat(keep, &stat) < 0)
-		return 5;
-	if (nxu_ui_control(NXU_UI_CONTROL_SESSION, (uint64_t)&session) < 0)
-		return 12;
+	if (nxu_stat(keep, &stat) < 0) return 5;
+	if (nxu_ui_control(NXU_UI_CONTROL_SESSION, (uint64_t)&session) < 0) return 12;
 
 	/* After a desktop restart the same app connection is adopted again. */
 	__atomic_store_n(&presented, 0, __ATOMIC_RELEASE);
 	for (uint32_t poll = 0; poll < 1000 && !__atomic_load_n(&presented, __ATOMIC_ACQUIRE); poll++)
 		nxu_sleep_us(10000);
 
-	if (!__atomic_load_n(&presented, __ATOMIC_ACQUIRE))
-		return 13;
+	if (!__atomic_load_n(&presented, __ATOMIC_ACQUIRE)) return 13;
 
 	output("saptest: rejected-password phase\n");
-	if (nxu_unlink(keep) != -NXU_SYS_E_DENIED || nxu_stat(keep, &stat) < 0)
-		return 6;
+	if (nxu_unlink(keep) != -NXU_SYS_E_DENIED || nxu_stat(keep, &stat) < 0) return 6;
 	/* Compositor recovery may finish after the rejected-password modal. */
-	if (nxu_ui_control(NXU_UI_CONTROL_SESSION, (uint64_t)&session) < 0)
-		return 14;
+	if (nxu_ui_control(NXU_UI_CONTROL_SESSION, (uint64_t)&session) < 0) return 14;
 
 	output("saptest: authorized-delete phase\n");
-	if (nxu_unlink(remove_path) != 0 || nxu_stat(remove_path, &stat) != -NXU_SYS_E_NOT_FOUND)
-		return 7;
+	if (nxu_unlink(remove_path) != 0 || nxu_stat(remove_path, &stat) != -NXU_SYS_E_NOT_FOUND) return 7;
 	if (nxu_sap_delete("/disk/System/Library/Frameworks") >= 0 ||
 		nxu_sap_delete("/disk/System/../System/Library/Frameworks/SAPTest.framework/keep.txt") >= 0)
 		return 8;

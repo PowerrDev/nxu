@@ -9,23 +9,27 @@
 static struct proc procs[3];
 static uint32_t restart_pid;
 
-proc_t proc_kernel(void)
+proc_t
+proc_kernel(void)
 {
 	return &procs[0];
 }
 
-proc_t proc_find_ident(const proc_ident_t *ident)
+proc_t
+proc_find_ident(const proc_ident_t *ident)
 {
 	proc_t proc = proc_find(ident->pid);
 	return proc && proc->p_ident.uniqueid == ident->uniqueid && proc->p_ident.idversion == ident->idversion ? proc : 0;
 }
 
-void proc_rele(proc_t proc)
+void
+proc_rele(proc_t proc)
 {
 	(void)proc;
 }
 
-signal_send_result_t signal_send(proc_t sender, proc_id_t pid, uint32_t signal)
+signal_send_result_t
+signal_send(proc_t sender, proc_id_t pid, uint32_t signal)
 {
 	(void)sender;
 	restart_pid = pid;
@@ -33,46 +37,49 @@ signal_send_result_t signal_send(proc_t sender, proc_id_t pid, uint32_t signal)
 	return SIGNAL_SEND_OK;
 }
 
-proc_t proc_find(proc_id_t id)
+proc_t
+proc_find(proc_id_t id)
 {
 	return id > 0 && id < 3 ? &procs[id] : 0;
 }
 
-void ui_bridge_host_release(proc_t proc)
+void
+ui_bridge_host_release(proc_t proc)
 {
 	(void)proc;
 }
 
-bool proc_has_caps(proc_t p, uint32_t caps)
+bool
+proc_has_caps(proc_t p, uint32_t caps)
 {
 	return (p->caps & caps) == caps;
 }
 
 static int fail_map, fail_unmap, live;
 
-int64_t nxu_mmap(uint64_t n, uint64_t flags)
+int64_t
+nxu_mmap(uint64_t n, uint64_t flags)
 {
 	(void)flags;
-	if (fail_map)
-		return -1;
+	if (fail_map) return -1;
 	void *p = malloc(n);
-	if (!p)
-		return -1;
+	if (!p) return -1;
 	live++;
 	return (int64_t)(uintptr_t)p;
 }
 
-int64_t nxu_munmap(uint64_t a, uint64_t n)
+int64_t
+nxu_munmap(uint64_t a, uint64_t n)
 {
 	(void)n;
-	if (fail_unmap)
-		return -1;
+	if (fail_unmap) return -1;
 	free((void *)(uintptr_t)a);
 	live--;
 	return 0;
 }
 
-static nxu_gui_host_hello_t hello(void)
+static nxu_gui_host_hello_t
+hello(void)
 {
 	nxu_gui_host_hello_t r = {0};
 	r.header = (nxu_gui_host_header_t){sizeof(r), 1, 0, NXU_GUI_HOST_HELLO, 0, 0, 1};
@@ -81,7 +88,8 @@ static nxu_gui_host_hello_t hello(void)
 	return r;
 }
 
-static int call(proc_t p, nxu_gui_host_hello_t *r)
+static int
+call(proc_t p, nxu_gui_host_hello_t *r)
 {
 	nxu_gui_host_hello_reply_t out;
 	int result = display_owner_host(p, r, &out);
@@ -90,7 +98,8 @@ static int call(proc_t p, nxu_gui_host_hello_t *r)
 	return result;
 }
 
-int main(void)
+int
+main(void)
 {
 	for (int i = 1; i < 3; i++) {
 		procs[i].p_ident = (proc_ident_t){i, i, 1};

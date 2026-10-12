@@ -386,10 +386,12 @@ def main():
             ["debugfs", "-w", "-R", "rm /InstallReady", str(recovery_disk)],
             capture_output=True,
         )
-        boot(2, "incomplete installation queue discarded")
+        text = boot(2, "patchd: incomplete installation queue discarded")
+        assert "patchd: system files were not changed\n" in text
         assert read(recovery_disk, "/InstallPending") == b""
     elif args.case == "unsupported":
-        boot(2, "update preflight failed; system files were not changed")
+        text = boot(2, "patchd: update preflight failed")
+        assert "patchd: system files were not changed\n" in text
     elif args.case == "tamper":
         replacement = scratch / "tampered-manifest"
         replacement.write_text("bad manifest\n")
@@ -413,7 +415,8 @@ def main():
             ],
             capture_output=True,
         )
-        boot(2, "update preflight failed; system files were not changed")
+        text = boot(2, "patchd: update preflight failed")
+        assert "patchd: system files were not changed\n" in text
     elif args.case == "interrupted":
         boot(2, "applying patches to /disk/System/interrupted.bin", "-no-patchd")
         assert read(recovery_disk, transaction + "/State") == b"applying\n"
@@ -426,11 +429,16 @@ def main():
         marker = (
             "updated boot health confirmed"
             if args.case in ("success", "core")
-            else "patches applied; waiting"
+            else "patchd: waiting for the updated system to confirm its boot"
         )
         if args.case == "watchdog":
-            marker = "updated boot was not confirmed; restarting to roll back"
+            marker = "patchd: restarting to roll back"
         text = boot(2, marker, "" if args.case in ("success", "core") else "-no-patchd")
+        if args.case not in ("success", "core", "watchdog"):
+            assert "patchd: patches applied\n" in text
+        if args.case == "watchdog":
+            assert "patchd: updated boot was not confirmed\n" in text
+            assert "patchd: restarting to roll back\n" in text
         assert "applying patches to /disk/System/update-test.txt" in text
         assert "applying patches to /disk/Applications/UpdateTest.app/new.txt" in text
         if args.case in ("core", "core-unconfirmed"):

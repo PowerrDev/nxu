@@ -7,21 +7,23 @@
 static nxu_ipc_peer_t live = {9, 12, 44, 0, 0};
 static uint32_t destroyed;
 
-int64_t nxu_process_identity(uint32_t pid, nxu_ipc_peer_t *identity)
+int64_t
+nxu_process_identity(uint32_t pid, nxu_ipc_peer_t *identity)
 {
-	if (pid != live.pid)
-		return -NXU_SYS_E_NOT_FOUND;
+	if (pid != live.pid) return -NXU_SYS_E_NOT_FOUND;
 	*identity = live;
 	return 0;
 }
 
-bool WS_Destroy_Window(WSWindowID window)
+bool
+WS_Destroy_Window(WSWindowID window)
 {
 	destroyed = window;
 	return true;
 }
 
-int main(void)
+int
+main(void)
 {
 	g_windows[0] = (windowserver_window_t){live, 101, 7};
 	assert(windowserver_find(101, &live) == &g_windows[0]);

@@ -12,31 +12,35 @@ static uint32_t released;
 static bool queued;
 static bool alive = true;
 
-int64_t nxu_ipc_port_allocate(void)
+int64_t
+nxu_ipc_port_allocate(void)
 {
 	return 1;
 }
 
-int64_t nxu_ipc_register_bootstrap(uint32_t port)
+int64_t
+nxu_ipc_register_bootstrap(uint32_t port)
 {
 	return port == 1 ? 0 : -1;
 }
 
-int64_t nxu_ipc_port_deallocate(uint32_t port)
+int64_t
+nxu_ipc_port_deallocate(uint32_t port)
 {
 	released = port;
 	return 0;
 }
 
-int64_t nxu_process_identity(uint32_t pid, nxu_ipc_peer_t *identity)
+int64_t
+nxu_process_identity(uint32_t pid, nxu_ipc_peer_t *identity)
 {
-	if (!alive || pid != live.pid)
-		return -NXU_SYS_E_NOT_FOUND;
+	if (!alive || pid != live.pid) return -NXU_SYS_E_NOT_FOUND;
 	*identity = live;
 	return 0;
 }
 
-int64_t nxu_ipc_send(uint32_t port, const void *buffer, uint64_t length, uint32_t transfer)
+int64_t
+nxu_ipc_send(uint32_t port, const void *buffer, uint64_t length, uint32_t transfer)
 {
 	(void)port;
 	(void)buffer;
@@ -45,13 +49,13 @@ int64_t nxu_ipc_send(uint32_t port, const void *buffer, uint64_t length, uint32_
 	return 0;
 }
 
-int64_t nxu_ipc_receive_peer(uint32_t port, void *buffer, uint64_t length, uint32_t *transfer, uint32_t *type,
-							 nxu_ipc_peer_t *peer)
+int64_t
+nxu_ipc_receive_peer(uint32_t port, void *buffer, uint64_t length, uint32_t *transfer, uint32_t *type,
+					 nxu_ipc_peer_t *peer)
 {
 	(void)port;
 	assert(length == sizeof(pending));
-	if (!queued)
-		return -NXU_SYS_E_AGAIN;
+	if (!queued) return -NXU_SYS_E_AGAIN;
 	queued = false;
 	memcpy(buffer, &pending, sizeof(pending));
 	*transfer = transferred;
@@ -60,7 +64,8 @@ int64_t nxu_ipc_receive_peer(uint32_t port, void *buffer, uint64_t length, uint3
 	return sizeof(pending);
 }
 
-static void registration(bootd_registry_t *registry, nxu_ipc_peer_t peer, uint32_t port)
+static void
+registration(bootd_registry_t *registry, nxu_ipc_peer_t peer, uint32_t port)
 {
 	pending = (nxu_bootstrap_request_t){.opcode = NXU_BOOTSTRAP_OP_REGISTER};
 	memcpy(pending.label, WS_BOOTSTRAP_LABEL, sizeof(WS_BOOTSTRAP_LABEL));
@@ -71,7 +76,8 @@ static void registration(bootd_registry_t *registry, nxu_ipc_peer_t peer, uint32
 	bootd_registry_poll(registry);
 }
 
-int main(void)
+int
+main(void)
 {
 	bootd_registry_t registry;
 	assert(bootd_registry_init(&registry));
