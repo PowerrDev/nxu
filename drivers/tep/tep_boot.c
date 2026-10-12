@@ -37,13 +37,15 @@ static volatile tep_boot_check_t g_check = TEP_BOOT_CHECK_PENDING;
 static volatile uint32_t g_detail;
 static bool g_started;
 
-static void tep_boot_finish(tep_boot_check_t check, uint32_t detail)
+static void
+tep_boot_finish(tep_boot_check_t check, uint32_t detail)
 {
 	g_detail = detail;
 	__atomic_store_n(&g_check, check, __ATOMIC_RELEASE);
 }
 
-static bool tep_boot_exists(const char *path)
+static bool
+tep_boot_exists(const char *path)
 {
 	vnode_t vnode;
 
@@ -53,7 +55,8 @@ static bool tep_boot_exists(const char *path)
 	return true;
 }
 
-bool tep_boot_read_manifest(const char *path, uint8_t manifest[TEP_BOOT_MANIFEST_SIZE])
+bool
+tep_boot_read_manifest(const char *path, uint8_t manifest[TEP_BOOT_MANIFEST_SIZE])
 {
 	filedesc_t filedesc = &proc_kernel()->p_fd;
 	vnode_t vnode;
@@ -84,7 +87,8 @@ bool tep_boot_read_manifest(const char *path, uint8_t manifest[TEP_BOOT_MANIFEST
 }
 
 /* Read in chunks, so the image never has to fit in memory. */
-bool tep_boot_measure(const char *path, uint8_t digest[SHA256_DIGEST_SIZE], uint64_t *size)
+bool
+tep_boot_measure(const char *path, uint8_t digest[SHA256_DIGEST_SIZE], uint64_t *size)
 {
 	filedesc_t filedesc = &proc_kernel()->p_fd;
 	vnode_t vnode;
@@ -133,19 +137,20 @@ bool tep_boot_measure(const char *path, uint8_t digest[SHA256_DIGEST_SIZE], uint
 }
 
 /* libk's SHA-256 against the FIPS 180-4 "abc" example, before trusting a measurement to it. */
-static bool tep_boot_sha256_selftest(void)
+static bool
+tep_boot_sha256_selftest(void)
 {
 	static const uint8_t expected[SHA256_DIGEST_SIZE] = {
 		0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23,
-		0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad
-	};
+		0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad};
 	uint8_t digest[SHA256_DIGEST_SIZE];
 
 	sha256("abc", 3U, digest);
 	return memcmp(digest, expected, sizeof(expected)) == 0;
 }
 
-static void tep_boot_hex(const uint8_t *bytes, uint32_t size, char *out)
+static void
+tep_boot_hex(const uint8_t *bytes, uint32_t size, char *out)
 {
 	static const char digits[] = "0123456789abcdef";
 
@@ -157,9 +162,10 @@ static void tep_boot_hex(const uint8_t *bytes, uint32_t size, char *out)
 }
 
 /* Whether the manifest's (still unverified) name field is TEP_BOOT_IMAGE_NAME, NUL padded. */
-static bool tep_boot_names_bootd(const uint8_t manifest[TEP_BOOT_MANIFEST_SIZE])
+static bool
+tep_boot_names_bootd(const uint8_t manifest[TEP_BOOT_MANIFEST_SIZE])
 {
-	uint8_t name[16] = { 0 };
+	uint8_t name[16] = {0};
 
 	memcpy(name, TEP_BOOT_IMAGE_NAME, sizeof(TEP_BOOT_IMAGE_NAME) - 1U);
 	return memcmp(manifest + 24U, name, sizeof(name)) == 0;
@@ -172,7 +178,8 @@ static bool tep_boot_names_bootd(const uint8_t manifest[TEP_BOOT_MANIFEST_SIZE])
  * and asks once. Only "tepOS did not answer" is retried; a verdict is final
  * for this boot. Nothing here delays or stops bootd.
  */
-static void tep_boot_check_thread(void *parameter)
+static void
+tep_boot_check_thread(void *parameter)
 {
 	(void)parameter;
 
@@ -249,7 +256,8 @@ static void tep_boot_check_thread(void *parameter)
 			tep_boot_finish(TEP_BOOT_CHECK_REFUSED, detail);
 			return;
 		case TEP_ERR_ROLLBACK:
-			TEP_BOOT_LOG("bootd NOT verified by tepOS (not enforced): rollback, minimum version %u\n", (unsigned)detail);
+			TEP_BOOT_LOG("bootd NOT verified by tepOS (not enforced): rollback, minimum version %u\n",
+						 (unsigned)detail);
 			tep_boot_finish(TEP_BOOT_CHECK_REFUSED, detail);
 			return;
 		case TEP_ERR_UNAVAILABLE:
@@ -266,13 +274,15 @@ static void tep_boot_check_thread(void *parameter)
 	}
 }
 
-bool tep_boot_check_start(void)
+bool
+tep_boot_check_start(void)
 {
 	thread_t thread;
 
 	if (g_started) return true;
 
-	if (!kernel_thread_create(proc_task(proc_kernel()), tep_boot_check_thread, 0, &thread) || !sched_thread_start(thread)) {
+	if (!kernel_thread_create(proc_task(proc_kernel()), tep_boot_check_thread, 0, &thread) ||
+		!sched_thread_start(thread)) {
 		TEP_BOOT_LOG("check thread could not be started: bootd will not be checked\n");
 		return false;
 	}
@@ -280,7 +290,8 @@ bool tep_boot_check_start(void)
 	return true;
 }
 
-tep_boot_check_t tep_boot_check_state(uint32_t *detail)
+tep_boot_check_t
+tep_boot_check_state(uint32_t *detail)
 {
 	tep_boot_check_t check = __atomic_load_n(&g_check, __ATOMIC_ACQUIRE);
 
@@ -288,14 +299,20 @@ tep_boot_check_t tep_boot_check_state(uint32_t *detail)
 	return check;
 }
 
-const char *tep_boot_check_name(tep_boot_check_t check)
+const char *
+tep_boot_check_name(tep_boot_check_t check)
 {
 	switch (check) {
-	case TEP_BOOT_CHECK_PENDING: return "pending";
-	case TEP_BOOT_CHECK_VERIFIED: return "verified";
-	case TEP_BOOT_CHECK_REFUSED: return "refused";
-	case TEP_BOOT_CHECK_NO_MANIFEST: return "no manifest";
-	case TEP_BOOT_CHECK_FAILED: return "failed";
+	case TEP_BOOT_CHECK_PENDING:
+		return "pending";
+	case TEP_BOOT_CHECK_VERIFIED:
+		return "verified";
+	case TEP_BOOT_CHECK_REFUSED:
+		return "refused";
+	case TEP_BOOT_CHECK_NO_MANIFEST:
+		return "no manifest";
+	case TEP_BOOT_CHECK_FAILED:
+		return "failed";
 	}
 	return "unknown";
 }

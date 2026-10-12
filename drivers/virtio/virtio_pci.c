@@ -68,17 +68,20 @@
 static bool g_virtio_pci_irq_mode;
 static uint32_t g_virtio_pci_irq_bound;
 
-void virtio_pci_set_irq_mode(bool enabled)
+void
+virtio_pci_set_irq_mode(bool enabled)
 {
 	g_virtio_pci_irq_mode = enabled;
 }
 
-bool virtio_pci_irq_mode(void)
+bool
+virtio_pci_irq_mode(void)
 {
 	return g_virtio_pci_irq_mode;
 }
 
-uint32_t virtio_pci_irq_bound_count(void)
+uint32_t
+virtio_pci_irq_bound_count(void)
 {
 	return g_virtio_pci_irq_bound;
 }
@@ -102,7 +105,8 @@ extern bool pic_set_level_triggered(uint32_t irq, bool level) __attribute__((wea
  * ELCR as PCI requires, and then unmasked. A line the PIC cannot serve or a
  * refused registration is not fatal because the drivers can always poll.
  */
-static bool virtio_pci_irq_attach(virtio_device_t *device, irq_handler_t handler, void *context)
+static bool
+virtio_pci_irq_attach(virtio_device_t *device, irq_handler_t handler, void *context)
 {
 	if (!g_virtio_pci_irq_mode) return true;
 
@@ -132,12 +136,14 @@ static bool virtio_pci_irq_attach(virtio_device_t *device, irq_handler_t handler
 
 /* ---- legacy transport ------------------------------------------------- */
 
-static uint16_t virtio_legacy_port(const virtio_device_t *device, uint16_t offset)
+static uint16_t
+virtio_legacy_port(const virtio_device_t *device, uint16_t offset)
 {
 	return (uint16_t)(device->pci.io_base + offset);
 }
 
-static bool virtio_legacy_reset(virtio_device_t *device)
+static bool
+virtio_legacy_reset(virtio_device_t *device)
 {
 	outb(virtio_legacy_port(device, VIRTIO_LEGACY_STATUS), 0U);
 	ml_dma_mb();
@@ -154,7 +160,8 @@ static bool virtio_legacy_reset(virtio_device_t *device)
 	return true;
 }
 
-static void virtio_legacy_fail(virtio_device_t *device)
+static void
+virtio_legacy_fail(virtio_device_t *device)
 {
 	uint16_t port = virtio_legacy_port(device, VIRTIO_LEGACY_STATUS);
 
@@ -167,7 +174,8 @@ static void virtio_legacy_fail(virtio_device_t *device)
  * accept the class driver's subset. The device has no FEATURES_OK handshake,
  * so the negotiation is complete once the driver bits are written.
  */
-static bool virtio_legacy_begin(virtio_device_t *device, uint64_t accepted_device_features)
+static bool
+virtio_legacy_begin(virtio_device_t *device, uint64_t accepted_device_features)
 {
 	if (device->device_id == VIRTIO_DEVICE_ID_NONE || device->initialized) return false;
 	if (!virtio_legacy_reset(device)) return false;
@@ -194,7 +202,8 @@ static bool virtio_legacy_begin(virtio_device_t *device, uint64_t accepted_devic
  * The legacy queue size is read-only: the device says how many descriptors the
  * ring has and the driver lays the ring out for exactly that many.
  */
-static bool virtio_legacy_queue_init(virtio_device_t *device, uint16_t queue_index, uint16_t size, virtqueue_t *queue)
+static bool
+virtio_legacy_queue_init(virtio_device_t *device, uint16_t queue_index, uint16_t size, virtqueue_t *queue)
 {
 	(void)size;
 
@@ -210,7 +219,8 @@ static bool virtio_legacy_queue_init(virtio_device_t *device, uint16_t queue_ind
 	return virtqueue_init_legacy(queue, device_size);
 }
 
-static bool virtio_legacy_setup_queue(virtio_device_t *device, uint16_t queue_index, virtqueue_t *queue)
+static bool
+virtio_legacy_setup_queue(virtio_device_t *device, uint16_t queue_index, virtqueue_t *queue)
 {
 	if (!device->initialized || !queue->initialized) return false;
 
@@ -229,7 +239,8 @@ static bool virtio_legacy_setup_queue(virtio_device_t *device, uint16_t queue_in
 	return inl(virtio_legacy_port(device, VIRTIO_LEGACY_QUEUE_PFN)) == (uint32_t)frame;
 }
 
-static bool virtio_legacy_finish(virtio_device_t *device)
+static bool
+virtio_legacy_finish(virtio_device_t *device)
 {
 	if (!device->initialized || device->driver_ok) return false;
 
@@ -247,7 +258,8 @@ static bool virtio_legacy_finish(virtio_device_t *device)
 	return true;
 }
 
-static void virtio_legacy_notify(virtio_device_t *device, uint16_t queue_index)
+static void
+virtio_legacy_notify(virtio_device_t *device, uint16_t queue_index)
 {
 	if (!device->driver_ok) return;
 
@@ -256,27 +268,31 @@ static void virtio_legacy_notify(virtio_device_t *device, uint16_t queue_index)
 }
 
 /* Reading the ISR byte acknowledges it, so it is read exactly once per interrupt. */
-static uint32_t virtio_legacy_interrupt_status(const virtio_device_t *device)
+static uint32_t
+virtio_legacy_interrupt_status(const virtio_device_t *device)
 {
 	if (!device->initialized) return 0U;
 
 	return inb(virtio_legacy_port(device, VIRTIO_LEGACY_ISR));
 }
 
-static void virtio_legacy_interrupt_ack(virtio_device_t *device, uint32_t status)
+static void
+virtio_legacy_interrupt_ack(virtio_device_t *device, uint32_t status)
 {
 	(void)device;
 	(void)status;
 }
 
-static uint8_t virtio_legacy_config_read8(const virtio_device_t *device, uint32_t offset)
+static uint8_t
+virtio_legacy_config_read8(const virtio_device_t *device, uint32_t offset)
 {
 	if (!device->initialized) return 0U;
 
 	return inb(virtio_legacy_port(device, (uint16_t)(VIRTIO_LEGACY_CONFIG + offset)));
 }
 
-static uint32_t virtio_legacy_config_read32(const virtio_device_t *device, uint32_t offset)
+static uint32_t
+virtio_legacy_config_read32(const virtio_device_t *device, uint32_t offset)
 {
 	uint32_t value = 0U;
 
@@ -287,7 +303,8 @@ static uint32_t virtio_legacy_config_read32(const virtio_device_t *device, uint3
 	return value;
 }
 
-static uint64_t virtio_legacy_config_read64(const virtio_device_t *device, uint32_t offset)
+static uint64_t
+virtio_legacy_config_read64(const virtio_device_t *device, uint32_t offset)
 {
 	uint64_t value = 0ULL;
 
@@ -298,7 +315,8 @@ static uint64_t virtio_legacy_config_read64(const virtio_device_t *device, uint3
 	return value;
 }
 
-static void virtio_legacy_config_write8(virtio_device_t *device, uint32_t offset, uint8_t value)
+static void
+virtio_legacy_config_write8(virtio_device_t *device, uint32_t offset, uint8_t value)
 {
 	if (!device->initialized) return;
 
@@ -306,63 +324,69 @@ static void virtio_legacy_config_write8(virtio_device_t *device, uint32_t offset
 	ml_dma_mb();
 }
 
-const virtio_transport_ops_t virtio_pci_legacy_ops = {
-	.name = "virtio-pci-legacy",
-	.begin = virtio_legacy_begin,
-	.queue_init = virtio_legacy_queue_init,
-	.setup_queue = virtio_legacy_setup_queue,
-	.finish = virtio_legacy_finish,
-	.reset = virtio_legacy_reset,
-	.fail = virtio_legacy_fail,
-	.notify = virtio_legacy_notify,
-	.interrupt_status = virtio_legacy_interrupt_status,
-	.interrupt_ack = virtio_legacy_interrupt_ack,
-	.irq_attach = virtio_pci_irq_attach,
-	.config_read8 = virtio_legacy_config_read8,
-	.config_read32 = virtio_legacy_config_read32,
-	.config_read64 = virtio_legacy_config_read64,
-	.config_write8 = virtio_legacy_config_write8
-};
+const virtio_transport_ops_t virtio_pci_legacy_ops = {.name = "virtio-pci-legacy",
+													  .begin = virtio_legacy_begin,
+													  .queue_init = virtio_legacy_queue_init,
+													  .setup_queue = virtio_legacy_setup_queue,
+													  .finish = virtio_legacy_finish,
+													  .reset = virtio_legacy_reset,
+													  .fail = virtio_legacy_fail,
+													  .notify = virtio_legacy_notify,
+													  .interrupt_status = virtio_legacy_interrupt_status,
+													  .interrupt_ack = virtio_legacy_interrupt_ack,
+													  .irq_attach = virtio_pci_irq_attach,
+													  .config_read8 = virtio_legacy_config_read8,
+													  .config_read32 = virtio_legacy_config_read32,
+													  .config_read64 = virtio_legacy_config_read64,
+													  .config_write8 = virtio_legacy_config_write8};
 
 /* ---- modern transport ------------------------------------------------- */
 
-static volatile uint8_t *virtio_common(const virtio_device_t *device, uint32_t offset)
+static volatile uint8_t *
+virtio_common(const virtio_device_t *device, uint32_t offset)
 {
 	return device->pci.common + offset;
 }
 
-static uint32_t virtio_modern_read32(const virtio_device_t *device, uint32_t offset)
+static uint32_t
+virtio_modern_read32(const virtio_device_t *device, uint32_t offset)
 {
 	return *(volatile uint32_t *)virtio_common(device, offset);
 }
 
-static void virtio_modern_write32(virtio_device_t *device, uint32_t offset, uint32_t value)
+static void
+virtio_modern_write32(virtio_device_t *device, uint32_t offset, uint32_t value)
 {
 	*(volatile uint32_t *)virtio_common(device, offset) = value;
 }
 
-static uint16_t virtio_modern_read16(const virtio_device_t *device, uint32_t offset)
+static uint16_t
+virtio_modern_read16(const virtio_device_t *device, uint32_t offset)
 {
 	return *(volatile uint16_t *)virtio_common(device, offset);
 }
 
-static void virtio_modern_write16(virtio_device_t *device, uint32_t offset, uint16_t value)
+static void
+virtio_modern_write16(virtio_device_t *device, uint32_t offset, uint16_t value)
 {
 	*(volatile uint16_t *)virtio_common(device, offset) = value;
 }
 
-static uint8_t virtio_modern_status(const virtio_device_t *device)
+static uint8_t
+virtio_modern_status(const virtio_device_t *device)
 {
 	return *virtio_common(device, VIRTIO_COMMON_STATUS);
 }
 
-static void virtio_modern_set_status(virtio_device_t *device, uint8_t status)
+static void
+virtio_modern_set_status(virtio_device_t *device, uint8_t status)
 {
 	*virtio_common(device, VIRTIO_COMMON_STATUS) = status;
 	ml_dma_mb();
 }
 
-static bool virtio_modern_reset(virtio_device_t *device)
+static bool
+virtio_modern_reset(virtio_device_t *device)
 {
 	virtio_modern_set_status(device, 0U);
 
@@ -378,12 +402,14 @@ static bool virtio_modern_reset(virtio_device_t *device)
 	return true;
 }
 
-static void virtio_modern_fail(virtio_device_t *device)
+static void
+virtio_modern_fail(virtio_device_t *device)
 {
 	virtio_modern_set_status(device, (uint8_t)(virtio_modern_status(device) | VIRTIO_STATUS_FAILED));
 }
 
-static uint64_t virtio_modern_read_features(virtio_device_t *device)
+static uint64_t
+virtio_modern_read_features(virtio_device_t *device)
 {
 	virtio_modern_write32(device, VIRTIO_COMMON_DEVICE_FEATURE_SELECT, 0U);
 	ml_dma_mb();
@@ -398,7 +424,8 @@ static uint64_t virtio_modern_read_features(virtio_device_t *device)
 	return low | (high << 32U);
 }
 
-static bool virtio_modern_begin(virtio_device_t *device, uint64_t accepted_device_features)
+static bool
+virtio_modern_begin(virtio_device_t *device, uint64_t accepted_device_features)
 {
 	if (device->device_id == VIRTIO_DEVICE_ID_NONE || device->initialized) return false;
 	if (!virtio_modern_reset(device)) return false;
@@ -418,7 +445,8 @@ static bool virtio_modern_begin(virtio_device_t *device, uint64_t accepted_devic
 		return false;
 	}
 
-	device->driver_features = (device->device_features & (accepted_device_features | version_feature)) | version_feature;
+	device->driver_features =
+		(device->device_features & (accepted_device_features | version_feature)) | version_feature;
 
 	virtio_modern_write32(device, VIRTIO_COMMON_DRIVER_FEATURE_SELECT, 0U);
 	virtio_modern_write32(device, VIRTIO_COMMON_DRIVER_FEATURE, (uint32_t)device->driver_features);
@@ -438,7 +466,8 @@ static bool virtio_modern_begin(virtio_device_t *device, uint64_t accepted_devic
 }
 
 /* Modern devices let the driver pick any power of two up to the device maximum. */
-static bool virtio_modern_queue_init(virtio_device_t *device, uint16_t queue_index, uint16_t size, virtqueue_t *queue)
+static bool
+virtio_modern_queue_init(virtio_device_t *device, uint16_t queue_index, uint16_t size, virtqueue_t *queue)
 {
 	if (!device->initialized) return false;
 
@@ -452,13 +481,15 @@ static bool virtio_modern_queue_init(virtio_device_t *device, uint16_t queue_ind
 	return virtqueue_init(queue, size);
 }
 
-static void virtio_modern_write64(virtio_device_t *device, uint32_t offset, uint64_t value)
+static void
+virtio_modern_write64(virtio_device_t *device, uint32_t offset, uint64_t value)
 {
 	virtio_modern_write32(device, offset, (uint32_t)value);
 	virtio_modern_write32(device, offset + 4U, (uint32_t)(value >> 32U));
 }
 
-static bool virtio_modern_setup_queue(virtio_device_t *device, uint16_t queue_index, virtqueue_t *queue)
+static bool
+virtio_modern_setup_queue(virtio_device_t *device, uint16_t queue_index, virtqueue_t *queue)
 {
 	if (!device->initialized || !queue->initialized || queue_index >= VIRTIO_PCI_MAX_QUEUES) return false;
 
@@ -484,7 +515,8 @@ static bool virtio_modern_setup_queue(virtio_device_t *device, uint16_t queue_in
 	return virtio_modern_read16(device, VIRTIO_COMMON_QUEUE_ENABLE) == 1U;
 }
 
-static bool virtio_modern_finish(virtio_device_t *device)
+static bool
+virtio_modern_finish(virtio_device_t *device)
 {
 	if (!device->initialized || device->driver_ok) return false;
 
@@ -499,7 +531,8 @@ static bool virtio_modern_finish(virtio_device_t *device)
 	return true;
 }
 
-static void virtio_modern_notify(virtio_device_t *device, uint16_t queue_index)
+static void
+virtio_modern_notify(virtio_device_t *device, uint16_t queue_index)
 {
 	if (!device->driver_ok || queue_index >= VIRTIO_PCI_MAX_QUEUES) return;
 
@@ -509,27 +542,31 @@ static void virtio_modern_notify(virtio_device_t *device, uint16_t queue_index)
 	*(volatile uint16_t *)(device->pci.notify + offset) = queue_index;
 }
 
-static uint32_t virtio_modern_interrupt_status(const virtio_device_t *device)
+static uint32_t
+virtio_modern_interrupt_status(const virtio_device_t *device)
 {
 	if (!device->initialized) return 0U;
 
 	return *device->pci.isr;
 }
 
-static void virtio_modern_interrupt_ack(virtio_device_t *device, uint32_t status)
+static void
+virtio_modern_interrupt_ack(virtio_device_t *device, uint32_t status)
 {
 	(void)device;
 	(void)status;
 }
 
-static uint8_t virtio_modern_config_read8(const virtio_device_t *device, uint32_t offset)
+static uint8_t
+virtio_modern_config_read8(const virtio_device_t *device, uint32_t offset)
 {
 	if (!device->initialized || device->pci.device_config == 0) return 0U;
 
 	return device->pci.device_config[offset];
 }
 
-static uint32_t virtio_modern_config_read32(const virtio_device_t *device, uint32_t offset)
+static uint32_t
+virtio_modern_config_read32(const virtio_device_t *device, uint32_t offset)
 {
 	if (!device->initialized) return 0U;
 
@@ -547,7 +584,8 @@ static uint32_t virtio_modern_config_read32(const virtio_device_t *device, uint3
 	}
 }
 
-static uint64_t virtio_modern_config_read64(const virtio_device_t *device, uint32_t offset)
+static uint64_t
+virtio_modern_config_read64(const virtio_device_t *device, uint32_t offset)
 {
 	if (!device->initialized) return 0ULL;
 
@@ -565,7 +603,8 @@ static uint64_t virtio_modern_config_read64(const virtio_device_t *device, uint3
 	}
 }
 
-static void virtio_modern_config_write8(virtio_device_t *device, uint32_t offset, uint8_t value)
+static void
+virtio_modern_config_write8(virtio_device_t *device, uint32_t offset, uint8_t value)
 {
 	if (!device->initialized || device->pci.device_config == 0) return;
 
@@ -573,23 +612,21 @@ static void virtio_modern_config_write8(virtio_device_t *device, uint32_t offset
 	ml_dma_mb();
 }
 
-const virtio_transport_ops_t virtio_pci_modern_ops = {
-	.name = "virtio-pci-modern",
-	.begin = virtio_modern_begin,
-	.queue_init = virtio_modern_queue_init,
-	.setup_queue = virtio_modern_setup_queue,
-	.finish = virtio_modern_finish,
-	.reset = virtio_modern_reset,
-	.fail = virtio_modern_fail,
-	.notify = virtio_modern_notify,
-	.interrupt_status = virtio_modern_interrupt_status,
-	.interrupt_ack = virtio_modern_interrupt_ack,
-	.irq_attach = virtio_pci_irq_attach,
-	.config_read8 = virtio_modern_config_read8,
-	.config_read32 = virtio_modern_config_read32,
-	.config_read64 = virtio_modern_config_read64,
-	.config_write8 = virtio_modern_config_write8
-};
+const virtio_transport_ops_t virtio_pci_modern_ops = {.name = "virtio-pci-modern",
+													  .begin = virtio_modern_begin,
+													  .queue_init = virtio_modern_queue_init,
+													  .setup_queue = virtio_modern_setup_queue,
+													  .finish = virtio_modern_finish,
+													  .reset = virtio_modern_reset,
+													  .fail = virtio_modern_fail,
+													  .notify = virtio_modern_notify,
+													  .interrupt_status = virtio_modern_interrupt_status,
+													  .interrupt_ack = virtio_modern_interrupt_ack,
+													  .irq_attach = virtio_pci_irq_attach,
+													  .config_read8 = virtio_modern_config_read8,
+													  .config_read32 = virtio_modern_config_read32,
+													  .config_read64 = virtio_modern_config_read64,
+													  .config_write8 = virtio_modern_config_write8};
 
 /* ---- probing ---------------------------------------------------------- */
 
@@ -607,12 +644,13 @@ typedef struct {
  * in the modern-transport state. False when a required capability is missing
  * or its BAR cannot be mapped (see pci_map_bar).
  */
-static bool virtio_modern_map(const pci_device_t *pci, virtio_device_t *device)
+static bool
+virtio_modern_map(const pci_device_t *pci, virtio_device_t *device)
 {
-	virtio_pci_window_t common = { 0 };
-	virtio_pci_window_t notify = { 0 };
-	virtio_pci_window_t isr = { 0 };
-	virtio_pci_window_t config = { 0 };
+	virtio_pci_window_t common = {0};
+	virtio_pci_window_t notify = {0};
+	virtio_pci_window_t isr = {0};
+	virtio_pci_window_t config = {0};
 	uint32_t multiplier = 0U;
 
 	uint8_t id;
@@ -627,15 +665,17 @@ static bool virtio_modern_map(const pci_device_t *pci, virtio_device_t *device)
 			.present = true,
 			.bar = pci_config_read8(pci->bus, pci->slot, pci->function, (uint8_t)(offset + 4U)),
 			.offset = pci_config_read32(pci->bus, pci->slot, pci->function, (uint8_t)(offset + 8U)),
-			.length = pci_config_read32(pci->bus, pci->slot, pci->function, (uint8_t)(offset + 12U))
-		};
+			.length = pci_config_read32(pci->bus, pci->slot, pci->function, (uint8_t)(offset + 12U))};
 
-		if (type == VIRTIO_PCI_CAP_COMMON && !common.present) common = window;
+		if (type == VIRTIO_PCI_CAP_COMMON && !common.present)
+			common = window;
 		else if (type == VIRTIO_PCI_CAP_NOTIFY && !notify.present) {
 			notify = window;
 			multiplier = pci_config_read32(pci->bus, pci->slot, pci->function, (uint8_t)(offset + 16U));
-		} else if (type == VIRTIO_PCI_CAP_ISR && !isr.present) isr = window;
-		else if (type == VIRTIO_PCI_CAP_DEVICE && !config.present) config = window;
+		} else if (type == VIRTIO_PCI_CAP_ISR && !isr.present)
+			isr = window;
+		else if (type == VIRTIO_PCI_CAP_DEVICE && !config.present)
+			config = window;
 	}
 
 	if (!common.present || !notify.present || !isr.present || common.length < VIRTIO_COMMON_LENGTH) return false;
@@ -654,7 +694,8 @@ static bool virtio_modern_map(const pci_device_t *pci, virtio_device_t *device)
 	return true;
 }
 
-bool virtio_pci_probe(const pci_device_t *pci, virtio_device_t *device)
+bool
+virtio_pci_probe(const pci_device_t *pci, virtio_device_t *device)
 {
 	if (pci == 0 || device == 0 || pci->vendor_id != VIRTIO_PCI_VENDOR_ID) return false;
 
@@ -671,7 +712,7 @@ bool virtio_pci_probe(const pci_device_t *pci, virtio_device_t *device)
 		return false;
 	}
 
-	virtio_device_t probe = { 0 };
+	virtio_device_t probe = {0};
 
 	probe.device_id = type;
 	probe.vendor_id = pci->vendor_id;
@@ -686,7 +727,8 @@ bool virtio_pci_probe(const pci_device_t *pci, virtio_device_t *device)
 		const pci_bar_t *bar = &pci->bars[0];
 
 		if (!bar->valid || !bar->io || bar->base == 0ULL || bar->base > 0xFFFFULL) {
-			kprintf("virtio_pci_probe: legacy device %x:%x has no I/O BAR0\n", (unsigned int)pci->vendor_id, (unsigned int)pci->device_id);
+			kprintf("virtio_pci_probe: legacy device %x:%x has no I/O BAR0\n", (unsigned int)pci->vendor_id,
+					(unsigned int)pci->device_id);
 			return false;
 		}
 
@@ -712,7 +754,8 @@ bool virtio_pci_probe(const pci_device_t *pci, virtio_device_t *device)
 	return true;
 }
 
-bool virtio_pci_scan(const platform_t *platform, const virtio_probe_policy_t *policy)
+bool
+virtio_pci_scan(const platform_t *platform, const virtio_probe_policy_t *policy)
 {
 	(void)platform;
 
@@ -724,12 +767,8 @@ bool virtio_pci_scan(const platform_t *platform, const virtio_probe_policy_t *po
 
 		kputs("virtio_pci_scan: ");
 		pci_print_location(pci);
-		kprintf(
-			" device ID %u via %s, irq line %u\n",
-			device.device_id,
-			device.ops->name,
-			(unsigned int)pci->interrupt_line
-		);
+		kprintf(" device ID %u via %s, irq line %u\n", device.device_id, device.ops->name,
+				(unsigned int)pci->interrupt_line);
 
 		if (!virtio_bind_device(&device, policy)) return false;
 	}
@@ -737,7 +776,8 @@ bool virtio_pci_scan(const platform_t *platform, const virtio_probe_policy_t *po
 	return true;
 }
 
-bool virtio_pci_register(void)
+bool
+virtio_pci_register(void)
 {
 	return virtio_bus_register(virtio_pci_scan);
 }

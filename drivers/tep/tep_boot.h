@@ -29,11 +29,11 @@
 #define TEP_BOOT_IMAGE_NAME "bootd"
 
 typedef enum {
-	TEP_BOOT_CHECK_PENDING = 0,  /* not checked yet (tepOS or the disk not there yet) */
-	TEP_BOOT_CHECK_VERIFIED,     /* tepOS accepted the manifest for the measured image */
-	TEP_BOOT_CHECK_REFUSED,      /* tepOS refused it: denied or rollback */
-	TEP_BOOT_CHECK_NO_MANIFEST,  /* the disk has no manifest for bootd */
-	TEP_BOOT_CHECK_FAILED        /* could not measure, or tepOS could not answer */
+	TEP_BOOT_CHECK_PENDING = 0, /* not checked yet (tepOS or the disk not there yet) */
+	TEP_BOOT_CHECK_VERIFIED,	/* tepOS accepted the manifest for the measured image */
+	TEP_BOOT_CHECK_REFUSED,		/* tepOS refused it: denied or rollback */
+	TEP_BOOT_CHECK_NO_MANIFEST, /* the disk has no manifest for bootd */
+	TEP_BOOT_CHECK_FAILED		/* could not measure, or tepOS could not answer */
 } tep_boot_check_t;
 
 /* Starts the measuring thread (once). False when it could not be started. */

@@ -27,10 +27,7 @@ typedef struct {
  * frames (VirtIO-PCI on x86), builds a virtio_device_t for each and hands it to
  * virtio_bind_device(). Returns false to stop the scan on a fatal error.
  */
-typedef bool (*virtio_bus_scan_t)(
-	const platform_t *platform,
-	const virtio_probe_policy_t *policy
-);
+typedef bool (*virtio_bus_scan_t)(const platform_t *platform, const virtio_probe_policy_t *policy);
 
 /*
  * virtio_bus_register:
@@ -48,10 +45,7 @@ bool virtio_bus_register(virtio_bus_scan_t scan);
  * must stop); unsupported and policy-disabled devices return true, and so
  * do a GPU or sound device that fails to attach.
  */
-bool virtio_bind_device(
-	const virtio_device_t *device,
-	const virtio_probe_policy_t *policy
-);
+bool virtio_bind_device(const virtio_device_t *device, const virtio_probe_policy_t *policy);
 
 /*
  * virtio_init:
@@ -67,10 +61,7 @@ bool virtio_bind_device(
  *
  * Returns true when the complete bus scan finished.
  */
-bool virtio_init(
-	const platform_t *platform,
-	const virtio_probe_policy_t *policy
-);
+bool virtio_init(const platform_t *platform, const virtio_probe_policy_t *policy);
 
 uint32_t virtio_device_count(void);
 uint32_t virtio_input_count(void);

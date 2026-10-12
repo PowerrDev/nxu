@@ -31,9 +31,10 @@
 #define UART_LSR_DATA_READY 0x01U
 #define UART_LSR_TX_EMPTY 0x20U
 
-static bool tep_uart_16550_present(void)
+static bool
+tep_uart_16550_present(void)
 {
-	static const uint8_t patterns[2] = { 0x5AU, 0xA5U };
+	static const uint8_t patterns[2] = {0x5AU, 0xA5U};
 
 	for (uint32_t index = 0U; index < 2U; index++) {
 		outb(UART_COM2 + UART_SCRATCH, patterns[index]);
@@ -42,16 +43,17 @@ static bool tep_uart_16550_present(void)
 	return inb(UART_COM2 + UART_LINE_STATUS) != 0xFFU;
 }
 
-bool tep_uart_init(const char **where, uint64_t *address)
+bool
+tep_uart_init(const char **where, uint64_t *address)
 {
 	if (!tep_uart_16550_present()) return false;
 
 	outb(UART_COM2 + UART_INTERRUPT_ENABLE, 0x00U); /* polled */
-	outb(UART_COM2 + UART_LINE_CONTROL, 0x80U); /* DLAB on */
-	outb(UART_COM2 + UART_DATA, 0x01U); /* divisor 1: 115200 baud */
+	outb(UART_COM2 + UART_LINE_CONTROL, 0x80U);		/* DLAB on */
+	outb(UART_COM2 + UART_DATA, 0x01U);				/* divisor 1: 115200 baud */
 	outb(UART_COM2 + UART_INTERRUPT_ENABLE, 0x00U);
-	outb(UART_COM2 + UART_LINE_CONTROL, 0x03U); /* 8N1, DLAB off */
-	outb(UART_COM2 + UART_FIFO_CONTROL, 0xC7U); /* enable and clear FIFOs */
+	outb(UART_COM2 + UART_LINE_CONTROL, 0x03U);	 /* 8N1, DLAB off */
+	outb(UART_COM2 + UART_FIFO_CONTROL, 0xC7U);	 /* enable and clear FIFOs */
 	outb(UART_COM2 + UART_MODEM_CONTROL, 0x03U); /* DTR + RTS */
 
 	*where = "16550 COM2";
@@ -59,14 +61,17 @@ bool tep_uart_init(const char **where, uint64_t *address)
 	return true;
 }
 
-int tep_uart_getc(void)
+int
+tep_uart_getc(void)
 {
 	if ((inb(UART_COM2 + UART_LINE_STATUS) & UART_LSR_DATA_READY) == 0U) return -1;
 	return (int)inb(UART_COM2 + UART_DATA);
 }
 
-void tep_uart_putc(uint8_t byte)
+void
+tep_uart_putc(uint8_t byte)
 {
-	while ((inb(UART_COM2 + UART_LINE_STATUS) & UART_LSR_TX_EMPTY) == 0U) cpu_relax();
+	while ((inb(UART_COM2 + UART_LINE_STATUS) & UART_LSR_TX_EMPTY) == 0U)
+		cpu_relax();
 	outb(UART_COM2 + UART_DATA, byte);
 }

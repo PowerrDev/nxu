@@ -37,17 +37,15 @@
 #define REL_Y 1U
 #define BTN_LEFT 0x110U
 
-_Static_assert(
-	sizeof(virtio_input_event_t) == 8U,
-	"VirtIO Input event must match the eight-byte wire format"
-);
+_Static_assert(sizeof(virtio_input_event_t) == 8U, "VirtIO Input event must match the eight-byte wire format");
 
 static virtio_input_device_t g_virtio_input_devices[VIRTIO_INPUT_MAX_DEVICES];
 static uint32_t g_virtio_input_device_count;
 static uint32_t g_next_input_device_id = 1U;
 static ioreg_id_t g_virtio_input_ioreg_family;
 
-static ioreg_id_t virtio_input_ioreg_family(void)
+static ioreg_id_t
+virtio_input_ioreg_family(void)
 {
 	if (g_virtio_input_ioreg_family == 0U) {
 		g_virtio_input_ioreg_family = ioreg_add(ioreg_family_hid(), "VirtIOInputFamily", "VirtIOInputFamily");
@@ -61,11 +59,8 @@ static ioreg_id_t virtio_input_ioreg_family(void)
  * Test one capability bit returned through the VirtIO Input configuration
  * bitmap.
  */
-static bool virtio_input_bitmap_test(
-	const uint8_t *bitmap,
-	uint32_t size,
-	uint32_t bit
-)
+static bool
+virtio_input_bitmap_test(const uint8_t *bitmap, uint32_t size, uint32_t bit)
 {
 	uint32_t byte = bit / 8U;
 	if (bitmap == 0 || byte >= size) return false;
@@ -78,13 +73,8 @@ static bool virtio_input_bitmap_test(
  * Select one VirtIO Input configuration item and copy its bounded payload
  * into caller storage.
  */
-static uint32_t virtio_input_read_config(
-	virtio_device_t *transport,
-	uint8_t select,
-	uint8_t subsel,
-	uint8_t *buffer,
-	uint32_t capacity
-)
+static uint32_t
+virtio_input_read_config(virtio_device_t *transport, uint8_t select, uint8_t subsel, uint8_t *buffer, uint32_t capacity)
 {
 	virtio_device_config_write8(transport, VIRTIO_INPUT_CONFIG_SELECT, select);
 	virtio_device_config_write8(transport, VIRTIO_INPUT_CONFIG_SUBSEL, subsel);
@@ -94,10 +84,7 @@ static uint32_t virtio_input_read_config(
 	if (size > capacity) size = capacity;
 
 	for (uint32_t index = 0U; index < size; index++) {
-		buffer[index] = virtio_device_config_read8(
-			transport,
-			VIRTIO_INPUT_CONFIG_DATA + index
-		);
+		buffer[index] = virtio_device_config_read8(transport, VIRTIO_INPUT_CONFIG_DATA + index);
 	}
 
 	return size;
@@ -109,45 +96,25 @@ static uint32_t virtio_input_read_config(
  * Classify the device from advertised event capabilities without relying
  * on its transport slot or name.
  */
-static input_device_class_t virtio_input_classify(
-	virtio_device_t *transport
-)
+static input_device_class_t
+virtio_input_classify(virtio_device_t *transport)
 {
 	uint8_t bitmap[128];
 	memset(bitmap, 0, sizeof(bitmap));
 
-	uint32_t rel_size = virtio_input_read_config(
-		transport,
-		VIRTIO_INPUT_CFG_EV_BITS,
-		EV_REL,
-		bitmap,
-		sizeof(bitmap)
-	);
+	uint32_t rel_size = virtio_input_read_config(transport, VIRTIO_INPUT_CFG_EV_BITS, EV_REL, bitmap, sizeof(bitmap));
 
 	bool relative_pointer =
-		virtio_input_bitmap_test(bitmap, rel_size, REL_X) &&
-		virtio_input_bitmap_test(bitmap, rel_size, REL_Y);
+		virtio_input_bitmap_test(bitmap, rel_size, REL_X) && virtio_input_bitmap_test(bitmap, rel_size, REL_Y);
 
 	memset(bitmap, 0, sizeof(bitmap));
-	uint32_t key_size = virtio_input_read_config(
-		transport,
-		VIRTIO_INPUT_CFG_EV_BITS,
-		EV_KEY,
-		bitmap,
-		sizeof(bitmap)
-	);
+	uint32_t key_size = virtio_input_read_config(transport, VIRTIO_INPUT_CFG_EV_BITS, EV_KEY, bitmap, sizeof(bitmap));
 
-	if (
-		relative_pointer &&
-		virtio_input_bitmap_test(bitmap, key_size, BTN_LEFT)
-	) {
+	if (relative_pointer && virtio_input_bitmap_test(bitmap, key_size, BTN_LEFT)) {
 		return INPUT_DEVICE_MOUSE;
 	}
 
-	if (
-		virtio_input_bitmap_test(bitmap, key_size, KEY_A) &&
-		virtio_input_bitmap_test(bitmap, key_size, KEY_ENTER)
-	) {
+	if (virtio_input_bitmap_test(bitmap, key_size, KEY_A) && virtio_input_bitmap_test(bitmap, key_size, KEY_ENTER)) {
 		return INPUT_DEVICE_KEYBOARD;
 	}
 
@@ -159,16 +126,12 @@ static input_device_class_t virtio_input_classify(
  *
  * Read the optional device name into fixed driver-owned storage.
  */
-static void virtio_input_read_name(virtio_input_device_t *device)
+static void
+virtio_input_read_name(virtio_input_device_t *device)
 {
 	memset(device->name, 0, sizeof(device->name));
-	uint32_t size = virtio_input_read_config(
-		&device->transport,
-		VIRTIO_INPUT_CFG_ID_NAME,
-		0U,
-		(uint8_t *)device->name,
-		VIRTIO_INPUT_NAME_MAX
-	);
+	uint32_t size = virtio_input_read_config(&device->transport, VIRTIO_INPUT_CFG_ID_NAME, 0U, (uint8_t *)device->name,
+											 VIRTIO_INPUT_NAME_MAX);
 
 	device->name[size] = '\0';
 }
@@ -179,15 +142,13 @@ static void virtio_input_read_name(virtio_input_device_t *device)
  * Allocate the physically backed event-buffer array used for device
  * writes.
  */
-static bool virtio_input_allocate_buffers(virtio_input_device_t *device)
+static bool
+virtio_input_allocate_buffers(virtio_input_device_t *device)
 {
 	if (!pmm_allocate_page(&device->event_buffer_physical)) return false;
 
 	uint64_t virtual_address;
-	if (!vmm_physical_to_higher_half(
-		device->event_buffer_physical,
-		&virtual_address
-	)) {
+	if (!vmm_physical_to_higher_half(device->event_buffer_physical, &virtual_address)) {
 		(void)pmm_free_page(device->event_buffer_physical);
 		device->event_buffer_physical = 0ULL;
 		return false;
@@ -204,7 +165,8 @@ static bool virtio_input_allocate_buffers(virtio_input_device_t *device)
  * Populate eventq with one device-writable descriptor for every persistent
  * event buffer.
  */
-static bool virtio_input_populate_eventq(virtio_input_device_t *device)
+static bool
+virtio_input_populate_eventq(virtio_input_device_t *device)
 {
 	for (uint16_t buffer = 0U; buffer < VIRTIO_INPUT_EVENT_QUEUE_SIZE; buffer++) {
 		uint16_t descriptor;
@@ -212,8 +174,7 @@ static bool virtio_input_populate_eventq(virtio_input_device_t *device)
 
 		device->descriptor_to_buffer[descriptor] = buffer;
 		virtq_desc_t *desc = &device->eventq.descriptors[descriptor];
-		desc->address = device->event_buffer_physical +
-			(uint64_t)buffer * sizeof(virtio_input_event_t);
+		desc->address = device->event_buffer_physical + (uint64_t)buffer * sizeof(virtio_input_event_t);
 		desc->length = sizeof(virtio_input_event_t);
 		desc->flags = VIRTQ_DESC_F_WRITE;
 		desc->next = 0U;
@@ -230,18 +191,14 @@ static bool virtio_input_populate_eventq(virtio_input_device_t *device)
  * Normalize one completed VirtIO Input event, publish it to the raw queue,
  * and update class state.
  */
-static void virtio_input_route_event(
-	virtio_input_device_t *device,
-	const virtio_input_event_t *raw
-)
+static void
+virtio_input_route_event(virtio_input_device_t *device, const virtio_input_event_t *raw)
 {
-	input_event_t event = {
-		.device_id = device->input_device_id,
-		.device_class = device->device_class,
-		.type = raw->type,
-		.code = raw->code,
-		.value = (int32_t)raw->value
-	};
+	input_event_t event = {.device_id = device->input_device_id,
+						   .device_class = device->device_class,
+						   .type = raw->type,
+						   .code = raw->code,
+						   .value = (int32_t)raw->value};
 
 	if (device->device_class == INPUT_DEVICE_KEYBOARD) {
 		keyboard_handle_event(&event);
@@ -260,7 +217,8 @@ static void virtio_input_route_event(
  * Drain completed event descriptors and recycle each buffer immediately
  * back to eventq.
  */
-static void virtio_input_process_eventq(virtio_input_device_t *device)
+static void
+virtio_input_process_eventq(virtio_input_device_t *device)
 {
 	bool requeued = false;
 
@@ -274,10 +232,7 @@ static void virtio_input_process_eventq(virtio_input_device_t *device)
 
 		uint16_t buffer = device->descriptor_to_buffer[id];
 
-		if (
-			buffer < VIRTIO_INPUT_EVENT_QUEUE_SIZE &&
-			length >= sizeof(virtio_input_event_t)
-		) {
+		if (buffer < VIRTIO_INPUT_EVENT_QUEUE_SIZE && length >= sizeof(virtio_input_event_t)) {
 			ml_dma_rmb();
 			virtio_input_event_t raw = device->event_buffers[buffer];
 			virtio_input_route_event(device, &raw);
@@ -295,7 +250,8 @@ static void virtio_input_process_eventq(virtio_input_device_t *device)
  * Acknowledge VirtIO transport interrupt status and process completed
  * input events in IRQ context.
  */
-static void virtio_input_irq(uint32_t intid, void *context)
+static void
+virtio_input_irq(uint32_t intid, void *context)
 {
 	virtio_input_device_t *device = context;
 	if (device == 0 || !device->attached || device->transport.intid != intid) return;
@@ -322,7 +278,8 @@ static void virtio_input_irq(uint32_t intid, void *context)
  * Release partially initialized driver resources before the device becomes
  * externally visible.
  */
-static void virtio_input_cleanup(virtio_input_device_t *device)
+static void
+virtio_input_cleanup(virtio_input_device_t *device)
 {
 	if (device->eventq.initialized) (void)virtqueue_destroy(&device->eventq);
 	if (device->statusq.initialized) (void)virtqueue_destroy(&device->statusq);
@@ -340,13 +297,11 @@ static void virtio_input_cleanup(virtio_input_device_t *device)
  * Negotiate and attach one VirtIO Input device, initialize its queues,
  * classify it, and register its interrupt source.
  */
-bool virtio_input_attach(const virtio_device_t *transport)
+bool
+virtio_input_attach(const virtio_device_t *transport)
 {
-	if (
-		transport == 0 ||
-		transport->device_id != VIRTIO_DEVICE_ID_INPUT ||
-		g_virtio_input_device_count >= VIRTIO_INPUT_MAX_DEVICES
-	) {
+	if (transport == 0 || transport->device_id != VIRTIO_DEVICE_ID_INPUT ||
+		g_virtio_input_device_count >= VIRTIO_INPUT_MAX_DEVICES) {
 		return false;
 	}
 
@@ -362,24 +317,20 @@ bool virtio_input_attach(const virtio_device_t *transport)
 
 	device->input_device_id = g_next_input_device_id++;
 
-	if (!virtio_device_queue_init(&device->transport, VIRTIO_INPUT_EVENTQ, VIRTIO_INPUT_EVENT_QUEUE_SIZE, &device->eventq)) goto fail;
-	if (!virtio_device_queue_init(&device->transport, VIRTIO_INPUT_STATUSQ, VIRTIO_INPUT_STATUS_QUEUE_SIZE, &device->statusq)) goto fail;
+	if (!virtio_device_queue_init(&device->transport, VIRTIO_INPUT_EVENTQ, VIRTIO_INPUT_EVENT_QUEUE_SIZE,
+								  &device->eventq))
+		goto fail;
+	if (!virtio_device_queue_init(&device->transport, VIRTIO_INPUT_STATUSQ, VIRTIO_INPUT_STATUS_QUEUE_SIZE,
+								  &device->statusq))
+		goto fail;
 	if (!virtio_input_allocate_buffers(device)) goto fail;
 	if (!virtio_input_populate_eventq(device)) goto fail;
 
-	if (!virtio_device_setup_queue(
-		&device->transport,
-		VIRTIO_INPUT_EVENTQ,
-		&device->eventq
-	)) {
+	if (!virtio_device_setup_queue(&device->transport, VIRTIO_INPUT_EVENTQ, &device->eventq)) {
 		goto fail;
 	}
 
-	if (!virtio_device_setup_queue(
-		&device->transport,
-		VIRTIO_INPUT_STATUSQ,
-		&device->statusq
-	)) {
+	if (!virtio_device_setup_queue(&device->transport, VIRTIO_INPUT_STATUSQ, &device->statusq)) {
 		goto fail;
 	}
 
@@ -396,18 +347,17 @@ bool virtio_input_attach(const virtio_device_t *transport)
 	device->attached = true;
 	g_virtio_input_device_count++;
 
-	kprintf(
-		"VirtIOInputFamily: matched %s \"%s\" at 0x%llx\n",
-		device->device_class == INPUT_DEVICE_KEYBOARD ? "keyboard" : device->device_class == INPUT_DEVICE_MOUSE ? "mouse" : "input device",
-		device->name[0] != '\0' ? device->name : "unnamed",
-		(unsigned long long)device->transport.region.base
-	);
+	kprintf("VirtIOInputFamily: matched %s \"%s\" at 0x%llx\n",
+			device->device_class == INPUT_DEVICE_KEYBOARD ? "keyboard"
+			: device->device_class == INPUT_DEVICE_MOUSE  ? "mouse"
+														  : "input device",
+			device->name[0] != '\0' ? device->name : "unnamed", (unsigned long long)device->transport.region.base);
 
-	(void)ioreg_add(
-		virtio_input_ioreg_family(),
-		device->device_class == INPUT_DEVICE_KEYBOARD ? "Keyboard" : device->device_class == INPUT_DEVICE_MOUSE ? "Mouse" : "InputDevice",
-		"VirtIOInputDevice"
-	);
+	(void)ioreg_add(virtio_input_ioreg_family(),
+					device->device_class == INPUT_DEVICE_KEYBOARD ? "Keyboard"
+					: device->device_class == INPUT_DEVICE_MOUSE  ? "Mouse"
+																  : "InputDevice",
+					"VirtIOInputDevice");
 
 	virtio_device_notify(&device->transport, VIRTIO_INPUT_EVENTQ);
 	return true;
@@ -426,7 +376,8 @@ fail:
  * The same queue is also serviced by virtio_input_irq(), so mask local IRQs
  * while polling to keep last_used_index and descriptor recycling serialized.
  */
-void virtio_input_service(void)
+void
+virtio_input_service(void)
 {
 	uint64_t irq_state = ml_irq_save();
 
@@ -439,12 +390,14 @@ void virtio_input_service(void)
 	ml_irq_restore(irq_state);
 }
 
-uint32_t virtio_input_device_count(void)
+uint32_t
+virtio_input_device_count(void)
 {
 	return g_virtio_input_device_count;
 }
 
-const virtio_input_device_t *virtio_input_device(uint32_t index)
+const virtio_input_device_t *
+virtio_input_device(uint32_t index)
 {
 	if (index >= g_virtio_input_device_count) return 0;
 	return &g_virtio_input_devices[index];
@@ -455,17 +408,22 @@ const virtio_input_device_t *virtio_input_device(uint32_t index)
  *
  * Print the set of attached input devices and their bring-up counters.
  */
-void virtio_input_dump(void)
+void
+virtio_input_dump(void)
 {
 	for (uint32_t index = 0U; index < g_virtio_input_device_count; index++) {
 		const virtio_input_device_t *device = &g_virtio_input_devices[index];
 
 		const char *class_name = "unknown";
-		if (device->device_class == INPUT_DEVICE_KEYBOARD) class_name = "keyboard";
-		else if (device->device_class == INPUT_DEVICE_MOUSE) class_name = "mouse";
+		if (device->device_class == INPUT_DEVICE_KEYBOARD)
+			class_name = "keyboard";
+		else if (device->device_class == INPUT_DEVICE_MOUSE)
+			class_name = "mouse";
 
 		kprintf("VirtIOInputFamily: device %llu: %s\n", (unsigned long long)device->input_device_id, class_name);
-		kprintf("VirtIOInputFamily: device %llu: name %s\n", (unsigned long long)device->input_device_id, device->name[0] != '\0' ? device->name : "unnamed");
-		kverbosef("VirtIOInputFamily: device %llu: INTID %u\n", (unsigned long long)device->input_device_id, (unsigned)device->transport.intid);
+		kprintf("VirtIOInputFamily: device %llu: name %s\n", (unsigned long long)device->input_device_id,
+				device->name[0] != '\0' ? device->name : "unnamed");
+		kverbosef("VirtIOInputFamily: device %llu: INTID %u\n", (unsigned long long)device->input_device_id,
+				  (unsigned)device->transport.intid);
 	}
 }

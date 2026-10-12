@@ -12,14 +12,16 @@
 static nxu_stats_virtio_t g_virtqueue_stats;
 static nxu_spinlock_t g_virtqueue_stats_lock = NXU_SPINLOCK_INIT;
 
-static void virtqueue_count(uint64_t *counter, uint64_t amount)
+static void
+virtqueue_count(uint64_t *counter, uint64_t amount)
 {
 	uint64_t irq = nxu_spin_lock_irqsave(&g_virtqueue_stats_lock);
 	*counter += amount;
 	nxu_spin_unlock_irqrestore(&g_virtqueue_stats_lock, irq);
 }
 
-void virtqueue_statistics(nxu_stats_virtio_t *out)
+void
+virtqueue_statistics(nxu_stats_virtio_t *out)
 {
 	uint64_t irq = nxu_spin_lock_irqsave(&g_virtqueue_stats_lock);
 	*out = g_virtqueue_stats;
@@ -35,17 +37,20 @@ void virtqueue_statistics(nxu_stats_virtio_t *out)
  *
  * Round a queue metadata offset up to the required split-ring alignment.
  */
-static uint64_t virtqueue_align_up(uint64_t value, uint64_t alignment)
+static uint64_t
+virtqueue_align_up(uint64_t value, uint64_t alignment)
 {
 	return (value + alignment - 1ULL) & ~(alignment - 1ULL);
 }
 
-static inline void virtqueue_publish_barrier(void)
+static inline void
+virtqueue_publish_barrier(void)
 {
 	ml_dma_wmb();
 }
 
-static inline void virtqueue_consume_barrier(void)
+static inline void
+virtqueue_consume_barrier(void)
 {
 	ml_dma_rmb();
 }
@@ -56,15 +61,13 @@ static inline void virtqueue_consume_barrier(void)
  * Allocate one physically contiguous split-ring page and initialize
  * descriptor/free-list state.
  */
-bool virtqueue_init(virtqueue_t *queue, uint16_t size)
+bool
+virtqueue_init(virtqueue_t *queue, uint16_t size)
 {
-	if (queue == 0 || size == 0U || size > VIRTQUEUE_MAX_SIZE)
-		return false;
+	if (queue == 0 || size == 0U || size > VIRTQUEUE_MAX_SIZE) return false;
 
-	if ((size & (uint16_t)(size - 1U)) != 0U)
-		return false;
-	if (!vmm_higher_half_direct_map_enabled())
-		return false;
+	if ((size & (uint16_t)(size - 1U)) != 0U) return false;
+	if (!vmm_higher_half_direct_map_enabled()) return false;
 
 	memset(queue, 0, sizeof(*queue));
 
@@ -75,12 +78,10 @@ bool virtqueue_init(virtqueue_t *queue, uint16_t size)
 	uint64_t used_offset = virtqueue_align_up(available_offset + available_size, 4ULL);
 	uint64_t used_size = 4ULL + (uint64_t)size * sizeof(virtq_used_elem_t);
 
-	if (used_offset + used_size > VIRTQUEUE_STORAGE_SIZE)
-		return false;
+	if (used_offset + used_size > VIRTQUEUE_STORAGE_SIZE) return false;
 
 	uint64_t physical;
-	if (!pmm_allocate_page(&physical))
-		return false;
+	if (!pmm_allocate_page(&physical)) return false;
 
 	uint64_t virtual_address;
 	if (!vmm_physical_to_higher_half(physical, &virtual_address)) {
@@ -122,15 +123,13 @@ bool virtqueue_init(virtqueue_t *queue, uint16_t size)
  * queue PFN and the fixed 4096-byte QUEUE_ALIGN, so it is not free to sit right
  * behind the available ring as in the modern layout above.
  */
-bool virtqueue_init_legacy(virtqueue_t *queue, uint16_t size)
+bool
+virtqueue_init_legacy(virtqueue_t *queue, uint16_t size)
 {
-	if (queue == 0 || size == 0U || size > VIRTQUEUE_LEGACY_MAX_SIZE)
-		return false;
+	if (queue == 0 || size == 0U || size > VIRTQUEUE_LEGACY_MAX_SIZE) return false;
 
-	if ((size & (uint16_t)(size - 1U)) != 0U)
-		return false;
-	if (!vmm_higher_half_direct_map_enabled())
-		return false;
+	if ((size & (uint16_t)(size - 1U)) != 0U) return false;
+	if (!vmm_higher_half_direct_map_enabled()) return false;
 
 	uint64_t descriptors_size = (uint64_t)size * sizeof(virtq_desc_t);
 	uint64_t available_offset = descriptors_size;
@@ -143,8 +142,7 @@ bool virtqueue_init_legacy(virtqueue_t *queue, uint16_t size)
 	memset(queue, 0, sizeof(*queue));
 
 	uint64_t physical;
-	if (!pmm_allocate_contiguous_pages(pages, &physical))
-		return false;
+	if (!pmm_allocate_contiguous_pages(pages, &physical)) return false;
 
 	uint64_t virtual_address;
 	if (!vmm_physical_to_higher_half(physical, &virtual_address)) {
@@ -187,10 +185,10 @@ bool virtqueue_init_legacy(virtqueue_t *queue, uint16_t size)
  *
  * Release queue metadata after device ownership has ended.
  */
-bool virtqueue_destroy(virtqueue_t *queue)
+bool
+virtqueue_destroy(virtqueue_t *queue)
 {
-	if (queue == 0 || !queue->initialized)
-		return false;
+	if (queue == 0 || !queue->initialized) return false;
 
 	uint64_t physical = queue->storage_physical;
 	uint32_t pages = queue->storage_pages;
@@ -198,8 +196,7 @@ bool virtqueue_destroy(virtqueue_t *queue)
 	/* Removed from service even if returning its backing pages fails. */
 	virtqueue_count(&g_virtqueue_stats.live_queues, UINT64_MAX);
 
-	if (pages > 1U)
-		return pmm_free_contiguous_pages(physical, pages);
+	if (pages > 1U) return pmm_free_contiguous_pages(physical, pages);
 	return pmm_free_page(physical);
 }
 
@@ -208,10 +205,10 @@ bool virtqueue_destroy(virtqueue_t *queue)
  *
  * Remove one descriptor from the queue-local free list.
  */
-bool virtqueue_alloc_descriptor(virtqueue_t *queue, uint16_t *index)
+bool
+virtqueue_alloc_descriptor(virtqueue_t *queue, uint16_t *index)
 {
-	if (queue == 0 || index == 0 || !queue->initialized)
-		return false;
+	if (queue == 0 || index == 0 || !queue->initialized) return false;
 
 	if (queue->free_count == 0U || queue->free_head == UINT16_MAX) {
 		virtqueue_count(&g_virtqueue_stats.descriptor_exhaustions, 1ULL);
@@ -232,13 +229,12 @@ bool virtqueue_alloc_descriptor(virtqueue_t *queue, uint16_t *index)
  * Return one descriptor to the queue-local free list after device
  * ownership has ended.
  */
-bool virtqueue_free_descriptor(virtqueue_t *queue, uint16_t index)
+bool
+virtqueue_free_descriptor(virtqueue_t *queue, uint16_t index)
 {
-	if (queue == 0 || !queue->initialized || index >= queue->size || index >= VIRTQUEUE_MAX_SIZE)
-		return false;
+	if (queue == 0 || !queue->initialized || index >= queue->size || index >= VIRTQUEUE_MAX_SIZE) return false;
 
-	if (queue->free_count >= queue->size)
-		return false;
+	if (queue->free_count >= queue->size) return false;
 
 	memset(&queue->descriptors[index], 0, sizeof(queue->descriptors[index]));
 	queue->free_next[index] = queue->free_head;
@@ -253,7 +249,8 @@ bool virtqueue_free_descriptor(virtqueue_t *queue, uint16_t index)
  * Publish one descriptor head to the available ring with the required DMA
  * store ordering.
  */
-bool virtqueue_submit(virtqueue_t *queue, uint16_t head)
+bool
+virtqueue_submit(virtqueue_t *queue, uint16_t head)
 {
 	if (queue == 0 || !queue->initialized || head >= queue->size) {
 		virtqueue_count(&g_virtqueue_stats.rejected_submissions, 1ULL);
@@ -275,7 +272,8 @@ bool virtqueue_submit(virtqueue_t *queue, uint16_t head)
  * Consume the next used-ring completion after ordering device writes
  * before CPU reads.
  */
-bool virtqueue_pop_used(virtqueue_t *queue, uint32_t *id, uint32_t *length)
+bool
+virtqueue_pop_used(virtqueue_t *queue, uint32_t *id, uint32_t *length)
 {
 	if (queue == 0 || id == 0 || length == 0 || !queue->initialized) {
 		return false;
@@ -284,8 +282,7 @@ bool virtqueue_pop_used(virtqueue_t *queue, uint32_t *id, uint32_t *length)
 	uint16_t device_index = *queue->used_index;
 	virtqueue_consume_barrier();
 
-	if (queue->last_used_index == device_index)
-		return false;
+	if (queue->last_used_index == device_index) return false;
 
 	volatile virtq_used_elem_t *element = &queue->used_ring[queue->last_used_index % queue->size];
 
@@ -296,8 +293,7 @@ bool virtqueue_pop_used(virtqueue_t *queue, uint32_t *id, uint32_t *length)
 	uint64_t irq = nxu_spin_lock_irqsave(&g_virtqueue_stats_lock);
 	g_virtqueue_stats.completions++;
 	g_virtqueue_stats.used_bytes += used_length;
-	if (used_id >= queue->size || used_id >= VIRTQUEUE_MAX_SIZE)
-		g_virtqueue_stats.invalid_completions++;
+	if (used_id >= queue->size || used_id >= VIRTQUEUE_MAX_SIZE) g_virtqueue_stats.invalid_completions++;
 	nxu_spin_unlock_irqrestore(&g_virtqueue_stats_lock, irq);
 	queue->last_used_index++;
 	*id = used_id;
@@ -305,26 +301,26 @@ bool virtqueue_pop_used(virtqueue_t *queue, uint32_t *id, uint32_t *length)
 	return true;
 }
 
-uint64_t virtqueue_desc_physical(const virtqueue_t *queue)
+uint64_t
+virtqueue_desc_physical(const virtqueue_t *queue)
 {
-	if (queue == 0 || !queue->initialized)
-		return 0ULL;
+	if (queue == 0 || !queue->initialized) return 0ULL;
 	return queue->storage_physical;
 }
 
-uint64_t virtqueue_available_physical(const virtqueue_t *queue)
+uint64_t
+virtqueue_available_physical(const virtqueue_t *queue)
 {
-	if (queue == 0 || !queue->initialized)
-		return 0ULL;
+	if (queue == 0 || !queue->initialized) return 0ULL;
 
 	return queue->storage_physical +
 		   (uint64_t)((const uint8_t *)queue->available_flags - (const uint8_t *)queue->storage_virtual);
 }
 
-uint64_t virtqueue_used_physical(const virtqueue_t *queue)
+uint64_t
+virtqueue_used_physical(const virtqueue_t *queue)
 {
-	if (queue == 0 || !queue->initialized)
-		return 0ULL;
+	if (queue == 0 || !queue->initialized) return 0ULL;
 
 	return queue->storage_physical +
 		   (uint64_t)((const uint8_t *)queue->used_flags - (const uint8_t *)queue->storage_virtual);

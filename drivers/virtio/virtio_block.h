@@ -62,15 +62,11 @@ typedef struct {
  * Bind one VirtIO block device (any transport), publish requestq, discover
  * medium geometry, and register the resulting block device.
  */
-bool virtio_block_attach(
-	const virtio_device_t *transport
-);
+bool virtio_block_attach(const virtio_device_t *transport);
 
 uint32_t virtio_block_device_count(void);
 
-const virtio_block_device_t *virtio_block_device(
-	uint32_t index
-);
+const virtio_block_device_t *virtio_block_device(uint32_t index);
 
 void virtio_block_dump(void);
 

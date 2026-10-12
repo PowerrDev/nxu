@@ -15,7 +15,8 @@ static bool g_block_initialized;
  *
  * Copy a bounded driver-provided name into registry-owned device storage.
  */
-static void block_device_copy_name(char *destination, const char *source)
+static void
+block_device_copy_name(char *destination, const char *source)
 {
 	uint32_t index = 0U;
 
@@ -32,11 +33,8 @@ static void block_device_copy_name(char *destination, const char *source)
  *
  * Validate a sector range without allowing unsigned addition overflow.
  */
-static bool block_device_range_valid(
-	block_device_t device,
-	uint64_t sector,
-	uint32_t count
-)
+static bool
+block_device_range_valid(block_device_t device, uint64_t sector, uint32_t count)
 {
 	if (device == 0 || !device->registered || count == 0U) return false;
 
@@ -45,7 +43,8 @@ static bool block_device_range_valid(
 	return (uint64_t)count <= device->sector_count - sector;
 }
 
-bool block_device_init(void)
+bool
+block_device_init(void)
 {
 	if (g_block_initialized) return true;
 
@@ -59,17 +58,15 @@ bool block_device_init(void)
 	return true;
 }
 
-bool block_device_register(block_device_t device)
+bool
+block_device_register(block_device_t device)
 {
 	if (!g_block_initialized || device == 0 || device->registered) return false;
 
 	if (g_block_device_count >= BLOCK_DEVICE_MAX) return false;
 	if (device->ops == 0 || device->ops->read == 0) return false;
 
-	if (
-		device->sector_count == 0ULL ||
-		device->sector_size != BLOCK_SECTOR_SIZE
-	) {
+	if (device->sector_count == 0ULL || device->sector_size != BLOCK_SECTOR_SIZE) {
 		return false;
 	}
 
@@ -94,34 +91,30 @@ bool block_device_register(block_device_t device)
 	return true;
 }
 
-uint32_t block_device_count(void)
+uint32_t
+block_device_count(void)
 {
 	return g_block_device_count;
 }
 
-block_device_t block_device_get(uint32_t index)
+block_device_t
+block_device_get(uint32_t index)
 {
 	if (index >= g_block_device_count) return 0;
 
 	return g_block_devices[index];
 }
 
-block_device_t block_device_first(void)
+block_device_t
+block_device_first(void)
 {
 	return block_device_get(0U);
 }
 
-bool block_device_read(
-	block_device_t device,
-	uint64_t sector,
-	uint32_t count,
-	void *buffer
-)
+bool
+block_device_read(block_device_t device, uint64_t sector, uint32_t count, void *buffer)
 {
-	if (
-		buffer == 0 ||
-		!block_device_range_valid(device, sector, count)
-	) {
+	if (buffer == 0 || !block_device_range_valid(device, sector, count)) {
 		return false;
 	}
 
@@ -131,24 +124,14 @@ bool block_device_read(
 	return result;
 }
 
-bool block_device_write(
-	block_device_t device,
-	uint64_t sector,
-	uint32_t count,
-	const void *buffer
-)
+bool
+block_device_write(block_device_t device, uint64_t sector, uint32_t count, const void *buffer)
 {
-	if (
-		buffer == 0 ||
-		!block_device_range_valid(device, sector, count)
-	) {
+	if (buffer == 0 || !block_device_range_valid(device, sector, count)) {
 		return false;
 	}
 
-	if (
-		device->read_only ||
-		device->ops->write == 0
-	) {
+	if (device->read_only || device->ops->write == 0) {
 		return false;
 	}
 
@@ -158,7 +141,8 @@ bool block_device_write(
 	return result;
 }
 
-bool block_device_flush(block_device_t device)
+bool
+block_device_flush(block_device_t device)
 {
 	if (device == 0 || !device->registered) return false;
 
@@ -170,7 +154,8 @@ bool block_device_flush(block_device_t device)
 	return result;
 }
 
-bool block_device_verify(block_device_t device)
+bool
+block_device_verify(block_device_t device)
 {
 	if (device == 0 || !device->registered || device->sector_count == 0ULL) return false;
 
@@ -196,20 +181,18 @@ bool block_device_verify(block_device_t device)
  *
  * Print stable medium geometry needed while bringing up VFS and filesystems.
  */
-void block_device_dump(void)
+void
+block_device_dump(void)
 {
 	kprintf("VirtIOBlockFamily: devices: %u\n", g_block_device_count);
 
-	for (
-		uint32_t index = 0U;
-		index < g_block_device_count;
-		index++
-	) {
+	for (uint32_t index = 0U; index < g_block_device_count; index++) {
 		block_device_t device = g_block_devices[index];
 
 		kprintf("VirtIOBlockFamily: %s: %llu sectors\n", device->name, (unsigned long long)device->sector_count);
 		kverbosef("VirtIOBlockFamily: %s: sector size: %llu\n", device->name, (unsigned long long)device->sector_size);
-		kverbosef("VirtIOBlockFamily: %s: logical block size: %llu\n", device->name, (unsigned long long)device->logical_block_size);
+		kverbosef("VirtIOBlockFamily: %s: logical block size: %llu\n", device->name,
+				  (unsigned long long)device->logical_block_size);
 		kverbosef("VirtIOBlockFamily: %s: read-only: %s\n", device->name, device->read_only ? "yes" : "no");
 	}
 }

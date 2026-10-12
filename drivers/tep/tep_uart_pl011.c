@@ -36,19 +36,22 @@
 
 static volatile uint32_t *g_uart;
 
-static uint32_t uart_read(uint32_t offset)
+static uint32_t
+uart_read(uint32_t offset)
 {
 	return g_uart[offset / 4U];
 }
 
-static void uart_write(uint32_t offset, uint32_t value)
+static void
+uart_write(uint32_t offset, uint32_t value)
 {
 	g_uart[offset / 4U] = value;
 }
 
-bool tep_uart_init(const char **where, uint64_t *address)
+bool
+tep_uart_init(const char **where, uint64_t *address)
 {
-	static const uint8_t cell_id[4] = { 0x0dU, 0xf0U, 0x05U, 0xb1U };
+	static const uint8_t cell_id[4] = {0x0dU, 0xf0U, 0x05U, 0xb1U};
 	const platform_t *platform = platform_get();
 	uint64_t virtual_address;
 
@@ -72,14 +75,17 @@ bool tep_uart_init(const char **where, uint64_t *address)
 	return true;
 }
 
-int tep_uart_getc(void)
+int
+tep_uart_getc(void)
 {
 	if ((uart_read(UART_FR) & UART_FR_RXFE) != 0U) return -1;
 	return (int)(uart_read(UART_DR) & 0xffU);
 }
 
-void tep_uart_putc(uint8_t byte)
+void
+tep_uart_putc(uint8_t byte)
 {
-	while ((uart_read(UART_FR) & UART_FR_TXFF) != 0U) cpu_relax();
+	while ((uart_read(UART_FR) & UART_FR_TXFF) != 0U)
+		cpu_relax();
 	uart_write(UART_DR, byte);
 }

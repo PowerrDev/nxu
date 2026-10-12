@@ -60,7 +60,7 @@ void virtio_snd_dump(void);
 typedef struct {
 	uint32_t rate_hz;
 	uint32_t channels;
-	uint32_t format; /* VIRTIO_SND_PCM_FMT_* */
+	uint32_t format;	   /* VIRTIO_SND_PCM_FMT_* */
 	uint32_t period_bytes; /* set by the driver */
 	uint32_t buffer_bytes; /* set by the driver */
 } virtio_snd_params_t;
@@ -73,7 +73,7 @@ typedef struct {
 	uint32_t channels_min;
 	uint32_t channels_max;
 	uint64_t formats; /* bit map of VIRTIO_SND_PCM_FMT_* */
-	uint64_t rates; /* bit map of VIRTIO_SND_PCM_RATE_* */
+	uint64_t rates;	  /* bit map of VIRTIO_SND_PCM_RATE_* */
 
 	uint32_t latency_bytes;
 	uint32_t queued_periods;
@@ -92,8 +92,10 @@ virtio_snd_device_t *virtio_snd_device_at(uint32_t index);
 virtio_snd_error_t virtio_snd_playback_open(virtio_snd_device_t *device, bool nonblock);
 void virtio_snd_playback_close(virtio_snd_device_t *device);
 void virtio_snd_playback_set_nonblock(virtio_snd_device_t *device, bool nonblock);
-virtio_snd_error_t virtio_snd_playback_set_params(virtio_snd_device_t *device, const virtio_snd_params_t *wanted, virtio_snd_params_t *actual);
-virtio_snd_error_t virtio_snd_playback_write(virtio_snd_device_t *device, const void *data, uint64_t size, uint64_t *written);
+virtio_snd_error_t virtio_snd_playback_set_params(virtio_snd_device_t *device, const virtio_snd_params_t *wanted,
+												  virtio_snd_params_t *actual);
+virtio_snd_error_t virtio_snd_playback_write(virtio_snd_device_t *device, const void *data, uint64_t size,
+											 uint64_t *written);
 virtio_snd_error_t virtio_snd_playback_drain(virtio_snd_device_t *device);
 virtio_snd_error_t virtio_snd_playback_stop(virtio_snd_device_t *device);
 void virtio_snd_playback_info(virtio_snd_device_t *device, virtio_snd_playback_info_t *info);

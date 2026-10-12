@@ -32,18 +32,15 @@
 
 #define VIRTQ_AVAIL_F_NO_INTERRUPT 1U
 
-_Static_assert(
-	sizeof(virtio_block_request_header_t) == 16U,
-	"VirtIO block request header must match the wire format"
-);
+_Static_assert(sizeof(virtio_block_request_header_t) == 16U, "VirtIO block request header must match the wire format");
 
-static virtio_block_device_t
-	g_virtio_block_devices[VIRTIO_BLOCK_MAX_DEVICES];
+static virtio_block_device_t g_virtio_block_devices[VIRTIO_BLOCK_MAX_DEVICES];
 
 static uint32_t g_virtio_block_device_count;
 static ioreg_id_t g_virtio_block_ioreg_family;
 
-static ioreg_id_t virtio_block_ioreg_family(void)
+static ioreg_id_t
+virtio_block_ioreg_family(void)
 {
 	if (g_virtio_block_ioreg_family == 0U) {
 		g_virtio_block_ioreg_family = ioreg_add(ioreg_family_storage(), "VirtIOBlockFamily", "VirtIOBlockFamily");
@@ -58,30 +55,18 @@ static ioreg_id_t virtio_block_ioreg_family(void)
  * NXU kernel execution is not preempted while executing ordinary EL1 code,
  * so this lock cannot be stranded by another block caller on the same CPU.
  */
-static void virtio_block_lock(
-	virtio_block_device_t *device
-)
+static void
+virtio_block_lock(virtio_block_device_t *device)
 {
-	while (
-		__atomic_exchange_n(
-			&device->lock,
-			1U,
-			__ATOMIC_ACQUIRE
-		) != 0U
-	) {
+	while (__atomic_exchange_n(&device->lock, 1U, __ATOMIC_ACQUIRE) != 0U) {
 		ml_cpu_relax();
 	}
 }
 
-static void virtio_block_unlock(
-	virtio_block_device_t *device
-)
+static void
+virtio_block_unlock(virtio_block_device_t *device)
 {
-	__atomic_store_n(
-		&device->lock,
-		0U,
-		__ATOMIC_RELEASE
-	);
+	__atomic_store_n(&device->lock, 0U, __ATOMIC_RELEASE);
 }
 
 /*
@@ -90,10 +75,8 @@ static void virtio_block_unlock(
  * Allocate one DMA-visible physical page and return its permanent direct-map
  * alias to the driver.
  */
-static bool virtio_block_allocate_page(
-	uint64_t *physical,
-	uint8_t **virtual_address
-)
+static bool
+virtio_block_allocate_page(uint64_t *physical, uint8_t **virtual_address)
 {
 	if (!pmm_allocate_page(physical)) {
 		return false;
@@ -101,10 +84,7 @@ static bool virtio_block_allocate_page(
 
 	uint64_t higher_half;
 
-	if (!vmm_physical_to_higher_half(
-		*physical,
-		&higher_half
-	)) {
+	if (!vmm_physical_to_higher_half(*physical, &higher_half)) {
 		(void)pmm_free_page(*physical);
 
 		*physical = 0ULL;
@@ -114,11 +94,7 @@ static bool virtio_block_allocate_page(
 
 	*virtual_address = (uint8_t *)higher_half;
 
-	memset(
-		*virtual_address,
-		0,
-		PMM_PAGE_SIZE
-	);
+	memset(*virtual_address, 0, PMM_PAGE_SIZE);
 
 	return true;
 }
@@ -129,45 +105,23 @@ static bool virtio_block_allocate_page(
  * Reserve the three descriptors used by a normal read/write request. Partial
  * allocation is rolled back before failure is returned.
  */
-static bool virtio_block_alloc_chain(
-	virtio_block_device_t *device,
-	uint16_t *header,
-	uint16_t *data,
-	uint16_t *status
-)
+static bool
+virtio_block_alloc_chain(virtio_block_device_t *device, uint16_t *header, uint16_t *data, uint16_t *status)
 {
-	if (!virtqueue_alloc_descriptor(
-		&device->requestq,
-		header
-	)) {
+	if (!virtqueue_alloc_descriptor(&device->requestq, header)) {
 		return false;
 	}
 
-	if (!virtqueue_alloc_descriptor(
-		&device->requestq,
-		data
-	)) {
-		(void)virtqueue_free_descriptor(
-			&device->requestq,
-			*header
-		);
+	if (!virtqueue_alloc_descriptor(&device->requestq, data)) {
+		(void)virtqueue_free_descriptor(&device->requestq, *header);
 
 		return false;
 	}
 
-	if (!virtqueue_alloc_descriptor(
-		&device->requestq,
-		status
-	)) {
-		(void)virtqueue_free_descriptor(
-			&device->requestq,
-			*data
-		);
+	if (!virtqueue_alloc_descriptor(&device->requestq, status)) {
+		(void)virtqueue_free_descriptor(&device->requestq, *data);
 
-		(void)virtqueue_free_descriptor(
-			&device->requestq,
-			*header
-		);
+		(void)virtqueue_free_descriptor(&device->requestq, *header);
 
 		return false;
 	}
@@ -180,27 +134,14 @@ static bool virtio_block_alloc_chain(
  *
  * Return a completed three-descriptor request chain to the queue free list.
  */
-static void virtio_block_free_chain(
-	virtio_block_device_t *device,
-	uint16_t header,
-	uint16_t data,
-	uint16_t status
-)
+static void
+virtio_block_free_chain(virtio_block_device_t *device, uint16_t header, uint16_t data, uint16_t status)
 {
-	(void)virtqueue_free_descriptor(
-		&device->requestq,
-		status
-	);
+	(void)virtqueue_free_descriptor(&device->requestq, status);
 
-	(void)virtqueue_free_descriptor(
-		&device->requestq,
-		data
-	);
+	(void)virtqueue_free_descriptor(&device->requestq, data);
 
-	(void)virtqueue_free_descriptor(
-		&device->requestq,
-		header
-	);
+	(void)virtqueue_free_descriptor(&device->requestq, header);
 }
 
 /*
@@ -209,20 +150,14 @@ static void virtio_block_free_chain(
  * Poll requestq until the submitted descriptor head is returned by the
  * device. Queue interrupts are suppressed for this synchronous driver.
  */
-static bool virtio_block_wait(
-	virtio_block_device_t *device,
-	uint16_t expected_head
-)
+static bool
+virtio_block_wait(virtio_block_device_t *device, uint16_t expected_head)
 {
 	for (;;) {
 		uint32_t id;
 		uint32_t length;
 
-		if (!virtqueue_pop_used(
-			&device->requestq,
-			&id,
-			&length
-		)) {
+		if (!virtqueue_pop_used(&device->requestq, &id, &length)) {
 			ml_cpu_relax();
 
 			continue;
@@ -240,36 +175,20 @@ static bool virtio_block_wait(
  * Execute one request using the persistent control and bounce pages. count is
  * bounded so the data descriptor never crosses the 4 KiB bounce page.
  */
-static bool virtio_block_transfer_one(
-	virtio_block_device_t *device,
-	bool write,
-	uint64_t sector,
-	uint32_t count,
-	void *buffer
-)
+static bool
+virtio_block_transfer_one(virtio_block_device_t *device, bool write, uint64_t sector, uint32_t count, void *buffer)
 {
-	if (
-		count == 0U ||
-		count >
-			VIRTIO_BLOCK_MAX_SECTORS_PER_REQUEST
-	) {
+	if (count == 0U || count > VIRTIO_BLOCK_MAX_SECTORS_PER_REQUEST) {
 		return false;
 	}
 
 	uint32_t bytes = count * BLOCK_SECTOR_SIZE;
 
 	if (write) {
-		memcpy(
-			device->bounce,
-			buffer,
-			bytes
-		);
+		memcpy(device->bounce, buffer, bytes);
 	}
 
-	device->header->type =
-		write
-			? VIRTIO_BLK_T_OUT
-			: VIRTIO_BLK_T_IN;
+	device->header->type = write ? VIRTIO_BLK_T_OUT : VIRTIO_BLK_T_IN;
 
 	device->header->reserved = 0U;
 	device->header->sector = sector;
@@ -280,19 +199,11 @@ static bool virtio_block_transfer_one(
 	uint16_t data_desc;
 	uint16_t status_desc;
 
-	if (!virtio_block_alloc_chain(
-		device,
-		&header_desc,
-		&data_desc,
-		&status_desc
-	)) {
+	if (!virtio_block_alloc_chain(device, &header_desc, &data_desc, &status_desc)) {
 		return false;
 	}
 
-	virtq_desc_t *header =
-		&device->requestq.descriptors[
-			header_desc
-		];
+	virtq_desc_t *header = &device->requestq.descriptors[header_desc];
 
 	header->address = device->control_physical;
 
@@ -302,10 +213,7 @@ static bool virtio_block_transfer_one(
 
 	header->next = data_desc;
 
-	virtq_desc_t *data =
-		&device->requestq.descriptors[
-			data_desc
-		];
+	virtq_desc_t *data = &device->requestq.descriptors[data_desc];
 
 	data->address = device->bounce_physical;
 
@@ -319,14 +227,9 @@ static bool virtio_block_transfer_one(
 
 	data->next = status_desc;
 
-	virtq_desc_t *status =
-		&device->requestq.descriptors[
-			status_desc
-		];
+	virtq_desc_t *status = &device->requestq.descriptors[status_desc];
 
-	status->address =
-		device->control_physical +
-		sizeof(*device->header);
+	status->address = device->control_physical + sizeof(*device->header);
 
 	status->length = sizeof(*device->status);
 
@@ -336,53 +239,25 @@ static bool virtio_block_transfer_one(
 
 	ml_dma_wmb();
 
-	if (!virtqueue_submit(
-		&device->requestq,
-		header_desc
-	)) {
-		virtio_block_free_chain(
-			device,
-			header_desc,
-			data_desc,
-			status_desc
-		);
+	if (!virtqueue_submit(&device->requestq, header_desc)) {
+		virtio_block_free_chain(device, header_desc, data_desc, status_desc);
 
 		return false;
 	}
 
-	virtio_device_notify(
-		&device->transport,
-		VIRTIO_BLK_REQUESTQ
-	);
+	virtio_device_notify(&device->transport, VIRTIO_BLK_REQUESTQ);
 
-	bool completed =
-		virtio_block_wait(
-			device,
-			header_desc
-		);
+	bool completed = virtio_block_wait(device, header_desc);
 
 	ml_dma_rmb();
 
 	uint8_t request_status = *device->status;
 
-	if (
-		completed &&
-		request_status == VIRTIO_BLK_S_OK &&
-		!write
-	) {
-		memcpy(
-			buffer,
-			device->bounce,
-			bytes
-		);
+	if (completed && request_status == VIRTIO_BLK_S_OK && !write) {
+		memcpy(buffer, device->bounce, bytes);
 	}
 
-	virtio_block_free_chain(
-		device,
-		header_desc,
-		data_desc,
-		status_desc
-	);
+	virtio_block_free_chain(device, header_desc, data_desc, status_desc);
 
 	device->request_count++;
 
@@ -392,9 +267,7 @@ static bool virtio_block_transfer_one(
 		device->read_request_count++;
 	}
 
-	return
-		completed &&
-		request_status == VIRTIO_BLK_S_OK;
+	return completed && request_status == VIRTIO_BLK_S_OK;
 }
 
 /*
@@ -402,13 +275,8 @@ static bool virtio_block_transfer_one(
  *
  * Split arbitrary block-layer requests into DMA-page-sized VirtIO requests.
  */
-static bool virtio_block_transfer(
-	virtio_block_device_t *device,
-	bool write,
-	uint64_t sector,
-	uint32_t count,
-	void *buffer
-)
+static bool
+virtio_block_transfer(virtio_block_device_t *device, bool write, uint64_t sector, uint32_t count, void *buffer)
 {
 	uint8_t *bytes = buffer;
 
@@ -418,18 +286,9 @@ static bool virtio_block_transfer(
 
 	while (remaining != 0U) {
 		uint32_t chunk =
-			remaining >
-				VIRTIO_BLOCK_MAX_SECTORS_PER_REQUEST
-				? VIRTIO_BLOCK_MAX_SECTORS_PER_REQUEST
-				: remaining;
+			remaining > VIRTIO_BLOCK_MAX_SECTORS_PER_REQUEST ? VIRTIO_BLOCK_MAX_SECTORS_PER_REQUEST : remaining;
 
-		if (!virtio_block_transfer_one(
-			device,
-			write,
-			sector,
-			chunk,
-			bytes
-		)) {
+		if (!virtio_block_transfer_one(device, write, sector, chunk, bytes)) {
 			virtio_block_unlock(device);
 
 			return false;
@@ -447,55 +306,28 @@ static bool virtio_block_transfer(
 	return true;
 }
 
-static bool virtio_block_read(
-	block_device_t block,
-	uint64_t sector,
-	uint32_t count,
-	void *buffer
-)
+static bool
+virtio_block_read(block_device_t block, uint64_t sector, uint32_t count, void *buffer)
 {
 	virtio_block_device_t *device = block->driver_data;
 
-	if (
-		device == 0 ||
-		!device->attached
-	) {
+	if (device == 0 || !device->attached) {
 		return false;
 	}
 
-	return virtio_block_transfer(
-		device,
-		false,
-		sector,
-		count,
-		buffer
-	);
+	return virtio_block_transfer(device, false, sector, count, buffer);
 }
 
-static bool virtio_block_write(
-	block_device_t block,
-	uint64_t sector,
-	uint32_t count,
-	const void *buffer
-)
+static bool
+virtio_block_write(block_device_t block, uint64_t sector, uint32_t count, const void *buffer)
 {
 	virtio_block_device_t *device = block->driver_data;
 
-	if (
-		device == 0 ||
-		!device->attached ||
-		device->read_only
-	) {
+	if (device == 0 || !device->attached || device->read_only) {
 		return false;
 	}
 
-	return virtio_block_transfer(
-		device,
-		true,
-		sector,
-		count,
-		(void *)buffer
-	);
+	return virtio_block_transfer(device, true, sector, count, (void *)buffer);
 }
 
 /*
@@ -504,14 +336,10 @@ static bool virtio_block_write(
  * Submit the two-descriptor FLUSH request defined by VirtIO Block. No data
  * descriptor is present and sector is required to be zero.
  */
-static bool virtio_block_flush_request(
-	virtio_block_device_t *device
-)
+static bool
+virtio_block_flush_request(virtio_block_device_t *device)
 {
-	if (
-		!device->flush_supported ||
-		device->read_only
-	) {
+	if (!device->flush_supported || device->read_only) {
 		return true;
 	}
 
@@ -528,33 +356,21 @@ static bool virtio_block_flush_request(
 	uint16_t header_desc;
 	uint16_t status_desc;
 
-	if (!virtqueue_alloc_descriptor(
-		&device->requestq,
-		&header_desc
-	)) {
+	if (!virtqueue_alloc_descriptor(&device->requestq, &header_desc)) {
 		virtio_block_unlock(device);
 
 		return false;
 	}
 
-	if (!virtqueue_alloc_descriptor(
-		&device->requestq,
-		&status_desc
-	)) {
-		(void)virtqueue_free_descriptor(
-			&device->requestq,
-			header_desc
-		);
+	if (!virtqueue_alloc_descriptor(&device->requestq, &status_desc)) {
+		(void)virtqueue_free_descriptor(&device->requestq, header_desc);
 
 		virtio_block_unlock(device);
 
 		return false;
 	}
 
-	virtq_desc_t *header =
-		&device->requestq.descriptors[
-			header_desc
-		];
+	virtq_desc_t *header = &device->requestq.descriptors[header_desc];
 
 	header->address = device->control_physical;
 
@@ -564,14 +380,9 @@ static bool virtio_block_flush_request(
 
 	header->next = status_desc;
 
-	virtq_desc_t *status =
-		&device->requestq.descriptors[
-			status_desc
-		];
+	virtq_desc_t *status = &device->requestq.descriptors[status_desc];
 
-	status->address =
-		device->control_physical +
-		sizeof(*device->header);
+	status->address = device->control_physical + sizeof(*device->header);
 
 	status->length = sizeof(*device->status);
 
@@ -581,84 +392,50 @@ static bool virtio_block_flush_request(
 
 	ml_dma_wmb();
 
-	if (!virtqueue_submit(
-		&device->requestq,
-		header_desc
-	)) {
-		(void)virtqueue_free_descriptor(
-			&device->requestq,
-			status_desc
-		);
+	if (!virtqueue_submit(&device->requestq, header_desc)) {
+		(void)virtqueue_free_descriptor(&device->requestq, status_desc);
 
-		(void)virtqueue_free_descriptor(
-			&device->requestq,
-			header_desc
-		);
+		(void)virtqueue_free_descriptor(&device->requestq, header_desc);
 
 		virtio_block_unlock(device);
 
 		return false;
 	}
 
-	virtio_device_notify(
-		&device->transport,
-		VIRTIO_BLK_REQUESTQ
-	);
+	virtio_device_notify(&device->transport, VIRTIO_BLK_REQUESTQ);
 
-	bool completed =
-		virtio_block_wait(
-			device,
-			header_desc
-		);
+	bool completed = virtio_block_wait(device, header_desc);
 
 	ml_dma_rmb();
 
 	uint8_t request_status = *device->status;
 
-	(void)virtqueue_free_descriptor(
-		&device->requestq,
-		status_desc
-	);
+	(void)virtqueue_free_descriptor(&device->requestq, status_desc);
 
-	(void)virtqueue_free_descriptor(
-		&device->requestq,
-		header_desc
-	);
+	(void)virtqueue_free_descriptor(&device->requestq, header_desc);
 
 	device->request_count++;
 	device->flush_request_count++;
 
 	virtio_block_unlock(device);
 
-	return
-		completed &&
-		request_status == VIRTIO_BLK_S_OK;
+	return completed && request_status == VIRTIO_BLK_S_OK;
 }
 
-static bool virtio_block_flush(
-	block_device_t block
-)
+static bool
+virtio_block_flush(block_device_t block)
 {
 	virtio_block_device_t *device = block->driver_data;
 
-	if (
-		device == 0 ||
-		!device->attached
-	) {
+	if (device == 0 || !device->attached) {
 		return false;
 	}
 
-	return virtio_block_flush_request(
-		device
-	);
+	return virtio_block_flush_request(device);
 }
 
-static const block_device_ops_t
-	g_virtio_block_ops = {
-		.read = virtio_block_read,
-		.write = virtio_block_write,
-		.flush = virtio_block_flush
-	};
+static const block_device_ops_t g_virtio_block_ops = {
+	.read = virtio_block_read, .write = virtio_block_write, .flush = virtio_block_flush};
 
 /*
  * virtio_block_cleanup:
@@ -666,45 +443,26 @@ static const block_device_ops_t
  * Reset the device before releasing queue or DMA memory. Once reset has
  * completed, the transport no longer owns any published descriptor storage.
  */
-static void virtio_block_cleanup(
-	virtio_block_device_t *device
-)
+static void
+virtio_block_cleanup(virtio_block_device_t *device)
 {
 	if (virtio_device_live(&device->transport)) {
-		(void)virtio_device_reset(
-			&device->transport
-		);
+		(void)virtio_device_reset(&device->transport);
 	}
 
 	if (device->requestq.initialized) {
-		(void)virtqueue_destroy(
-			&device->requestq
-		);
+		(void)virtqueue_destroy(&device->requestq);
 	}
 
-	if (
-		device->bounce_physical !=
-		0ULL
-	) {
-		(void)pmm_free_page(
-			device->bounce_physical
-		);
+	if (device->bounce_physical != 0ULL) {
+		(void)pmm_free_page(device->bounce_physical);
 	}
 
-	if (
-		device->control_physical !=
-		0ULL
-	) {
-		(void)pmm_free_page(
-			device->control_physical
-		);
+	if (device->control_physical != 0ULL) {
+		(void)pmm_free_page(device->control_physical);
 	}
 
-	memset(
-		device,
-		0,
-		sizeof(*device)
-	);
+	memset(device, 0, sizeof(*device));
 }
 
 /*
@@ -713,68 +471,36 @@ static void virtio_block_cleanup(
  * Negotiate one block device, configure requestq and publish the resulting
  * transport-independent block device.
  */
-bool virtio_block_attach(
-	const virtio_device_t *transport
-)
+bool
+virtio_block_attach(const virtio_device_t *transport)
 {
-	if (
-		transport == 0 ||
-		transport->device_id !=
-			VIRTIO_DEVICE_ID_BLOCK
-	) {
+	if (transport == 0 || transport->device_id != VIRTIO_DEVICE_ID_BLOCK) {
 		return false;
 	}
 
-	if (
-		g_virtio_block_device_count >=
-		VIRTIO_BLOCK_MAX_DEVICES
-	) {
+	if (g_virtio_block_device_count >= VIRTIO_BLOCK_MAX_DEVICES) {
 		return false;
 	}
 
-	virtio_block_device_t *device =
-		&g_virtio_block_devices[
-			g_virtio_block_device_count
-		];
+	virtio_block_device_t *device = &g_virtio_block_devices[g_virtio_block_device_count];
 
-	memset(
-		device,
-		0,
-		sizeof(*device)
-	);
+	memset(device, 0, sizeof(*device));
 
 	device->transport = *transport;
 
 	uint64_t accepted_features =
-		(1ULL << VIRTIO_BLK_F_RO) |
-		(1ULL << VIRTIO_BLK_F_BLK_SIZE) |
-		(1ULL << VIRTIO_BLK_F_FLUSH);
+		(1ULL << VIRTIO_BLK_F_RO) | (1ULL << VIRTIO_BLK_F_BLK_SIZE) | (1ULL << VIRTIO_BLK_F_FLUSH);
 
-	if (!virtio_device_begin(
-		&device->transport,
-		accepted_features
-	)) {
+	if (!virtio_device_begin(&device->transport, accepted_features)) {
 		goto fail;
 	}
 
-	device->read_only =
-		(
-			device->transport.driver_features &
-			(1ULL << VIRTIO_BLK_F_RO)
-		) != 0ULL;
+	device->read_only = (device->transport.driver_features & (1ULL << VIRTIO_BLK_F_RO)) != 0ULL;
 
-	device->flush_supported =
-		(
-			device->transport.driver_features &
-			(1ULL << VIRTIO_BLK_F_FLUSH)
-		) != 0ULL;
+	device->flush_supported = (device->transport.driver_features & (1ULL << VIRTIO_BLK_F_FLUSH)) != 0ULL;
 
-	if (!virtio_device_queue_init(
-		&device->transport,
-		VIRTIO_BLK_REQUESTQ,
-		VIRTIO_BLOCK_QUEUE_SIZE,
-		&device->requestq
-	)) {
+	if (!virtio_device_queue_init(&device->transport, VIRTIO_BLK_REQUESTQ, VIRTIO_BLOCK_QUEUE_SIZE,
+								  &device->requestq)) {
 		goto fail;
 	}
 
@@ -783,45 +509,25 @@ bool virtio_block_attach(
 	 */
 	*device->requestq.available_flags = VIRTQ_AVAIL_F_NO_INTERRUPT;
 
-	if (!virtio_device_setup_queue(
-		&device->transport,
-		VIRTIO_BLK_REQUESTQ,
-		&device->requestq
-	)) {
+	if (!virtio_device_setup_queue(&device->transport, VIRTIO_BLK_REQUESTQ, &device->requestq)) {
 		goto fail;
 	}
 
 	uint8_t *control;
 
-	if (!virtio_block_allocate_page(
-		&device->control_physical,
-		&control
-	)) {
+	if (!virtio_block_allocate_page(&device->control_physical, &control)) {
 		goto fail;
 	}
 
-	device->header =
-		(virtio_block_request_header_t *)
-			control;
+	device->header = (virtio_block_request_header_t *)control;
 
-	device->status =
-		(volatile uint8_t *)(
-			control +
-			sizeof(*device->header)
-		);
+	device->status = (volatile uint8_t *)(control + sizeof(*device->header));
 
-	if (!virtio_block_allocate_page(
-		&device->bounce_physical,
-		&device->bounce
-	)) {
+	if (!virtio_block_allocate_page(&device->bounce_physical, &device->bounce)) {
 		goto fail;
 	}
 
-	uint64_t capacity =
-		virtio_device_config_read64(
-			&device->transport,
-			VIRTIO_BLK_CONFIG_CAPACITY
-		);
+	uint64_t capacity = virtio_device_config_read64(&device->transport, VIRTIO_BLK_CONFIG_CAPACITY);
 
 	if (capacity == 0ULL) {
 		goto fail;
@@ -829,26 +535,10 @@ bool virtio_block_attach(
 
 	uint32_t logical_block_size = BLOCK_SECTOR_SIZE;
 
-	if (
-		(
-			device->transport.driver_features &
-			(1ULL << VIRTIO_BLK_F_BLK_SIZE)
-		) != 0ULL
-	) {
-		uint32_t configured =
-			virtio_device_config_read32(
-				&device->transport,
-				VIRTIO_BLK_CONFIG_BLK_SIZE
-			);
+	if ((device->transport.driver_features & (1ULL << VIRTIO_BLK_F_BLK_SIZE)) != 0ULL) {
+		uint32_t configured = virtio_device_config_read32(&device->transport, VIRTIO_BLK_CONFIG_BLK_SIZE);
 
-		if (
-			configured >=
-				BLOCK_SECTOR_SIZE &&
-			(
-				configured %
-				BLOCK_SECTOR_SIZE
-			) == 0U
-		) {
+		if (configured >= BLOCK_SECTOR_SIZE && (configured % BLOCK_SECTOR_SIZE) == 0U) {
 			logical_block_size = configured;
 		}
 	}
@@ -868,28 +558,22 @@ bool virtio_block_attach(
 
 	device->block_storage.driver_data = device;
 
-	if (!virtio_device_finish(
-		&device->transport
-	)) {
+	if (!virtio_device_finish(&device->transport)) {
 		goto fail;
 	}
 
 	device->attached = true;
 
-	if (!block_device_register(
-		device->block
-	)) {
+	if (!block_device_register(device->block)) {
 		goto fail_after_finish;
 	}
 
 	g_virtio_block_device_count++;
 
-	kprintf(
-		"VirtIOBlockFamily: matched virtio-blk at 0x%llx, %llu MiB, %s\n",
-		(unsigned long long)device->transport.region.base,
-		(unsigned long long)((capacity * (uint64_t)BLOCK_SECTOR_SIZE) / (1024ULL * 1024ULL)),
-		device->read_only ? "read-only" : "read-write"
-	);
+	kprintf("VirtIOBlockFamily: matched virtio-blk at 0x%llx, %llu MiB, %s\n",
+			(unsigned long long)device->transport.region.base,
+			(unsigned long long)((capacity * (uint64_t)BLOCK_SECTOR_SIZE) / (1024ULL * 1024ULL)),
+			device->read_only ? "read-only" : "read-write");
 
 	(void)ioreg_add(virtio_block_ioreg_family(), "disk0", "VirtIOBlockDevice");
 
@@ -908,25 +592,20 @@ fail:
 	return false;
 }
 
-uint32_t virtio_block_device_count(void)
+uint32_t
+virtio_block_device_count(void)
 {
 	return g_virtio_block_device_count;
 }
 
-const virtio_block_device_t *virtio_block_device(
-	uint32_t index
-)
+const virtio_block_device_t *
+virtio_block_device(uint32_t index)
 {
-	if (
-		index >=
-		g_virtio_block_device_count
-	) {
+	if (index >= g_virtio_block_device_count) {
 		return 0;
 	}
 
-	return &g_virtio_block_devices[
-		index
-	];
+	return &g_virtio_block_devices[index];
 }
 
 /*
@@ -934,21 +613,16 @@ const virtio_block_device_t *virtio_block_device(
  *
  * Print transport and request statistics for attached block devices.
  */
-void virtio_block_dump(void)
+void
+virtio_block_dump(void)
 {
-	for (
-		uint32_t index = 0U;
-		index <
-			g_virtio_block_device_count;
-		index++
-	) {
-		const virtio_block_device_t *device =
-			&g_virtio_block_devices[
-				index
-			];
+	for (uint32_t index = 0U; index < g_virtio_block_device_count; index++) {
+		const virtio_block_device_t *device = &g_virtio_block_devices[index];
 
-		kprintf("VirtIOBlockFamily: device %u: %llu sectors\n", index + 1U, (unsigned long long)device->block->sector_count);
-		kverbosef("VirtIOBlockFamily: device %u: %llu requests\n", index + 1U, (unsigned long long)device->request_count);
+		kprintf("VirtIOBlockFamily: device %u: %llu sectors\n", index + 1U,
+				(unsigned long long)device->block->sector_count);
+		kverbosef("VirtIOBlockFamily: device %u: %llu requests\n", index + 1U,
+				  (unsigned long long)device->request_count);
 		kverbosef("VirtIOBlockFamily: device %u: read-only %s\n", index + 1U, device->read_only ? "yes" : "no");
 	}
 }

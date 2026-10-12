@@ -31,15 +31,15 @@
 
 typedef enum {
 	TEP_OK = 0,
-	TEP_ERR_UNAVAILABLE,    /* tepOS or the service is not available */
-	TEP_ERR_INVALID,        /* bad arguments (sizes out of range) */
-	TEP_ERR_NOT_FOUND,      /* no such key handle, or no passcode set */
-	TEP_ERR_FULL,           /* tepOS has no room for another key */
-	TEP_ERR_PROTOCOL,       /* tepOS answered something unexpected */
-	TEP_ERR_DENIED,         /* wrong passcode, or a boot manifest refused */
-	TEP_ERR_RETRY_LATER,    /* too soon after failed passcodes */
-	TEP_ERR_LOCKED,         /* passcode locked until a recovery reset in tepOS */
-	TEP_ERR_ROLLBACK        /* boot image older than the newest accepted */
+	TEP_ERR_UNAVAILABLE, /* tepOS or the service is not available */
+	TEP_ERR_INVALID,	 /* bad arguments (sizes out of range) */
+	TEP_ERR_NOT_FOUND,	 /* no such key handle, or no passcode set */
+	TEP_ERR_FULL,		 /* tepOS has no room for another key */
+	TEP_ERR_PROTOCOL,	 /* tepOS answered something unexpected */
+	TEP_ERR_DENIED,		 /* wrong passcode, or a boot manifest refused */
+	TEP_ERR_RETRY_LATER, /* too soon after failed passcodes */
+	TEP_ERR_LOCKED,		 /* passcode locked until a recovery reset in tepOS */
+	TEP_ERR_ROLLBACK	 /* boot image older than the newest accepted */
 } tep_result_t;
 
 tep_result_t tep_sha256(const void *data, uint32_t size, uint8_t digest[TEP_SHA256_SIZE]);
@@ -58,8 +58,8 @@ tep_result_t tep_key_delete(uint32_t handle);
 typedef struct {
 	bool passcode_set;
 	bool locked;
-	uint8_t failures;       /* failed attempts since the last success */
-	uint32_t wait_seconds;  /* before tepOS accepts another attempt */
+	uint8_t failures;	   /* failed attempts since the last success */
+	uint32_t wait_seconds; /* before tepOS accepts another attempt */
 } tep_auth_status_t;
 
 /*
@@ -71,7 +71,8 @@ typedef struct {
  * The passcode crosses the mailbox serial link as it is: the link is
  * checked for corruption, not encrypted, so the host can read it.
  */
-tep_result_t tep_auth_set(const void *old_passcode, uint32_t old_size, const void *passcode, uint32_t size, uint32_t *wait_seconds);
+tep_result_t tep_auth_set(const void *old_passcode, uint32_t old_size, const void *passcode, uint32_t size,
+						  uint32_t *wait_seconds);
 tep_result_t tep_auth_verify(const void *passcode, uint32_t size, uint32_t *wait_seconds);
 tep_result_t tep_auth_status(tep_auth_status_t *status);
 
@@ -84,7 +85,8 @@ tep_result_t tep_auth_status(tep_auth_status_t *status);
  * TEP_ERR_DENIED and the minimum version on TEP_ERR_ROLLBACK. The verdict
  * is only as good as NXU's own measurement, and nothing enforces it.
  */
-tep_result_t tep_boot_verify(const uint8_t manifest[TEP_BOOT_MANIFEST_SIZE], const uint8_t digest[TEP_SHA256_SIZE], uint32_t *detail);
+tep_result_t tep_boot_verify(const uint8_t manifest[TEP_BOOT_MANIFEST_SIZE], const uint8_t digest[TEP_SHA256_SIZE],
+							 uint32_t *detail);
 
 const char *tep_boot_reason_name(uint32_t reason);
 const char *tep_result_name(tep_result_t result);

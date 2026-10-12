@@ -153,6 +153,7 @@ bool virtio_snd_pcm_supports(const virtio_snd_pcm_info_t *info, const virtio_snd
  * first: everything the WAV layer converts to is 16-bit). Returns false when
  * the stream has no usable format or rate at all.
  */
-bool virtio_snd_pcm_pick(const virtio_snd_pcm_info_t *info, const virtio_snd_pcm_format_t *wanted, virtio_snd_pcm_format_t *picked);
+bool virtio_snd_pcm_pick(const virtio_snd_pcm_info_t *info, const virtio_snd_pcm_format_t *wanted,
+						 virtio_snd_pcm_format_t *picked);
 
 #endif

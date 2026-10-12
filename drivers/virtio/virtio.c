@@ -24,18 +24,16 @@ static bool g_virtio_initialized;
 static virtio_bus_scan_t g_virtio_bus_scanners[VIRTIO_MAX_BUS_SCANNERS];
 static uint32_t g_virtio_bus_scanner_count;
 
-bool virtio_bus_register(virtio_bus_scan_t scan)
+bool
+virtio_bus_register(virtio_bus_scan_t scan)
 {
-	if (scan == 0 || g_virtio_initialized)
-		return false;
+	if (scan == 0 || g_virtio_initialized) return false;
 
 	for (uint32_t index = 0U; index < g_virtio_bus_scanner_count; index++) {
-		if (g_virtio_bus_scanners[index] == scan)
-			return true;
+		if (g_virtio_bus_scanners[index] == scan) return true;
 	}
 
-	if (g_virtio_bus_scanner_count >= VIRTIO_MAX_BUS_SCANNERS)
-		return false;
+	if (g_virtio_bus_scanner_count >= VIRTIO_MAX_BUS_SCANNERS) return false;
 
 	g_virtio_bus_scanners[g_virtio_bus_scanner_count++] = scan;
 	return true;
@@ -46,10 +44,10 @@ bool virtio_bus_register(virtio_bus_scan_t scan)
  * A GPU that fails to attach is reported and skipped; a block or input device
  * that fails to attach stops the scan.
  */
-bool virtio_bind_device(const virtio_device_t *device, const virtio_probe_policy_t *policy)
+bool
+virtio_bind_device(const virtio_device_t *device, const virtio_probe_policy_t *policy)
 {
-	if (device == 0 || policy == 0)
-		return false;
+	if (device == 0 || policy == 0) return false;
 
 	g_virtio_device_count++;
 
@@ -66,8 +64,7 @@ bool virtio_bind_device(const virtio_device_t *device, const virtio_probe_policy
 	}
 
 	if (device->device_id == VIRTIO_DEVICE_ID_GPU) {
-		if (!policy->gpu)
-			return true;
+		if (!policy->gpu) return true;
 
 		if (!virtio_gpu_attach(device)) {
 			kprintf("VirtIOFamily: GPU at 0x%llx failed to attach\n", (unsigned long long)device->region.base);
@@ -75,14 +72,12 @@ bool virtio_bind_device(const virtio_device_t *device, const virtio_probe_policy
 		}
 
 		g_virtio_gpu_count++;
-		if (policy->on_gpu_ready != 0)
-			policy->on_gpu_ready();
+		if (policy->on_gpu_ready != 0) policy->on_gpu_ready();
 		return true;
 	}
 
 	if (device->device_id == VIRTIO_DEVICE_ID_BLOCK) {
-		if (!policy->block)
-			return true;
+		if (!policy->block) return true;
 
 		if (!virtio_block_attach(device)) {
 			kprintf("VirtIOFamily: block device at 0x%llx failed to attach\n", (unsigned long long)device->region.base);
@@ -94,8 +89,7 @@ bool virtio_bind_device(const virtio_device_t *device, const virtio_probe_policy
 	}
 
 	if (device->device_id == VIRTIO_DEVICE_ID_INPUT) {
-		if (!policy->input)
-			return true;
+		if (!policy->input) return true;
 
 		if (!virtio_input_attach(device)) {
 			kprintf("VirtIOFamily: input device at 0x%llx failed to attach\n", (unsigned long long)device->region.base);
@@ -107,8 +101,7 @@ bool virtio_bind_device(const virtio_device_t *device, const virtio_probe_policy
 	}
 
 	if (device->device_id == VIRTIO_DEVICE_ID_SOUND) {
-		if (!policy->sound)
-			return true;
+		if (!policy->sound) return true;
 
 		if (!virtio_snd_attach(device)) {
 			kprintf("VirtIOFamily: sound device at 0x%llx failed to attach\n", (unsigned long long)device->region.base);
@@ -129,12 +122,11 @@ bool virtio_bind_device(const virtio_device_t *device, const virtio_probe_policy
  * scanner (VirtIO-PCI on x86), and report only live devices and class-driver
  * results. Empty QEMU MMIO slots are expected and remain silent.
  */
-bool virtio_init(const platform_t *platform, const virtio_probe_policy_t *policy)
+bool
+virtio_init(const platform_t *platform, const virtio_probe_policy_t *policy)
 {
-	if (g_virtio_initialized)
-		return true;
-	if (platform == 0 || policy == 0)
-		return false;
+	if (g_virtio_initialized) return true;
+	if (platform == 0 || policy == 0) return false;
 
 	for (uint32_t index = 0U; index < platform->virtio_mmio_count; index++) {
 		virtio_mmio_device_t device;
@@ -149,52 +141,58 @@ bool virtio_init(const platform_t *platform, const virtio_probe_policy_t *policy
 				  (unsigned long long)platform->virtio_mmio[index].base, platform->virtio_mmio_intid[index],
 				  device.device_id);
 
-		if (!virtio_bind_device(&device, policy))
-			return false;
+		if (!virtio_bind_device(&device, policy)) return false;
 	}
 
 	for (uint32_t index = 0U; index < g_virtio_bus_scanner_count; index++) {
-		if (!g_virtio_bus_scanners[index](platform, policy))
-			return false;
+		if (!g_virtio_bus_scanners[index](platform, policy)) return false;
 	}
 
 	g_virtio_initialized = true;
 	virtio_snd_probe();
 	kprintf("VirtIOFamily: %u device(s): %u input, %u block, %u GPU, %u sound, %u network\n", g_virtio_device_count,
-			g_virtio_input_count, g_virtio_block_count, g_virtio_gpu_count, g_virtio_sound_count, g_virtio_network_count);
+			g_virtio_input_count, g_virtio_block_count, g_virtio_gpu_count, g_virtio_sound_count,
+			g_virtio_network_count);
 	return true;
 }
 
-uint32_t virtio_device_count(void)
+uint32_t
+virtio_device_count(void)
 {
 	return g_virtio_device_count;
 }
 
-uint32_t virtio_input_count(void)
+uint32_t
+virtio_input_count(void)
 {
 	return g_virtio_input_count;
 }
 
-uint32_t virtio_block_count(void)
+uint32_t
+virtio_block_count(void)
 {
 	return g_virtio_block_count;
 }
 
-uint32_t virtio_gpu_count(void)
+uint32_t
+virtio_gpu_count(void)
 {
 	return g_virtio_gpu_count;
 }
 
-uint32_t virtio_sound_count(void)
+uint32_t
+virtio_sound_count(void)
 {
 	return g_virtio_sound_count;
 }
 
-void virtio_dump(void)
+void
+virtio_dump(void)
 {
 	/* virtio_init() already printed the device count line. */
 	kverbosef("VirtIOFamily: %u device(s): %u input, %u block, %u GPU, %u sound, %u network\n", g_virtio_device_count,
-			  g_virtio_input_count, g_virtio_block_count, g_virtio_gpu_count, g_virtio_sound_count, g_virtio_network_count);
+			  g_virtio_input_count, g_virtio_block_count, g_virtio_gpu_count, g_virtio_sound_count,
+			  g_virtio_network_count);
 	virtio_input_dump();
 	virtio_block_dump();
 	virtio_gpu_dump();

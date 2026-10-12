@@ -69,8 +69,10 @@
 /* After the last period completes the host may still be playing what it has buffered; wait this long before STOP. */
 #define VIRTIO_SND_DRAIN_TAIL_US 120000ULL
 
-_Static_assert(VIRTIO_SND_TX_SLOTS * 2U <= VIRTIO_SND_TX_QUEUE_SIZE, "the tx queue must hold every slot's two descriptors");
-_Static_assert(VIRTIO_SND_SLOT_DATA_OFFSET + VIRTIO_SND_PERIOD_MAX_BYTES <= VIRTIO_SND_SLOT_STATUS_OFFSET, "a period must end before its status");
+_Static_assert(VIRTIO_SND_TX_SLOTS * 2U <= VIRTIO_SND_TX_QUEUE_SIZE,
+			   "the tx queue must hold every slot's two descriptors");
+_Static_assert(VIRTIO_SND_SLOT_DATA_OFFSET + VIRTIO_SND_PERIOD_MAX_BYTES <= VIRTIO_SND_SLOT_STATUS_OFFSET,
+			   "a period must end before its status");
 _Static_assert(VIRTIO_SND_SLOT_STATUS_OFFSET + 8U <= 4096U, "the status must fit in the page");
 
 /* One page of DMA memory and where the CPU sees it. */
@@ -79,11 +81,7 @@ typedef struct {
 	uint8_t *virtual_address;
 } virtio_snd_page_t;
 
-typedef enum {
-	VIRTIO_SND_SLOT_FREE,
-	VIRTIO_SND_SLOT_FILLING,
-	VIRTIO_SND_SLOT_QUEUED
-} virtio_snd_slot_state_t;
+typedef enum { VIRTIO_SND_SLOT_FREE, VIRTIO_SND_SLOT_FILLING, VIRTIO_SND_SLOT_QUEUED } virtio_snd_slot_state_t;
 
 typedef struct {
 	virtio_snd_page_t page;
@@ -191,7 +189,8 @@ void virtio_snd_free_page(virtio_snd_page_t *page);
  * poisons the device: it may still write into the page, so nothing else is
  * ever sent (VIRTIO_SND_E_DEAD from then on).
  */
-virtio_snd_error_t virtio_snd_control(virtio_snd_device_t *device, uint32_t request_bytes, uint32_t response_capacity, uint32_t *response_bytes);
+virtio_snd_error_t virtio_snd_control(virtio_snd_device_t *device, uint32_t request_bytes, uint32_t response_capacity,
+									  uint32_t *response_bytes);
 
 /*
  * virtio_snd_pcm_request:
@@ -206,7 +205,8 @@ virtio_snd_error_t virtio_snd_pcm_request(virtio_snd_device_t *device, uint32_t 
  *
  * PCM_SET_PARAMS for a stream, with no optional stream features.
  */
-virtio_snd_error_t virtio_snd_set_params_request(virtio_snd_device_t *device, uint32_t stream_id, uint32_t buffer_bytes, uint32_t period_bytes, const virtio_snd_pcm_format_t *format);
+virtio_snd_error_t virtio_snd_set_params_request(virtio_snd_device_t *device, uint32_t stream_id, uint32_t buffer_bytes,
+												 uint32_t period_bytes, const virtio_snd_pcm_format_t *format);
 
 /* /dev/audio0 (virtio_sound_dev.c): publish the playback stream as a character device. */
 bool virtio_snd_dev_register(virtio_snd_device_t *device);

@@ -145,7 +145,8 @@ typedef struct {
 	uint32_t data;
 } virtio_snd_event_t;
 
-/* Query of jack, stream or channel-map information: an array of `count` items of `size` bytes follows the response header. */
+/* Query of jack, stream or channel-map information: an array of `count` items of `size` bytes follows the response
+ * header. */
 typedef struct {
 	virtio_snd_hdr_t hdr;
 	uint32_t start_id;

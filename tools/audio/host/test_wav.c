@@ -17,13 +17,13 @@
 static unsigned int g_checks;
 static unsigned int g_failures;
 
-#define CHECK(condition) \
-	do { \
-		g_checks++; \
-		if (!(condition)) { \
-			g_failures++; \
-			printf("FAIL  %s:%d: %s\n", __FILE__, __LINE__, #condition); \
-		} \
+#define CHECK(condition)                                                                                               \
+	do {                                                                                                               \
+		g_checks++;                                                                                                    \
+		if (!(condition)) {                                                                                            \
+			g_failures++;                                                                                              \
+			printf("FAIL  %s:%d: %s\n", __FILE__, __LINE__, #condition);                                               \
+		}                                                                                                              \
 	} while (0)
 
 /* ---- building files ---------------------------------------------------- */
@@ -34,7 +34,8 @@ typedef struct {
 	size_t capacity;
 } builder_t;
 
-static void put(builder_t *b, const void *data, size_t size)
+static void
+put(builder_t *b, const void *data, size_t size)
 {
 	if (b->size + size > b->capacity) {
 		b->capacity = (b->size + size) * 2U + 64U;
@@ -45,26 +46,30 @@ static void put(builder_t *b, const void *data, size_t size)
 	b->size += size;
 }
 
-static void put16(builder_t *b, uint32_t value)
+static void
+put16(builder_t *b, uint32_t value)
 {
-	uint8_t bytes[2] = { (uint8_t)value, (uint8_t)(value >> 8U) };
+	uint8_t bytes[2] = {(uint8_t)value, (uint8_t)(value >> 8U)};
 
 	put(b, bytes, 2U);
 }
 
-static void put32(builder_t *b, uint32_t value)
+static void
+put32(builder_t *b, uint32_t value)
 {
-	uint8_t bytes[4] = { (uint8_t)value, (uint8_t)(value >> 8U), (uint8_t)(value >> 16U), (uint8_t)(value >> 24U) };
+	uint8_t bytes[4] = {(uint8_t)value, (uint8_t)(value >> 8U), (uint8_t)(value >> 16U), (uint8_t)(value >> 24U)};
 
 	put(b, bytes, 4U);
 }
 
-static void put_tag(builder_t *b, const char *tag)
+static void
+put_tag(builder_t *b, const char *tag)
 {
 	put(b, tag, 4U);
 }
 
-static void patch32(builder_t *b, size_t offset, uint32_t value)
+static void
+patch32(builder_t *b, size_t offset, uint32_t value)
 {
 	b->bytes[offset] = (uint8_t)value;
 	b->bytes[offset + 1U] = (uint8_t)(value >> 8U);
@@ -72,7 +77,8 @@ static void patch32(builder_t *b, size_t offset, uint32_t value)
 	b->bytes[offset + 3U] = (uint8_t)(value >> 24U);
 }
 
-static void riff_begin(builder_t *b)
+static void
+riff_begin(builder_t *b)
 {
 	memset(b, 0, sizeof(*b));
 	put_tag(b, "RIFF");
@@ -80,12 +86,14 @@ static void riff_begin(builder_t *b)
 	put_tag(b, "WAVE");
 }
 
-static void riff_end(builder_t *b)
+static void
+riff_end(builder_t *b)
 {
 	patch32(b, 4U, (uint32_t)(b->size - 8U));
 }
 
-static void fmt_chunk(builder_t *b, uint32_t tag, uint32_t channels, uint32_t rate, uint32_t bits)
+static void
+fmt_chunk(builder_t *b, uint32_t tag, uint32_t channels, uint32_t rate, uint32_t bits)
 {
 	put_tag(b, "fmt ");
 	put32(b, 16U);
@@ -97,9 +105,12 @@ static void fmt_chunk(builder_t *b, uint32_t tag, uint32_t channels, uint32_t ra
 	put16(b, bits);
 }
 
-static void fmt_extensible(builder_t *b, uint32_t subtag, uint32_t channels, uint32_t rate, uint32_t bits, uint32_t valid, uint32_t mask)
+static void
+fmt_extensible(builder_t *b, uint32_t subtag, uint32_t channels, uint32_t rate, uint32_t bits, uint32_t valid,
+			   uint32_t mask)
 {
-	static const uint8_t tail[14] = { 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71 };
+	static const uint8_t tail[14] = {0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80,
+									 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71};
 
 	put_tag(b, "fmt ");
 	put32(b, 40U);
@@ -116,7 +127,8 @@ static void fmt_extensible(builder_t *b, uint32_t subtag, uint32_t channels, uin
 	put(b, tail, sizeof(tail));
 }
 
-static void data_chunk(builder_t *b, const uint8_t *samples, size_t size)
+static void
+data_chunk(builder_t *b, const uint8_t *samples, size_t size)
 {
 	put_tag(b, "data");
 	put32(b, (uint32_t)size);
@@ -129,7 +141,8 @@ static void data_chunk(builder_t *b, const uint8_t *samples, size_t size)
 	}
 }
 
-static void list_chunk(builder_t *b, size_t size)
+static void
+list_chunk(builder_t *b, size_t size)
 {
 	put_tag(b, "LIST");
 	put32(b, (uint32_t)size);
@@ -148,7 +161,8 @@ static void list_chunk(builder_t *b, size_t size)
 }
 
 /* A copy in an allocation of exactly `size` bytes, for ASan. */
-static uint8_t *exact(const uint8_t *bytes, size_t size)
+static uint8_t *
+exact(const uint8_t *bytes, size_t size)
 {
 	uint8_t *copy = malloc(size == 0U ? 1U : size);
 
@@ -156,7 +170,8 @@ static uint8_t *exact(const uint8_t *bytes, size_t size)
 	return copy;
 }
 
-static wav_status_t parse_exact(const uint8_t *bytes, size_t size, wav_info_t *info)
+static wav_status_t
+parse_exact(const uint8_t *bytes, size_t size, wav_info_t *info)
 {
 	uint8_t *copy = exact(bytes, size);
 	wav_status_t status = wav_parse(copy, size, info);
@@ -172,19 +187,20 @@ static wav_status_t parse_exact(const uint8_t *bytes, size_t size, wav_info_t *i
 
 /* ---- accepted files ---------------------------------------------------- */
 
-static void test_formats(void)
+static void
+test_formats(void)
 {
 	static const struct {
 		uint32_t tag;
 		uint32_t channels;
 		uint32_t bits;
-	} cases[] = {
-		{ 1U, 1U, 8U }, { 1U, 2U, 8U }, { 1U, 1U, 16U }, { 1U, 2U, 16U }, { 1U, 2U, 24U }, { 1U, 1U, 24U },
-		{ 1U, 2U, 32U }, { 1U, 6U, 16U }, { 3U, 1U, 32U }, { 3U, 2U, 32U }, { 3U, 2U, 64U }, { 1U, 8U, 16U }
-	};
+	} cases[] = {{1U, 1U, 8U},	{1U, 2U, 8U},  {1U, 1U, 16U}, {1U, 2U, 16U}, {1U, 2U, 24U}, {1U, 1U, 24U},
+				 {1U, 2U, 32U}, {1U, 6U, 16U}, {3U, 1U, 32U}, {3U, 2U, 32U}, {3U, 2U, 64U}, {1U, 8U, 16U}};
+
 	uint8_t samples[512];
 
-	for (size_t index = 0U; index < sizeof(samples); index++) samples[index] = (uint8_t)(index * 7U);
+	for (size_t index = 0U; index < sizeof(samples); index++)
+		samples[index] = (uint8_t)(index * 7U);
 
 	for (size_t index = 0U; index < sizeof(cases) / sizeof(cases[0]); index++) {
 		builder_t b;
@@ -210,9 +226,10 @@ static void test_formats(void)
 	}
 }
 
-static void test_extensible(void)
+static void
+test_extensible(void)
 {
-	uint8_t samples[32] = { 1 };
+	uint8_t samples[32] = {1};
 	builder_t b;
 	wav_info_t info;
 
@@ -221,7 +238,8 @@ static void test_extensible(void)
 	data_chunk(&b, samples, 24U);
 	riff_end(&b);
 	CHECK(parse_exact(b.bytes, b.size, &info) == WAV_OK);
-	CHECK(info.extensible && info.encoding == WAV_ENCODING_PCM && info.bits_per_sample == 24U && info.valid_bits == 20U);
+	CHECK(info.extensible && info.encoding == WAV_ENCODING_PCM && info.bits_per_sample == 24U &&
+		  info.valid_bits == 20U);
 	CHECK(info.channel_mask == 3U && info.sample_rate == 48000U && info.frames == 4U);
 	free(b.bytes);
 
@@ -268,13 +286,15 @@ static void test_extensible(void)
 	free(b.bytes);
 }
 
-static void test_chunk_walking(void)
+static void
+test_chunk_walking(void)
 {
 	uint8_t samples[16];
 	builder_t b;
 	wav_info_t info;
 
-	for (size_t index = 0U; index < sizeof(samples); index++) samples[index] = (uint8_t)(0x10U + index);
+	for (size_t index = 0U; index < sizeof(samples); index++)
+		samples[index] = (uint8_t)(0x10U + index);
 
 	/* LIST before fmt, odd-sized (needs its pad byte), another chunk between fmt and data, and one after. */
 	riff_begin(&b);
@@ -344,14 +364,15 @@ static void test_chunk_walking(void)
 	free(b.bytes);
 }
 
-static void test_sizes_that_lie(void)
+static void
+test_sizes_that_lie(void)
 {
-	uint8_t samples[16] = { 1 };
+	uint8_t samples[16] = {1};
 	builder_t b;
 	wav_info_t info;
 
 	/* A RIFF size of 0, of 0xFFFFFFFF, or too small: not consulted. */
-	static const uint32_t riff_sizes[] = { 0U, 0xFFFFFFFFU, 4U, 0x7FFFFFFFU };
+	static const uint32_t riff_sizes[] = {0U, 0xFFFFFFFFU, 4U, 0x7FFFFFFFU};
 
 	for (size_t index = 0U; index < sizeof(riff_sizes) / sizeof(riff_sizes[0]); index++) {
 		riff_begin(&b);
@@ -406,9 +427,10 @@ static void test_sizes_that_lie(void)
 
 /* ---- refused files ----------------------------------------------------- */
 
-static void test_refusals(void)
+static void
+test_refusals(void)
 {
-	uint8_t samples[16] = { 1 };
+	uint8_t samples[16] = {1};
 	builder_t b;
 	wav_info_t info;
 
@@ -457,7 +479,7 @@ static void test_refusals(void)
 	free(b.bytes);
 
 	/* formats other than PCM and float: ADPCM (2), A-law (6), mu-law (7), MP3 (0x55) */
-	static const uint32_t foreign[] = { 2U, 6U, 7U, 0x55U, 0U, 0xFFFFU };
+	static const uint32_t foreign[] = {2U, 6U, 7U, 0x55U, 0U, 0xFFFFU};
 
 	for (size_t index = 0U; index < sizeof(foreign) / sizeof(foreign[0]); index++) {
 		riff_begin(&b);
@@ -471,18 +493,19 @@ static void test_refusals(void)
 	static const struct {
 		uint32_t tag;
 		uint32_t bits;
-	} widths[] = { { 1U, 4U }, { 1U, 12U }, { 1U, 20U }, { 1U, 64U }, { 3U, 16U }, { 3U, 24U }, { 3U, 8U } };
+	} widths[] = {{1U, 4U}, {1U, 12U}, {1U, 20U}, {1U, 64U}, {3U, 16U}, {3U, 24U}, {3U, 8U}};
 
 	for (size_t index = 0U; index < sizeof(widths) / sizeof(widths[0]); index++) {
 		riff_begin(&b);
 		fmt_chunk(&b, widths[index].tag, 2U, 44100U, widths[index].bits);
 		data_chunk(&b, samples, 16U);
-		CHECK(parse_exact(b.bytes, b.size, &info) == WAV_ERR_UNSUPPORTED || parse_exact(b.bytes, b.size, &info) == WAV_ERR_BAD_FORMAT);
+		CHECK(parse_exact(b.bytes, b.size, &info) == WAV_ERR_UNSUPPORTED ||
+			  parse_exact(b.bytes, b.size, &info) == WAV_ERR_BAD_FORMAT);
 		free(b.bytes);
 	}
 
 	/* channels: none, too many */
-	static const uint32_t bad_channels[] = { 0U, 9U, 255U, 65535U };
+	static const uint32_t bad_channels[] = {0U, 9U, 255U, 65535U};
 
 	for (size_t index = 0U; index < sizeof(bad_channels) / sizeof(bad_channels[0]); index++) {
 		riff_begin(&b);
@@ -493,7 +516,7 @@ static void test_refusals(void)
 	}
 
 	/* rates: none, absurd */
-	static const uint32_t bad_rates[] = { 0U, WAV_SAMPLE_RATE_MAX + 1U, 0xFFFFFFFFU };
+	static const uint32_t bad_rates[] = {0U, WAV_SAMPLE_RATE_MAX + 1U, 0xFFFFFFFFU};
 
 	for (size_t index = 0U; index < sizeof(bad_rates) / sizeof(bad_rates[0]); index++) {
 		riff_begin(&b);
@@ -504,7 +527,7 @@ static void test_refusals(void)
 	}
 
 	/* a block alignment that disagrees with channels and width, in either direction, and zero */
-	static const uint32_t aligns[] = { 0U, 2U, 3U, 8U, 65535U };
+	static const uint32_t aligns[] = {0U, 2U, 3U, 8U, 65535U};
 
 	for (size_t index = 0U; index < sizeof(aligns) / sizeof(aligns[0]); index++) {
 		riff_begin(&b);
@@ -523,14 +546,16 @@ static void test_refusals(void)
 
 	CHECK(strcmp(wav_status_name(WAV_OK), "ok") == 0);
 	CHECK(strcmp(wav_status_name((wav_status_t)99), "?") == 0);
-	for (int status = WAV_OK; status <= WAV_ERR_UNSUPPORTED; status++) CHECK(strcmp(wav_status_name((wav_status_t)status), "?") != 0);
+	for (int status = WAV_OK; status <= WAV_ERR_UNSUPPORTED; status++)
+		CHECK(strcmp(wav_status_name((wav_status_t)status), "?") != 0);
 	CHECK(strcmp(wav_encoding_name(WAV_ENCODING_PCM), "PCM") == 0);
 	CHECK(strcmp(wav_encoding_name(WAV_ENCODING_FLOAT), "float") == 0);
 }
 
 /* ---- conversion -------------------------------------------------------- */
 
-static wav_info_t make_info(uint32_t tag, uint32_t channels, uint32_t bits, const uint8_t *samples, size_t size, builder_t *b)
+static wav_info_t
+make_info(uint32_t tag, uint32_t channels, uint32_t bits, const uint8_t *samples, size_t size, builder_t *b)
 {
 	wav_info_t info;
 
@@ -542,7 +567,8 @@ static wav_info_t make_info(uint32_t tag, uint32_t channels, uint32_t bits, cons
 	return info;
 }
 
-static void float_bits(uint8_t *out, float value)
+static void
+float_bits(uint8_t *out, float value)
 {
 	uint32_t bits;
 
@@ -553,29 +579,33 @@ static void float_bits(uint8_t *out, float value)
 	out[3] = (uint8_t)(bits >> 24U);
 }
 
-static void double_bits(uint8_t *out, double value)
+static void
+double_bits(uint8_t *out, double value)
 {
 	uint64_t bits;
 
 	memcpy(&bits, &value, sizeof(bits));
-	for (int index = 0; index < 8; index++) out[index] = (uint8_t)(bits >> (8 * index));
+	for (int index = 0; index < 8; index++)
+		out[index] = (uint8_t)(bits >> (8 * index));
 }
 
-static void test_conversion(void)
+static void
+test_conversion(void)
 {
 	builder_t b;
 	int16_t out[64];
 
 	/* 8-bit unsigned, mono: 128 is zero */
-	static const uint8_t u8[] = { 128U, 255U, 0U, 129U };
+	static const uint8_t u8[] = {128U, 255U, 0U, 129U};
 	wav_info_t info = make_info(1U, 1U, 8U, u8, sizeof(u8), &b);
 
 	CHECK(wav_convert_s16_stereo(&info, 0U, out, 64U) == 4U);
-	CHECK(out[0] == 0 && out[1] == 0 && out[2] == 32512 && out[3] == 32512 && out[4] == -32768 && out[5] == -32768 && out[6] == 256 && out[7] == 256);
+	CHECK(out[0] == 0 && out[1] == 0 && out[2] == 32512 && out[3] == 32512 && out[4] == -32768 && out[5] == -32768 &&
+		  out[6] == 256 && out[7] == 256);
 	free(b.bytes);
 
 	/* 16-bit stereo is copied as it is */
-	static const uint8_t s16[] = { 0x01, 0x80, 0xFF, 0x7F, 0x00, 0x00, 0x34, 0x12 };
+	static const uint8_t s16[] = {0x01, 0x80, 0xFF, 0x7F, 0x00, 0x00, 0x34, 0x12};
 
 	info = make_info(1U, 2U, 16U, s16, sizeof(s16), &b);
 	CHECK(wav_convert_s16_stereo(&info, 0U, out, 64U) == 2U);
@@ -589,7 +619,7 @@ static void test_conversion(void)
 	free(b.bytes);
 
 	/* 24-bit: the top 16 bits */
-	static const uint8_t s24[] = { 0x00, 0x00, 0x80, 0xFF, 0xFF, 0x7F, 0x12, 0x34, 0x56, 0xFF, 0xFF, 0xFF };
+	static const uint8_t s24[] = {0x00, 0x00, 0x80, 0xFF, 0xFF, 0x7F, 0x12, 0x34, 0x56, 0xFF, 0xFF, 0xFF};
 
 	info = make_info(1U, 2U, 24U, s24, sizeof(s24), &b);
 	CHECK(wav_convert_s16_stereo(&info, 0U, out, 64U) == 2U);
@@ -597,7 +627,7 @@ static void test_conversion(void)
 	free(b.bytes);
 
 	/* 32-bit */
-	static const uint8_t s32[] = { 0x00, 0x00, 0x00, 0x80, 0xFF, 0xFF, 0xFF, 0x7F };
+	static const uint8_t s32[] = {0x00, 0x00, 0x00, 0x80, 0xFF, 0xFF, 0xFF, 0x7F};
 
 	info = make_info(1U, 2U, 32U, s32, sizeof(s32), &b);
 	CHECK(wav_convert_s16_stereo(&info, 0U, out, 64U) == 1U);
@@ -605,12 +635,14 @@ static void test_conversion(void)
 	free(b.bytes);
 
 	/* float32: exact values, the rounding of a half, clamping, tiny values, NaN, infinity */
-	static const float floats[] = { 0.0f, 1.0f, -1.0f, 0.5f, -0.5f, 2.0f, -3.5f, 1e-9f, -1e-9f, 0.99999f, 1.0f / 32767.0f, 0.25f };
+	static const float floats[] = {0.0f,  1.0f,	 -1.0f,	 0.5f,	   -0.5f,			2.0f,
+								   -3.5f, 1e-9f, -1e-9f, 0.99999f, 1.0f / 32767.0f, 0.25f};
 	uint8_t raw[sizeof(floats) + 32U];
 
-	for (size_t index = 0U; index < sizeof(floats) / sizeof(floats[0]); index++) float_bits(raw + 4U * index, floats[index]);
+	for (size_t index = 0U; index < sizeof(floats) / sizeof(floats[0]); index++)
+		float_bits(raw + 4U * index, floats[index]);
 
-	static const uint32_t special[] = { 0x7FC00000U, 0xFF800000U, 0x7F800000U, 0x00000001U, 0x80000000U };
+	static const uint32_t special[] = {0x7FC00000U, 0xFF800000U, 0x7F800000U, 0x00000001U, 0x80000000U};
 
 	for (size_t index = 0U; index < sizeof(special) / sizeof(special[0]); index++) {
 		size_t at = sizeof(floats) + 4U * index;
@@ -626,30 +658,35 @@ static void test_conversion(void)
 	info = make_info(3U, 1U, 32U, raw, float_count * 4U, &b);
 	CHECK(wav_convert_s16_stereo(&info, 0U, out, 64U) == float_count);
 
-	static const int expected[] = { 0, 32767, -32768, 16384, -16384, 32767, -32768, 0, 0, 32767, 1, 8192, 0, -32768, 32767, 0, 0 };
+	static const int expected[] = {0,	  32767, -32768, 16384, -16384, 32767, -32768, 0, 0,
+								   32767, 1,	 8192,	 0,		-32768, 32767, 0,	   0};
 
 	for (size_t index = 0U; index < float_count; index++) {
-		if (out[2U * index] != expected[index]) printf("float %zu: got %d, expected %d\n", index, out[2U * index], expected[index]);
+		if (out[2U * index] != expected[index])
+			printf("float %zu: got %d, expected %d\n", index, out[2U * index], expected[index]);
 		CHECK(out[2U * index] == expected[index]);
 	}
 
 	free(b.bytes);
 
 	/* float64 */
-	static const double doubles[] = { 0.0, 1.0, -1.0, 0.5, -0.25, 7.0, 1e-300, 0.999999 };
+	static const double doubles[] = {0.0, 1.0, -1.0, 0.5, -0.25, 7.0, 1e-300, 0.999999};
 	uint8_t raw64[sizeof(doubles)];
 
-	for (size_t index = 0U; index < sizeof(doubles) / sizeof(doubles[0]); index++) double_bits(raw64 + 8U * index, doubles[index]);
+	for (size_t index = 0U; index < sizeof(doubles) / sizeof(doubles[0]); index++)
+		double_bits(raw64 + 8U * index, doubles[index]);
 
 	info = make_info(3U, 2U, 64U, raw64, sizeof(raw64), &b);
 	CHECK(wav_convert_s16_stereo(&info, 0U, out, 64U) == 4U);
-	CHECK(out[0] == 0 && out[1] == 32767 && out[2] == -32768 && out[3] == 16384 && out[4] == -8192 && out[5] == 32767 && out[6] == 0 && out[7] == 32767);
+	CHECK(out[0] == 0 && out[1] == 32767 && out[2] == -32768 && out[3] == 16384 && out[4] == -8192 && out[5] == 32767 &&
+		  out[6] == 0 && out[7] == 32767);
 	free(b.bytes);
 
 	/* More than two channels keep the first two; six channels of 16 bits */
 	uint8_t six[24];
 
-	for (size_t index = 0U; index < sizeof(six); index++) six[index] = (uint8_t)index;
+	for (size_t index = 0U; index < sizeof(six); index++)
+		six[index] = (uint8_t)index;
 
 	info = make_info(1U, 6U, 16U, six, sizeof(six), &b);
 	CHECK(wav_convert_s16_stereo(&info, 0U, out, 64U) == 2U);
@@ -667,7 +704,7 @@ static void test_conversion(void)
 	CHECK(wav_convert_s16_stereo(&info, 0U, 0, 64U) == 0U);
 	free(b.bytes);
 
-	wav_info_t empty = { 0 };
+	wav_info_t empty = {0};
 
 	CHECK(wav_convert_s16_stereo(&empty, 0U, out, 64U) == 0U);
 }
@@ -676,14 +713,16 @@ static void test_conversion(void)
 
 static uint32_t g_seed = 12345U;
 
-static uint32_t random32(void)
+static uint32_t
+random32(void)
 {
 	g_seed = g_seed * 1664525U + 1013904223U;
 	return g_seed >> 8U;
 }
 
 /* Parse; if it is accepted, convert the whole stream in small steps. Never crash, never leave the buffer. */
-static void exercise(const uint8_t *bytes, size_t size)
+static void
+exercise(const uint8_t *bytes, size_t size)
 {
 	uint8_t *copy = exact(bytes, size);
 	wav_info_t info;
@@ -697,7 +736,8 @@ static void exercise(const uint8_t *bytes, size_t size)
 		CHECK(info.frames * info.block_align == info.data_bytes);
 		CHECK(info.data_bytes == 0U || (info.data >= copy && info.data + info.data_bytes <= copy + size));
 
-		while ((got = wav_convert_s16_stereo(&info, frame, out, 8U)) != 0U) frame += got;
+		while ((got = wav_convert_s16_stereo(&info, frame, out, 8U)) != 0U)
+			frame += got;
 
 		CHECK(frame == info.frames);
 	} else {
@@ -707,9 +747,11 @@ static void exercise(const uint8_t *bytes, size_t size)
 	free(copy);
 }
 
-static void test_every_prefix_and_mutation(void)
+static void
+test_every_prefix_and_mutation(void)
 {
-	static const uint8_t rich[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24 };
+	static const uint8_t rich[] = {1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12,
+								   13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24};
 	builder_t files[4];
 
 	riff_begin(&files[0]);
@@ -736,11 +778,12 @@ static void test_every_prefix_and_mutation(void)
 
 	/* Every prefix of every file, including the empty one. */
 	for (int file = 0; file < 4; file++) {
-		for (size_t length = 0U; length <= files[file].size; length++) exercise(files[file].bytes, length);
+		for (size_t length = 0U; length <= files[file].size; length++)
+			exercise(files[file].bytes, length);
 	}
 
 	/* Every single byte set to each of a few interesting values, then random flips of several bytes. */
-	static const uint8_t values[] = { 0x00, 0x01, 0x7F, 0x80, 0xFE, 0xFF };
+	static const uint8_t values[] = {0x00, 0x01, 0x7F, 0x80, 0xFE, 0xFF};
 
 	for (int file = 0; file < 4; file++) {
 		uint8_t *work = exact(files[file].bytes, files[file].size);
@@ -761,7 +804,8 @@ static void test_every_prefix_and_mutation(void)
 
 			unsigned int flips = 1U + random32() % 6U;
 
-			for (unsigned int flip = 0U; flip < flips; flip++) work[random32() % files[file].size] = (uint8_t)random32();
+			for (unsigned int flip = 0U; flip < flips; flip++)
+				work[random32() % files[file].size] = (uint8_t)random32();
 
 			size_t length = random32() % 8U == 0U ? random32() % (files[file].size + 1U) : files[file].size;
 
@@ -775,17 +819,20 @@ static void test_every_prefix_and_mutation(void)
 	uint8_t noise[128];
 
 	for (unsigned int round = 0U; round < 20000U; round++) {
-		for (size_t index = 0U; index < sizeof(noise); index++) noise[index] = (uint8_t)random32();
+		for (size_t index = 0U; index < sizeof(noise); index++)
+			noise[index] = (uint8_t)random32();
 
 		if (round % 2U == 0U) memcpy(noise, files[0].bytes, 12U);
 
 		exercise(noise, random32() % (sizeof(noise) + 1U));
 	}
 
-	for (int file = 0; file < 4; file++) free(files[file].bytes);
+	for (int file = 0; file < 4; file++)
+		free(files[file].bytes);
 }
 
-int main(void)
+int
+main(void)
 {
 	test_formats();
 	test_extensible();

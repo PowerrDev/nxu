@@ -17,17 +17,25 @@
  * stream itself, its ring and its blocking are all in virtio_sound_pcm.c.
  */
 
-static vfs_status_t virtio_snd_dev_status(virtio_snd_error_t error)
+static vfs_status_t
+virtio_snd_dev_status(virtio_snd_error_t error)
 {
 	switch (error) {
-	case VIRTIO_SND_E_NONE: return VFS_STATUS_OK;
-	case VIRTIO_SND_E_BUSY: return VFS_STATUS_BUSY;
-	case VIRTIO_SND_E_AGAIN: return VFS_STATUS_WOULD_BLOCK;
-	case VIRTIO_SND_E_INTERRUPTED: return VFS_STATUS_INTERRUPTED;
+	case VIRTIO_SND_E_NONE:
+		return VFS_STATUS_OK;
+	case VIRTIO_SND_E_BUSY:
+		return VFS_STATUS_BUSY;
+	case VIRTIO_SND_E_AGAIN:
+		return VFS_STATUS_WOULD_BLOCK;
+	case VIRTIO_SND_E_INTERRUPTED:
+		return VFS_STATUS_INTERRUPTED;
 	case VIRTIO_SND_E_INVALID:
-	case VIRTIO_SND_E_ILLEGAL: return VFS_STATUS_INVALID;
-	case VIRTIO_SND_E_NO_MEMORY: return VFS_STATUS_NO_MEMORY;
-	default: return VFS_STATUS_IO_ERROR;
+	case VIRTIO_SND_E_ILLEGAL:
+		return VFS_STATUS_INVALID;
+	case VIRTIO_SND_E_NO_MEMORY:
+		return VFS_STATUS_NO_MEMORY;
+	default:
+		return VFS_STATUS_IO_ERROR;
 	}
 }
 
@@ -35,16 +43,15 @@ static vfs_status_t virtio_snd_dev_status(virtio_snd_error_t error)
 static const struct {
 	uint32_t abi;
 	uint32_t device;
-} g_virtio_snd_formats[] = {
-	{ NXU_AUDIO_FORMAT_U8, VIRTIO_SND_PCM_FMT_U8 },
-	{ NXU_AUDIO_FORMAT_S16, VIRTIO_SND_PCM_FMT_S16 },
-	{ NXU_AUDIO_FORMAT_S32, VIRTIO_SND_PCM_FMT_S32 },
-	{ NXU_AUDIO_FORMAT_F32, VIRTIO_SND_PCM_FMT_FLOAT }
-};
+} g_virtio_snd_formats[] = {{NXU_AUDIO_FORMAT_U8, VIRTIO_SND_PCM_FMT_U8},
+							{NXU_AUDIO_FORMAT_S16, VIRTIO_SND_PCM_FMT_S16},
+							{NXU_AUDIO_FORMAT_S32, VIRTIO_SND_PCM_FMT_S32},
+							{NXU_AUDIO_FORMAT_F32, VIRTIO_SND_PCM_FMT_FLOAT}};
 
 #define VIRTIO_SND_FORMAT_COUNT (sizeof(g_virtio_snd_formats) / sizeof(g_virtio_snd_formats[0]))
 
-static bool virtio_snd_dev_format_to_device(uint32_t abi, uint32_t *device)
+static bool
+virtio_snd_dev_format_to_device(uint32_t abi, uint32_t *device)
 {
 	for (uint32_t index = 0U; index < VIRTIO_SND_FORMAT_COUNT; index++) {
 		if (g_virtio_snd_formats[index].abi != abi) continue;
@@ -57,7 +64,8 @@ static bool virtio_snd_dev_format_to_device(uint32_t abi, uint32_t *device)
 }
 
 /* A format the ABI has no name for (the device fell back to something exotic) is reported as 0. */
-static uint32_t virtio_snd_dev_format_to_abi(uint32_t device)
+static uint32_t
+virtio_snd_dev_format_to_abi(uint32_t device)
 {
 	for (uint32_t index = 0U; index < VIRTIO_SND_FORMAT_COUNT; index++) {
 		if (g_virtio_snd_formats[index].device == device) return g_virtio_snd_formats[index].abi;
@@ -66,7 +74,8 @@ static uint32_t virtio_snd_dev_format_to_abi(uint32_t device)
 	return 0U;
 }
 
-static void virtio_snd_dev_params_to_abi(const virtio_snd_params_t *params, nxu_audio_params_t *abi)
+static void
+virtio_snd_dev_params_to_abi(const virtio_snd_params_t *params, nxu_audio_params_t *abi)
 {
 	abi->rate = params->rate_hz;
 	abi->channels = params->channels;
@@ -75,7 +84,8 @@ static void virtio_snd_dev_params_to_abi(const virtio_snd_params_t *params, nxu_
 	abi->buffer_bytes = params->buffer_bytes;
 }
 
-static vfs_status_t virtio_snd_dev_open(void *context, uint32_t flags)
+static vfs_status_t
+virtio_snd_dev_open(void *context, uint32_t flags)
 {
 	virtio_snd_device_t *device = context;
 
@@ -93,17 +103,20 @@ static vfs_status_t virtio_snd_dev_open(void *context, uint32_t flags)
 	return virtio_snd_dev_status(virtio_snd_playback_open(device, (flags & VFS_OPEN_NONBLOCK) != 0U));
 }
 
-static void virtio_snd_dev_close(void *context)
+static void
+virtio_snd_dev_close(void *context)
 {
 	virtio_snd_playback_close(context);
 }
 
-static vfs_status_t virtio_snd_dev_write(void *context, const void *buffer, uint64_t size, uint64_t *written_size)
+static vfs_status_t
+virtio_snd_dev_write(void *context, const void *buffer, uint64_t size, uint64_t *written_size)
 {
 	return virtio_snd_dev_status(virtio_snd_playback_write(context, buffer, size, written_size));
 }
 
-static void virtio_snd_dev_info(virtio_snd_device_t *device, nxu_audio_info_t *abi)
+static void
+virtio_snd_dev_info(virtio_snd_device_t *device, nxu_audio_info_t *abi)
 {
 	virtio_snd_playback_info_t info;
 
@@ -118,10 +131,18 @@ static void virtio_snd_dev_info(virtio_snd_device_t *device, nxu_audio_info_t *a
 	virtio_snd_dev_params_to_abi(&info.params, &abi->params);
 
 	switch (info.state) {
-	case VIRTIO_SND_PCM_STATE_PREPARED: abi->state = NXU_AUDIO_STATE_PREPARED; break;
-	case VIRTIO_SND_PCM_STATE_STARTED: abi->state = NXU_AUDIO_STATE_RUNNING; break;
-	case VIRTIO_SND_PCM_STATE_STOPPED: abi->state = NXU_AUDIO_STATE_STOPPED; break;
-	default: abi->state = NXU_AUDIO_STATE_IDLE; break;
+	case VIRTIO_SND_PCM_STATE_PREPARED:
+		abi->state = NXU_AUDIO_STATE_PREPARED;
+		break;
+	case VIRTIO_SND_PCM_STATE_STARTED:
+		abi->state = NXU_AUDIO_STATE_RUNNING;
+		break;
+	case VIRTIO_SND_PCM_STATE_STOPPED:
+		abi->state = NXU_AUDIO_STATE_STOPPED;
+		break;
+	default:
+		abi->state = NXU_AUDIO_STATE_IDLE;
+		break;
 	}
 
 	abi->channels_min = info.channels_min;
@@ -137,14 +158,16 @@ static void virtio_snd_dev_info(virtio_snd_device_t *device, nxu_audio_info_t *a
 	}
 
 	for (uint32_t index = 0U; index < VIRTIO_SND_FORMAT_COUNT; index++) {
-		if ((info.formats & (1ULL << g_virtio_snd_formats[index].device)) != 0ULL) abi->formats |= 1U << g_virtio_snd_formats[index].abi;
+		if ((info.formats & (1ULL << g_virtio_snd_formats[index].device)) != 0ULL)
+			abi->formats |= 1U << g_virtio_snd_formats[index].abi;
 	}
 
 	abi->latency_bytes = info.latency_bytes;
 	abi->queued_periods = info.queued_periods;
 }
 
-static vfs_status_t virtio_snd_dev_ioctl(void *context, uint32_t command, void *argument)
+static vfs_status_t
+virtio_snd_dev_ioctl(void *context, uint32_t command, void *argument)
 {
 	virtio_snd_device_t *device = context;
 
@@ -186,14 +209,13 @@ static vfs_status_t virtio_snd_dev_ioctl(void *context, uint32_t command, void *
 	}
 }
 
-static const devfs_operations_t g_virtio_snd_dev_operations = {
-	.open = virtio_snd_dev_open,
-	.close = virtio_snd_dev_close,
-	.write = virtio_snd_dev_write,
-	.ioctl = virtio_snd_dev_ioctl
-};
+static const devfs_operations_t g_virtio_snd_dev_operations = {.open = virtio_snd_dev_open,
+															   .close = virtio_snd_dev_close,
+															   .write = virtio_snd_dev_write,
+															   .ioctl = virtio_snd_dev_ioctl};
 
-bool virtio_snd_dev_register(virtio_snd_device_t *device)
+bool
+virtio_snd_dev_register(virtio_snd_device_t *device)
 {
 	if (!devfs_register_device("audio0", &g_virtio_snd_dev_operations, device)) {
 		VIRTIO_SND_LOG("/dev/audio0 could not be registered\n");

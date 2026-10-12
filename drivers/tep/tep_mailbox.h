@@ -24,20 +24,20 @@
 #include <stdint.h>
 
 typedef enum {
-	TEP_LINK_ABSENT = 0,        /* no mailbox UART on this machine */
-	TEP_LINK_UNAVAILABLE,       /* link present, tepOS not answering (yet) */
-	TEP_LINK_AVAILABLE          /* HELLO succeeded and health checks pass */
+	TEP_LINK_ABSENT = 0,  /* no mailbox UART on this machine */
+	TEP_LINK_UNAVAILABLE, /* link present, tepOS not answering (yet) */
+	TEP_LINK_AVAILABLE	  /* HELLO succeeded and health checks pass */
 } tep_link_state_t;
 
 typedef enum {
-	TEP_REQ_OK = 0,             /* a response arrived; see its status */
-	TEP_REQ_UNAVAILABLE,        /* refused: tepOS is not available */
-	TEP_REQ_TIMEOUT,            /* no matching response in time */
-	TEP_REQ_INVALID             /* bad arguments or a malformed response */
+	TEP_REQ_OK = 0,		 /* a response arrived; see its status */
+	TEP_REQ_UNAVAILABLE, /* refused: tepOS is not available */
+	TEP_REQ_TIMEOUT,	 /* no matching response in time */
+	TEP_REQ_INVALID		 /* bad arguments or a malformed response */
 } tep_request_result_t;
 
 typedef struct {
-	uint16_t status;            /* tep_mb_status_t */
+	uint16_t status; /* tep_mb_status_t */
 	uint16_t payload_len;
 	uint8_t payload[TEP_MB_MAX_PAYLOAD];
 } tep_mailbox_response_t;
@@ -60,7 +60,8 @@ tep_link_state_t tep_mailbox_link_state(void);
  * TEP_REQ_UNAVAILABLE unless the link is TEP_LINK_AVAILABLE. Callers must
  * treat anything but TEP_REQ_OK with status TEP_MB_OK as a failure.
  */
-tep_request_result_t tep_mailbox_request(uint16_t command, const void *payload, uint16_t payload_len, tep_mailbox_response_t *response);
+tep_request_result_t tep_mailbox_request(uint16_t command, const void *payload, uint16_t payload_len,
+										 tep_mailbox_response_t *response);
 
 /*
  * tep_mailbox_health:

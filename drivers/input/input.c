@@ -29,10 +29,10 @@ static input_state_t g_input;
  *
  * Initialize the bounded raw input queue and accounting state.
  */
-bool input_init(void)
+bool
+input_init(void)
 {
-	if (g_input.initialized)
-		return true;
+	if (g_input.initialized) return true;
 	memset(&g_input, 0, sizeof(g_input));
 	g_input.initialized = true;
 	return true;
@@ -44,14 +44,13 @@ bool input_init(void)
  * Append one normalized input event without blocking or allocating. Queue
  * overflow drops the incoming event and preserves existing FIFO order.
  */
-bool input_publish(const input_event_t *event)
+bool
+input_publish(const input_event_t *event)
 {
-	if (!g_input.initialized || event == 0)
-		return false;
+	if (!g_input.initialized || event == 0) return false;
 	/* Secure entry belongs only to the keyboard class's private queue.
 	 * Keeping a raw copy would reveal it to display clients after the modal. */
-	if (event->device_class == INPUT_DEVICE_KEYBOARD && keyboard_secure_active())
-		return true;
+	if (event->device_class == INPUT_DEVICE_KEYBOARD && keyboard_secure_active()) return true;
 
 	uint64_t irq_state = ml_irq_save();
 
@@ -81,10 +80,10 @@ bool input_publish(const input_event_t *event)
  * Remove the oldest queued input event. This primitive is non-blocking and
  * is intended to sit below a future waitable userspace interface.
  */
-bool input_read(input_event_t *event)
+bool
+input_read(input_event_t *event)
 {
-	if (!g_input.initialized || event == 0)
-		return false;
+	if (!g_input.initialized || event == 0) return false;
 
 	uint64_t irq_state = ml_irq_save();
 
@@ -102,7 +101,8 @@ bool input_read(input_event_t *event)
 	return true;
 }
 
-void input_flush(void)
+void
+input_flush(void)
 {
 	uint64_t irq_state = ml_irq_save();
 	memset(g_input.events, 0, sizeof(g_input.events));
@@ -116,7 +116,8 @@ void input_flush(void)
  * targets, where a plain 64-bit load is two instructions and a lock-free
  * 64-bit atomic load is not guaranteed to exist.
  */
-uint64_t input_event_count(void)
+uint64_t
+input_event_count(void)
 {
 	uint64_t irq_state = ml_irq_save();
 	uint64_t value = g_input.published;
@@ -125,7 +126,8 @@ uint64_t input_event_count(void)
 	return value;
 }
 
-uint64_t input_drop_count(void)
+uint64_t
+input_drop_count(void)
 {
 	uint64_t irq_state = ml_irq_save();
 	uint64_t value = g_input.dropped;
@@ -134,7 +136,8 @@ uint64_t input_drop_count(void)
 	return value;
 }
 
-uint32_t input_pending_count(void)
+uint32_t
+input_pending_count(void)
 {
 	return __atomic_load_n(&g_input.count, __ATOMIC_ACQUIRE);
 }
@@ -145,10 +148,10 @@ uint32_t input_pending_count(void)
  * Emit low-frequency bring-up diagnostics when input counters change. This
  * routine is deliberately outside the IRQ event path.
  */
-void input_dump_activity(void)
+void
+input_dump_activity(void)
 {
-	if (!g_input.initialized)
-		return;
+	if (!g_input.initialized) return;
 
 	uint64_t published = input_event_count();
 	uint64_t dropped = input_drop_count();

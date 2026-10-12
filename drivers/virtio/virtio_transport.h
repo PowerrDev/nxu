@@ -113,82 +113,98 @@ typedef struct virtio_device {
 	bool initialized;
 	bool driver_ok;
 
-	/* Set by irq_attach when the handler really is on the device's interrupt line (a polled transport leaves it clear). */
+	/* Set by irq_attach when the handler really is on the device's interrupt line (a polled transport leaves it clear).
+	 */
 	bool irq_bound;
 	virtio_pci_state_t pci;
 } virtio_device_t;
 
-static inline bool virtio_device_live(const virtio_device_t *device)
+static inline bool
+virtio_device_live(const virtio_device_t *device)
 {
 	return device != 0 && device->ops != 0;
 }
 
-static inline bool virtio_device_begin(virtio_device_t *device, uint64_t accepted_device_features)
+static inline bool
+virtio_device_begin(virtio_device_t *device, uint64_t accepted_device_features)
 {
 	return virtio_device_live(device) && device->ops->begin(device, accepted_device_features);
 }
 
-static inline bool virtio_device_queue_init(virtio_device_t *device, uint16_t queue_index, uint16_t size, virtqueue_t *queue)
+static inline bool
+virtio_device_queue_init(virtio_device_t *device, uint16_t queue_index, uint16_t size, virtqueue_t *queue)
 {
 	return virtio_device_live(device) && device->ops->queue_init(device, queue_index, size, queue);
 }
 
-static inline bool virtio_device_setup_queue(virtio_device_t *device, uint16_t queue_index, virtqueue_t *queue)
+static inline bool
+virtio_device_setup_queue(virtio_device_t *device, uint16_t queue_index, virtqueue_t *queue)
 {
 	return virtio_device_live(device) && device->ops->setup_queue(device, queue_index, queue);
 }
 
-static inline bool virtio_device_finish(virtio_device_t *device)
+static inline bool
+virtio_device_finish(virtio_device_t *device)
 {
 	return virtio_device_live(device) && device->ops->finish(device);
 }
 
-static inline bool virtio_device_reset(virtio_device_t *device)
+static inline bool
+virtio_device_reset(virtio_device_t *device)
 {
 	return virtio_device_live(device) && device->ops->reset(device);
 }
 
-static inline void virtio_device_fail(virtio_device_t *device)
+static inline void
+virtio_device_fail(virtio_device_t *device)
 {
 	if (virtio_device_live(device)) device->ops->fail(device);
 }
 
-static inline void virtio_device_notify(virtio_device_t *device, uint16_t queue_index)
+static inline void
+virtio_device_notify(virtio_device_t *device, uint16_t queue_index)
 {
 	if (virtio_device_live(device)) device->ops->notify(device, queue_index);
 }
 
-static inline uint32_t virtio_device_interrupt_status(const virtio_device_t *device)
+static inline uint32_t
+virtio_device_interrupt_status(const virtio_device_t *device)
 {
 	return virtio_device_live(device) ? device->ops->interrupt_status(device) : 0U;
 }
 
-static inline void virtio_device_interrupt_ack(virtio_device_t *device, uint32_t status)
+static inline void
+virtio_device_interrupt_ack(virtio_device_t *device, uint32_t status)
 {
 	if (virtio_device_live(device)) device->ops->interrupt_ack(device, status);
 }
 
-static inline bool virtio_device_irq_attach(virtio_device_t *device, irq_handler_t handler, void *context)
+static inline bool
+virtio_device_irq_attach(virtio_device_t *device, irq_handler_t handler, void *context)
 {
 	return virtio_device_live(device) && device->ops->irq_attach(device, handler, context);
 }
 
-static inline uint8_t virtio_device_config_read8(const virtio_device_t *device, uint32_t offset)
+static inline uint8_t
+virtio_device_config_read8(const virtio_device_t *device, uint32_t offset)
 {
 	return virtio_device_live(device) ? device->ops->config_read8(device, offset) : 0U;
 }
 
-static inline uint32_t virtio_device_config_read32(const virtio_device_t *device, uint32_t offset)
+static inline uint32_t
+virtio_device_config_read32(const virtio_device_t *device, uint32_t offset)
 {
 	return virtio_device_live(device) ? device->ops->config_read32(device, offset) : 0U;
 }
 
-static inline uint64_t virtio_device_config_read64(const virtio_device_t *device, uint32_t offset)
+static inline uint64_t
+virtio_device_config_read64(const virtio_device_t *device, uint32_t offset)
 {
 	return virtio_device_live(device) ? device->ops->config_read64(device, offset) : 0ULL;
 }
 
-static inline void virtio_device_config_write8(virtio_device_t *device, uint32_t offset, uint8_t value)
+static inline void
+virtio_device_config_write8(virtio_device_t *device, uint32_t offset, uint8_t value)
 {
 	if (virtio_device_live(device)) device->ops->config_write8(device, offset, value);
 }

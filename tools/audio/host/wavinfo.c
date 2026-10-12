@@ -11,7 +11,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-int main(int argc, char **argv)
+int
+main(int argc, char **argv)
 {
 	if (argc != 2) {
 		fprintf(stderr, "usage: wavinfo <file.wav>\n");
@@ -49,8 +50,11 @@ int main(int argc, char **argv)
 	}
 
 	printf("wavinfo: %s\n", argv[1]);
-	printf("wavinfo: %u-bit %s, %u channel(s), %u Hz\n", info.bits_per_sample, wav_encoding_name(info.encoding), info.channels, info.sample_rate);
-	printf("wavinfo: %llu frame(s), %llu.%03llu s\n", (unsigned long long)info.frames, (unsigned long long)(info.frames / info.sample_rate), (unsigned long long)(info.frames % info.sample_rate * 1000ULL / info.sample_rate));
+	printf("wavinfo: %u-bit %s, %u channel(s), %u Hz\n", info.bits_per_sample, wav_encoding_name(info.encoding),
+		   info.channels, info.sample_rate);
+	printf("wavinfo: %llu frame(s), %llu.%03llu s\n", (unsigned long long)info.frames,
+		   (unsigned long long)(info.frames / info.sample_rate),
+		   (unsigned long long)(info.frames % info.sample_rate * 1000ULL / info.sample_rate));
 
 	int16_t block[2 * 4096];
 	uint64_t frame = 0U;
@@ -75,9 +79,12 @@ int main(int argc, char **argv)
 	printf("wavinfo: peak %d of 32768\n", peak);
 	printf("wavinfo: rms %.0f\n", info.frames != 0U ? __builtin_sqrt(energy / (2.0 * (double)info.frames)) : 0.0);
 
-	if (first_loud != UINT64_MAX) printf("wavinfo: first sample above 500 at frame %llu (%.0f ms)\n", (unsigned long long)first_loud, 1000.0 * (double)first_loud / info.sample_rate);
+	if (first_loud != UINT64_MAX)
+		printf("wavinfo: first sample above 500 at frame %llu (%.0f ms)\n", (unsigned long long)first_loud,
+			   1000.0 * (double)first_loud / info.sample_rate);
 
-	if (info.bits_per_sample != 16U || info.encoding != WAV_ENCODING_PCM || info.channels != 2U || info.sample_rate != 44100U) {
+	if (info.bits_per_sample != 16U || info.encoding != WAV_ENCODING_PCM || info.channels != 2U ||
+		info.sample_rate != 44100U) {
 		printf("wavinfo: not 16-bit stereo PCM at 44100 Hz\n");
 		return 1;
 	}

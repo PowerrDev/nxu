@@ -41,7 +41,8 @@
  * can run something else in place of. The boot context (the bootstrap thread,
  * or any time before the scheduler exists) polls instead.
  */
-static bool virtio_snd_may_sleep(const virtio_snd_device_t *device)
+static bool
+virtio_snd_may_sleep(const virtio_snd_device_t *device)
 {
 	if (!device->transport.irq_bound || !sched_is_initialized()) return false;
 
@@ -50,7 +51,8 @@ static bool virtio_snd_may_sleep(const virtio_snd_device_t *device)
 	return thread != 0 && thread != sched_bootstrap_thread();
 }
 
-static void virtio_snd_yield(void)
+static void
+virtio_snd_yield(void)
 {
 	thread_t thread = current_thread();
 
@@ -63,7 +65,8 @@ static void virtio_snd_yield(void)
 
 /* ---- events ------------------------------------------------------------ */
 
-bool virtio_snd_post_events(virtio_snd_device_t *device)
+bool
+virtio_snd_post_events(virtio_snd_device_t *device)
 {
 	for (uint32_t index = 0U; index < VIRTIO_SND_EVENT_QUEUE_SIZE; index++) {
 		uint16_t desc;
@@ -94,7 +97,8 @@ bool virtio_snd_post_events(virtio_snd_device_t *device)
  * counts and the last event are kept for the summary; nothing is logged from
  * here, it may be the interrupt handler.
  */
-static void virtio_snd_process_events(virtio_snd_device_t *device)
+static void
+virtio_snd_process_events(virtio_snd_device_t *device)
 {
 	uint32_t id;
 	uint32_t length;
@@ -104,7 +108,9 @@ static void virtio_snd_process_events(virtio_snd_device_t *device)
 		for (uint32_t index = 0U; index < VIRTIO_SND_EVENT_QUEUE_SIZE; index++) {
 			if (device->event_desc[index] != id) continue;
 
-			volatile virtio_snd_event_t *event = (volatile virtio_snd_event_t *)(void *)(device->event_page.virtual_address + (size_t)index * sizeof(virtio_snd_event_t));
+			volatile virtio_snd_event_t *event =
+				(volatile virtio_snd_event_t *)(void *)(device->event_page.virtual_address +
+														(size_t)index * sizeof(virtio_snd_event_t));
 
 			ml_dma_rmb();
 
@@ -116,7 +122,8 @@ static void virtio_snd_process_events(virtio_snd_device_t *device)
 			device->last_event_data = data;
 
 			if (code == VIRTIO_SND_EVT_PCM_XRUN) device->xrun_events++;
-			if (code == VIRTIO_SND_EVT_JACK_CONNECTED || code == VIRTIO_SND_EVT_JACK_DISCONNECTED) device->jack_events++;
+			if (code == VIRTIO_SND_EVT_JACK_CONNECTED || code == VIRTIO_SND_EVT_JACK_DISCONNECTED)
+				device->jack_events++;
 
 			event->hdr.code = 0U;
 			event->data = 0U;
@@ -141,7 +148,8 @@ static void virtio_snd_process_events(virtio_snd_device_t *device)
  * is an underrun: the device ran dry, the host plays silence until more
  * arrives. Called with interrupts masked.
  */
-static void virtio_snd_reap(virtio_snd_device_t *device)
+static void
+virtio_snd_reap(virtio_snd_device_t *device)
 {
 	virtio_snd_playback_t *playback = &device->playback;
 	uint32_t id;
@@ -156,7 +164,9 @@ static void virtio_snd_reap(virtio_snd_device_t *device)
 
 			ml_dma_rmb();
 
-			volatile const virtio_snd_pcm_status_t *status = (volatile const virtio_snd_pcm_status_t *)(const void *)(slot->page.virtual_address + VIRTIO_SND_SLOT_STATUS_OFFSET);
+			volatile const virtio_snd_pcm_status_t *status =
+				(volatile const virtio_snd_pcm_status_t *)(const void *)(slot->page.virtual_address +
+																		 VIRTIO_SND_SLOT_STATUS_OFFSET);
 
 			if (status->status != VIRTIO_SND_S_OK) playback->io_errors++;
 
@@ -184,7 +194,8 @@ static void virtio_snd_reap(virtio_snd_device_t *device)
 }
 
 /* Take what the device has finished with; the caller has interrupts masked. */
-static void virtio_snd_service_locked(virtio_snd_device_t *device)
+static void
+virtio_snd_service_locked(virtio_snd_device_t *device)
 {
 	virtio_snd_process_events(device);
 	virtio_snd_reap(device);
@@ -198,7 +209,8 @@ static void virtio_snd_service_locked(virtio_snd_device_t *device)
  * before the queues are looked at, so a completion that lands in between
  * raises a fresh interrupt instead of being lost.
  */
-void virtio_snd_irq(uint32_t intid, void *context)
+void
+virtio_snd_irq(uint32_t intid, void *context)
 {
 	virtio_snd_device_t *device = context;
 
@@ -223,7 +235,8 @@ void virtio_snd_irq(uint32_t intid, void *context)
  * (they stay masked across the sleep; what runs meanwhile has its own state).
  * False when a signal interrupted the wait.
  */
-static bool virtio_snd_wait_step(virtio_snd_device_t *device)
+static bool
+virtio_snd_wait_step(virtio_snd_device_t *device)
 {
 	if (virtio_snd_may_sleep(device)) {
 		if (signal_pending_for(current_proc(), current_thread())) return false;
@@ -237,7 +250,8 @@ static bool virtio_snd_wait_step(virtio_snd_device_t *device)
 }
 
 /* Let `microseconds` go by, collecting completions meanwhile. Interrupts masked by the caller. */
-static void virtio_snd_delay(virtio_snd_device_t *device, uint64_t microseconds)
+static void
+virtio_snd_delay(virtio_snd_device_t *device, uint64_t microseconds)
 {
 	uint64_t deadline = timer_get_microseconds() + microseconds;
 
@@ -257,21 +271,24 @@ static void virtio_snd_delay(virtio_snd_device_t *device, uint64_t microseconds)
  * sent, because the device treats it as a fatal driver error. The state
  * changes only when the device has said OK.
  */
-static virtio_snd_error_t virtio_snd_stream_op(virtio_snd_device_t *device, virtio_snd_pcm_op_t op)
+static virtio_snd_error_t
+virtio_snd_stream_op(virtio_snd_device_t *device, virtio_snd_pcm_op_t op)
 {
 	virtio_snd_playback_t *playback = &device->playback;
 	uint32_t stream = device->playback_stream;
 	virtio_snd_pcm_state_t next;
 
 	if (!virtio_snd_pcm_transition(playback->state, op, &next)) {
-		VIRTIO_SND_LOG("stream %u: %s is illegal in state %s, not sent\n", stream, virtio_snd_pcm_op_name(op), virtio_snd_pcm_state_name(playback->state));
+		VIRTIO_SND_LOG("stream %u: %s is illegal in state %s, not sent\n", stream, virtio_snd_pcm_op_name(op),
+					   virtio_snd_pcm_state_name(playback->state));
 		return VIRTIO_SND_E_ILLEGAL;
 	}
 
 	virtio_snd_error_t error;
 
 	if (op == VIRTIO_SND_PCM_OP_SET_PARAMS) {
-		error = virtio_snd_set_params_request(device, stream, playback->params.buffer_bytes, playback->params.period_bytes, &playback->format);
+		error = virtio_snd_set_params_request(device, stream, playback->params.buffer_bytes,
+											  playback->params.period_bytes, &playback->format);
 	} else {
 		error = virtio_snd_pcm_request(device, virtio_snd_pcm_op_request(op), stream);
 	}
@@ -281,13 +298,15 @@ static virtio_snd_error_t virtio_snd_stream_op(virtio_snd_device_t *device, virt
 		return error;
 	}
 
-	kverbosef("virtio_snd_stream_op: stream %u: %s, %s to %s\n", stream, virtio_snd_pcm_op_name(op), virtio_snd_pcm_state_name(playback->state), virtio_snd_pcm_state_name(next));
+	kverbosef("virtio_snd_stream_op: stream %u: %s, %s to %s\n", stream, virtio_snd_pcm_op_name(op),
+			  virtio_snd_pcm_state_name(playback->state), virtio_snd_pcm_state_name(next));
 	playback->state = next;
 	return VIRTIO_SND_E_NONE;
 }
 
 /* The period the ring is cut into for the current format: the largest whole number of frames in a page's payload. */
-static void virtio_snd_compute_geometry(virtio_snd_playback_t *playback)
+static void
+virtio_snd_compute_geometry(virtio_snd_playback_t *playback)
 {
 	uint32_t sample_bytes = virtio_snd_format_bytes(playback->format.format);
 
@@ -295,11 +314,14 @@ static void virtio_snd_compute_geometry(virtio_snd_playback_t *playback)
 	playback->params.rate_hz = virtio_snd_rate_hz(playback->format.rate);
 	playback->params.channels = playback->format.channels;
 	playback->params.format = playback->format.format;
-	playback->params.period_bytes = playback->frame_bytes == 0U ? 0U : (VIRTIO_SND_PERIOD_MAX_BYTES / playback->frame_bytes) * playback->frame_bytes;
+	playback->params.period_bytes = playback->frame_bytes == 0U
+										? 0U
+										: (VIRTIO_SND_PERIOD_MAX_BYTES / playback->frame_bytes) * playback->frame_bytes;
 	playback->params.buffer_bytes = playback->params.period_bytes * VIRTIO_SND_TX_SLOTS;
 }
 
-static void virtio_snd_slots_free(virtio_snd_device_t *device)
+static void
+virtio_snd_slots_free(virtio_snd_device_t *device)
 {
 	virtio_snd_playback_t *playback = &device->playback;
 
@@ -318,7 +340,8 @@ static void virtio_snd_slots_free(virtio_snd_device_t *device)
 	playback->queued = 0U;
 }
 
-static virtio_snd_error_t virtio_snd_slots_allocate(virtio_snd_device_t *device)
+static virtio_snd_error_t
+virtio_snd_slots_allocate(virtio_snd_device_t *device)
 {
 	virtio_snd_playback_t *playback = &device->playback;
 
@@ -366,7 +389,8 @@ static virtio_snd_error_t virtio_snd_slots_allocate(virtio_snd_device_t *device)
  * idle, and its pages can be freed unless the device has stopped answering
  * (then it may still own them, and they are kept).
  */
-static void virtio_snd_release(virtio_snd_device_t *device)
+static void
+virtio_snd_release(virtio_snd_device_t *device)
 {
 	virtio_snd_playback_t *playback = &device->playback;
 
@@ -379,7 +403,8 @@ static void virtio_snd_release(virtio_snd_device_t *device)
 	virtio_snd_service_locked(device);
 
 	if (playback->queued != 0U) {
-		VIRTIO_SND_LOG("stream %u: %u period(s) are still queued after RELEASE\n", device->playback_stream, playback->queued);
+		VIRTIO_SND_LOG("stream %u: %u period(s) are still queued after RELEASE\n", device->playback_stream,
+					   playback->queued);
 	}
 
 	if (!device->control_dead && playback->queued == 0U) {
@@ -398,12 +423,14 @@ static void virtio_snd_release(virtio_snd_device_t *device)
  * Bring the stream from wherever it is to PREPARED with the parameters the
  * open has chosen: SET_PARAMS, PREPARE, and the ring of periods.
  */
-static virtio_snd_error_t virtio_snd_configure(virtio_snd_device_t *device)
+static virtio_snd_error_t
+virtio_snd_configure(virtio_snd_device_t *device)
 {
 	virtio_snd_playback_t *playback = &device->playback;
 	virtio_snd_error_t error;
 
-	if (playback->state == VIRTIO_SND_PCM_STATE_STARTED || playback->state == VIRTIO_SND_PCM_STATE_STOPPED) virtio_snd_release(device);
+	if (playback->state == VIRTIO_SND_PCM_STATE_STARTED || playback->state == VIRTIO_SND_PCM_STATE_STOPPED)
+		virtio_snd_release(device);
 
 	virtio_snd_compute_geometry(playback);
 
@@ -424,15 +451,18 @@ static virtio_snd_error_t virtio_snd_configure(virtio_snd_device_t *device)
 
 	playback->needs_configure = false;
 
-	VIRTIO_SND_LOG("stream %u: %u Hz, %u channel(s), %s\n", device->playback_stream, playback->params.rate_hz, playback->params.channels, virtio_snd_format_name(playback->params.format));
-	VIRTIO_SND_LOG("stream %u: %u periods of %u bytes\n", device->playback_stream, VIRTIO_SND_TX_SLOTS, playback->params.period_bytes);
+	VIRTIO_SND_LOG("stream %u: %u Hz, %u channel(s), %s\n", device->playback_stream, playback->params.rate_hz,
+				   playback->params.channels, virtio_snd_format_name(playback->params.format));
+	VIRTIO_SND_LOG("stream %u: %u periods of %u bytes\n", device->playback_stream, VIRTIO_SND_TX_SLOTS,
+				   playback->params.period_bytes);
 	VIRTIO_SND_LOG("stream %u: buffer %u bytes\n", device->playback_stream, playback->params.buffer_bytes);
 	return VIRTIO_SND_E_NONE;
 }
 
 /* ---- the ring ---------------------------------------------------------- */
 
-static uint32_t virtio_snd_find_free_slot(const virtio_snd_playback_t *playback)
+static uint32_t
+virtio_snd_find_free_slot(const virtio_snd_playback_t *playback)
 {
 	for (uint32_t index = 0U; index < VIRTIO_SND_TX_SLOTS; index++) {
 		if (playback->slots[index].state == VIRTIO_SND_SLOT_FREE) return index;
@@ -441,13 +471,15 @@ static uint32_t virtio_snd_find_free_slot(const virtio_snd_playback_t *playback)
 	return VIRTIO_SND_NO_SLOT;
 }
 
-static virtio_snd_error_t virtio_snd_start(virtio_snd_device_t *device)
+static virtio_snd_error_t
+virtio_snd_start(virtio_snd_device_t *device)
 {
 	virtio_snd_error_t error = virtio_snd_stream_op(device, VIRTIO_SND_PCM_OP_START);
 
 	if (error == VIRTIO_SND_E_NONE) {
 		device->playback.start_us = timer_get_microseconds();
-		kverbosef("virtio_snd_start: stream %u started with %u period(s) queued\n", device->playback_stream, device->playback.queued);
+		kverbosef("virtio_snd_start: stream %u started with %u period(s) queued\n", device->playback_stream,
+				  device->playback.queued);
 	}
 
 	return error;
@@ -461,7 +493,8 @@ static virtio_snd_error_t virtio_snd_start(virtio_snd_device_t *device)
  * second. A period that ends in the middle of a frame (the last bytes of a
  * stream) is padded with silence. Once enough is queued the stream starts.
  */
-static virtio_snd_error_t virtio_snd_submit_fill(virtio_snd_device_t *device)
+static virtio_snd_error_t
+virtio_snd_submit_fill(virtio_snd_device_t *device)
 {
 	virtio_snd_playback_t *playback = &device->playback;
 	virtio_snd_slot_t *slot = &playback->slots[playback->fill_slot];
@@ -509,7 +542,8 @@ static virtio_snd_error_t virtio_snd_submit_fill(virtio_snd_device_t *device)
 	playback->periods_submitted++;
 	virtio_device_notify(&device->transport, VIRTIO_SND_VQ_TX);
 
-	bool startable = playback->state == VIRTIO_SND_PCM_STATE_PREPARED || playback->state == VIRTIO_SND_PCM_STATE_STOPPED;
+	bool startable =
+		playback->state == VIRTIO_SND_PCM_STATE_PREPARED || playback->state == VIRTIO_SND_PCM_STATE_STOPPED;
 
 	if (startable && playback->queued >= VIRTIO_SND_PREBUFFER_SLOTS) return virtio_snd_start(device);
 
@@ -518,9 +552,11 @@ static virtio_snd_error_t virtio_snd_submit_fill(virtio_snd_device_t *device)
 
 /* ---- the interface ----------------------------------------------------- */
 
-virtio_snd_error_t virtio_snd_playback_open(virtio_snd_device_t *device, bool nonblock)
+virtio_snd_error_t
+virtio_snd_playback_open(virtio_snd_device_t *device, bool nonblock)
 {
-	if (device == 0 || !device->attached || device->playback_stream == VIRTIO_SND_NO_STREAM) return VIRTIO_SND_E_INVALID;
+	if (device == 0 || !device->attached || device->playback_stream == VIRTIO_SND_NO_STREAM)
+		return VIRTIO_SND_E_INVALID;
 	if (device->control_dead) return VIRTIO_SND_E_DEAD;
 
 	virtio_snd_playback_t *playback = &device->playback;
@@ -559,12 +595,15 @@ virtio_snd_error_t virtio_snd_playback_open(virtio_snd_device_t *device, bool no
 	return VIRTIO_SND_E_NONE;
 }
 
-void virtio_snd_playback_set_nonblock(virtio_snd_device_t *device, bool nonblock)
+void
+virtio_snd_playback_set_nonblock(virtio_snd_device_t *device, bool nonblock)
 {
 	if (device != 0) device->playback.nonblock = nonblock;
 }
 
-virtio_snd_error_t virtio_snd_playback_set_params(virtio_snd_device_t *device, const virtio_snd_params_t *wanted, virtio_snd_params_t *actual)
+virtio_snd_error_t
+virtio_snd_playback_set_params(virtio_snd_device_t *device, const virtio_snd_params_t *wanted,
+							   virtio_snd_params_t *actual)
 {
 	if (device == 0 || wanted == 0 || actual == 0) return VIRTIO_SND_E_INVALID;
 
@@ -573,23 +612,30 @@ virtio_snd_error_t virtio_snd_playback_set_params(virtio_snd_device_t *device, c
 
 	if (!playback->open) return VIRTIO_SND_E_INVALID;
 
-	if (wanted->channels == 0U || wanted->channels > 255U || wanted->format >= VIRTIO_SND_PCM_FMT_COUNT || !virtio_snd_rate_from_hz(wanted->rate_hz, &rate)) {
-		VIRTIO_SND_LOG("stream %u: %u Hz, %u channel(s), format %u is not a format the device knows\n", device->playback_stream, wanted->rate_hz, wanted->channels, wanted->format);
+	if (wanted->channels == 0U || wanted->channels > 255U || wanted->format >= VIRTIO_SND_PCM_FMT_COUNT ||
+		!virtio_snd_rate_from_hz(wanted->rate_hz, &rate)) {
+		VIRTIO_SND_LOG("stream %u: %u Hz, %u channel(s), format %u is not a format the device knows\n",
+					   device->playback_stream, wanted->rate_hz, wanted->channels, wanted->format);
 		return VIRTIO_SND_E_INVALID;
 	}
 
-	virtio_snd_pcm_format_t request = { .channels = (uint8_t)wanted->channels, .format = (uint8_t)wanted->format, .rate = (uint8_t)rate };
+	virtio_snd_pcm_format_t request = {
+		.channels = (uint8_t)wanted->channels, .format = (uint8_t)wanted->format, .rate = (uint8_t)rate};
 	virtio_snd_pcm_format_t picked;
 
 	if (!virtio_snd_pcm_pick(&device->pcm_info[device->playback_stream], &request, &picked)) {
-		VIRTIO_SND_LOG("stream %u: nothing the stream offers matches %u Hz, %u channel(s), %s\n", device->playback_stream, wanted->rate_hz, wanted->channels, virtio_snd_format_name(wanted->format));
+		VIRTIO_SND_LOG("stream %u: nothing the stream offers matches %u Hz, %u channel(s), %s\n",
+					   device->playback_stream, wanted->rate_hz, wanted->channels,
+					   virtio_snd_format_name(wanted->format));
 		return VIRTIO_SND_E_INVALID;
 	}
 
 	uint64_t irq_state = ml_irq_save();
 
 	/* A new format abandons what was queued in the old one. */
-	if (playback->state == VIRTIO_SND_PCM_STATE_PREPARED || playback->state == VIRTIO_SND_PCM_STATE_STARTED || playback->state == VIRTIO_SND_PCM_STATE_STOPPED) virtio_snd_release(device);
+	if (playback->state == VIRTIO_SND_PCM_STATE_PREPARED || playback->state == VIRTIO_SND_PCM_STATE_STARTED ||
+		playback->state == VIRTIO_SND_PCM_STATE_STOPPED)
+		virtio_snd_release(device);
 
 	playback->format = picked;
 	playback->needs_configure = true;
@@ -599,14 +645,17 @@ virtio_snd_error_t virtio_snd_playback_set_params(virtio_snd_device_t *device, c
 	ml_irq_restore(irq_state);
 
 	if (picked.channels != request.channels || picked.format != request.format || picked.rate != request.rate) {
-		VIRTIO_SND_LOG("stream %u: asked for %u Hz, %u channel(s), %s\n", device->playback_stream, wanted->rate_hz, wanted->channels, virtio_snd_format_name(wanted->format));
-		VIRTIO_SND_LOG("stream %u: running %u Hz, %u channel(s), %s\n", device->playback_stream, actual->rate_hz, actual->channels, virtio_snd_format_name(actual->format));
+		VIRTIO_SND_LOG("stream %u: asked for %u Hz, %u channel(s), %s\n", device->playback_stream, wanted->rate_hz,
+					   wanted->channels, virtio_snd_format_name(wanted->format));
+		VIRTIO_SND_LOG("stream %u: running %u Hz, %u channel(s), %s\n", device->playback_stream, actual->rate_hz,
+					   actual->channels, virtio_snd_format_name(actual->format));
 	}
 
 	return VIRTIO_SND_E_NONE;
 }
 
-virtio_snd_error_t virtio_snd_playback_write(virtio_snd_device_t *device, const void *data, uint64_t size, uint64_t *written)
+virtio_snd_error_t
+virtio_snd_playback_write(virtio_snd_device_t *device, const void *data, uint64_t size, uint64_t *written)
 {
 	if (written != 0) *written = 0ULL;
 
@@ -669,7 +718,8 @@ virtio_snd_error_t virtio_snd_playback_write(virtio_snd_device_t *device, const 
 	return error;
 }
 
-virtio_snd_error_t virtio_snd_playback_drain(virtio_snd_device_t *device)
+virtio_snd_error_t
+virtio_snd_playback_drain(virtio_snd_device_t *device)
 {
 	if (device == 0) return VIRTIO_SND_E_INVALID;
 
@@ -682,7 +732,9 @@ virtio_snd_error_t virtio_snd_playback_drain(virtio_snd_device_t *device)
 	virtio_snd_error_t error = VIRTIO_SND_E_NONE;
 
 	/* Nothing was ever written: nothing to wait for. */
-	if (playback->needs_configure || (playback->state != VIRTIO_SND_PCM_STATE_PREPARED && playback->state != VIRTIO_SND_PCM_STATE_STARTED && playback->state != VIRTIO_SND_PCM_STATE_STOPPED)) {
+	if (playback->needs_configure ||
+		(playback->state != VIRTIO_SND_PCM_STATE_PREPARED && playback->state != VIRTIO_SND_PCM_STATE_STARTED &&
+		 playback->state != VIRTIO_SND_PCM_STATE_STOPPED)) {
 		ml_irq_restore(irq_state);
 		return VIRTIO_SND_E_NONE;
 	}
@@ -691,7 +743,8 @@ virtio_snd_error_t virtio_snd_playback_drain(virtio_snd_device_t *device)
 
 	if (playback->fill_slot != VIRTIO_SND_NO_SLOT) error = virtio_snd_submit_fill(device);
 
-	if (error == VIRTIO_SND_E_NONE && playback->queued != 0U && playback->state != VIRTIO_SND_PCM_STATE_STARTED) error = virtio_snd_start(device);
+	if (error == VIRTIO_SND_E_NONE && playback->queued != 0U && playback->state != VIRTIO_SND_PCM_STATE_STARTED)
+		error = virtio_snd_start(device);
 
 	while (error == VIRTIO_SND_E_NONE && playback->queued != 0U) {
 		if (!virtio_snd_wait_step(device)) error = VIRTIO_SND_E_INTERRUPTED;
@@ -708,7 +761,8 @@ virtio_snd_error_t virtio_snd_playback_drain(virtio_snd_device_t *device)
 	return error;
 }
 
-virtio_snd_error_t virtio_snd_playback_stop(virtio_snd_device_t *device)
+virtio_snd_error_t
+virtio_snd_playback_stop(virtio_snd_device_t *device)
 {
 	if (device == 0 || !device->playback.open) return VIRTIO_SND_E_INVALID;
 
@@ -719,7 +773,8 @@ virtio_snd_error_t virtio_snd_playback_stop(virtio_snd_device_t *device)
 	return VIRTIO_SND_E_NONE;
 }
 
-void virtio_snd_playback_close(virtio_snd_device_t *device)
+void
+virtio_snd_playback_close(virtio_snd_device_t *device)
 {
 	if (device == 0 || !device->playback.open) return;
 
@@ -737,7 +792,8 @@ void virtio_snd_playback_close(virtio_snd_device_t *device)
 		return;
 	}
 
-	uint64_t milliseconds = playback->end_us > playback->start_us ? (playback->end_us - playback->start_us) / 1000ULL : 0ULL;
+	uint64_t milliseconds =
+		playback->end_us > playback->start_us ? (playback->end_us - playback->start_us) / 1000ULL : 0ULL;
 
 	VIRTIO_SND_LOG("stream %u closed\n", stream);
 	VIRTIO_SND_LOG("stream %u: %llu byte(s) written\n", stream, (unsigned long long)playback->bytes_written);
@@ -749,7 +805,8 @@ void virtio_snd_playback_close(virtio_snd_device_t *device)
 	VIRTIO_SND_LOG("stream %u: playback took %llu ms\n", stream, (unsigned long long)milliseconds);
 }
 
-void virtio_snd_playback_info(virtio_snd_device_t *device, virtio_snd_playback_info_t *info)
+void
+virtio_snd_playback_info(virtio_snd_device_t *device, virtio_snd_playback_info_t *info)
 {
 	if (device == 0 || info == 0) return;
 

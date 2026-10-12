@@ -11,7 +11,6 @@
 #define VIRTIO_MMIO_MAGIC_VALUE 0x74726976U
 #define VIRTIO_MMIO_VERSION_MODERN 2U
 
-
 /*
  * The MMIO transport is one implementation of the transport interface in
  * virtio_transport.h; the device object it fills in is the common
@@ -33,12 +32,8 @@ extern const virtio_transport_ops_t virtio_mmio_ops;
  *
  * Returns true for a live modern VirtIO-MMIO device.
  */
-bool virtio_mmio_probe(
-	const platform_region_t *region,
-	uint32_t intid,
-	uint32_t irq_flags,
-	virtio_mmio_device_t *device
-);
+bool virtio_mmio_probe(const platform_region_t *region, uint32_t intid, uint32_t irq_flags,
+					   virtio_mmio_device_t *device);
 
 /*
  * virtio_mmio_begin:
@@ -51,10 +46,7 @@ bool virtio_mmio_probe(
  *
  * Returns true after FEATURES_OK has been accepted by the device.
  */
-bool virtio_mmio_begin(
-	virtio_mmio_device_t *device,
-	uint64_t accepted_device_features
-);
+bool virtio_mmio_begin(virtio_mmio_device_t *device, uint64_t accepted_device_features);
 
 /*
  * virtio_mmio_setup_queue:
@@ -65,11 +57,7 @@ bool virtio_mmio_begin(
  *
  * Returns true when the device accepted the queue configuration.
  */
-bool virtio_mmio_setup_queue(
-	virtio_mmio_device_t *device,
-	uint16_t queue_index,
-	virtqueue_t *queue
-);
+bool virtio_mmio_setup_queue(virtio_mmio_device_t *device, uint16_t queue_index, virtqueue_t *queue);
 
 /*
  * virtio_mmio_finish:
@@ -86,34 +74,19 @@ bool virtio_mmio_finish(virtio_mmio_device_t *device);
  * Reset a device and wait for transport status to return to zero. Queue and
  * DMA memory may be reclaimed after this operation completes.
  */
-bool virtio_mmio_reset(
-	virtio_mmio_device_t *device
-);
+bool virtio_mmio_reset(virtio_mmio_device_t *device);
 
 void virtio_mmio_fail(virtio_mmio_device_t *device);
 void virtio_mmio_notify(virtio_mmio_device_t *device, uint16_t queue_index);
 uint32_t virtio_mmio_interrupt_status(const virtio_mmio_device_t *device);
 void virtio_mmio_interrupt_ack(virtio_mmio_device_t *device, uint32_t status);
 
-uint8_t virtio_mmio_config_read8(
-	const virtio_mmio_device_t *device,
-	uint32_t offset
-);
+uint8_t virtio_mmio_config_read8(const virtio_mmio_device_t *device, uint32_t offset);
 
-uint32_t virtio_mmio_config_read32(
-	const virtio_mmio_device_t *device,
-	uint32_t offset
-);
+uint32_t virtio_mmio_config_read32(const virtio_mmio_device_t *device, uint32_t offset);
 
-uint64_t virtio_mmio_config_read64(
-	const virtio_mmio_device_t *device,
-	uint32_t offset
-);
+uint64_t virtio_mmio_config_read64(const virtio_mmio_device_t *device, uint32_t offset);
 
-void virtio_mmio_config_write8(
-	virtio_mmio_device_t *device,
-	uint32_t offset,
-	uint8_t value
-);
+void virtio_mmio_config_write8(virtio_mmio_device_t *device, uint32_t offset, uint8_t value);
 
 #endif

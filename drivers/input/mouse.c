@@ -60,7 +60,8 @@ static mouse_state_t g_mouse;
  *
  * Reset relative-pointer class state.
  */
-bool mouse_init(void)
+bool
+mouse_init(void)
 {
 	if (g_mouse.initialized) return true;
 	memset(&g_mouse, 0, sizeof(g_mouse));
@@ -73,7 +74,8 @@ bool mouse_init(void)
  *
  * Select one normalized input device as the active system mouse.
  */
-bool mouse_attach(uint32_t device_id)
+bool
+mouse_attach(uint32_t device_id)
 {
 	if (!g_mouse.initialized || g_mouse.present || device_id == 0U) return false;
 	g_mouse.device_id = device_id;
@@ -86,15 +88,23 @@ bool mouse_attach(uint32_t device_id)
  *
  * Apply one pointer button transition to the pending button mask.
  */
-static void mouse_button(uint16_t code, bool down)
+static void
+mouse_button(uint16_t code, bool down)
 {
 	uint32_t mask;
 
 	switch (code) {
-	case BTN_LEFT: mask = MOUSE_BUTTON_LEFT; break;
-	case BTN_RIGHT: mask = MOUSE_BUTTON_RIGHT; break;
-	case BTN_MIDDLE: mask = MOUSE_BUTTON_MIDDLE; break;
-	default: return;
+	case BTN_LEFT:
+		mask = MOUSE_BUTTON_LEFT;
+		break;
+	case BTN_RIGHT:
+		mask = MOUSE_BUTTON_RIGHT;
+		break;
+	case BTN_MIDDLE:
+		mask = MOUSE_BUTTON_MIDDLE;
+		break;
+	default:
+		return;
 	}
 
 	if (down) {
@@ -123,7 +133,8 @@ static void mouse_button(uint16_t code, bool down)
  * detected from. A dropped sample costs a few pixels of position accuracy
  * (invisible on screen); folding costs the whole gesture.
  */
-static void mouse_push_delta(int32_t dx, int32_t dy)
+static void
+mouse_push_delta(int32_t dx, int32_t dy)
 {
 	if (g_mouse.delta_count == MOUSE_DELTA_QUEUE_LEN) {
 		g_mouse.delta_head = (g_mouse.delta_head + 1U) % MOUSE_DELTA_QUEUE_LEN;
@@ -142,13 +153,10 @@ static void mouse_push_delta(int32_t dx, int32_t dy)
  * Accumulate relative axes and button state until SYN_REPORT commits one
  * coherent pointer packet.
  */
-void mouse_handle_event(const input_event_t *event)
+void
+mouse_handle_event(const input_event_t *event)
 {
-	if (
-		event == 0 ||
-		!g_mouse.present ||
-		event->device_id != g_mouse.device_id
-	) {
+	if (event == 0 || !g_mouse.present || event->device_id != g_mouse.device_id) {
 		return;
 	}
 
@@ -156,10 +164,17 @@ void mouse_handle_event(const input_event_t *event)
 
 	if (event->type == EV_REL) {
 		switch (event->code) {
-		case REL_X: g_mouse.pending_x += event->value; break;
-		case REL_Y: g_mouse.pending_y += event->value; break;
-		case REL_WHEEL: g_mouse.pending_wheel += event->value; break;
-		default: break;
+		case REL_X:
+			g_mouse.pending_x += event->value;
+			break;
+		case REL_Y:
+			g_mouse.pending_y += event->value;
+			break;
+		case REL_WHEEL:
+			g_mouse.pending_wheel += event->value;
+			break;
+		default:
+			break;
 		}
 		return;
 	}
@@ -185,38 +200,45 @@ void mouse_handle_event(const input_event_t *event)
 	}
 }
 
-bool mouse_is_present(void)
+bool
+mouse_is_present(void)
 {
 	return g_mouse.present;
 }
 
-uint32_t mouse_device_id(void)
+uint32_t
+mouse_device_id(void)
 {
 	return g_mouse.present ? g_mouse.device_id : 0U;
 }
 
-uint32_t mouse_buttons(void)
+uint32_t
+mouse_buttons(void)
 {
 	return g_mouse.buttons;
 }
 
-void mouse_take_button_edges(uint32_t *pressed, uint32_t *released)
+void
+mouse_take_button_edges(uint32_t *pressed, uint32_t *released)
 {
 	*pressed = __atomic_exchange_n(&g_mouse.pressed_edges, 0U, __ATOMIC_ACQUIRE);
 	*released = __atomic_exchange_n(&g_mouse.released_edges, 0U, __ATOMIC_ACQUIRE);
 }
 
-int64_t mouse_x(void)
+int64_t
+mouse_x(void)
 {
 	return g_mouse.x;
 }
 
-int64_t mouse_y(void)
+int64_t
+mouse_y(void)
 {
 	return g_mouse.y;
 }
 
-int64_t mouse_wheel(void)
+int64_t
+mouse_wheel(void)
 {
 	return g_mouse.wheel;
 }
@@ -236,7 +258,8 @@ int64_t mouse_wheel(void)
  * Returns false (dx/dy untouched) once the queue is empty; call in a loop
  * until it does to drain everything currently queued.
  */
-bool mouse_take_delta(int32_t *dx, int32_t *dy)
+bool
+mouse_take_delta(int32_t *dx, int32_t *dy)
 {
 	if (dx == 0 || dy == 0 || g_mouse.delta_count == 0U) return false;
 
@@ -247,17 +270,20 @@ bool mouse_take_delta(int32_t *dx, int32_t *dy)
 	return true;
 }
 
-uint64_t mouse_event_count(void)
+uint64_t
+mouse_event_count(void)
 {
 	return g_mouse.events;
 }
 
-uint64_t mouse_packet_count(void)
+uint64_t
+mouse_packet_count(void)
 {
 	return g_mouse.packets;
 }
 
-static void mouse_put_signed(int64_t value)
+static void
+mouse_put_signed(int64_t value)
 {
 	if (value < 0) {
 		kputc('-');
@@ -273,7 +299,8 @@ static void mouse_put_signed(int64_t value)
  * Print committed pointer state only after observable packet activity
  * changes.
  */
-void mouse_dump_state(void)
+void
+mouse_dump_state(void)
 {
 	if (!g_mouse.present) return;
 

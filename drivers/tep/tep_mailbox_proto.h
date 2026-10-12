@@ -45,20 +45,21 @@ typedef enum {
 	TEP_MB_CMD_GET_HEALTH = 0x0002,
 
 	/* TEP_MB_FEATURE_CRYPTO */
-	TEP_MB_CMD_SHA256 = 0x0010,       /* 1..240 bytes -> 32-byte digest */
-	TEP_MB_CMD_RANDOM = 0x0011,       /* u16 n (1..64) -> n bytes */
+	TEP_MB_CMD_SHA256 = 0x0010,		  /* 1..240 bytes -> 32-byte digest */
+	TEP_MB_CMD_RANDOM = 0x0011,		  /* u16 n (1..64) -> n bytes */
 	TEP_MB_CMD_KEY_GENERATE = 0x0020, /* u8 algorithm -> u32 handle */
-	TEP_MB_CMD_KEY_PUBLIC = 0x0021,   /* u32 handle -> 32-byte public key */
-	TEP_MB_CMD_KEY_SIGN = 0x0022,     /* u32 handle, 1..224 bytes -> 64-byte signature */
-	TEP_MB_CMD_KEY_DELETE = 0x0023,   /* u32 handle -> empty */
+	TEP_MB_CMD_KEY_PUBLIC = 0x0021,	  /* u32 handle -> 32-byte public key */
+	TEP_MB_CMD_KEY_SIGN = 0x0022,	  /* u32 handle, 1..224 bytes -> 64-byte signature */
+	TEP_MB_CMD_KEY_DELETE = 0x0023,	  /* u32 handle -> empty */
 
 	/* TEP_MB_FEATURE_AUTH: the passcode, checked inside tepOS */
-	TEP_MB_CMD_AUTH_SET = 0x0030,     /* u8 old n (0 if none set), old, new -> empty */
-	TEP_MB_CMD_AUTH_VERIFY = 0x0031,  /* passcode (4..64 bytes) -> empty */
-	TEP_MB_CMD_AUTH_STATUS = 0x0032,  /* empty -> TEP_MB_AUTH_STATUS_LEN bytes */
+	TEP_MB_CMD_AUTH_SET = 0x0030,	 /* u8 old n (0 if none set), old, new -> empty */
+	TEP_MB_CMD_AUTH_VERIFY = 0x0031, /* passcode (4..64 bytes) -> empty */
+	TEP_MB_CMD_AUTH_STATUS = 0x0032, /* empty -> TEP_MB_AUTH_STATUS_LEN bytes */
 
 	/* TEP_MB_FEATURE_BOOT: signed boot manifests */
-	TEP_MB_CMD_BOOT_VERIFY = 0x0040   /* manifest, measured SHA-256 -> OK u32 version | DENIED u8 reason | ROLLBACK u32 minimum */
+	TEP_MB_CMD_BOOT_VERIFY =
+		0x0040 /* manifest, measured SHA-256 -> OK u32 version | DENIED u8 reason | ROLLBACK u32 minimum */
 } tep_mb_command_t;
 
 #define TEP_MB_ALG_ED25519 1U
@@ -70,8 +71,8 @@ typedef enum {
  * AUTH_VERIFY and AUTH_SET answer OK, DENIED (after a checked passcode with
  * a u8: failures so far), LOCKED, NOT_FOUND (no passcode set) or
  * RETRY_LATER with a u32: seconds before the next attempt is accepted.
- * Delays start at the fifth failure in a row; the tenth locks. AUTH_STATUS response: u8 passcode set, u8 failures, u8 locked,
- * u8 reserved, u32 seconds before the next attempt.
+ * Delays start at the fifth failure in a row; the tenth locks. AUTH_STATUS response: u8 passcode set, u8 failures, u8
+ * locked, u8 reserved, u32 seconds before the next attempt.
  */
 #define TEP_MB_PASSCODE_MIN 4U
 #define TEP_MB_PASSCODE_MAX 64U
@@ -94,9 +95,9 @@ typedef enum {
 #define TEP_MB_BOOT_VERIFY_LEN (TEP_BOOT_MANIFEST_SIZE + 32U)
 
 /* BOOT_VERIFY DENIED reasons. */
-#define TEP_BOOT_BAD_FORMAT 1U    /* not a manifest this tepOS understands */
+#define TEP_BOOT_BAD_FORMAT 1U	  /* not a manifest this tepOS understands */
 #define TEP_BOOT_BAD_SIGNATURE 2U /* not signed by the boot-signing key */
-#define TEP_BOOT_WRONG_IMAGE 3U   /* signed, but for another image than measured */
+#define TEP_BOOT_WRONG_IMAGE 3U	  /* signed, but for another image than measured */
 
 typedef enum {
 	TEP_MB_OK = 0,
@@ -107,17 +108,17 @@ typedef enum {
 	TEP_MB_INTERNAL = 5,
 	TEP_MB_NOT_FOUND = 6,
 	TEP_MB_FULL = 7,
-	TEP_MB_DENIED = 8,       /* wrong passcode, or a boot manifest refused: u8 reason */
-	TEP_MB_RETRY_LATER = 9,  /* too soon after failures: u32 seconds to wait */
-	TEP_MB_LOCKED = 10,      /* passcode locked until a recovery reset on the tepOS side */
-	TEP_MB_ROLLBACK = 11     /* image older than the newest accepted: u32 minimum version */
+	TEP_MB_DENIED = 8,		/* wrong passcode, or a boot manifest refused: u8 reason */
+	TEP_MB_RETRY_LATER = 9, /* too soon after failures: u32 seconds to wait */
+	TEP_MB_LOCKED = 10,		/* passcode locked until a recovery reset on the tepOS side */
+	TEP_MB_ROLLBACK = 11	/* image older than the newest accepted: u32 minimum version */
 } tep_mb_status_t;
 
 /* HELLO response: u16 protocol, u16 flags, u32 tepOS version (major << 16 | minor << 8 | patch), u32 boot id. */
 #define TEP_MB_HELLO_LEN 12U
 #define TEP_MB_FEATURE_CRYPTO (1U << 0U) /* SHA256, RANDOM and the KEY_* commands */
-#define TEP_MB_FEATURE_AUTH (1U << 1U)   /* the AUTH_* commands */
-#define TEP_MB_FEATURE_BOOT (1U << 2U)   /* BOOT_VERIFY */
+#define TEP_MB_FEATURE_AUTH (1U << 1U)	 /* the AUTH_* commands */
+#define TEP_MB_FEATURE_BOOT (1U << 2U)	 /* BOOT_VERIFY */
 
 /* GET_HEALTH response: u8 health, u8 n, u16 reserved, then n x (u8 id, u8 state, u8 restarts, u8 reserved). */
 #define TEP_MB_MAX_SERVICES 8U

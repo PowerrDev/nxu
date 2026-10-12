@@ -8,11 +8,7 @@
 
 #define BLOCK_PARTITION_NAME_MAX 35U
 
-typedef enum {
-	BLOCK_LAYOUT_RAW = 0,
-	BLOCK_LAYOUT_MBR = 1,
-	BLOCK_LAYOUT_GPT = 2
-} block_layout_scheme_t;
+typedef enum { BLOCK_LAYOUT_RAW = 0, BLOCK_LAYOUT_MBR = 1, BLOCK_LAYOUT_GPT = 2 } block_layout_scheme_t;
 
 typedef enum {
 	BLOCK_PARTITION_STATUS_OK = 0,
@@ -55,13 +51,8 @@ block_device_t block_partition_device(block_device_t parent, const block_partiti
 bool block_layout_inspect(block_device_t device, block_layout_info_t *info);
 bool block_partition_get(block_device_t device, uint32_t index, block_partition_info_t *info);
 block_partition_status_t block_layout_initialize_gpt(block_device_t device);
-block_partition_status_t block_partition_create(
-	block_device_t device,
-	uint64_t sector_count,
-	const char *name,
-	block_partition_role_t role,
-	block_partition_info_t *info
-);
+block_partition_status_t block_partition_create(block_device_t device, uint64_t sector_count, const char *name,
+												block_partition_role_t role, block_partition_info_t *info);
 block_partition_status_t block_partition_delete(block_device_t device, uint32_t index);
 
 #endif

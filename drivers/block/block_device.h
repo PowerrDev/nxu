@@ -11,19 +11,9 @@
 typedef struct block_device *block_device_t;
 
 typedef struct {
-	bool (*read)(
-		block_device_t device,
-		uint64_t sector,
-		uint32_t count,
-		void *buffer
-	);
+	bool (*read)(block_device_t device, uint64_t sector, uint32_t count, void *buffer);
 
-	bool (*write)(
-		block_device_t device,
-		uint64_t sector,
-		uint32_t count,
-		const void *buffer
-	);
+	bool (*write)(block_device_t device, uint64_t sector, uint32_t count, const void *buffer);
 
 	bool (*flush)(block_device_t device);
 } block_device_ops_t;
@@ -96,12 +86,7 @@ bool block_device_overlaps(block_device_t left, block_device_t right);
  * Read count protocol sectors beginning at sector into caller storage.
  * Requests outside the medium are rejected before entering the driver.
  */
-bool block_device_read(
-	block_device_t device,
-	uint64_t sector,
-	uint32_t count,
-	void *buffer
-);
+bool block_device_read(block_device_t device, uint64_t sector, uint32_t count, void *buffer);
 
 /*
  * block_device_write:
@@ -109,12 +94,7 @@ bool block_device_read(
  * Write count protocol sectors beginning at sector. Read-only devices are
  * rejected by the block layer before driver dispatch.
  */
-bool block_device_write(
-	block_device_t device,
-	uint64_t sector,
-	uint32_t count,
-	const void *buffer
-);
+bool block_device_write(block_device_t device, uint64_t sector, uint32_t count, const void *buffer);
 
 /*
  * block_device_flush:

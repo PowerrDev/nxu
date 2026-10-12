@@ -47,7 +47,8 @@ static bool g_uart_ready;
  * timer runs; before that (boot-time tests) the scheduler is cooperative and
  * a sleep would never be woken, so it yields instead.
  */
-void tep_mailbox_wait_us(uint64_t microseconds)
+void
+tep_mailbox_wait_us(uint64_t microseconds)
 {
 	uint64_t deadline = timer_get_microseconds() + microseconds;
 
@@ -74,32 +75,38 @@ typedef struct {
 	const uint8_t *payload;
 } tep_frame_t;
 
-static uint32_t tep_crc32(uint32_t crc, const uint8_t *bytes, uint32_t length)
+static uint32_t
+tep_crc32(uint32_t crc, const uint8_t *bytes, uint32_t length)
 {
 	for (uint32_t index = 0U; index < length; index++) {
 		crc ^= bytes[index];
-		for (uint32_t bit = 0U; bit < 8U; bit++) crc = (crc >> 1U) ^ (0xedb88320U & (0U - (crc & 1U)));
+		for (uint32_t bit = 0U; bit < 8U; bit++)
+			crc = (crc >> 1U) ^ (0xedb88320U & (0U - (crc & 1U)));
 	}
 	return crc;
 }
 
-static uint16_t get16(const uint8_t *p)
+static uint16_t
+get16(const uint8_t *p)
 {
 	return (uint16_t)(p[0] | (uint16_t)p[1] << 8U);
 }
 
-static uint32_t get32(const uint8_t *p)
+static uint32_t
+get32(const uint8_t *p)
 {
 	return (uint32_t)p[0] | (uint32_t)p[1] << 8U | (uint32_t)p[2] << 16U | (uint32_t)p[3] << 24U;
 }
 
-static void put16(uint8_t *p, uint16_t value)
+static void
+put16(uint8_t *p, uint16_t value)
 {
 	p[0] = (uint8_t)value;
 	p[1] = (uint8_t)(value >> 8U);
 }
 
-static void put32(uint8_t *p, uint32_t value)
+static void
+put32(uint8_t *p, uint32_t value)
 {
 	p[0] = (uint8_t)value;
 	p[1] = (uint8_t)(value >> 8U);
@@ -108,7 +115,8 @@ static void put32(uint8_t *p, uint32_t value)
 }
 
 /* Is the buffered prefix still a possible frame? */
-static bool frame_prefix_ok(const tep_frame_reader_t *reader)
+static bool
+frame_prefix_ok(const tep_frame_reader_t *reader)
 {
 	if (reader->have >= 1U && reader->buffer[0] != (TEP_MB_MAGIC & 0xffU)) return false;
 	if (reader->have >= 2U && reader->buffer[1] != (TEP_MB_MAGIC >> 8U)) return false;
@@ -117,12 +125,15 @@ static bool frame_prefix_ok(const tep_frame_reader_t *reader)
 }
 
 /* Drop the first buffered byte and restart at the next possible magic. */
-static void frame_resync(tep_frame_reader_t *reader)
+static void
+frame_resync(tep_frame_reader_t *reader)
 {
 	uint32_t start = 1U;
 
-	while (start < reader->have && reader->buffer[start] != (TEP_MB_MAGIC & 0xffU)) start++;
-	for (uint32_t index = start; index < reader->have; index++) reader->buffer[index - start] = reader->buffer[index];
+	while (start < reader->have && reader->buffer[start] != (TEP_MB_MAGIC & 0xffU))
+		start++;
+	for (uint32_t index = start; index < reader->have; index++)
+		reader->buffer[index - start] = reader->buffer[index];
 	reader->have -= start;
 }
 
@@ -133,12 +144,14 @@ static void frame_resync(tep_frame_reader_t *reader)
  * with valid magic, length and CRC; its payload points into the reader, valid
  * until the next call.
  */
-static bool frame_feed(tep_frame_reader_t *reader, uint8_t byte, tep_frame_t *frame)
+static bool
+frame_feed(tep_frame_reader_t *reader, uint8_t byte, tep_frame_t *frame)
 {
 	reader->buffer[reader->have++] = byte;
 
 	for (;;) {
-		while (reader->have > 0U && !frame_prefix_ok(reader)) frame_resync(reader);
+		while (reader->have > 0U && !frame_prefix_ok(reader))
+			frame_resync(reader);
 		if (reader->have < TEP_MB_HEADER_LEN) return false;
 
 		uint32_t length = get16(&reader->buffer[12]);
@@ -165,7 +178,8 @@ static bool frame_feed(tep_frame_reader_t *reader, uint8_t byte, tep_frame_t *fr
 	}
 }
 
-static void frame_send(uint16_t command, uint32_t request_id, const uint8_t *payload, uint16_t payload_len)
+static void
+frame_send(uint16_t command, uint32_t request_id, const uint8_t *payload, uint16_t payload_len)
 {
 	uint8_t header[TEP_MB_HEADER_LEN];
 	uint8_t trailer[TEP_MB_CRC_LEN];
@@ -184,19 +198,25 @@ static void frame_send(uint16_t command, uint32_t request_id, const uint8_t *pay
 	crc = tep_crc32(crc, payload, payload_len) ^ 0xffffffffU;
 	put32(trailer, crc);
 
-	for (uint32_t index = 0U; index < sizeof(header); index++) tep_uart_putc(header[index]);
-	for (uint32_t index = 0U; index < payload_len; index++) tep_uart_putc(payload[index]);
-	for (uint32_t index = 0U; index < sizeof(trailer); index++) tep_uart_putc(trailer[index]);
+	for (uint32_t index = 0U; index < sizeof(header); index++)
+		tep_uart_putc(header[index]);
+	for (uint32_t index = 0U; index < payload_len; index++)
+		tep_uart_putc(payload[index]);
+	for (uint32_t index = 0U; index < sizeof(trailer); index++)
+		tep_uart_putc(trailer[index]);
 }
 
 /* ---- exchanges ---------------------------------------------------------- */
 
-static void exchange_lock(void)
+static void
+exchange_lock(void)
 {
-	while (__atomic_exchange_n(&g_exchange_busy, 1U, __ATOMIC_ACQUIRE) != 0U) tep_mailbox_wait_us(1000ULL);
+	while (__atomic_exchange_n(&g_exchange_busy, 1U, __ATOMIC_ACQUIRE) != 0U)
+		tep_mailbox_wait_us(1000ULL);
 }
 
-static void exchange_unlock(void)
+static void
+exchange_unlock(void)
 {
 	__atomic_store_n(&g_exchange_busy, 0U, __ATOMIC_RELEASE);
 }
@@ -207,12 +227,14 @@ static void exchange_unlock(void)
  * One request/response round trip, whatever the link state. Stale bytes are
  * flushed first; responses to other request ids or commands are skipped.
  */
-static tep_request_result_t tep_exchange(uint16_t command, const void *payload, uint16_t payload_len, tep_mailbox_response_t *response)
+static tep_request_result_t
+tep_exchange(uint16_t command, const void *payload, uint16_t payload_len, tep_mailbox_response_t *response)
 {
 	static tep_frame_reader_t reader;
 	tep_request_result_t result = TEP_REQ_TIMEOUT;
 
-	if (!g_uart_ready || response == 0 || payload_len > TEP_MB_MAX_PAYLOAD || (payload_len != 0U && payload == 0)) return TEP_REQ_INVALID;
+	if (!g_uart_ready || response == 0 || payload_len > TEP_MB_MAX_PAYLOAD || (payload_len != 0U && payload == 0))
+		return TEP_REQ_INVALID;
 
 	exchange_lock();
 
@@ -254,40 +276,55 @@ static tep_request_result_t tep_exchange(uint16_t command, const void *payload, 
 
 /* ---- monitor ------------------------------------------------------------ */
 
-const char *tep_link_state_name(tep_link_state_t state)
+const char *
+tep_link_state_name(tep_link_state_t state)
 {
 	switch (state) {
-	case TEP_LINK_ABSENT: return "absent";
-	case TEP_LINK_UNAVAILABLE: return "unavailable";
-	case TEP_LINK_AVAILABLE: return "available";
+	case TEP_LINK_ABSENT:
+		return "absent";
+	case TEP_LINK_UNAVAILABLE:
+		return "unavailable";
+	case TEP_LINK_AVAILABLE:
+		return "available";
 	}
 	return "unknown";
 }
 
-const char *tep_request_result_name(tep_request_result_t result)
+const char *
+tep_request_result_name(tep_request_result_t result)
 {
 	switch (result) {
-	case TEP_REQ_OK: return "ok";
-	case TEP_REQ_UNAVAILABLE: return "tepOS unavailable";
-	case TEP_REQ_TIMEOUT: return "timed out";
-	case TEP_REQ_INVALID: return "invalid";
+	case TEP_REQ_OK:
+		return "ok";
+	case TEP_REQ_UNAVAILABLE:
+		return "tepOS unavailable";
+	case TEP_REQ_TIMEOUT:
+		return "timed out";
+	case TEP_REQ_INVALID:
+		return "invalid";
 	}
 	return "unknown";
 }
 
-const char *tep_mb_health_name(uint8_t health)
+const char *
+tep_mb_health_name(uint8_t health)
 {
 	switch (health) {
-	case TEP_MB_HEALTH_STARTING: return "starting";
-	case TEP_MB_HEALTH_OK: return "ok";
-	case TEP_MB_HEALTH_DEGRADED: return "degraded";
-	case TEP_MB_HEALTH_FAILED: return "failed";
+	case TEP_MB_HEALTH_STARTING:
+		return "starting";
+	case TEP_MB_HEALTH_OK:
+		return "ok";
+	case TEP_MB_HEALTH_DEGRADED:
+		return "degraded";
+	case TEP_MB_HEALTH_FAILED:
+		return "failed";
 	}
 	return "unknown";
 }
 
 /* HELLO; on success the link becomes available. Returns why it failed, or 0. */
-static const char *tep_monitor_hello(uint32_t *boot_id)
+static const char *
+tep_monitor_hello(uint32_t *boot_id)
 {
 	tep_mailbox_response_t response;
 	tep_request_result_t result = tep_exchange(TEP_MB_CMD_HELLO, 0, 0U, &response);
@@ -302,7 +339,8 @@ static const char *tep_monitor_hello(uint32_t *boot_id)
 	g_features = get16(&response.payload[2]);
 	TEP_MAILBOX_LOG("tepOS available\n");
 	TEP_MAILBOX_LOG("tepOS protocol: %u\n", (unsigned)TEP_MB_VERSION);
-	TEP_MAILBOX_LOG("tepOS version: %u.%u.%u\n", (unsigned)(version >> 16U), (unsigned)((version >> 8U) & 0xffU), (unsigned)(version & 0xffU));
+	TEP_MAILBOX_LOG("tepOS version: %u.%u.%u\n", (unsigned)(version >> 16U), (unsigned)((version >> 8U) & 0xffU),
+					(unsigned)(version & 0xffU));
 	TEP_MAILBOX_LOG("tepOS boot id: %u\n", (unsigned)*boot_id);
 	TEP_MAILBOX_LOG("tepOS crypto services: %s\n", (g_features & TEP_MB_FEATURE_CRYPTO) != 0U ? "yes" : "no");
 	TEP_MAILBOX_LOG("tepOS passcode service: %s\n", (g_features & TEP_MB_FEATURE_AUTH) != 0U ? "yes" : "no");
@@ -311,7 +349,8 @@ static const char *tep_monitor_hello(uint32_t *boot_id)
 }
 
 /* GET_HEALTH; records and logs changes. Returns why it failed, or 0. */
-static const char *tep_monitor_health(void)
+static const char *
+tep_monitor_health(void)
 {
 	tep_mailbox_response_t response;
 	tep_request_result_t result = tep_exchange(TEP_MB_CMD_GET_HEALTH, 0, 0U, &response);
@@ -321,7 +360,8 @@ static const char *tep_monitor_health(void)
 
 	uint8_t services = response.payload[1];
 
-	if (services > TEP_MB_MAX_SERVICES || response.payload_len != TEP_MB_HEALTH_LEN(services)) return "GET_HEALTH malformed";
+	if (services > TEP_MB_MAX_SERVICES || response.payload_len != TEP_MB_HEALTH_LEN(services))
+		return "GET_HEALTH malformed";
 
 	uint8_t health = response.payload[0];
 
@@ -332,7 +372,8 @@ static const char *tep_monitor_health(void)
 	return 0;
 }
 
-static void tep_mailbox_monitor(void *parameter)
+static void
+tep_mailbox_monitor(void *parameter)
 {
 	(void)parameter;
 
@@ -378,7 +419,8 @@ static void tep_mailbox_monitor(void *parameter)
 
 /* ---- public ------------------------------------------------------------- */
 
-bool tep_mailbox_start(void)
+bool
+tep_mailbox_start(void)
 {
 	const char *where;
 	uint64_t address;
@@ -394,7 +436,8 @@ bool tep_mailbox_start(void)
 
 	thread_t thread;
 
-	if (!kernel_thread_create(proc_task(proc_kernel()), tep_mailbox_monitor, 0, &thread) || !sched_thread_start(thread)) {
+	if (!kernel_thread_create(proc_task(proc_kernel()), tep_mailbox_monitor, 0, &thread) ||
+		!sched_thread_start(thread)) {
 		TEP_MAILBOX_LOG("monitor thread could not be started: tepOS unavailable\n");
 		g_link_state = TEP_LINK_UNAVAILABLE;
 		return false;
@@ -405,23 +448,27 @@ bool tep_mailbox_start(void)
 	return true;
 }
 
-tep_link_state_t tep_mailbox_link_state(void)
+tep_link_state_t
+tep_mailbox_link_state(void)
 {
 	return __atomic_load_n(&g_link_state, __ATOMIC_ACQUIRE);
 }
 
-tep_request_result_t tep_mailbox_request(uint16_t command, const void *payload, uint16_t payload_len, tep_mailbox_response_t *response)
+tep_request_result_t
+tep_mailbox_request(uint16_t command, const void *payload, uint16_t payload_len, tep_mailbox_response_t *response)
 {
 	if (tep_mailbox_link_state() != TEP_LINK_AVAILABLE) return TEP_REQ_UNAVAILABLE;
 	return tep_exchange(command, payload, payload_len, response);
 }
 
-uint16_t tep_mailbox_features(void)
+uint16_t
+tep_mailbox_features(void)
 {
 	return tep_mailbox_link_state() == TEP_LINK_AVAILABLE ? g_features : 0U;
 }
 
-bool tep_mailbox_health(tep_mb_health_t *health)
+bool
+tep_mailbox_health(tep_mb_health_t *health)
 {
 	if (health == 0 || tep_mailbox_link_state() != TEP_LINK_AVAILABLE) return false;
 	*health = (tep_mb_health_t)g_health;

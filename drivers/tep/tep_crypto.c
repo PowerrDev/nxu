@@ -16,7 +16,8 @@
 #include <stdint.h>
 #include <string.h>
 
-static void put32(uint8_t *p, uint32_t value)
+static void
+put32(uint8_t *p, uint32_t value)
 {
 	p[0] = (uint8_t)value;
 	p[1] = (uint8_t)(value >> 8U);
@@ -24,32 +25,46 @@ static void put32(uint8_t *p, uint32_t value)
 	p[3] = (uint8_t)(value >> 24U);
 }
 
-static uint32_t get32(const uint8_t *p)
+static uint32_t
+get32(const uint8_t *p)
 {
 	return (uint32_t)p[0] | (uint32_t)p[1] << 8U | (uint32_t)p[2] << 16U | (uint32_t)p[3] << 24U;
 }
 
 /* Clears a buffer that held a passcode; volatile so the stores are not dropped as dead. */
-static void tep_wipe(void *buffer, size_t size)
+static void
+tep_wipe(void *buffer, size_t size)
 {
 	volatile uint8_t *bytes = buffer;
 
-	for (size_t index = 0U; index < size; index++) bytes[index] = 0U;
+	for (size_t index = 0U; index < size; index++)
+		bytes[index] = 0U;
 }
 
-static tep_result_t tep_from_status(uint16_t status)
+static tep_result_t
+tep_from_status(uint16_t status)
 {
 	switch (status) {
-	case TEP_MB_OK: return TEP_OK;
-	case TEP_MB_NOT_FOUND: return TEP_ERR_NOT_FOUND;
-	case TEP_MB_FULL: return TEP_ERR_FULL;
-	case TEP_MB_UNAVAILABLE: return TEP_ERR_UNAVAILABLE;
-	case TEP_MB_BAD_LENGTH: return TEP_ERR_INVALID;
-	case TEP_MB_DENIED: return TEP_ERR_DENIED;
-	case TEP_MB_RETRY_LATER: return TEP_ERR_RETRY_LATER;
-	case TEP_MB_LOCKED: return TEP_ERR_LOCKED;
-	case TEP_MB_ROLLBACK: return TEP_ERR_ROLLBACK;
-	default: return TEP_ERR_PROTOCOL;
+	case TEP_MB_OK:
+		return TEP_OK;
+	case TEP_MB_NOT_FOUND:
+		return TEP_ERR_NOT_FOUND;
+	case TEP_MB_FULL:
+		return TEP_ERR_FULL;
+	case TEP_MB_UNAVAILABLE:
+		return TEP_ERR_UNAVAILABLE;
+	case TEP_MB_BAD_LENGTH:
+		return TEP_ERR_INVALID;
+	case TEP_MB_DENIED:
+		return TEP_ERR_DENIED;
+	case TEP_MB_RETRY_LATER:
+		return TEP_ERR_RETRY_LATER;
+	case TEP_MB_LOCKED:
+		return TEP_ERR_LOCKED;
+	case TEP_MB_ROLLBACK:
+		return TEP_ERR_ROLLBACK;
+	default:
+		return TEP_ERR_PROTOCOL;
 	}
 }
 
@@ -60,7 +75,9 @@ static tep_result_t tep_from_status(uint16_t status)
  * succeeds only with status OK and exactly want_len bytes of payload. Other
  * statuses leave their payload in *response for the caller to check.
  */
-static tep_result_t tep_service_call(uint16_t feature, uint16_t command, const void *payload, uint16_t payload_len, tep_mailbox_response_t *response, uint16_t want_len)
+static tep_result_t
+tep_service_call(uint16_t feature, uint16_t command, const void *payload, uint16_t payload_len,
+				 tep_mailbox_response_t *response, uint16_t want_len)
 {
 	if ((tep_mailbox_features() & feature) == 0U) return TEP_ERR_UNAVAILABLE;
 
@@ -73,12 +90,15 @@ static tep_result_t tep_service_call(uint16_t feature, uint16_t command, const v
 	return TEP_OK;
 }
 
-static tep_result_t tep_crypto_call(uint16_t command, const void *payload, uint16_t payload_len, tep_mailbox_response_t *response, uint16_t want_len)
+static tep_result_t
+tep_crypto_call(uint16_t command, const void *payload, uint16_t payload_len, tep_mailbox_response_t *response,
+				uint16_t want_len)
 {
 	return tep_service_call(TEP_MB_FEATURE_CRYPTO, command, payload, payload_len, response, want_len);
 }
 
-tep_result_t tep_sha256(const void *data, uint32_t size, uint8_t digest[TEP_SHA256_SIZE])
+tep_result_t
+tep_sha256(const void *data, uint32_t size, uint8_t digest[TEP_SHA256_SIZE])
 {
 	tep_mailbox_response_t response;
 
@@ -90,7 +110,8 @@ tep_result_t tep_sha256(const void *data, uint32_t size, uint8_t digest[TEP_SHA2
 	return result;
 }
 
-tep_result_t tep_random(void *out, uint32_t size)
+tep_result_t
+tep_random(void *out, uint32_t size)
 {
 	tep_mailbox_response_t response;
 	uint8_t request[2];
@@ -106,7 +127,8 @@ tep_result_t tep_random(void *out, uint32_t size)
 	return result;
 }
 
-tep_result_t tep_key_generate(uint32_t *handle)
+tep_result_t
+tep_key_generate(uint32_t *handle)
 {
 	tep_mailbox_response_t response;
 	uint8_t algorithm = TEP_MB_ALG_ED25519;
@@ -119,7 +141,8 @@ tep_result_t tep_key_generate(uint32_t *handle)
 	return result;
 }
 
-tep_result_t tep_key_public(uint32_t handle, uint8_t public_key[TEP_PUBLIC_KEY_SIZE])
+tep_result_t
+tep_key_public(uint32_t handle, uint8_t public_key[TEP_PUBLIC_KEY_SIZE])
 {
 	tep_mailbox_response_t response;
 	uint8_t request[4];
@@ -127,13 +150,15 @@ tep_result_t tep_key_public(uint32_t handle, uint8_t public_key[TEP_PUBLIC_KEY_S
 	if (public_key == 0) return TEP_ERR_INVALID;
 	put32(request, handle);
 
-	tep_result_t result = tep_crypto_call(TEP_MB_CMD_KEY_PUBLIC, request, sizeof(request), &response, TEP_PUBLIC_KEY_SIZE);
+	tep_result_t result =
+		tep_crypto_call(TEP_MB_CMD_KEY_PUBLIC, request, sizeof(request), &response, TEP_PUBLIC_KEY_SIZE);
 
 	if (result == TEP_OK) memcpy(public_key, response.payload, TEP_PUBLIC_KEY_SIZE);
 	return result;
 }
 
-tep_result_t tep_key_sign(uint32_t handle, const void *message, uint32_t size, uint8_t signature[TEP_SIGNATURE_SIZE])
+tep_result_t
+tep_key_sign(uint32_t handle, const void *message, uint32_t size, uint8_t signature[TEP_SIGNATURE_SIZE])
 {
 	tep_mailbox_response_t response;
 	uint8_t request[4U + TEP_MB_SIGN_MAX];
@@ -142,13 +167,15 @@ tep_result_t tep_key_sign(uint32_t handle, const void *message, uint32_t size, u
 	put32(request, handle);
 	memcpy(request + 4U, message, size);
 
-	tep_result_t result = tep_crypto_call(TEP_MB_CMD_KEY_SIGN, request, (uint16_t)(4U + size), &response, TEP_SIGNATURE_SIZE);
+	tep_result_t result =
+		tep_crypto_call(TEP_MB_CMD_KEY_SIGN, request, (uint16_t)(4U + size), &response, TEP_SIGNATURE_SIZE);
 
 	if (result == TEP_OK) memcpy(signature, response.payload, TEP_SIGNATURE_SIZE);
 	return result;
 }
 
-tep_result_t tep_key_delete(uint32_t handle)
+tep_result_t
+tep_key_delete(uint32_t handle)
 {
 	tep_mailbox_response_t response;
 	uint8_t request[4];
@@ -157,7 +184,8 @@ tep_result_t tep_key_delete(uint32_t handle)
 	return tep_crypto_call(TEP_MB_CMD_KEY_DELETE, request, sizeof(request), &response, 0U);
 }
 
-static bool tep_passcode_size_ok(uint32_t size)
+static bool
+tep_passcode_size_ok(uint32_t size)
 {
 	return size >= TEP_MB_PASSCODE_MIN && size <= TEP_MB_PASSCODE_MAX;
 }
@@ -167,7 +195,8 @@ static bool tep_passcode_size_ok(uint32_t size)
  * most the u8 failure count (unused here: tep_auth_status has it), LOCKED and
  * NOT_FOUND nothing.
  */
-static tep_result_t tep_auth_finish(tep_result_t result, const tep_mailbox_response_t *response, uint32_t *wait_seconds)
+static tep_result_t
+tep_auth_finish(tep_result_t result, const tep_mailbox_response_t *response, uint32_t *wait_seconds)
 {
 	if (result == TEP_ERR_RETRY_LATER) {
 		if (response->payload_len != 4U) return TEP_ERR_PROTOCOL;
@@ -180,7 +209,8 @@ static tep_result_t tep_auth_finish(tep_result_t result, const tep_mailbox_respo
 	return result;
 }
 
-tep_result_t tep_auth_set(const void *old_passcode, uint32_t old_size, const void *passcode, uint32_t size, uint32_t *wait_seconds)
+tep_result_t
+tep_auth_set(const void *old_passcode, uint32_t old_size, const void *passcode, uint32_t size, uint32_t *wait_seconds)
 {
 	tep_mailbox_response_t response;
 	uint8_t request[1U + 2U * TEP_MB_PASSCODE_MAX];
@@ -193,13 +223,15 @@ tep_result_t tep_auth_set(const void *old_passcode, uint32_t old_size, const voi
 	if (old_size != 0U) memcpy(request + 1U, old_passcode, old_size);
 	memcpy(request + 1U + old_size, passcode, size);
 
-	tep_result_t result = tep_service_call(TEP_MB_FEATURE_AUTH, TEP_MB_CMD_AUTH_SET, request, (uint16_t)(1U + old_size + size), &response, 0U);
+	tep_result_t result = tep_service_call(TEP_MB_FEATURE_AUTH, TEP_MB_CMD_AUTH_SET, request,
+										   (uint16_t)(1U + old_size + size), &response, 0U);
 
 	tep_wipe(request, sizeof(request));
 	return tep_auth_finish(result, &response, wait_seconds);
 }
 
-tep_result_t tep_auth_verify(const void *passcode, uint32_t size, uint32_t *wait_seconds)
+tep_result_t
+tep_auth_verify(const void *passcode, uint32_t size, uint32_t *wait_seconds)
 {
 	tep_mailbox_response_t response;
 	uint8_t request[TEP_MB_PASSCODE_MAX];
@@ -209,19 +241,22 @@ tep_result_t tep_auth_verify(const void *passcode, uint32_t size, uint32_t *wait
 
 	memcpy(request, passcode, size);
 
-	tep_result_t result = tep_service_call(TEP_MB_FEATURE_AUTH, TEP_MB_CMD_AUTH_VERIFY, request, (uint16_t)size, &response, 0U);
+	tep_result_t result =
+		tep_service_call(TEP_MB_FEATURE_AUTH, TEP_MB_CMD_AUTH_VERIFY, request, (uint16_t)size, &response, 0U);
 
 	tep_wipe(request, sizeof(request));
 	return tep_auth_finish(result, &response, wait_seconds);
 }
 
-tep_result_t tep_auth_status(tep_auth_status_t *status)
+tep_result_t
+tep_auth_status(tep_auth_status_t *status)
 {
 	tep_mailbox_response_t response;
 
 	if (status == 0) return TEP_ERR_INVALID;
 
-	tep_result_t result = tep_service_call(TEP_MB_FEATURE_AUTH, TEP_MB_CMD_AUTH_STATUS, 0, 0U, &response, TEP_MB_AUTH_STATUS_LEN);
+	tep_result_t result =
+		tep_service_call(TEP_MB_FEATURE_AUTH, TEP_MB_CMD_AUTH_STATUS, 0, 0U, &response, TEP_MB_AUTH_STATUS_LEN);
 
 	if (result != TEP_OK) return result;
 	if (response.payload[0] > 1U || response.payload[2] > 1U) return TEP_ERR_PROTOCOL;
@@ -233,7 +268,8 @@ tep_result_t tep_auth_status(tep_auth_status_t *status)
 	return TEP_OK;
 }
 
-tep_result_t tep_boot_verify(const uint8_t manifest[TEP_BOOT_MANIFEST_SIZE], const uint8_t digest[TEP_SHA256_SIZE], uint32_t *detail)
+tep_result_t
+tep_boot_verify(const uint8_t manifest[TEP_BOOT_MANIFEST_SIZE], const uint8_t digest[TEP_SHA256_SIZE], uint32_t *detail)
 {
 	tep_mailbox_response_t response;
 	uint8_t request[TEP_MB_BOOT_VERIFY_LEN];
@@ -245,7 +281,8 @@ tep_result_t tep_boot_verify(const uint8_t manifest[TEP_BOOT_MANIFEST_SIZE], con
 	memcpy(request, manifest, TEP_BOOT_MANIFEST_SIZE);
 	memcpy(request + TEP_BOOT_MANIFEST_SIZE, digest, TEP_SHA256_SIZE);
 
-	tep_result_t result = tep_service_call(TEP_MB_FEATURE_BOOT, TEP_MB_CMD_BOOT_VERIFY, request, sizeof(request), &response, 4U);
+	tep_result_t result =
+		tep_service_call(TEP_MB_FEATURE_BOOT, TEP_MB_CMD_BOOT_VERIFY, request, sizeof(request), &response, 4U);
 
 	if (result == TEP_OK || result == TEP_ERR_ROLLBACK) {
 		if (response.payload_len != 4U) return TEP_ERR_PROTOCOL;
@@ -261,29 +298,44 @@ tep_result_t tep_boot_verify(const uint8_t manifest[TEP_BOOT_MANIFEST_SIZE], con
 	return result;
 }
 
-const char *tep_boot_reason_name(uint32_t reason)
+const char *
+tep_boot_reason_name(uint32_t reason)
 {
 	switch (reason) {
-	case TEP_BOOT_BAD_FORMAT: return "not a manifest";
-	case TEP_BOOT_BAD_SIGNATURE: return "bad signature";
-	case TEP_BOOT_WRONG_IMAGE: return "signed for another image";
+	case TEP_BOOT_BAD_FORMAT:
+		return "not a manifest";
+	case TEP_BOOT_BAD_SIGNATURE:
+		return "bad signature";
+	case TEP_BOOT_WRONG_IMAGE:
+		return "signed for another image";
 	}
 	return "unknown reason";
 }
 
-const char *tep_result_name(tep_result_t result)
+const char *
+tep_result_name(tep_result_t result)
 {
 	switch (result) {
-	case TEP_OK: return "ok";
-	case TEP_ERR_UNAVAILABLE: return "tepOS unavailable";
-	case TEP_ERR_INVALID: return "invalid arguments";
-	case TEP_ERR_NOT_FOUND: return "not found";
-	case TEP_ERR_FULL: return "key store full";
-	case TEP_ERR_PROTOCOL: return "protocol error";
-	case TEP_ERR_DENIED: return "denied";
-	case TEP_ERR_RETRY_LATER: return "retry later";
-	case TEP_ERR_LOCKED: return "locked";
-	case TEP_ERR_ROLLBACK: return "rollback";
+	case TEP_OK:
+		return "ok";
+	case TEP_ERR_UNAVAILABLE:
+		return "tepOS unavailable";
+	case TEP_ERR_INVALID:
+		return "invalid arguments";
+	case TEP_ERR_NOT_FOUND:
+		return "not found";
+	case TEP_ERR_FULL:
+		return "key store full";
+	case TEP_ERR_PROTOCOL:
+		return "protocol error";
+	case TEP_ERR_DENIED:
+		return "denied";
+	case TEP_ERR_RETRY_LATER:
+		return "retry later";
+	case TEP_ERR_LOCKED:
+		return "locked";
+	case TEP_ERR_ROLLBACK:
+		return "rollback";
 	}
 	return "unknown";
 }
