@@ -3,12 +3,12 @@
 #include <nxu/string.h>
 #include <nxu/syscall.h>
 
-uint32_t DesktopServiceScale(void)
+uint32_t
+DesktopServiceScale(void)
 {
 	char arguments[1024] = {0};
 
-	if (nxu_get_boot_args(arguments, sizeof(arguments)) < 0)
-		return 1000;
+	if (nxu_get_boot_args(arguments, sizeof(arguments)) < 0) return 1000;
 
 	for (uint32_t cursor = 0; arguments[cursor];) {
 		while (arguments[cursor] == ' ')
@@ -21,8 +21,7 @@ uint32_t DesktopServiceScale(void)
 
 		uint32_t length = cursor - start;
 
-		if (length <= 9)
-			continue;
+		if (length <= 9) continue;
 
 		bool matched = true;
 		const char prefix[] = "ui.scale=";
@@ -30,14 +29,12 @@ uint32_t DesktopServiceScale(void)
 		for (uint32_t i = 0; i < 9; i++)
 			matched &= arguments[start + i] == prefix[i];
 
-		if (!matched)
-			continue;
+		if (!matched) continue;
 
 		uint32_t scale = 0;
 
 		for (uint32_t i = start + 9; i < cursor; i++) {
-			if (arguments[i] < '0' || arguments[i] > '9' || scale > 4000)
-				return 1000;
+			if (arguments[i] < '0' || arguments[i] > '9' || scale > 4000) return 1000;
 
 			scale = scale * 10 + arguments[i] - '0';
 		}
@@ -48,8 +45,9 @@ uint32_t DesktopServiceScale(void)
 	return 1000;
 }
 
-uint32_t DesktopServiceGetActivity(void *context, CoreGraphicsActivity *activity, CoreGraphicsProcessInfo *processes,
-								   uint32_t capacity, uint32_t *count)
+uint32_t
+DesktopServiceGetActivity(void *context, CoreGraphicsActivity *activity, CoreGraphicsProcessInfo *processes,
+						  uint32_t capacity, uint32_t *count)
 {
 	(void)context;
 
@@ -72,8 +70,9 @@ uint32_t DesktopServiceGetActivity(void *context, CoreGraphicsActivity *activity
 	return CORE_GRAPHICS_STATUS_OK;
 }
 
-uint32_t DesktopServiceListDirectory(void *context, const char *path, uint32_t length, CoreGraphicsDirEntry *entries,
-									 uint32_t capacity, uint32_t *count, bool *truncated)
+uint32_t
+DesktopServiceListDirectory(void *context, const char *path, uint32_t length, CoreGraphicsDirEntry *entries,
+							uint32_t capacity, uint32_t *count, bool *truncated)
 {
 	(void)context;
 
@@ -87,8 +86,7 @@ uint32_t DesktopServiceListDirectory(void *context, const char *path, uint32_t l
 	directory[length] = 0;
 
 	for (uint32_t i = 0; i < length; i++)
-		if (!directory[i])
-			return CORE_GRAPHICS_FS_STATUS_ERROR;
+		if (!directory[i]) return CORE_GRAPHICS_FS_STATUS_ERROR;
 
 	nxu_stat_t stat;
 
@@ -97,21 +95,18 @@ uint32_t DesktopServiceListDirectory(void *context, const char *path, uint32_t l
 	if (found < 0)
 		return found == -NXU_SYS_E_NOT_FOUND ? CORE_GRAPHICS_FS_STATUS_NOT_FOUND : CORE_GRAPHICS_FS_STATUS_ERROR;
 
-	if (stat.type != NXU_STAT_TYPE_DIRECTORY)
-		return CORE_GRAPHICS_FS_STATUS_NOT_A_DIRECTORY;
+	if (stat.type != NXU_STAT_TYPE_DIRECTORY) return CORE_GRAPHICS_FS_STATUS_NOT_A_DIRECTORY;
 
 	int64_t descriptor = nxu_open(directory, 1);
 
-	if (descriptor < 0)
-		return CORE_GRAPHICS_FS_STATUS_ERROR;
+	if (descriptor < 0) return CORE_GRAPHICS_FS_STATUS_ERROR;
 
 	uint32_t status = CORE_GRAPHICS_FS_STATUS_OK;
 	nxu_dirent_t item;
 	int64_t read;
 
 	while ((read = nxu_readdir((uint64_t)descriptor, &item)) > 0) {
-		if (nxu_streq(item.name, ".") || nxu_streq(item.name, ".."))
-			continue;
+		if (nxu_streq(item.name, ".") || nxu_streq(item.name, "..")) continue;
 
 		if (*count == capacity) {
 			*truncated = true;
@@ -134,8 +129,7 @@ uint32_t DesktopServiceListDirectory(void *context, const char *path, uint32_t l
 			directory[length] = '/';
 			memcpy(directory + length + 1, item.name, item.name_length + 1);
 
-			if (nxu_stat(directory, &stat) == 0)
-				entry->size_bytes = stat.size;
+			if (nxu_stat(directory, &stat) == 0) entry->size_bytes = stat.size;
 
 			directory[length] = 0;
 		}
@@ -143,8 +137,7 @@ uint32_t DesktopServiceListDirectory(void *context, const char *path, uint32_t l
 
 	int64_t closed = nxu_close((uint64_t)descriptor);
 
-	if (read < 0 || closed < 0)
-		status = CORE_GRAPHICS_FS_STATUS_ERROR;
+	if (read < 0 || closed < 0) status = CORE_GRAPHICS_FS_STATUS_ERROR;
 
 	return status;
 }

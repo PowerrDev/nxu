@@ -374,7 +374,7 @@ main(void)
 							 .max_width = TERMINAL_WIDTH,
 							 .max_height = TERMINAL_HEIGHT + 24,
 							 .titlebar_height = 24,
-							 .corner_radius = 8};
+							 .corner_radius = 24};
 	memcpy(info.name, "Terminal", sizeof("Terminal"));
 	memcpy(info.bundle_path, "/Applications/Terminal.app", sizeof("/Applications/Terminal.app"));
 	int64_t connection = nxu_ui_connect(&info);

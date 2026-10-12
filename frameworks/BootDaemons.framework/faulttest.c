@@ -27,9 +27,8 @@
  * array and files it under .rodata, which user.ld puts in the executable
  * text segment -- and then the "jump into data" mode legitimately runs.
  */
-static volatile uint32_t g_data_words[4] __attribute__((section(".data.faulttest"))) = {
-	0xD503201FU, 0xD503201FU, 0xD65F03C0U, 0U
-};
+static volatile uint32_t g_data_words[4]
+	__attribute__((section(".data.faulttest"))) = {0xD503201FU, 0xD503201FU, 0xD65F03C0U, 0U};
 
 static int64_t
 faulttest_mode(void)
@@ -89,7 +88,8 @@ main(void)
 		int64_t tid = nxu_thread_spawn(faulttest_thread_fault, 0, FAULTTEST_STACK_SIZE);
 		if (tid <= 0) return 1;
 
-		for (uint32_t spin = 0U; spin < FAULTTEST_WAIT_ITERATIONS; spin++) (void)nxu_yield();
+		for (uint32_t spin = 0U; spin < FAULTTEST_WAIT_ITERATIONS; spin++)
+			(void)nxu_yield();
 		return 2;
 	}
 

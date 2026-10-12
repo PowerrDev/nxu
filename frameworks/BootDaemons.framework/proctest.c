@@ -32,7 +32,8 @@ static void
 say(const char *text)
 {
 	uint64_t length = 0ULL;
-	while (text[length] != '\0') length++;
+	while (text[length] != '\0')
+		length++;
 	(void)nxu_write(1ULL, text, length);
 }
 
@@ -40,7 +41,7 @@ static int
 fail(int check, const char *what)
 {
 	say("proctest: FAILED check ");
-	char digits[4] = { (char)('0' + (check / 10)), (char)('0' + (check % 10)), ' ', '\0' };
+	char digits[4] = {(char)('0' + (check / 10)), (char)('0' + (check % 10)), ' ', '\0'};
 	say(digits);
 	say(what);
 	say("\n");
@@ -99,7 +100,8 @@ signal_self_thread(void *arg)
 {
 	(void)arg;
 
-	for (uint32_t index = 0U; index < 30U; index++) (void)nxu_yield();
+	for (uint32_t index = 0U; index < 30U; index++)
+		(void)nxu_yield();
 
 	(void)nxu_kill((uint64_t)nxu_getpid(), NXU_SIGUSR1);
 	(void)nxu_thread_exit(0ULL);
@@ -196,7 +198,8 @@ main(void)
 		if (region[4096ULL * 101ULL] != 0U) return fail(14, "neighbour of a touched page is not zero");
 
 		/* The kernel writing into a page nobody has touched must fault it in too. */
-		if (nxu_get_boot_args((char *)(region + 4096ULL * 200ULL), 256ULL) < 0) return fail(15, "kernel write into an untouched page failed");
+		if (nxu_get_boot_args((char *)(region + 4096ULL * 200ULL), 256ULL) < 0)
+			return fail(15, "kernel write into an untouched page failed");
 
 		if (nxu_munmap((uint64_t)region, PROCTEST_MMAP_BYTES) < 0) return fail(16, "munmap failed");
 	}
@@ -210,7 +213,8 @@ main(void)
 		if (pid < 0) return fail(18, "fork failed in the loop");
 		if (pid == 0) (void)nxu_exit(100ULL + index);
 
-		if (wait_child(pid, &status) != pid || status != 100ULL + index) return fail(19, "wrong status from a looped child");
+		if (wait_child(pid, &status) != pid || status != 100ULL + index)
+			return fail(19, "wrong status from a looped child");
 	}
 
 	/* 6. exec: argv arrives, the image is replaced, the exit status proves it. */
@@ -219,7 +223,7 @@ main(void)
 		if (pid < 0) return fail(20, "fork failed");
 
 		if (pid == 0) {
-			const char *argv[] = { "execchild", "alpha", "beta", 0 };
+			const char *argv[] = {"execchild", "alpha", "beta", 0};
 			(void)nxu_exec(PROCTEST_EXEC_PATH, argv);
 			(void)nxu_exit(99ULL);
 		}
@@ -228,7 +232,8 @@ main(void)
 		if (status == 99ULL) return fail(22, "exec returned");
 		if (status != (uint64_t)PROCTEST_EXEC_STATUS) return fail(23, "exec'd program reported the wrong status");
 
-		if (nxu_exec("/disk/System/Library/CoreServices/no-such-program", 0) != -NXU_SYS_E_NOT_FOUND) return fail(24, "exec of a missing file did not fail cleanly");
+		if (nxu_exec("/disk/System/Library/CoreServices/no-such-program", 0) != -NXU_SYS_E_NOT_FOUND)
+			return fail(24, "exec of a missing file did not fail cleanly");
 	}
 
 	/* 7. A caught signal runs its handler and execution resumes where it was. */
@@ -240,17 +245,21 @@ main(void)
 
 		if (nxu_kill((uint64_t)nxu_getpid(), NXU_SIGUSR1) != 0) return fail(26, "kill(self) failed");
 
-		if (g_handler_hits != 1ULL || g_last_signal != (int)NXU_SIGUSR1) return fail(27, "handler did not run once with the signal number");
+		if (g_handler_hits != 1ULL || g_last_signal != (int)NXU_SIGUSR1)
+			return fail(27, "handler did not run once with the signal number");
 		if (before != 0x1234567890ABCDEFULL) return fail(28, "registers not restored after the handler");
-		if ((g_mask_inside_handler & (1U << NXU_SIGUSR1)) == 0U) return fail(29, "signal not blocked while its handler runs");
-		if ((nxu_sigprocmask(NXU_SIG_BLOCK, 0U) & (1U << NXU_SIGUSR1)) != 0) return fail(30, "signal still blocked after the handler returned");
+		if ((g_mask_inside_handler & (1U << NXU_SIGUSR1)) == 0U)
+			return fail(29, "signal not blocked while its handler runs");
+		if ((nxu_sigprocmask(NXU_SIG_BLOCK, 0U) & (1U << NXU_SIGUSR1)) != 0)
+			return fail(30, "signal still blocked after the handler returned");
 	}
 
 	/* 8. A blocked signal waits until it is unblocked. */
 	{
 		g_handler_hits = 0ULL;
 
-		if (nxu_sigprocmask(NXU_SIG_BLOCK, 1U << NXU_SIGUSR1) != 0) return fail(31, "sigprocmask returned a stale mask");
+		if (nxu_sigprocmask(NXU_SIG_BLOCK, 1U << NXU_SIGUSR1) != 0)
+			return fail(31, "sigprocmask returned a stale mask");
 		if (nxu_kill((uint64_t)nxu_getpid(), NXU_SIGUSR1) != 0) return fail(32, "kill(self) failed");
 
 		(void)nxu_yield();
@@ -273,11 +282,14 @@ main(void)
 	{
 		int64_t pid = nxu_fork();
 		if (pid < 0) return fail(38, "fork failed");
-		if (pid == 0) for (;;) (void)nxu_yield();
+		if (pid == 0)
+			for (;;)
+				(void)nxu_yield();
 
 		if (nxu_kill((uint64_t)pid, NXU_SIGTERM) != 0) return fail(39, "kill(child, SIGTERM) failed");
 		if (wait_child(pid, &status) != pid) return fail(40, "child did not die");
-		if (!NXU_EXIT_WAS_KILLED(status) || NXU_EXIT_TERMSIG(status) != NXU_SIGTERM) return fail(41, "status does not record SIGTERM");
+		if (!NXU_EXIT_WAS_KILLED(status) || NXU_EXIT_TERMSIG(status) != NXU_SIGTERM)
+			return fail(41, "status does not record SIGTERM");
 	}
 
 	/* 11. A child that ignores SIGTERM survives it; SIGKILL still ends it. */
@@ -292,18 +304,21 @@ main(void)
 		if (pid == 0) {
 			(void)nxu_signal(NXU_SIGTERM, (void (*)(int))NXU_SIG_IGN);
 			shared[SHARED_CHILD_ARMED] = 1ULL;
-			for (;;) (void)nxu_yield();
+			for (;;)
+				(void)nxu_yield();
 		}
 
 		if (!wait_flag(&shared[SHARED_CHILD_ARMED])) return fail(44, "child never armed");
 
 		if (nxu_kill((uint64_t)pid, NXU_SIGTERM) != 0) return fail(45, "kill(SIGTERM) failed");
 		(void)nxu_yield();
-		if (nxu_waitpid((uint64_t)pid, &status) != -NXU_SYS_E_AGAIN) return fail(46, "ignored SIGTERM killed the child");
+		if (nxu_waitpid((uint64_t)pid, &status) != -NXU_SYS_E_AGAIN)
+			return fail(46, "ignored SIGTERM killed the child");
 
 		if (nxu_kill((uint64_t)pid, NXU_SIGKILL) != 0) return fail(47, "kill(SIGKILL) failed");
 		if (wait_child(pid, &status) != pid) return fail(48, "SIGKILL did not end the child");
-		if (!NXU_EXIT_WAS_KILLED(status) || NXU_EXIT_TERMSIG(status) != NXU_SIGKILL) return fail(49, "status does not record SIGKILL");
+		if (!NXU_EXIT_WAS_KILLED(status) || NXU_EXIT_TERMSIG(status) != NXU_SIGKILL)
+			return fail(49, "status does not record SIGKILL");
 	}
 
 	/* 12. SIGCHLD reaches a parent that asked for it. */
@@ -354,21 +369,25 @@ main(void)
 			(void)nxu_exit(grandchild_status);
 		}
 
-		if (wait_child(pid, &status) != pid || status != 0ULL) return fail(58, "a descendant was allowed to signal its ancestor");
+		if (wait_child(pid, &status) != pid || status != 0ULL)
+			return fail(58, "a descendant was allowed to signal its ancestor");
 	}
 
 	/* 15. wait() sleeps until a child exits; ANY takes whichever comes first. */
 	{
-		if (nxu_wait(NXU_WAIT_ANY, &status) != -NXU_SYS_E_NOT_FOUND) return fail(59, "wait with no children did not report NOT_FOUND");
+		if (nxu_wait(NXU_WAIT_ANY, &status) != -NXU_SYS_E_NOT_FOUND)
+			return fail(59, "wait with no children did not report NOT_FOUND");
 
 		int64_t pid = nxu_fork();
 		if (pid < 0) return fail(60, "fork failed");
 		if (pid == 0) {
-			for (uint32_t index = 0U; index < 20U; index++) (void)nxu_yield();
+			for (uint32_t index = 0U; index < 20U; index++)
+				(void)nxu_yield();
 			(void)nxu_exit(9ULL);
 		}
 
-		if (nxu_wait((uint64_t)pid, &status) != pid || status != 9ULL) return fail(61, "wait did not return the child's status");
+		if (nxu_wait((uint64_t)pid, &status) != pid || status != 9ULL)
+			return fail(61, "wait did not return the child's status");
 
 		int64_t first = nxu_fork();
 		if (first < 0) return fail(62, "fork failed");
@@ -386,8 +405,10 @@ main(void)
 		}
 
 		if (total != 43ULL) return fail(65, "wait(ANY) did not collect both children");
-		if (nxu_wait(NXU_WAIT_ANY, &status) != -NXU_SYS_E_NOT_FOUND) return fail(66, "wait after reaping everything did not report NOT_FOUND");
-		if (nxu_wait(999ULL, &status) != -NXU_SYS_E_NOT_FOUND) return fail(67, "wait for a stranger did not report NOT_FOUND");
+		if (nxu_wait(NXU_WAIT_ANY, &status) != -NXU_SYS_E_NOT_FOUND)
+			return fail(66, "wait after reaping everything did not report NOT_FOUND");
+		if (nxu_wait(999ULL, &status) != -NXU_SYS_E_NOT_FOUND)
+			return fail(67, "wait for a stranger did not report NOT_FOUND");
 	}
 
 	/* 16. A signal wakes a sleeping wait(): it returns INTERRUPTED. */
@@ -396,17 +417,21 @@ main(void)
 
 		int64_t pid = nxu_fork();
 		if (pid < 0) return fail(68, "fork failed");
-		if (pid == 0) for (;;) (void)nxu_yield();
+		if (pid == 0)
+			for (;;)
+				(void)nxu_yield();
 
 		if (nxu_thread_spawn(signal_self_thread, 0, PROCTEST_THREAD_STACK) <= 0) return fail(69, "thread_spawn failed");
 
-		if (nxu_wait((uint64_t)pid, &status) != -NXU_SYS_E_INTERRUPTED) return fail(70, "wait was not interrupted by the signal");
+		if (nxu_wait((uint64_t)pid, &status) != -NXU_SYS_E_INTERRUPTED)
+			return fail(70, "wait was not interrupted by the signal");
 		if (!wait_flag(&g_handler_hits)) return fail(71, "the signal's handler never ran");
 
 		/* The child is still running: the interrupted wait must not have reaped it. */
 		if (nxu_kill((uint64_t)pid, NXU_SIGKILL) != 0) return fail(72, "kill failed");
 		if (nxu_wait((uint64_t)pid, &status) != pid) return fail(73, "wait after the interrupt failed");
-		if (!NXU_EXIT_WAS_KILLED(status) || NXU_EXIT_TERMSIG(status) != NXU_SIGKILL) return fail(74, "status does not record SIGKILL");
+		if (!NXU_EXIT_WAS_KILLED(status) || NXU_EXIT_TERMSIG(status) != NXU_SIGKILL)
+			return fail(74, "status does not record SIGKILL");
 	}
 
 	/* 17. A process asleep in the kernel can be killed, and nothing is left
@@ -430,11 +455,13 @@ main(void)
 		}
 
 		if (!wait_flag(&shared[SHARED_CHILD_ARMED])) return fail(77, "child never went to sleep");
-		for (uint32_t index = 0U; index < 50U; index++) (void)nxu_yield();
+		for (uint32_t index = 0U; index < 50U; index++)
+			(void)nxu_yield();
 
 		if (nxu_kill((uint64_t)pid, NXU_SIGKILL) != 0) return fail(78, "kill of a sleeping process failed");
 		if (wait_child(pid, &status) != pid) return fail(79, "sleeping process did not die");
-		if (!NXU_EXIT_WAS_KILLED(status) || NXU_EXIT_TERMSIG(status) != NXU_SIGKILL) return fail(80, "status does not record SIGKILL");
+		if (!NXU_EXIT_WAS_KILLED(status) || NXU_EXIT_TERMSIG(status) != NXU_SIGKILL)
+			return fail(80, "status does not record SIGKILL");
 	}
 
 	/* 18. Blocking receive: a message sent by a child wakes the parent. */
@@ -446,12 +473,14 @@ main(void)
 		if (pid < 0) return fail(82, "fork failed");
 
 		if (pid == 0) {
-			for (uint32_t index = 0U; index < 10U; index++) (void)nxu_yield();
+			for (uint32_t index = 0U; index < 10U; index++)
+				(void)nxu_yield();
 			(void)nxu_exit(nxu_ipc_send((uint32_t)port, "hello", 5ULL, 0U) == 0 ? 0ULL : 1ULL);
 		}
 
 		char message[64];
-		if (nxu_ipc_receive_wait((uint32_t)port, message, sizeof(message), 0, 0) != 5) return fail(83, "blocking receive did not return the message size");
+		if (nxu_ipc_receive_wait((uint32_t)port, message, sizeof(message), 0, 0) != 5)
+			return fail(83, "blocking receive did not return the message size");
 		if (message[0] != 'h' || message[4] != 'o') return fail(84, "blocking receive returned the wrong bytes");
 
 		if (nxu_wait((uint64_t)pid, &status) != pid || status != 0ULL) return fail(85, "sender failed");
@@ -465,7 +494,8 @@ main(void)
 	 */
 	{
 		if (nxu_get_caps() != 0) return fail(86, "a process the kernel started holds capabilities");
-		if (nxu_open("/disk/var/proctest.tmp", NXU_O_WRITE | NXU_O_CREATE) != -NXU_SYS_E_DENIED) return fail(87, "open for write was not refused");
+		if (nxu_open("/disk/var/proctest.tmp", NXU_O_WRITE | NXU_O_CREATE) != -NXU_SYS_E_DENIED)
+			return fail(87, "open for write was not refused");
 		if (nxu_unlink("/disk/var/proctest.tmp") != -NXU_SYS_E_DENIED) return fail(88, "unlink was not refused");
 		if (nxu_mkdir("/disk/var/proctest.d") != -NXU_SYS_E_DENIED) return fail(89, "mkdir was not refused");
 		if (nxu_display_claim() != -NXU_SYS_E_DENIED) return fail(90, "display_claim was not refused");
@@ -475,7 +505,8 @@ main(void)
 		if (reading < 0) return fail(92, "reading a file was refused");
 		(void)nxu_close((uint64_t)reading);
 
-		if (nxu_spawn_caps(PROCTEST_EXEC_PATH, "execchild", NXU_CAP_FS_WRITE) != -NXU_SYS_E_DENIED) return fail(93, "spawn passed on a capability the caller lacks");
+		if (nxu_spawn_caps(PROCTEST_EXEC_PATH, "execchild", NXU_CAP_FS_WRITE) != -NXU_SYS_E_DENIED)
+			return fail(93, "spawn passed on a capability the caller lacks");
 	}
 
 	say("proctest: fork, exec, signals, copy-on-write, demand paging, blocking waits and capabilities all behaved\n");

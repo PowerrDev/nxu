@@ -15,18 +15,19 @@ static struct {
 	ui_pointer_motion_t motion;
 } desktop;
 
-static uint32_t get_surface(void *context, CoreGraphicsSurfaceDescriptor *surface)
+static uint32_t
+get_surface(void *context, CoreGraphicsSurfaceDescriptor *surface)
 {
 	(void)context;
 
-	if (!surface)
-		return CORE_GRAPHICS_STATUS_INVALID_ARGUMENT;
+	if (!surface) return CORE_GRAPHICS_STATUS_INVALID_ARGUMENT;
 
 	*surface = desktop.surface;
 	return CORE_GRAPHICS_STATUS_OK;
 }
 
-static uint32_t present(void *context, const CoreGraphicsDamageRect *damage)
+static uint32_t
+present(void *context, const CoreGraphicsDamageRect *damage)
 {
 	(void)context;
 	(void)damage;
@@ -34,23 +35,23 @@ static uint32_t present(void *context, const CoreGraphicsDamageRect *damage)
 	return CORE_GRAPHICS_STATUS_OK;
 }
 
-static int32_t clamp(int64_t value, uint32_t extent)
+static int32_t
+clamp(int64_t value, uint32_t extent)
 {
-	if (value < 0)
-		return 0;
+	if (value < 0) return 0;
 
 	return (uint64_t)value >= extent ? (int32_t)(extent - 1) : (int32_t)value;
 }
 
-static uint32_t key_character(uint32_t code, uint32_t modifiers)
+static uint32_t
+key_character(uint32_t code, uint32_t modifiers)
 {
 	static const char normal[] = "\0\0"
 								 "1234567890-=\b\tqwertyuiop[]\n\0asdfghjkl;'`\0\\zxcvbnm,./\0*\0 ";
 	static const char shifted[] = "\0\0"
 								  "!@#$%^&*()_+\b\tQWERTYUIOP{}\n\0ASDFGHJKL:\"~\0|ZXCVBNM<>?\0*\0 ";
 
-	if (code >= sizeof(normal) - 1)
-		return 0;
+	if (code >= sizeof(normal) - 1) return 0;
 
 	char character = (modifiers & 1) ? shifted[code] : normal[code];
 
@@ -60,15 +61,15 @@ static uint32_t key_character(uint32_t code, uint32_t modifiers)
 		character += 'a' - 'A';
 
 	/* Terminal control chords use the conventional ASCII control characters. */
-	if ((modifiers & 2) && ((character >= 'a' && character <= 'z') ||
-		(character >= 'A' && character <= 'Z'))) {
+	if ((modifiers & 2) && ((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z'))) {
 		character &= 0x1f;
 	}
 
 	return (uint8_t)character;
 }
 
-static uint32_t poll_event(void *context, CoreGraphicsHostEvent *event)
+static uint32_t
+poll_event(void *context, CoreGraphicsHostEvent *event)
 {
 	(void)context;
 
@@ -80,8 +81,7 @@ static uint32_t poll_event(void *context, CoreGraphicsHostEvent *event)
 		nxu_exit(0);
 	}
 
-	if (!event)
-		return CORE_GRAPHICS_STATUS_INVALID_ARGUMENT;
+	if (!event) return CORE_GRAPHICS_STATUS_INVALID_ARGUMENT;
 
 	*event = (CoreGraphicsHostEvent){.struct_size = sizeof(*event)};
 
@@ -124,8 +124,7 @@ static uint32_t poll_event(void *context, CoreGraphicsHostEvent *event)
 		}
 
 		if (!received) {
-			if (desktop.idle_once)
-				(void)nxu_event_wait(16667, sequence);
+			if (desktop.idle_once) (void)nxu_event_wait(16667, sequence);
 			desktop.idle_once = true;
 			return CORE_GRAPHICS_STATUS_OK;
 		}
@@ -138,8 +137,7 @@ static uint32_t poll_event(void *context, CoreGraphicsHostEvent *event)
 		}
 
 		if (input.kind == NXU_RECOVERY_INPUT_KEY) {
-			if (input.value != 1 && input.value != 2)
-				continue;
+			if (input.value != 1 && input.value != 2) continue;
 
 			event->event_type = CORE_GRAPHICS_EVENT_KEY_DOWN;
 			event->button = input.code;
@@ -147,8 +145,7 @@ static uint32_t poll_event(void *context, CoreGraphicsHostEvent *event)
 			return CORE_GRAPHICS_STATUS_OK;
 		}
 
-		if (input.kind != NXU_RECOVERY_INPUT_POINTER)
-			continue;
+		if (input.kind != NXU_RECOVERY_INPUT_POINTER) continue;
 
 		if (!desktop.baseline) {
 			desktop.raw_x = input.x;
@@ -167,34 +164,33 @@ static uint32_t poll_event(void *context, CoreGraphicsHostEvent *event)
 		desktop.x = x;
 		desktop.y = y;
 
-		if (desktop.moved)
-			(void)CG_Pointer_Move(x, y);
+		if (desktop.moved) (void)CG_Pointer_Move(x, y);
 		desktop.down = input.buttons & ~desktop.buttons;
 		desktop.up = desktop.buttons & ~input.buttons;
 		desktop.buttons = input.buttons;
 	}
 }
 
-static uint32_t get_time(void *context, uint64_t *seconds)
+static uint32_t
+get_time(void *context, uint64_t *seconds)
 {
 	(void)context;
 	return DesktopServiceGetTime(seconds) ? CORE_GRAPHICS_STATUS_OK : CORE_GRAPHICS_STATUS_UNSUPPORTED;
 }
 
-int main(void)
+int
+main(void)
 {
 	uint32_t width, height;
 
 	while (!CoreGraphicsDisplaySize(&width, &height))
 		(void)nxu_sleep_us(100000);
 
-	if (width > 3840 || height > 2160)
-		return 1;
+	if (width > 3840 || height > 2160) return 1;
 
 	uint32_t *pixels = nxu_alloc((uint64_t)width * height * sizeof(uint32_t), 16);
 
-	if (!pixels)
-		return 2;
+	if (!pixels) return 2;
 
 	desktop.surface =
 		(CoreGraphicsSurfaceDescriptor){pixels, width, height, width, CORE_GRAPHICS_PIXEL_FORMAT_XRGB8888};

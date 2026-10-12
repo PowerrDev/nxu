@@ -37,7 +37,8 @@ typedef uintptr_t nxu_memops_word_t;
 
 #define NXU_MEMOPS_WORD sizeof(nxu_memops_word_t)
 
-static inline void *nxu_memops_copy_forward(void *destination, const void *source, size_t size)
+static inline void *
+nxu_memops_copy_forward(void *destination, const void *source, size_t size)
 {
 	uint8_t *d = destination;
 	const uint8_t *s = source;
@@ -95,8 +96,8 @@ static inline void *nxu_memops_copy_forward(void *destination, const void *sourc
 
 	while (size != 0U) {
 		NXU_MEMOPS_STORE(d, NXU_MEMOPS_LOAD(s));
-			d++;
-			s++;
+		d++;
+		s++;
 		size--;
 	}
 
@@ -104,7 +105,8 @@ static inline void *nxu_memops_copy_forward(void *destination, const void *sourc
 }
 
 /* The same, from the end down: for an overlapping move to a higher address. */
-static inline void *nxu_memops_copy_backward(void *destination, const void *source, size_t size)
+static inline void *
+nxu_memops_copy_backward(void *destination, const void *source, size_t size)
 {
 	uint8_t *d = (uint8_t *)destination + size;
 	const uint8_t *s = (const uint8_t *)source + size;
@@ -131,15 +133,16 @@ static inline void *nxu_memops_copy_backward(void *destination, const void *sour
 
 	while (size != 0U) {
 		--d;
-			--s;
-			NXU_MEMOPS_STORE(d, NXU_MEMOPS_LOAD(s));
+		--s;
+		NXU_MEMOPS_STORE(d, NXU_MEMOPS_LOAD(s));
 		size--;
 	}
 
 	return destination;
 }
 
-static inline void *nxu_memops_move(void *destination, const void *source, size_t size)
+static inline void *
+nxu_memops_move(void *destination, const void *source, size_t size)
 {
 	if (destination == source || size == 0U) return destination;
 
@@ -151,7 +154,8 @@ static inline void *nxu_memops_move(void *destination, const void *source, size_
 	return nxu_memops_copy_backward(destination, source, size);
 }
 
-static inline void *nxu_memops_set(void *destination, int value, size_t size)
+static inline void *
+nxu_memops_set(void *destination, int value, size_t size)
 {
 	uint8_t *d = destination;
 	uint8_t byte = (uint8_t)value;

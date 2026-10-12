@@ -39,18 +39,19 @@ static uint32_t g_online_count;
 
 /* ---- small helpers -------------------------------------------------------- */
 
-static void say(const char *text)
+static void
+say(const char *text)
 {
 	(void)nxu_write(1ULL, text, nxu_strlen(text));
 }
 
-static void say_number(uint64_t value)
+static void
+say_number(uint64_t value)
 {
 	char digits[24];
 	uint32_t length = 0U;
 
-	if (value == 0ULL)
-		digits[length++] = '0';
+	if (value == 0ULL) digits[length++] = '0';
 
 	while (value != 0ULL) {
 		digits[length++] = (char)('0' + (value % 10ULL));
@@ -65,7 +66,8 @@ static void say_number(uint64_t value)
 	(void)nxu_write(1ULL, text, length);
 }
 
-static int fail(int number, const char *what)
+static int
+fail(int number, const char *what)
 {
 	say("smptest: case ");
 	say_number((uint64_t)number);
@@ -75,12 +77,14 @@ static int fail(int number, const char *what)
 	return number;
 }
 
-static uint64_t now_us(void)
+static uint64_t
+now_us(void)
 {
 	return (uint64_t)nxu_uptime_us();
 }
 
-static uint32_t popcount(uint32_t value)
+static uint32_t
+popcount(uint32_t value)
 {
 	uint32_t count = 0U;
 
@@ -92,25 +96,24 @@ static uint32_t popcount(uint32_t value)
 	return count;
 }
 
-static void note_cpu(volatile uint32_t *mask)
+static void
+note_cpu(volatile uint32_t *mask)
 {
 	int64_t cpu = nxu_getcpu();
 
-	if (cpu >= 0 && cpu < (int64_t)MAX_CPUS)
-		(void)__atomic_fetch_or(mask, 1U << (uint32_t)cpu, __ATOMIC_ACQ_REL);
+	if (cpu >= 0 && cpu < (int64_t)MAX_CPUS) (void)__atomic_fetch_or(mask, 1U << (uint32_t)cpu, __ATOMIC_ACQ_REL);
 }
 
 /* The nth online CPU (0-based), wrapping. */
-static uint32_t nth_online(uint32_t n)
+static uint32_t
+nth_online(uint32_t n)
 {
 	uint32_t want = n % g_online_count;
 
 	for (uint32_t cpu = 0U; cpu < MAX_CPUS; cpu++) {
-		if ((g_online & (1U << cpu)) == 0U)
-			continue;
+		if ((g_online & (1U << cpu)) == 0U) continue;
 
-		if (want == 0U)
-			return cpu;
+		if (want == 0U) return cpu;
 
 		want--;
 	}
@@ -118,13 +121,13 @@ static uint32_t nth_online(uint32_t n)
 	return 0U;
 }
 
-static uint32_t probe_online_cpus(void)
+static uint32_t
+probe_online_cpus(void)
 {
 	uint32_t mask = 0U;
 
 	for (uint32_t cpu = 0U; cpu < MAX_CPUS; cpu++) {
-		if (nxu_setaffinity(1ULL << cpu) == 0)
-			mask |= 1U << cpu;
+		if (nxu_setaffinity(1ULL << cpu) == 0) mask |= 1U << cpu;
 	}
 
 	(void)nxu_setaffinity(0xFFULL);
@@ -132,14 +135,14 @@ static uint32_t probe_online_cpus(void)
 }
 
 /* Wait for *value to reach at least `target`; false if it takes implausibly long. */
-static bool wait_at_least(volatile uint32_t *value, uint32_t target)
+static bool
+wait_at_least(volatile uint32_t *value, uint32_t target)
 {
 	uint64_t deadline = now_us() + CASE_TIMEOUT_US;
 	uint32_t spins = 0U;
 
 	while (__atomic_load_n(value, __ATOMIC_ACQUIRE) < target) {
-		if ((++spins & 0xFFFU) == 0U && now_us() > deadline)
-			return false;
+		if ((++spins & 0xFFFU) == 0U && now_us() > deadline) return false;
 
 		__asm__ volatile("yield");
 	}
@@ -162,23 +165,23 @@ typedef struct {
 
 static shared_t *g_shared;
 
-static bool shared_create(void)
+static bool
+shared_create(void)
 {
 	int64_t id = nxu_shm_create(sizeof(shared_t));
 
-	if (id <= 0)
-		return false;
+	if (id <= 0) return false;
 
 	int64_t base = nxu_shm_map((uint64_t)id);
 
-	if (base <= 0)
-		return false;
+	if (base <= 0) return false;
 
 	g_shared = (shared_t *)base;
 	return true;
 }
 
-static void shared_reset(void)
+static void
+shared_reset(void)
 {
 	g_shared->ring_token = 0U;
 	g_shared->ring_mask = 0U;
@@ -202,7 +205,8 @@ static void shared_reset(void)
  * hands it on, RING_ROUNDS times, without ever sleeping or yielding. Every one of
  * them must be executing at the same time for this to complete quickly.
  */
-static bool ring_participate(volatile uint32_t *token, volatile uint32_t *mask, uint32_t index, uint32_t members)
+static bool
+ring_participate(volatile uint32_t *token, volatile uint32_t *mask, uint32_t index, uint32_t members)
 {
 	uint64_t deadline = now_us() + CASE_TIMEOUT_US;
 
@@ -212,8 +216,7 @@ static bool ring_participate(volatile uint32_t *token, volatile uint32_t *mask, 
 		while (__atomic_load_n(token, __ATOMIC_ACQUIRE) != index) {
 			if ((++spins & 0x3FFU) == 0U) {
 				note_cpu(mask);
-				if (now_us() > deadline)
-					return false;
+				if (now_us() > deadline) return false;
 			}
 		}
 
@@ -229,7 +232,8 @@ static volatile uint32_t g_ring_mask;
 static volatile uint32_t g_ring_done;
 static volatile uint32_t g_ring_failed;
 
-static void ring_thread(void *argument)
+static void
+ring_thread(void *argument)
 {
 	if (!ring_participate(&g_ring_token, &g_ring_mask, (uint32_t)(uint64_t)argument, 4U)) {
 		(void)__atomic_fetch_add(&g_ring_failed, 1U, __ATOMIC_ACQ_REL);
@@ -239,7 +243,8 @@ static void ring_thread(void *argument)
 	(void)nxu_thread_exit(0ULL);
 }
 
-static int case_thread_ring(void)
+static int
+case_thread_ring(void)
 {
 	g_ring_token = 0U;
 	g_ring_mask = 0U;
@@ -249,15 +254,12 @@ static int case_thread_ring(void)
 	uint64_t started = now_us();
 
 	for (uint64_t index = 1ULL; index < 4ULL; index++) {
-		if (nxu_thread_spawn(ring_thread, (void *)index, 16ULL * 1024ULL) <= 0)
-			return fail(1, "thread_spawn");
+		if (nxu_thread_spawn(ring_thread, (void *)index, 16ULL * 1024ULL) <= 0) return fail(1, "thread_spawn");
 	}
 
-	if (!ring_participate(&g_ring_token, &g_ring_mask, 0U, 4U))
-		return fail(1, "the ring stalled");
+	if (!ring_participate(&g_ring_token, &g_ring_mask, 0U, 4U)) return fail(1, "the ring stalled");
 
-	if (!wait_at_least(&g_ring_done, 3U))
-		return fail(1, "threads did not finish");
+	if (!wait_at_least(&g_ring_done, 3U)) return fail(1, "threads did not finish");
 
 	uint64_t elapsed = now_us() - started;
 	uint32_t cpus = popcount(g_ring_mask);
@@ -270,22 +272,19 @@ static int case_thread_ring(void)
 	say_number(g_ring_mask);
 	say(")\n");
 
-	if (g_ring_failed != 0U)
-		return fail(1, "a ring participant timed out");
+	if (g_ring_failed != 0U) return fail(1, "a ring participant timed out");
 
-	if (elapsed > RING_TIME_LIMIT_US)
-		return fail(1, "the ring was too slow to have run in parallel");
+	if (elapsed > RING_TIME_LIMIT_US) return fail(1, "the ring was too slow to have run in parallel");
 
-	if (cpus < 3U && g_online_count >= 4U)
-		return fail(1, "threads of one process did not spread over the CPUs");
+	if (cpus < 3U && g_online_count >= 4U) return fail(1, "threads of one process did not spread over the CPUs");
 
-	if (cpus < 2U)
-		return fail(1, "threads of one process ran on one CPU");
+	if (cpus < 2U) return fail(1, "threads of one process ran on one CPU");
 
 	return 0;
 }
 
-static int case_process_ring(void)
+static int
+case_process_ring(void)
 {
 	shared_reset();
 
@@ -295,8 +294,7 @@ static int case_process_ring(void)
 	for (uint32_t index = 0U; index < 3U; index++) {
 		int64_t pid = nxu_fork();
 
-		if (pid < 0)
-			return fail(2, "fork");
+		if (pid < 0) return fail(2, "fork");
 
 		if (pid == 0) {
 			bool ok = ring_participate(&g_shared->ring_token, &g_shared->ring_mask, index + 1U, 4U);
@@ -312,8 +310,7 @@ static int case_process_ring(void)
 	for (uint32_t index = 0U; index < 3U; index++) {
 		uint64_t status = 0ULL;
 
-		if (nxu_wait((uint64_t)children[index], &status) != children[index] || status != 0ULL)
-			ok = false;
+		if (nxu_wait((uint64_t)children[index], &status) != children[index] || status != 0ULL) ok = false;
 	}
 
 	uint64_t elapsed = now_us() - started;
@@ -327,17 +324,13 @@ static int case_process_ring(void)
 	say_number(g_shared->ring_mask);
 	say(")\n");
 
-	if (!ok)
-		return fail(2, "a ring participant failed");
+	if (!ok) return fail(2, "a ring participant failed");
 
-	if (elapsed > RING_TIME_LIMIT_US)
-		return fail(2, "the ring was too slow to have run in parallel");
+	if (elapsed > RING_TIME_LIMIT_US) return fail(2, "the ring was too slow to have run in parallel");
 
-	if (cpus < 3U && g_online_count >= 4U)
-		return fail(2, "processes did not spread over the CPUs");
+	if (cpus < 3U && g_online_count >= 4U) return fail(2, "processes did not spread over the CPUs");
 
-	if (cpus < 2U)
-		return fail(2, "processes ran on one CPU");
+	if (cpus < 2U) return fail(2, "processes ran on one CPU");
 
 	return 0;
 }
@@ -347,13 +340,13 @@ static int case_process_ring(void)
 #define ISOLATION_PAGES 16U
 #define ISOLATION_ITERATIONS 120U
 
-static int isolation_child(uint32_t member)
+static int
+isolation_child(uint32_t member)
 {
 	uint64_t pid = (uint64_t)nxu_getpid();
 	int64_t base = nxu_mmap(ISOLATION_PAGES * PAGE, NXU_MMAP_PROT_READ_WRITE);
 
-	if (base <= 0)
-		return 1;
+	if (base <= 0) return 1;
 
 	volatile uint64_t *words = (volatile uint64_t *)base;
 
@@ -368,15 +361,12 @@ static int isolation_child(uint32_t member)
 
 		uint32_t target = nth_online(iteration + member);
 
-		if (nxu_setaffinity(1ULL << target) != 0)
-			return 2;
+		if (nxu_setaffinity(1ULL << target) != 0) return 2;
 
-		if ((uint32_t)nxu_getcpu() != target)
-			return 3;
+		if ((uint32_t)nxu_getcpu() != target) return 3;
 
 		for (uint32_t index = 0U; index < count; index++) {
-			if (words[index] != (stamp ^ index))
-				return 4;
+			if (words[index] != (stamp ^ index)) return 4;
 		}
 	}
 
@@ -384,18 +374,17 @@ static int isolation_child(uint32_t member)
 	return 0;
 }
 
-static int case_isolation(void)
+static int
+case_isolation(void)
 {
 	int64_t children[3];
 
 	for (uint32_t index = 0U; index < 3U; index++) {
 		int64_t pid = nxu_fork();
 
-		if (pid < 0)
-			return fail(3, "fork");
+		if (pid < 0) return fail(3, "fork");
 
-		if (pid == 0)
-			nxu_exit((uint64_t)isolation_child(index + 1U));
+		if (pid == 0) nxu_exit((uint64_t)isolation_child(index + 1U));
 
 		children[index] = pid;
 	}
@@ -409,8 +398,7 @@ static int case_isolation(void)
 	for (uint32_t index = 0U; index < 3U; index++) {
 		uint64_t status = 0ULL;
 
-		if (nxu_wait((uint64_t)children[index], &status) != children[index] || status != 0ULL)
-			ok = false;
+		if (nxu_wait((uint64_t)children[index], &status) != children[index] || status != 0ULL) ok = false;
 	}
 
 	say("smptest: 3 address-space isolation across ");
@@ -433,7 +421,8 @@ static volatile uint32_t g_fault_read_arrive[FAULT_PAGES];
 static volatile uint32_t g_fault_done;
 static volatile uint32_t g_fault_bad;
 
-static void fault_run(uint32_t index)
+static void
+fault_run(uint32_t index)
 {
 	uint64_t deadline = now_us() + CASE_TIMEOUT_US;
 
@@ -473,20 +462,21 @@ static void fault_run(uint32_t index)
 	}
 }
 
-static void fault_thread(void *argument)
+static void
+fault_thread(void *argument)
 {
 	fault_run((uint32_t)(uint64_t)argument);
 	(void)__atomic_fetch_add(&g_fault_done, 1U, __ATOMIC_ACQ_REL);
 	(void)nxu_thread_exit(0ULL);
 }
 
-static int case_concurrent_faults(void)
+static int
+case_concurrent_faults(void)
 {
 	int64_t base = nxu_mmap(FAULT_PAGES * PAGE, NXU_MMAP_PROT_READ_WRITE);
 	int64_t read_base = nxu_mmap(FAULT_PAGES * PAGE, NXU_MMAP_PROT_READ_WRITE);
 
-	if (base <= 0 || read_base <= 0)
-		return fail(4, "mmap");
+	if (base <= 0 || read_base <= 0) return fail(4, "mmap");
 
 	g_fault_base = (volatile uint64_t *)base;
 	g_fault_read_base = (volatile uint64_t *)read_base;
@@ -499,17 +489,14 @@ static int case_concurrent_faults(void)
 	}
 
 	for (uint64_t index = 1ULL; index < FAULT_THREADS; index++) {
-		if (nxu_thread_spawn(fault_thread, (void *)index, 16ULL * 1024ULL) <= 0)
-			return fail(4, "thread_spawn");
+		if (nxu_thread_spawn(fault_thread, (void *)index, 16ULL * 1024ULL) <= 0) return fail(4, "thread_spawn");
 	}
 
 	fault_run(0U);
 
-	if (!wait_at_least(&g_fault_done, FAULT_THREADS - 1U))
-		return fail(4, "threads did not finish");
+	if (!wait_at_least(&g_fault_done, FAULT_THREADS - 1U)) return fail(4, "threads did not finish");
 
-	if (g_fault_bad != 0U)
-		return fail(4, "a fault handler gave a wrong page or a thread stalled");
+	if (g_fault_bad != 0U) return fail(4, "a fault handler gave a wrong page or a thread stalled");
 
 	for (uint32_t page = 0U; page < FAULT_PAGES; page++) {
 		for (uint32_t index = 0U; index < FAULT_THREADS; index++) {
@@ -520,8 +507,7 @@ static int case_concurrent_faults(void)
 				return fail(4, "a write after a concurrent read fault was lost");
 		}
 
-		if (g_fault_base[(uint64_t)page * 512ULL + 100ULL] != 0ULL)
-			return fail(4, "a page was not zero-filled");
+		if (g_fault_base[(uint64_t)page * 512ULL + 100ULL] != 0ULL) return fail(4, "a page was not zero-filled");
 	}
 
 	say("smptest: 4 concurrent page faults: ");
@@ -539,7 +525,8 @@ static int case_concurrent_faults(void)
 
 #define SHARED_INCREMENTS 20000U
 
-static int case_shared_memory(void)
+static int
+case_shared_memory(void)
 {
 	shared_reset();
 
@@ -548,8 +535,7 @@ static int case_shared_memory(void)
 	for (uint32_t index = 0U; index < 3U; index++) {
 		int64_t pid = nxu_fork();
 
-		if (pid < 0)
-			return fail(5, "fork");
+		if (pid < 0) return fail(5, "fork");
 
 		if (pid == 0) {
 			(void)nxu_setaffinity(1ULL << nth_online(index + 1U));
@@ -580,15 +566,13 @@ static int case_shared_memory(void)
 	bool ok = wait_at_least(&g_shared->block_ready, 1U);
 
 	for (uint32_t word = 0U; ok && word < 64U; word++) {
-		if (g_shared->block[word] != 0xB10C0000ULL + word)
-			ok = false;
+		if (g_shared->block[word] != 0xB10C0000ULL + word) ok = false;
 	}
 
 	for (uint32_t index = 0U; index < 3U; index++) {
 		uint64_t status = 0ULL;
 
-		if (nxu_wait((uint64_t)children[index], &status) != children[index] || status != 0ULL)
-			ok = false;
+		if (nxu_wait((uint64_t)children[index], &status) != children[index] || status != 0ULL) ok = false;
 	}
 
 	(void)nxu_setaffinity(0xFFULL);
@@ -599,8 +583,7 @@ static int case_shared_memory(void)
 	say_number(4ULL * SHARED_INCREMENTS);
 	say("\n");
 
-	if (!ok)
-		return fail(5, "a block published across CPUs was not seen whole, or a process failed");
+	if (!ok) return fail(5, "a block published across CPUs was not seen whole, or a process failed");
 
 	if (g_shared->counter != 4ULL * SHARED_INCREMENTS)
 		return fail(5, "atomic increments from different CPUs were lost");
@@ -612,21 +595,20 @@ static int case_shared_memory(void)
 
 #define IPC_ROUNDS 400U
 
-static int case_ipc(void)
+static int
+case_ipc(void)
 {
 	int64_t request_port = nxu_ipc_port_allocate();
 	int64_t reply_port = nxu_ipc_port_allocate();
 
-	if (request_port <= 0 || reply_port <= 0)
-		return fail(6, "port allocation");
+	if (request_port <= 0 || reply_port <= 0) return fail(6, "port allocation");
 
 	uint32_t parent_cpu = nth_online(0U);
 	uint32_t child_cpu = nth_online(g_online_count - 1U);
 
 	int64_t pid = nxu_fork();
 
-	if (pid < 0)
-		return fail(6, "fork");
+	if (pid < 0) return fail(6, "fork");
 
 	if (pid == 0) {
 		(void)nxu_setaffinity(1ULL << child_cpu);
@@ -641,8 +623,7 @@ static int case_ipc(void)
 			message[0] += 1ULL;
 			message[1] = (uint64_t)nxu_getcpu();
 
-			if (nxu_ipc_send((uint32_t)reply_port, message, sizeof(message), 0U) != 0)
-				nxu_exit(2ULL);
+			if (nxu_ipc_send((uint32_t)reply_port, message, sizeof(message), 0U) != 0) nxu_exit(2ULL);
 		}
 
 		nxu_exit(0ULL);
@@ -669,17 +650,14 @@ static int case_ipc(void)
 			break;
 		}
 
-		if (reply[0] != 1001ULL + round)
-			ok = false;
-		if (reply[1] != (uint64_t)nxu_getcpu())
-			crossed++;
+		if (reply[0] != 1001ULL + round) ok = false;
+		if (reply[1] != (uint64_t)nxu_getcpu()) crossed++;
 	}
 
 	uint64_t elapsed = now_us() - started;
 	uint64_t status = 0ULL;
 
-	if (nxu_wait((uint64_t)pid, &status) != pid || status != 0ULL)
-		ok = false;
+	if (nxu_wait((uint64_t)pid, &status) != pid || status != 0ULL) ok = false;
 
 	(void)nxu_setaffinity(0xFFULL);
 
@@ -695,18 +673,17 @@ static int case_ipc(void)
 	say_number(crossed);
 	say(" replies came from another CPU\n");
 
-	if (!ok)
-		return fail(6, "an IPC message was lost or corrupted");
+	if (!ok) return fail(6, "an IPC message was lost or corrupted");
 
-	if (g_online_count >= 2U && crossed != IPC_ROUNDS)
-		return fail(6, "sender and receiver were not on different CPUs");
+	if (g_online_count >= 2U && crossed != IPC_ROUNDS) return fail(6, "sender and receiver were not on different CPUs");
 
 	return 0;
 }
 
 /* ---- case 7: killing and exiting a process whose threads run on other CPUs -- */
 
-static void spinner_thread(void *argument)
+static void
+spinner_thread(void *argument)
 {
 	(void)argument;
 
@@ -715,14 +692,14 @@ static void spinner_thread(void *argument)
 	uint32_t spins = 0U;
 
 	while (!__atomic_load_n(&g_shared->stop, __ATOMIC_ACQUIRE)) {
-		if ((++spins & 0x3FFU) == 0U)
-			note_cpu(&g_shared->spin_mask);
+		if ((++spins & 0x3FFU) == 0U) note_cpu(&g_shared->spin_mask);
 	}
 
 	(void)nxu_thread_exit(0ULL);
 }
 
-static int case_termination(void)
+static int
+case_termination(void)
 {
 	uint32_t killed = 0U;
 	uint32_t exited = 0U;
@@ -733,30 +710,25 @@ static int case_termination(void)
 
 			int64_t pid = nxu_fork();
 
-			if (pid < 0)
-				return fail(7, "fork");
+			if (pid < 0) return fail(7, "fork");
 
 			if (pid == 0) {
 				for (uint64_t index = 0ULL; index < 3ULL; index++) {
-					if (nxu_thread_spawn(spinner_thread, (void *)index, 16ULL * 1024ULL) <= 0)
-						nxu_exit(90ULL);
+					if (nxu_thread_spawn(spinner_thread, (void *)index, 16ULL * 1024ULL) <= 0) nxu_exit(90ULL);
 				}
 
 				(void)__atomic_fetch_add(&g_shared->ready, 1U, __ATOMIC_ACQ_REL);
 
 				/* Wait for the spinners, then either exit with them still running or wait to be killed. */
-				if (!wait_at_least(&g_shared->ready, 4U))
-					nxu_exit(91ULL);
+				if (!wait_at_least(&g_shared->ready, 4U)) nxu_exit(91ULL);
 
-				if (variant == 1U)
-					nxu_exit(7ULL);
+				if (variant == 1U) nxu_exit(7ULL);
 
 				for (;;)
 					note_cpu(&g_shared->spin_mask);
 			}
 
-			if (!wait_at_least(&g_shared->ready, 4U))
-				return fail(7, "the child's threads did not all start");
+			if (!wait_at_least(&g_shared->ready, 4U)) return fail(7, "the child's threads did not all start");
 
 			/* Let the spinners settle onto CPUs. */
 			uint64_t settle = now_us() + 20000ULL;
@@ -764,18 +736,15 @@ static int case_termination(void)
 			while (now_us() < settle)
 				__asm__ volatile("yield");
 
-			if (variant == 0U && nxu_kill((uint64_t)pid, NXU_SIGKILL) != 0)
-				return fail(7, "kill");
+			if (variant == 0U && nxu_kill((uint64_t)pid, NXU_SIGKILL) != 0) return fail(7, "kill");
 
 			uint64_t status = 0ULL;
 			int64_t reaped = nxu_wait((uint64_t)pid, &status);
 
-			if (reaped != pid)
-				return fail(7, "wait did not return the child");
+			if (reaped != pid) return fail(7, "wait did not return the child");
 
 			if (variant == 0U) {
-				if (!NXU_EXIT_WAS_KILLED(status))
-					return fail(7, "a killed process did not report being killed");
+				if (!NXU_EXIT_WAS_KILLED(status)) return fail(7, "a killed process did not report being killed");
 
 				killed++;
 			} else {
@@ -806,7 +775,8 @@ static int case_termination(void)
 #define MIGRATE_ITERATIONS 300000U
 #define MIGRATE_HOP 3000U
 
-static uint64_t migrate_work(bool hop, uint32_t member, uint32_t *mask, uint32_t *hops)
+static uint64_t
+migrate_work(bool hop, uint32_t member, uint32_t *mask, uint32_t *hops)
 {
 	uint64_t x = 88172645463325252ULL + member;
 	uint64_t accumulator = 0ULL;
@@ -820,11 +790,9 @@ static uint64_t migrate_work(bool hop, uint32_t member, uint32_t *mask, uint32_t
 		if (hop && (index % MIGRATE_HOP) == MIGRATE_HOP - 1U) {
 			uint32_t target = nth_online(index / MIGRATE_HOP + member);
 
-			if (nxu_setaffinity(1ULL << target) != 0)
-				return 0ULL;
+			if (nxu_setaffinity(1ULL << target) != 0) return 0ULL;
 
-			if ((uint32_t)nxu_getcpu() != target)
-				return 0ULL;
+			if ((uint32_t)nxu_getcpu() != target) return 0ULL;
 
 			*mask |= 1U << target;
 			(*hops)++;
@@ -839,7 +807,8 @@ static volatile uint32_t g_migrate_bad;
 static volatile uint32_t g_migrate_mask;
 static volatile uint32_t g_migrate_hops;
 
-static void migrate_thread(void *argument)
+static void
+migrate_thread(void *argument)
 {
 	uint32_t member = (uint32_t)(uint64_t)argument;
 	uint32_t mask = 0U;
@@ -848,8 +817,7 @@ static void migrate_thread(void *argument)
 	uint64_t reference = migrate_work(false, member, &mask, &hops);
 	uint64_t moved = migrate_work(true, member, &mask, &hops);
 
-	if (moved != reference || hops == 0U)
-		(void)__atomic_fetch_add(&g_migrate_bad, 1U, __ATOMIC_ACQ_REL);
+	if (moved != reference || hops == 0U) (void)__atomic_fetch_add(&g_migrate_bad, 1U, __ATOMIC_ACQ_REL);
 
 	(void)__atomic_fetch_or(&g_migrate_mask, mask, __ATOMIC_ACQ_REL);
 	(void)__atomic_fetch_add(&g_migrate_hops, hops, __ATOMIC_ACQ_REL);
@@ -857,7 +825,8 @@ static void migrate_thread(void *argument)
 	(void)nxu_thread_exit(0ULL);
 }
 
-static int case_migration(void)
+static int
+case_migration(void)
 {
 	g_migrate_done = 0U;
 	g_migrate_bad = 0U;
@@ -865,8 +834,7 @@ static int case_migration(void)
 	g_migrate_hops = 0U;
 
 	for (uint64_t member = 1ULL; member < 4ULL; member++) {
-		if (nxu_thread_spawn(migrate_thread, (void *)member, 16ULL * 1024ULL) <= 0)
-			return fail(8, "thread_spawn");
+		if (nxu_thread_spawn(migrate_thread, (void *)member, 16ULL * 1024ULL) <= 0) return fail(8, "thread_spawn");
 	}
 
 	uint32_t mask = 0U;
@@ -876,8 +844,7 @@ static int case_migration(void)
 
 	bool ok = moved == reference && hops != 0U;
 
-	if (!wait_at_least(&g_migrate_done, 3U))
-		return fail(8, "threads did not finish");
+	if (!wait_at_least(&g_migrate_done, 3U)) return fail(8, "threads did not finish");
 
 	(void)nxu_setaffinity(0xFFULL);
 
@@ -887,11 +854,9 @@ static int case_migration(void)
 	say_number(popcount(mask | g_migrate_mask));
 	say(" CPUs, computation identical to the unmoved run\n");
 
-	if (!ok || g_migrate_bad != 0U)
-		return fail(8, "a computation changed result after its thread moved between CPUs");
+	if (!ok || g_migrate_bad != 0U) return fail(8, "a computation changed result after its thread moved between CPUs");
 
-	if (popcount(mask | g_migrate_mask) < 2U)
-		return fail(8, "threads did not visit different CPUs");
+	if (popcount(mask | g_migrate_mask) < 2U) return fail(8, "threads did not visit different CPUs");
 
 	return 0;
 }
@@ -904,7 +869,8 @@ static int case_migration(void)
 static volatile uint32_t g_vm_done;
 static volatile uint32_t g_vm_bad;
 
-static void vm_stress_run(uint32_t member)
+static void
+vm_stress_run(uint32_t member)
 {
 	uint64_t seed = 0x9E3779B97F4A7C15ULL * (member + 1U);
 
@@ -915,8 +881,7 @@ static void vm_stress_run(uint32_t member)
 			/* One thread also forks now and then while the others fault and unmap. */
 			int64_t pid = nxu_fork();
 
-			if (pid == 0)
-				nxu_exit(0ULL);
+			if (pid == 0) nxu_exit(0ULL);
 
 			uint64_t status = 0ULL;
 
@@ -946,36 +911,34 @@ static void vm_stress_run(uint32_t member)
 		for (uint64_t page = 0ULL; page < pages; page++) {
 			if (words[page * 512ULL + member] != stamp + page)
 				(void)__atomic_fetch_add(&g_vm_bad, 1U, __ATOMIC_ACQ_REL);
-			if (words[page * 512ULL + 511ULL] != 0ULL)
-				(void)__atomic_fetch_add(&g_vm_bad, 1U, __ATOMIC_ACQ_REL);
+			if (words[page * 512ULL + 511ULL] != 0ULL) (void)__atomic_fetch_add(&g_vm_bad, 1U, __ATOMIC_ACQ_REL);
 		}
 
-		if (nxu_munmap((uint64_t)base, pages * PAGE) != 0)
-			(void)__atomic_fetch_add(&g_vm_bad, 1U, __ATOMIC_ACQ_REL);
+		if (nxu_munmap((uint64_t)base, pages * PAGE) != 0) (void)__atomic_fetch_add(&g_vm_bad, 1U, __ATOMIC_ACQ_REL);
 	}
 }
 
-static void vm_stress_thread(void *argument)
+static void
+vm_stress_thread(void *argument)
 {
 	vm_stress_run((uint32_t)(uint64_t)argument);
 	(void)__atomic_fetch_add(&g_vm_done, 1U, __ATOMIC_ACQ_REL);
 	(void)nxu_thread_exit(0ULL);
 }
 
-static int case_vm_stress(void)
+static int
+case_vm_stress(void)
 {
 	g_vm_done = 0U;
 	g_vm_bad = 0U;
 
 	for (uint64_t member = 1ULL; member < VM_STRESS_THREADS; member++) {
-		if (nxu_thread_spawn(vm_stress_thread, (void *)member, 16ULL * 1024ULL) <= 0)
-			return fail(9, "thread_spawn");
+		if (nxu_thread_spawn(vm_stress_thread, (void *)member, 16ULL * 1024ULL) <= 0) return fail(9, "thread_spawn");
 	}
 
 	vm_stress_run(0U);
 
-	if (!wait_at_least(&g_vm_done, VM_STRESS_THREADS - 1U))
-		return fail(9, "threads did not finish");
+	if (!wait_at_least(&g_vm_done, VM_STRESS_THREADS - 1U)) return fail(9, "threads did not finish");
 
 	say("smptest: 9 VM stress: ");
 	say_number(VM_STRESS_THREADS * VM_STRESS_ITERATIONS);
@@ -1002,28 +965,25 @@ static int case_vm_stress(void)
 #define SHM_CHURN_ITERATIONS 96U
 #define SHM_CHURN_BYTES 4096ULL
 
-static int case_shm_churn(void)
+static int
+case_shm_churn(void)
 {
 	for (uint32_t iteration = 0U; iteration < SHM_CHURN_ITERATIONS; iteration++) {
 		int64_t id = nxu_shm_create(SHM_CHURN_BYTES);
 
-		if (id <= 0)
-			return fail(10, "shm_create");
+		if (id <= 0) return fail(10, "shm_create");
 
 		int64_t va = nxu_shm_map((uint64_t)id);
 
-		if (va <= 0)
-			return fail(10, "shm_map");
+		if (va <= 0) return fail(10, "shm_map");
 
 		*(volatile uint32_t *)va = iteration;
 		if (*(volatile uint32_t *)va != iteration)
 			return fail(10, "wrote through a mapping and read something else back");
 
-		if (nxu_shm_unmap((uint64_t)va) != 0)
-			return fail(10, "shm_unmap");
+		if (nxu_shm_unmap((uint64_t)va) != 0) return fail(10, "shm_unmap");
 
-		if (nxu_shm_withdraw((uint64_t)id) != 0)
-			return fail(10, "shm_withdraw");
+		if (nxu_shm_withdraw((uint64_t)id) != 0) return fail(10, "shm_withdraw");
 	}
 
 	say("smptest: 10 shm churn: ");
@@ -1035,17 +995,16 @@ static int case_shm_churn(void)
 
 /* ---- case 11: withdraw does not disturb an existing attachment ----------- */
 
-static int case_shm_withdraw_ordering(void)
+static int
+case_shm_withdraw_ordering(void)
 {
 	int64_t id = nxu_shm_create(SHM_CHURN_BYTES);
 
-	if (id <= 0)
-		return fail(11, "shm_create");
+	if (id <= 0) return fail(11, "shm_create");
 
 	int64_t va = nxu_shm_map((uint64_t)id);
 
-	if (va <= 0)
-		return fail(11, "shm_map");
+	if (va <= 0) return fail(11, "shm_map");
 
 	*(volatile uint32_t *)va = 0xC0FFEEU;
 
@@ -1055,27 +1014,21 @@ static int case_shm_withdraw_ordering(void)
 	 * shm_registry_withdraw only ever releases the reference publish itself
 	 * took out.
 	 */
-	if (nxu_shm_withdraw((uint64_t)id) != 0)
-		return fail(11, "shm_withdraw");
+	if (nxu_shm_withdraw((uint64_t)id) != 0) return fail(11, "shm_withdraw");
 
-	if (nxu_shm_map((uint64_t)id) != -NXU_SYS_E_NOT_FOUND)
-		return fail(11, "a withdrawn id still resolved to shm_map");
+	if (nxu_shm_map((uint64_t)id) != -NXU_SYS_E_NOT_FOUND) return fail(11, "a withdrawn id still resolved to shm_map");
 
-	if (*(volatile uint32_t *)va != 0xC0FFEEU)
-		return fail(11, "withdraw corrupted an attachment made before it");
+	if (*(volatile uint32_t *)va != 0xC0FFEEU) return fail(11, "withdraw corrupted an attachment made before it");
 
-	if (nxu_shm_unmap((uint64_t)va) != 0)
-		return fail(11, "shm_unmap");
+	if (nxu_shm_unmap((uint64_t)va) != 0) return fail(11, "shm_unmap");
 
 	/* The registry slot was freed by the withdraw above, not by this unmap:
 	 * a fresh create must be able to reuse it right away. */
 	int64_t reused = nxu_shm_create(SHM_CHURN_BYTES);
 
-	if (reused <= 0)
-		return fail(11, "shm_create did not reuse the withdrawn slot");
+	if (reused <= 0) return fail(11, "shm_create did not reuse the withdrawn slot");
 
-	if (nxu_shm_withdraw((uint64_t)reused) != 0)
-		return fail(11, "shm_withdraw (cleanup)");
+	if (nxu_shm_withdraw((uint64_t)reused) != 0) return fail(11, "shm_withdraw (cleanup)");
 
 	say("smptest: 11 shm withdraw ordering: withdraw-before-unmap kept the mapping alive and freed the id\n");
 	return 0;
@@ -1083,13 +1036,13 @@ static int case_shm_withdraw_ordering(void)
 
 /* ---- case 12: creator exit withdraws abandoned publications -------------- */
 
-static int case_shm_creator_exit(void)
+static int
+case_shm_creator_exit(void)
 {
 	for (uint32_t iteration = 0U; iteration < 128U; iteration++) {
 		int64_t pid = nxu_fork();
 
-		if (pid < 0)
-			return fail(12, "fork");
+		if (pid < 0) return fail(12, "fork");
 
 		if (pid == 0) {
 			/* Intentionally leave the publication behind at exit. */
@@ -1106,11 +1059,9 @@ static int case_shm_creator_exit(void)
 	/* A new publication must still succeed after more exits than slots. */
 	int64_t id = nxu_shm_create(SHM_CHURN_BYTES);
 
-	if (id <= 0)
-		return fail(12, "registry exhausted after creator exits");
+	if (id <= 0) return fail(12, "registry exhausted after creator exits");
 
-	if (nxu_shm_withdraw((uint64_t)id) != 0)
-		return fail(12, "cleanup");
+	if (nxu_shm_withdraw((uint64_t)id) != 0) return fail(12, "cleanup");
 
 	say("smptest: 12 shm creator exit: 128 abandoned publications reclaimed\n");
 	return 0;
@@ -1120,7 +1071,8 @@ static int case_shm_creator_exit(void)
 
 static volatile uint32_t g_stats_done, g_stats_bad;
 
-static int64_t stats_read(uint32_t kind, void *records, uint32_t size, uint32_t capacity, uint32_t *total)
+static int64_t
+stats_read(uint32_t kind, void *records, uint32_t size, uint32_t capacity, uint32_t *total)
 {
 	nxu_stats_request_t request = {.struct_size = sizeof(request),
 								   .version = NXU_STATS_VERSION,
@@ -1131,15 +1083,14 @@ static int64_t stats_read(uint32_t kind, void *records, uint32_t size, uint32_t 
 
 	int64_t result = nxu_statistics(&request);
 
-	if (result >= 0 && (uint64_t)result != request.count)
-		return -NXU_SYS_E_IO;
+	if (result >= 0 && (uint64_t)result != request.count) return -NXU_SYS_E_IO;
 
-	if (total != 0)
-		*total = request.total;
+	if (total != 0) *total = request.total;
 	return result;
 }
 
-static void stats_observer(void *arg)
+static void
+stats_observer(void *arg)
 {
 	uint32_t cpu = nth_online((uint32_t)(uintptr_t)arg);
 	bool ok = nxu_setaffinity(1ULL << cpu) == 0;
@@ -1178,8 +1129,7 @@ static void stats_observer(void *arg)
 		for (uint32_t i = 0U; i < (uint32_t)count; i++) {
 			if (threads[i].thread_id == (uint64_t)nxu_thread_self()) {
 				found = true;
-				if (threads[i].cpu_us < previous_thread_us)
-					ok = false;
+				if (threads[i].cpu_us < previous_thread_us) ok = false;
 				previous_thread_us = threads[i].cpu_us;
 			}
 
@@ -1188,18 +1138,17 @@ static void stats_observer(void *arg)
 				ok = false;
 		}
 
-		if (!found)
-			ok = false;
+		if (!found) ok = false;
 		(void)nxu_yield();
 	}
 
-	if (!ok)
-		(void)__atomic_fetch_add(&g_stats_bad, 1U, __ATOMIC_ACQ_REL);
+	if (!ok) (void)__atomic_fetch_add(&g_stats_bad, 1U, __ATOMIC_ACQ_REL);
 	(void)__atomic_fetch_add(&g_stats_done, 1U, __ATOMIC_ACQ_REL);
 	(void)nxu_thread_exit(0ULL);
 }
 
-static int case_statistics(void)
+static int
+case_statistics(void)
 {
 	say("smptest: 13 statistics: validating ABI\n");
 
@@ -1216,54 +1165,44 @@ static int case_statistics(void)
 
 	nxu_stats_cpu_t cpu;
 
-	if (stats_read(NXU_STATS_CPU, &cpu, sizeof(cpu), 1U, &total) != 1 || total < 2U)
-		return fail(13, "truncated query");
+	if (stats_read(NXU_STATS_CPU, &cpu, sizeof(cpu), 1U, &total) != 1 || total < 2U) return fail(13, "truncated query");
 
 	nxu_stats_process_t processes[64];
 	int64_t count = stats_read(NXU_STATS_PROCESS, processes, sizeof(processes[0]), 64U, &total);
 
-	if (count <= 0 || count > 64 || (uint32_t)count != total)
-		return fail(13, "process query");
+	if (count <= 0 || count > 64 || (uint32_t)count != total) return fail(13, "process query");
 
 	bool found = false;
 
 	for (uint32_t i = 0U; i < (uint32_t)count; i++) {
-		if (processes[i].pid == (uint32_t)nxu_getpid() && processes[i].threads != 0U)
-			found = true;
-		if (processes[i].name[31] != '\0' || processes[i].reserved != 0U)
-			return fail(13, "process record");
+		if (processes[i].pid == (uint32_t)nxu_getpid() && processes[i].threads != 0U) found = true;
+		if (processes[i].name[31] != '\0' || processes[i].reserved != 0U) return fail(13, "process record");
 	}
 
-	if (!found)
-		return fail(13, "observer missing from process table");
+	if (!found) return fail(13, "observer missing from process table");
 
 	nxu_stats_request_t invalid = {.struct_size = sizeof(invalid),
 								   .version = NXU_STATS_VERSION + 1U,
 								   .kind = NXU_STATS_SYSTEM,
 								   .record_size = sizeof(system)};
-	if (nxu_statistics(&invalid) != -NXU_SYS_E_INVALID_ARGUMENT)
-		return fail(13, "accepted unknown version");
+	if (nxu_statistics(&invalid) != -NXU_SYS_E_INVALID_ARGUMENT) return fail(13, "accepted unknown version");
 
 	invalid.version = NXU_STATS_VERSION;
 	invalid.struct_size--;
-	if (nxu_statistics(&invalid) != -NXU_SYS_E_INVALID_ARGUMENT)
-		return fail(13, "accepted short request");
+	if (nxu_statistics(&invalid) != -NXU_SYS_E_INVALID_ARGUMENT) return fail(13, "accepted short request");
 
 	invalid.struct_size = sizeof(invalid);
 	invalid.record_size--;
-	if (nxu_statistics(&invalid) != -NXU_SYS_E_INVALID_ARGUMENT)
-		return fail(13, "accepted wrong stride");
+	if (nxu_statistics(&invalid) != -NXU_SYS_E_INVALID_ARGUMENT) return fail(13, "accepted wrong stride");
 
 	invalid.record_size = sizeof(system);
 	invalid.kind = 99U;
-	if (nxu_statistics(&invalid) != -NXU_SYS_E_INVALID_ARGUMENT)
-		return fail(13, "accepted unknown kind");
+	if (nxu_statistics(&invalid) != -NXU_SYS_E_INVALID_ARGUMENT) return fail(13, "accepted unknown kind");
 
 	invalid.kind = NXU_STATS_SYSTEM;
 	invalid.capacity = 1U;
 	invalid.records = 1ULL;
-	if (nxu_statistics(&invalid) != -NXU_SYS_E_BAD_ADDRESS)
-		return fail(13, "accepted bad output address");
+	if (nxu_statistics(&invalid) != -NXU_SYS_E_BAD_ADDRESS) return fail(13, "accepted bad output address");
 
 	if (nxu_statistics((nxu_stats_request_t *)(uintptr_t)1U) != -NXU_SYS_E_BAD_ADDRESS)
 		return fail(13, "accepted bad request address");
@@ -1287,12 +1226,12 @@ static int case_statistics(void)
 
 static nxu_stats_process_memory_t g_memory_records[64];
 
-static bool self_memory(nxu_stats_process_memory_t *out)
+static bool
+self_memory(nxu_stats_process_memory_t *out)
 {
 	int64_t count = stats_read(NXU_STATS_PROCESS_MEMORY, g_memory_records, sizeof(g_memory_records[0]), 64U, 0);
 
-	if (count < 0 || count > 64)
-		return false;
+	if (count < 0 || count > 64) return false;
 
 	for (uint32_t i = 0U; i < (uint32_t)count; i++) {
 		if (g_memory_records[i].pid == (uint32_t)nxu_getpid()) {
@@ -1304,19 +1243,18 @@ static bool self_memory(nxu_stats_process_memory_t *out)
 	return false;
 }
 
-static int case_memory_statistics(void)
+static int
+case_memory_statistics(void)
 {
 	nxu_stats_process_memory_t before, reserved, touched, after;
 
 	/* Warm the output pages; the observer's own demand-zero allocations
 	 * must not be confused with the workload being measured. */
-	if (!self_memory(&before) || !self_memory(&before))
-		return fail(14, "memory query");
+	if (!self_memory(&before) || !self_memory(&before)) return fail(14, "memory query");
 
 	int64_t base = nxu_mmap(8ULL * PAGE, NXU_MMAP_PROT_READ_WRITE);
 
-	if (base <= 0 || !self_memory(&reserved))
-		return fail(14, "reserve");
+	if (base <= 0 || !self_memory(&reserved)) return fail(14, "reserve");
 
 	if (reserved.anon_reserved_pages != before.anon_reserved_pages + 8ULL ||
 		reserved.resident_pages != before.resident_pages)
@@ -1334,8 +1272,7 @@ static int case_memory_statistics(void)
 
 	int64_t id = nxu_shm_create(2ULL * PAGE);
 
-	if (id <= 0)
-		return fail(14, "shm_create");
+	if (id <= 0) return fail(14, "shm_create");
 
 	int64_t shared = nxu_shm_map((uint64_t)id);
 
@@ -1350,8 +1287,7 @@ static int case_memory_statistics(void)
 	nxu_stats_cpu_events_t events[MAX_CPUS];
 	int64_t count = stats_read(NXU_STATS_CPU_EVENTS, events, sizeof(events[0]), MAX_CPUS, 0);
 
-	if (count <= 0 || count > MAX_CPUS)
-		return fail(14, "CPU events query");
+	if (count <= 0 || count > MAX_CPUS) return fail(14, "CPU events query");
 
 	uint64_t faults = 0ULL, interrupts = 0ULL;
 
@@ -1360,21 +1296,17 @@ static int case_memory_statistics(void)
 		interrupts += events[i].interrupts;
 	}
 
-	if (faults < 8ULL || interrupts == 0ULL)
-		return fail(14, "hardware events missing");
+	if (faults < 8ULL || interrupts == 0ULL) return fail(14, "hardware events missing");
 
 	nxu_stats_thread_events_t threads[256];
 	count = stats_read(NXU_STATS_THREAD_EVENTS, threads, sizeof(threads[0]), 256U, 0);
-	if (count <= 0 || count > 256)
-		return fail(14, "thread events query");
+	if (count <= 0 || count > 256) return fail(14, "thread events query");
 
 	bool found = false;
 
 	for (uint32_t i = 0U; i < (uint32_t)count; i++)
-		if (threads[i].thread_id == (uint64_t)nxu_thread_self() && threads[i].page_faults >= 8ULL)
-			found = true;
-	if (!found)
-		return fail(14, "faults not attributed to thread");
+		if (threads[i].thread_id == (uint64_t)nxu_thread_self() && threads[i].page_faults >= 8ULL) found = true;
+	if (!found) return fail(14, "faults not attributed to thread");
 
 	nxu_stats_virtio_t virtio;
 
@@ -1388,12 +1320,12 @@ static int case_memory_statistics(void)
 
 /* ---- case 15: real terminal utility consumes every table ----------------- */
 
-static int case_top(void)
+static int
+case_top(void)
 {
 	int64_t pid = nxu_fork();
 
-	if (pid < 0)
-		return fail(15, "fork");
+	if (pid < 0) return fail(15, "fork");
 
 	if (pid == 0) {
 		const char *argv[] = {"top", "--once", "--plain", 0};
@@ -1403,8 +1335,7 @@ static int case_top(void)
 
 	uint64_t status;
 
-	if (nxu_wait((uint64_t)pid, &status) != pid || status != 0ULL)
-		return fail(15, "top execution");
+	if (nxu_wait((uint64_t)pid, &status) != pid || status != 0ULL) return fail(15, "top execution");
 
 	say("smptest: 15 top: one-shot terminal snapshot passed\n");
 	return 0;
@@ -1412,7 +1343,8 @@ static int case_top(void)
 
 /* ---- main ---------------------------------------------------------------- */
 
-int main(void)
+int
+main(void)
 {
 	g_online = probe_online_cpus();
 	g_online_count = popcount(g_online);
@@ -1425,58 +1357,41 @@ int main(void)
 	say_number((uint64_t)nxu_getcpu());
 	say("\n");
 
-	if (g_online_count < 2U)
-		return fail(100, "needs at least two CPUs");
+	if (g_online_count < 2U) return fail(100, "needs at least two CPUs");
 
-	if (!shared_create())
-		return fail(101, "shared memory setup");
+	if (!shared_create()) return fail(101, "shared memory setup");
 
 	int result;
 
-	if ((result = case_thread_ring()) != 0)
-		return result;
+	if ((result = case_thread_ring()) != 0) return result;
 
-	if ((result = case_process_ring()) != 0)
-		return result;
+	if ((result = case_process_ring()) != 0) return result;
 
-	if ((result = case_isolation()) != 0)
-		return result;
+	if ((result = case_isolation()) != 0) return result;
 
-	if ((result = case_concurrent_faults()) != 0)
-		return result;
+	if ((result = case_concurrent_faults()) != 0) return result;
 
-	if ((result = case_shared_memory()) != 0)
-		return result;
+	if ((result = case_shared_memory()) != 0) return result;
 
-	if ((result = case_ipc()) != 0)
-		return result;
+	if ((result = case_ipc()) != 0) return result;
 
-	if ((result = case_termination()) != 0)
-		return result;
+	if ((result = case_termination()) != 0) return result;
 
-	if ((result = case_migration()) != 0)
-		return result;
+	if ((result = case_migration()) != 0) return result;
 
-	if ((result = case_vm_stress()) != 0)
-		return result;
+	if ((result = case_vm_stress()) != 0) return result;
 
-	if ((result = case_shm_churn()) != 0)
-		return result;
+	if ((result = case_shm_churn()) != 0) return result;
 
-	if ((result = case_shm_withdraw_ordering()) != 0)
-		return result;
+	if ((result = case_shm_withdraw_ordering()) != 0) return result;
 
-	if ((result = case_shm_creator_exit()) != 0)
-		return result;
+	if ((result = case_shm_creator_exit()) != 0) return result;
 
-	if ((result = case_statistics()) != 0)
-		return result;
+	if ((result = case_statistics()) != 0) return result;
 
-	if ((result = case_memory_statistics()) != 0)
-		return result;
+	if ((result = case_memory_statistics()) != 0) return result;
 
-	if ((result = case_top()) != 0)
-		return result;
+	if ((result = case_top()) != 0) return result;
 
 	say("smptest: passed\n");
 	return 0;

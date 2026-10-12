@@ -46,7 +46,8 @@
 #define BOOTSTRAP_CLIENT_FALLBACK_ATTEMPTS 2000000U
 
 static bool
-bootstrap_client_deadline_passed(int64_t start_us, uint64_t deadline_us, uint32_t fallback_attempt, uint32_t fallback_limit)
+bootstrap_client_deadline_passed(int64_t start_us, uint64_t deadline_us, uint32_t fallback_attempt,
+								 uint32_t fallback_limit)
 {
 	if (start_us < 0) return fallback_attempt >= fallback_limit;
 
@@ -62,8 +63,10 @@ bootstrap_client_fill_label(char destination[NXU_BOOTSTRAP_LABEL_MAX], const cha
 	uint64_t length = nxu_strlen(label);
 	if (length >= NXU_BOOTSTRAP_LABEL_MAX) return false;
 
-	for (uint64_t index = 0ULL; index < length; index++) destination[index] = label[index];
-	for (uint64_t index = length; index < NXU_BOOTSTRAP_LABEL_MAX; index++) destination[index] = '\0';
+	for (uint64_t index = 0ULL; index < length; index++)
+		destination[index] = label[index];
+	for (uint64_t index = length; index < NXU_BOOTSTRAP_LABEL_MAX; index++)
+		destination[index] = '\0';
 	return true;
 }
 
@@ -84,12 +87,15 @@ bootstrap_client_register(const char *label, uint32_t service_port_name)
 	 * window rather than letting a single transient failure be fatal.
 	 */
 	int64_t start_us = nxu_uptime_us();
-	for (uint32_t fallback_attempt = 0U; ; fallback_attempt++) {
+	for (uint32_t fallback_attempt = 0U;; fallback_attempt++) {
 		int64_t bootstrap_name = nxu_ipc_bootstrap_port();
-		if (bootstrap_name > 0 && nxu_ipc_send((uint32_t)bootstrap_name, &request, sizeof(request), service_port_name) == 0) {
+		if (bootstrap_name > 0 &&
+			nxu_ipc_send((uint32_t)bootstrap_name, &request, sizeof(request), service_port_name) == 0) {
 			return true;
 		}
-		if (bootstrap_client_deadline_passed(start_us, BOOTSTRAP_CLIENT_REGISTER_DEADLINE_US, fallback_attempt, BOOTSTRAP_CLIENT_FALLBACK_ATTEMPTS)) break;
+		if (bootstrap_client_deadline_passed(start_us, BOOTSTRAP_CLIENT_REGISTER_DEADLINE_US, fallback_attempt,
+											 BOOTSTRAP_CLIENT_FALLBACK_ATTEMPTS))
+			break;
 		(void)nxu_yield();
 	}
 
@@ -119,7 +125,9 @@ bootstrap_client_lookup(const char *label, uint32_t *out_port_name)
 	uint32_t xfer_name = 0U;
 	int64_t start_us = nxu_uptime_us();
 
-	for (uint32_t fallback_attempt = 0U; !bootstrap_client_deadline_passed(start_us, BOOTSTRAP_CLIENT_LOOKUP_DEADLINE_US, fallback_attempt, BOOTSTRAP_CLIENT_FALLBACK_ATTEMPTS); fallback_attempt++) {
+	for (uint32_t fallback_attempt = 0U; !bootstrap_client_deadline_passed(
+			 start_us, BOOTSTRAP_CLIENT_LOOKUP_DEADLINE_US, fallback_attempt, BOOTSTRAP_CLIENT_FALLBACK_ATTEMPTS);
+		 fallback_attempt++) {
 		if (nxu_ipc_send((uint32_t)bootstrap_name, &request, sizeof(request), (uint32_t)reply_name) != 0) break;
 
 		nxu_bootstrap_reply_t reply;
@@ -127,22 +135,21 @@ bootstrap_client_lookup(const char *label, uint32_t *out_port_name)
 		int64_t received = -1;
 		int64_t attempt_start_us = nxu_uptime_us();
 
-		for (uint32_t reply_fallback = 0U; ; reply_fallback++) {
+		for (uint32_t reply_fallback = 0U;; reply_fallback++) {
 			received = nxu_ipc_receive((uint32_t)reply_name, &reply, sizeof(reply), &xfer_name, &xfer_type);
 			if (received >= 0) break;
 			if (received != -NXU_SYS_E_AGAIN) {
 				(void)nxu_ipc_port_deallocate((uint32_t)reply_name);
 				return false;
 			}
-			if (bootstrap_client_deadline_passed(attempt_start_us, BOOTSTRAP_CLIENT_LOOKUP_REPLY_DEADLINE_US, reply_fallback, BOOTSTRAP_CLIENT_FALLBACK_ATTEMPTS)) break;
+			if (bootstrap_client_deadline_passed(attempt_start_us, BOOTSTRAP_CLIENT_LOOKUP_REPLY_DEADLINE_US,
+												 reply_fallback, BOOTSTRAP_CLIENT_FALLBACK_ATTEMPTS))
+				break;
 			(void)nxu_yield();
 		}
 
-		if (
-			received >= 0 && (uint64_t)received == sizeof(reply) &&
-			reply.status == (int32_t)NXU_BOOTSTRAP_STATUS_OK &&
-			xfer_type == NXU_IPC_XFER_PORT && xfer_name != 0U
-		) {
+		if (received >= 0 && (uint64_t)received == sizeof(reply) && reply.status == (int32_t)NXU_BOOTSTRAP_STATUS_OK &&
+			xfer_type == NXU_IPC_XFER_PORT && xfer_name != 0U) {
 			found = true;
 			break;
 		}

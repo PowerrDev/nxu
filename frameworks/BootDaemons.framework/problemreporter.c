@@ -12,7 +12,8 @@ static uint32_t *g_pixels;
 static bool g_show_details;
 static uint32_t g_line;
 
-static void copy(char *out, uint32_t capacity, const char *in)
+static void
+copy(char *out, uint32_t capacity, const char *in)
 {
 	uint32_t n = 0;
 
@@ -21,19 +22,22 @@ static void copy(char *out, uint32_t capacity, const char *in)
 	out[n] = 0;
 }
 
-static void rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color)
+static void
+rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color)
 {
 	for (uint32_t row = y; row < HEIGHT && row < y + h; row++)
 		for (uint32_t col = x; col < WIDTH && col < x + w; col++)
 			g_pixels[row * WIDTH + col] = color;
 }
 
-static const reporter_glyph_t *glyph(const reporter_font_t *font, unsigned char c)
+static const reporter_glyph_t *
+glyph(const reporter_font_t *font, unsigned char c)
 {
 	return &font->glyphs[(c >= 32 && c <= 126 ? c : '?') - 32];
 }
 
-static uint32_t text_width(const char *s, const reporter_font_t *font)
+static uint32_t
+text_width(const char *s, const reporter_font_t *font)
 {
 	uint32_t width = 0;
 
@@ -42,7 +46,8 @@ static uint32_t text_width(const char *s, const reporter_font_t *font)
 	return width;
 }
 
-static void draw_text(uint32_t x, uint32_t y, const char *s, const reporter_font_t *font, uint32_t color)
+static void
+draw_text(uint32_t x, uint32_t y, const char *s, const reporter_font_t *font, uint32_t color)
 {
 	uint32_t start = x;
 
@@ -54,11 +59,9 @@ static void draw_text(uint32_t x, uint32_t y, const char *s, const reporter_font
 		if (c == '\n' || x + g->advance > WIDTH - 28) {
 			y += font->height + 3;
 			x = start;
-			if (c == '\n')
-				continue;
+			if (c == '\n') continue;
 
-			if (y + font->height >= HEIGHT - 58)
-				break;
+			if (y + font->height >= HEIGHT - 58) break;
 		}
 
 		for (uint32_t row = 0; row < g->height; row++)
@@ -66,8 +69,7 @@ static void draw_text(uint32_t x, uint32_t y, const char *s, const reporter_font
 				int32_t px = (int32_t)x + g->x + (int32_t)col;
 				int32_t py = (int32_t)y + g->y + (int32_t)row;
 
-				if (px < 0 || py < 0 || px >= (int32_t)WIDTH || py >= (int32_t)HEIGHT)
-					continue;
+				if (px < 0 || py < 0 || px >= (int32_t)WIDTH || py >= (int32_t)HEIGHT) continue;
 
 				uint32_t alpha = font->pixels[g->offset + row * g->width + col];
 				uint32_t old = g_pixels[py * WIDTH + px], blended = 0xff000000U;
@@ -82,7 +84,8 @@ static void draw_text(uint32_t x, uint32_t y, const char *s, const reporter_font
 	}
 }
 
-static void button(uint32_t x, uint32_t width, const char *label, bool primary)
+static void
+button(uint32_t x, uint32_t width, const char *label, bool primary)
 {
 	uint32_t y = HEIGHT - 50, height = 28, radius = 5;
 
@@ -95,19 +98,18 @@ static void button(uint32_t x, uint32_t width, const char *label, bool primary)
 			int32_t dy = row < radius			  ? (int32_t)radius - (int32_t)row
 						 : row >= height - radius ? (int32_t)row - (int32_t)(height - radius - 1)
 												  : 0;
-			if (dx * dx + dy * dy > (int32_t)(radius * radius))
-				continue;
+			if (dx * dx + dy * dy > (int32_t)(radius * radius)) continue;
 
 			bool border = row == 0 || row == height - 1 || col == 0 || col == width - 1 || dx * dx + dy * dy > 16;
 			uint32_t color = primary ? (border ? 0xff0870d9U : 0xff1686eeU) : (border ? 0xffc8c8ccU : 0xfffdfdfdU);
 			g_pixels[(y + row) * WIDTH + x + col] = color;
 		}
 
-	/* Center the Inter label in the button. */
+	/* Center the SF Pro label in the button. */
 	uint32_t label_width = text_width(label, &regular);
 	uint32_t left = x + (width - label_width) / 2;
 	uint32_t label_y = y + 4;
-	// Render the same antialiased Inter glyphs without body-text clipping.
+	// Render the same antialiased SF Pro glyphs without body-text clipping.
 	for (const char *s = label; *s; s++) {
 		const reporter_glyph_t *g = glyph(&regular, (unsigned char)*s);
 
@@ -127,7 +129,8 @@ static void button(uint32_t x, uint32_t width, const char *label, bool primary)
 	}
 }
 
-static bool bundle_path(char *out)
+static bool
+bundle_path(char *out)
 {
 	copy(out, NXU_CRASH_PATH_MAX, g_notice.executable);
 	for (uint32_t i = 0; out[i]; i++)
@@ -139,7 +142,8 @@ static bool bundle_path(char *out)
 	return false;
 }
 
-static bool draw(uint32_t connection)
+static bool
+draw(uint32_t connection)
 {
 	rect(0, 0, WIDTH, HEIGHT, 0xffefeff1U);
 	if (g_show_details) {
@@ -148,8 +152,7 @@ static bool draw(uint32_t connection)
 		const char *s = g_details;
 
 		for (uint32_t n = 0; n < g_line && *s;)
-			if (*s++ == '\n')
-				n++;
+			if (*s++ == '\n') n++;
 		draw_text(24, 18, s, &regular, 0xff202024U);
 	} else {
 		char heading[96];
@@ -168,35 +171,31 @@ static bool draw(uint32_t connection)
 	bool reopen = bundle_path(bundle);
 	button(reopen ? 172 : 280, 96, "Ignore", false);
 	button(reopen ? 280 : 388, 104, g_show_details ? "Back" : "Report...", !reopen);
-	if (reopen)
-		button(396, 96, "Reopen", true);
+	if (reopen) button(396, 96, "Reopen", true);
 
 	nxu_ui_submit_t submit = {
 		.pixels = (uint64_t)(uintptr_t)g_pixels, .width = WIDTH, .height = HEIGHT, .stride = WIDTH};
 	return nxu_ui_submit(connection, &submit) >= 0;
 }
 
-int main(void)
+int
+main(void)
 {
 	int64_t memory = nxu_mmap((uint64_t)WIDTH * HEIGHT * 4, 0);
 
-	if (memory < 0)
-		return 1;
+	if (memory < 0) return 1;
 
 	g_pixels = (uint32_t *)(uintptr_t)memory;
 	for (;;) {
 		int64_t result = nxu_crash(NXU_CRASH_UI_NEXT, (uint64_t)(uintptr_t)&g_notice);
 
-		if (result == -NXU_SYS_E_INTERRUPTED)
-			continue;
+		if (result == -NXU_SYS_E_INTERRUPTED) continue;
 
-		if (result < 0)
-			return 2;
+		if (result < 0) return 2;
 
 		int64_t child = nxu_fork();
 
-		if (child < 0)
-			continue;
+		if (child < 0) continue;
 
 		if (child > 0) {
 			uint64_t status;
@@ -223,22 +222,19 @@ int main(void)
 
 		int64_t connection = nxu_ui_connect(&info);
 
-		if (connection < 0)
-			return 3;
+		if (connection < 0) return 3;
 
 		g_show_details = false;
 		g_line = 0;
 		g_details[0] = 0;
-		if (!draw((uint32_t)connection))
-			return 4;
+		if (!draw((uint32_t)connection)) return 4;
 
 		const char *ready = "problemreporter: dialog ready\n";
 		(void)nxu_write(1, ready, nxu_strlen(ready));
 		for (;;) {
 			nxu_ui_message_t message;
 			result = nxu_ui_receive((uint32_t)connection, &message, NXU_UI_WAIT_FOREVER);
-			if (result < 0 || message.type == NXU_UI_MSG_QUIT)
-				break;
+			if (result < 0 || message.type == NXU_UI_MSG_QUIT) break;
 
 			if (message.type == NXU_UI_MSG_EVENT && message.event == NXU_UI_EVENT_POINTER_DOWN &&
 				message.y >= (int32_t)HEIGHT - 50 && message.y < (int32_t)HEIGHT - 22) {
@@ -247,15 +243,13 @@ int main(void)
 				int32_t ignore_x = can_reopen ? 172 : 280;
 				int32_t report_x = can_reopen ? 280 : 388;
 
-				if (message.x >= ignore_x && message.x < ignore_x + 96)
-					break;
+				if (message.x >= ignore_x && message.x < ignore_x + 96) break;
 
 				if (can_reopen && message.x >= 396 && message.x < 492) {
 					char bundle[NXU_CRASH_PATH_MAX];
 
 					if (bundle_path(bundle)) {
-						if (nxu_ui_control(NXU_UI_CONTROL_LAUNCH, (uint64_t)(uintptr_t)bundle) >= 0)
-							break;
+						if (nxu_ui_control(NXU_UI_CONTROL_LAUNCH, (uint64_t)(uintptr_t)bundle) >= 0) break;
 					}
 				}
 

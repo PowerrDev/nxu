@@ -28,7 +28,8 @@ static void
 say(const char *text)
 {
 	uint64_t length = 0ULL;
-	while (text[length] != '\0') length++;
+	while (text[length] != '\0')
+		length++;
 	(void)nxu_write(1ULL, text, length);
 }
 
@@ -36,7 +37,7 @@ static int
 fail(int check, const char *what)
 {
 	say("privtest: FAILED check ");
-	char digits[4] = { (char)('0' + (check / 10)), (char)('0' + (check % 10)), ' ', '\0' };
+	char digits[4] = {(char)('0' + (check / 10)), (char)('0' + (check % 10)), ' ', '\0'};
 	say(digits);
 	say(what);
 	say("\n");
@@ -64,8 +65,10 @@ use_filesystem(int base)
 static int
 refused_everything(int base)
 {
-	if (nxu_open(PRIVTEST_FILE, NXU_O_WRITE | NXU_O_CREATE) != -NXU_SYS_E_DENIED) return fail(base, "open(write|create) was not refused");
-	if (nxu_open(PRIVTEST_FILE, NXU_O_APPEND) != -NXU_SYS_E_DENIED) return fail(base + 1, "open(append) was not refused");
+	if (nxu_open(PRIVTEST_FILE, NXU_O_WRITE | NXU_O_CREATE) != -NXU_SYS_E_DENIED)
+		return fail(base, "open(write|create) was not refused");
+	if (nxu_open(PRIVTEST_FILE, NXU_O_APPEND) != -NXU_SYS_E_DENIED)
+		return fail(base + 1, "open(append) was not refused");
 	if (nxu_unlink(PRIVTEST_FILE) != -NXU_SYS_E_DENIED) return fail(base + 2, "unlink was not refused");
 	if (nxu_mkdir(PRIVTEST_DIR) != -NXU_SYS_E_DENIED) return fail(base + 3, "mkdir was not refused");
 	if (nxu_display_claim() != -NXU_SYS_E_DENIED) return fail(base + 4, "display_claim was not refused");
@@ -112,9 +115,12 @@ main(int argc, char **argv)
 	if (nxu_system_reset() != -NXU_SYS_E_DENIED) return fail(7, "system_reset was not refused without RESET");
 
 	/* A child can be given no more than its parent holds. */
-	if (nxu_spawn_caps(PRIVTEST_PATH, "privtest", NXU_CAP_RESET) != -NXU_SYS_E_DENIED) return fail(8, "spawn passed on a capability the parent lacks");
-	if (nxu_spawn_caps(PRIVTEST_PATH, "privtest", NXU_CAP_FS_WRITE | NXU_CAP_RESET) != -NXU_SYS_E_DENIED) return fail(9, "spawn passed on a set larger than the parent's");
-	if (nxu_spawn_caps(PRIVTEST_PATH, "privtest", 0x80ULL) != -NXU_SYS_E_INVALID_ARGUMENT) return fail(10, "spawn accepted a bit that is not a capability");
+	if (nxu_spawn_caps(PRIVTEST_PATH, "privtest", NXU_CAP_RESET) != -NXU_SYS_E_DENIED)
+		return fail(8, "spawn passed on a capability the parent lacks");
+	if (nxu_spawn_caps(PRIVTEST_PATH, "privtest", NXU_CAP_FS_WRITE | NXU_CAP_RESET) != -NXU_SYS_E_DENIED)
+		return fail(9, "spawn passed on a set larger than the parent's");
+	if (nxu_spawn_caps(PRIVTEST_PATH, "privtest", 0x80ULL) != -NXU_SYS_E_INVALID_ARGUMENT)
+		return fail(10, "spawn accepted a bit that is not a capability");
 
 	/* fork keeps the caller's set. */
 	int64_t pid = nxu_fork();
@@ -123,13 +129,14 @@ main(int argc, char **argv)
 		int ok = nxu_get_caps() == (int64_t)PRIVTEST_PARENT_CAPS && nxu_system_reset() == -NXU_SYS_E_DENIED;
 		(void)nxu_exit(ok ? 0ULL : 1ULL);
 	}
-	if (nxu_wait((uint64_t)pid, &status) != pid || status != 0ULL) return fail(12, "the forked child's set differed from its parent's");
+	if (nxu_wait((uint64_t)pid, &status) != pid || status != 0ULL)
+		return fail(12, "the forked child's set differed from its parent's");
 
 	/* exec keeps it too. */
 	pid = nxu_fork();
 	if (pid < 0) return fail(13, "fork failed");
 	if (pid == 0) {
-		const char *const exec_argv[] = { "privtest", "exec", 0 };
+		const char *const exec_argv[] = {"privtest", "exec", 0};
 		(void)nxu_exec(PRIVTEST_PATH, exec_argv);
 		(void)nxu_exit(99ULL);
 	}
@@ -138,11 +145,13 @@ main(int argc, char **argv)
 	/* A spawned child gets exactly what was passed: nothing, then a subset. */
 	pid = nxu_spawn_caps(PRIVTEST_PATH, "privtest", 0ULL);
 	if (pid <= 0) return fail(15, "spawn with no capabilities failed");
-	if (nxu_wait((uint64_t)pid, &status) != pid || status != 0ULL) return fail(16, "the child started with none was not refused everything");
+	if (nxu_wait((uint64_t)pid, &status) != pid || status != 0ULL)
+		return fail(16, "the child started with none was not refused everything");
 
 	pid = nxu_spawn_caps(PRIVTEST_PATH, "privtest", NXU_CAP_FS_WRITE);
 	if (pid <= 0) return fail(17, "spawn with FS_WRITE failed");
-	if (nxu_wait((uint64_t)pid, &status) != pid || status != 0ULL) return fail(18, "the child given a subset did not get exactly that");
+	if (nxu_wait((uint64_t)pid, &status) != pid || status != 0ULL)
+		return fail(18, "the child given a subset did not get exactly that");
 
 	return 0;
 }

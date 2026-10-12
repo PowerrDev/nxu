@@ -15,7 +15,8 @@
 
 #if !defined(__LP64__)
 
-uint64_t __udivmoddi4(uint64_t numerator, uint64_t denominator, uint64_t *remainder)
+uint64_t
+__udivmoddi4(uint64_t numerator, uint64_t denominator, uint64_t *remainder)
 {
 	if (denominator == 0ULL) {
 		__asm__ volatile("ud2");
@@ -38,12 +39,14 @@ uint64_t __udivmoddi4(uint64_t numerator, uint64_t denominator, uint64_t *remain
 	return quotient;
 }
 
-uint64_t __udivdi3(uint64_t numerator, uint64_t denominator)
+uint64_t
+__udivdi3(uint64_t numerator, uint64_t denominator)
 {
 	return __udivmoddi4(numerator, denominator, 0);
 }
 
-uint64_t __umoddi3(uint64_t numerator, uint64_t denominator)
+uint64_t
+__umoddi3(uint64_t numerator, uint64_t denominator)
 {
 	uint64_t remainder;
 
@@ -51,7 +54,8 @@ uint64_t __umoddi3(uint64_t numerator, uint64_t denominator)
 	return remainder;
 }
 
-int64_t __divdi3(int64_t numerator, int64_t denominator)
+int64_t
+__divdi3(int64_t numerator, int64_t denominator)
 {
 	uint64_t n = numerator < 0 ? -(uint64_t)numerator : (uint64_t)numerator;
 	uint64_t d = denominator < 0 ? -(uint64_t)denominator : (uint64_t)denominator;
@@ -60,7 +64,8 @@ int64_t __divdi3(int64_t numerator, int64_t denominator)
 	return (numerator < 0) != (denominator < 0) ? -(int64_t)q : (int64_t)q;
 }
 
-int64_t __moddi3(int64_t numerator, int64_t denominator)
+int64_t
+__moddi3(int64_t numerator, int64_t denominator)
 {
 	uint64_t n = numerator < 0 ? -(uint64_t)numerator : (uint64_t)numerator;
 	uint64_t d = denominator < 0 ? -(uint64_t)denominator : (uint64_t)denominator;

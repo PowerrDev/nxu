@@ -7,12 +7,14 @@
 #define LOGD_DRAIN_BYTES 4096ULL
 #define LOGD_POLL_INTERVAL_US 50000ULL
 
-static void logd_stderr(const char *message)
+static void
+logd_stderr(const char *message)
 {
 	(void)nxu_write(2U, message, nxu_strlen(message));
 }
 
-int main(void)
+int
+main(void)
 {
 	int64_t log = nxu_open("/disk/var/log/system.log", NXU_O_WRITE | NXU_O_CREATE | NXU_O_APPEND);
 
@@ -28,8 +30,7 @@ int main(void)
 	for (;;) {
 		int64_t length = nxu_klog_read(&cursor, buffer, sizeof(buffer));
 
-		if (length < 0)
-			return 2;
+		if (length < 0) return 2;
 
 		if (length == 0) {
 			/* Nothing new: look again in a moment rather than spin. */
@@ -43,8 +44,7 @@ int main(void)
 		while (complete < (uint64_t)length) {
 			int64_t written = nxu_write((uint64_t)log, buffer + complete, (uint64_t)length - complete);
 
-			if (written <= 0)
-				return 3;
+			if (written <= 0) return 3;
 
 			complete += (uint64_t)written;
 		}

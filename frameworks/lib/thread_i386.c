@@ -33,25 +33,23 @@
 
 void nxu_thread_trampoline(void *arg);
 
-__asm__(
-	".text\n"
-	".p2align 4\n"
-	".globl nxu_thread_trampoline\n"
-	".type nxu_thread_trampoline, @function\n"
-	"nxu_thread_trampoline:\n"
-	"	xorl %ebp, %ebp\n"
-	"	movl (%esp), %eax\n"
-	"	movl 4(%esp), %ecx\n"
-	"	andl $-16, %esp\n"
-	"	subl $16, %esp\n"
-	"	movl %ecx, (%esp)\n"
-	"	call *%eax\n"
-	"	movl $0, (%esp)\n"
-	"	movl $0, 4(%esp)\n"
-	"	call nxu_thread_exit\n"
-	"	ud2\n"
-	".size nxu_thread_trampoline, . - nxu_thread_trampoline\n"
-);
+__asm__(".text\n"
+		".p2align 4\n"
+		".globl nxu_thread_trampoline\n"
+		".type nxu_thread_trampoline, @function\n"
+		"nxu_thread_trampoline:\n"
+		"	xorl %ebp, %ebp\n"
+		"	movl (%esp), %eax\n"
+		"	movl 4(%esp), %ecx\n"
+		"	andl $-16, %esp\n"
+		"	subl $16, %esp\n"
+		"	movl %ecx, (%esp)\n"
+		"	call *%eax\n"
+		"	movl $0, (%esp)\n"
+		"	movl $0, 4(%esp)\n"
+		"	call nxu_thread_exit\n"
+		"	ud2\n"
+		".size nxu_thread_trampoline, . - nxu_thread_trampoline\n");
 
 int64_t
 nxu_thread_spawn(void (*entry)(void *arg), void *arg, uint64_t stack_size)

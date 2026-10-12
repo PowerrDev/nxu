@@ -8,7 +8,8 @@ nxu_strlen(const char *string)
 {
 	uint64_t length = 0ULL;
 	if (string == 0) return 0ULL;
-	while (string[length] != '\0') length++;
+	while (string[length] != '\0')
+		length++;
 	return length;
 }
 
@@ -32,11 +33,13 @@ nxu_arg_present(const char *arguments, const char *argument)
 	uint64_t wanted = nxu_strlen(argument);
 
 	for (uint64_t index = 0ULL; arguments[index] != '\0';) {
-		while (arguments[index] == ' ' || arguments[index] == '\t') index++;
+		while (arguments[index] == ' ' || arguments[index] == '\t')
+			index++;
 		if (arguments[index] == '\0') break;
 
 		uint64_t start = index;
-		while (arguments[index] != '\0' && arguments[index] != ' ' && arguments[index] != '\t') index++;
+		while (arguments[index] != '\0' && arguments[index] != ' ' && arguments[index] != '\t')
+			index++;
 		uint64_t length = index - start;
 		if (length != wanted) continue;
 

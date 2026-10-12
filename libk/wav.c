@@ -13,45 +13,65 @@
 #define WAV_FORMAT_EXTENSIBLE 0xFFFEU
 
 /* The tail of the KSDATAFORMAT_SUBTYPE_* GUIDs: {tag, 0x0000, 0x0000-0010-8000-00AA00389B71}. */
-static const uint8_t g_wav_subtype_tail[14] = { 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71 };
+static const uint8_t g_wav_subtype_tail[14] = {0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80,
+											   0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71};
 
-static uint32_t wav_u16(const uint8_t *bytes)
+static uint32_t
+wav_u16(const uint8_t *bytes)
 {
 	return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8U);
 }
 
-static uint32_t wav_u32(const uint8_t *bytes)
+static uint32_t
+wav_u32(const uint8_t *bytes)
 {
 	return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8U) | ((uint32_t)bytes[2] << 16U) | ((uint32_t)bytes[3] << 24U);
 }
 
-static int wav_tag(const uint8_t *bytes, const char *tag)
+static int
+wav_tag(const uint8_t *bytes, const char *tag)
 {
-	return bytes[0] == (uint8_t)tag[0] && bytes[1] == (uint8_t)tag[1] && bytes[2] == (uint8_t)tag[2] && bytes[3] == (uint8_t)tag[3];
+	return bytes[0] == (uint8_t)tag[0] && bytes[1] == (uint8_t)tag[1] && bytes[2] == (uint8_t)tag[2] &&
+		   bytes[3] == (uint8_t)tag[3];
 }
 
-const char *wav_status_name(wav_status_t status)
+const char *
+wav_status_name(wav_status_t status)
 {
 	switch (status) {
-	case WAV_OK: return "ok";
-	case WAV_ERR_ARGUMENT: return "bad argument";
-	case WAV_ERR_TOO_SHORT: return "too short to be a WAV file";
-	case WAV_ERR_NOT_RIFF: return "not a RIFF file";
-	case WAV_ERR_NOT_WAVE: return "a RIFF file, but not WAVE";
-	case WAV_ERR_NO_FORMAT: return "no fmt chunk";
-	case WAV_ERR_NO_DATA: return "no data chunk";
-	case WAV_ERR_BAD_FORMAT: return "inconsistent fmt chunk";
-	case WAV_ERR_UNSUPPORTED: return "unsupported sample format";
-	default: return "?";
+	case WAV_OK:
+		return "ok";
+	case WAV_ERR_ARGUMENT:
+		return "bad argument";
+	case WAV_ERR_TOO_SHORT:
+		return "too short to be a WAV file";
+	case WAV_ERR_NOT_RIFF:
+		return "not a RIFF file";
+	case WAV_ERR_NOT_WAVE:
+		return "a RIFF file, but not WAVE";
+	case WAV_ERR_NO_FORMAT:
+		return "no fmt chunk";
+	case WAV_ERR_NO_DATA:
+		return "no data chunk";
+	case WAV_ERR_BAD_FORMAT:
+		return "inconsistent fmt chunk";
+	case WAV_ERR_UNSUPPORTED:
+		return "unsupported sample format";
+	default:
+		return "?";
 	}
 }
 
-const char *wav_encoding_name(wav_encoding_t encoding)
+const char *
+wav_encoding_name(wav_encoding_t encoding)
 {
 	switch (encoding) {
-	case WAV_ENCODING_PCM: return "PCM";
-	case WAV_ENCODING_FLOAT: return "float";
-	default: return "?";
+	case WAV_ENCODING_PCM:
+		return "PCM";
+	case WAV_ENCODING_FLOAT:
+		return "float";
+	default:
+		return "?";
 	}
 }
 
@@ -62,7 +82,8 @@ const char *wav_encoding_name(wav_encoding_t encoding)
  * caller's buffer) into *info, and check that it describes a stream this
  * reader can play and that its numbers agree with each other.
  */
-static wav_status_t wav_read_format(const uint8_t *chunk, uint64_t size, wav_info_t *info)
+static wav_status_t
+wav_read_format(const uint8_t *chunk, uint64_t size, wav_info_t *info)
 {
 	if (size < 16U) return WAV_ERR_BAD_FORMAT;
 
@@ -104,7 +125,9 @@ static wav_status_t wav_read_format(const uint8_t *chunk, uint64_t size, wav_inf
 	if (info->sample_rate == 0U || info->sample_rate > WAV_SAMPLE_RATE_MAX) return WAV_ERR_BAD_FORMAT;
 
 	if (info->encoding == WAV_ENCODING_PCM) {
-		if (info->bits_per_sample != 8U && info->bits_per_sample != 16U && info->bits_per_sample != 24U && info->bits_per_sample != 32U) return WAV_ERR_UNSUPPORTED;
+		if (info->bits_per_sample != 8U && info->bits_per_sample != 16U && info->bits_per_sample != 24U &&
+			info->bits_per_sample != 32U)
+			return WAV_ERR_UNSUPPORTED;
 	} else if (info->bits_per_sample != 32U && info->bits_per_sample != 64U) {
 		return WAV_ERR_UNSUPPORTED;
 	}
@@ -114,18 +137,19 @@ static wav_status_t wav_read_format(const uint8_t *chunk, uint64_t size, wav_inf
 	return WAV_OK;
 }
 
-wav_status_t wav_parse(const uint8_t *bytes, size_t size, wav_info_t *info)
+wav_status_t
+wav_parse(const uint8_t *bytes, size_t size, wav_info_t *info)
 {
 	if (info == 0) return WAV_ERR_ARGUMENT;
 
-	*info = (wav_info_t) { 0 };
+	*info = (wav_info_t){0};
 
 	if (bytes == 0) return WAV_ERR_ARGUMENT;
 	if (size < 12U) return WAV_ERR_TOO_SHORT;
 	if (!wav_tag(bytes, "RIFF")) return WAV_ERR_NOT_RIFF;
 	if (!wav_tag(bytes + 8U, "WAVE")) return WAV_ERR_NOT_WAVE;
 
-	wav_info_t found = { 0 };
+	wav_info_t found = {0};
 	int have_format = 0;
 	int have_data = 0;
 	uint64_t total = size;
@@ -192,7 +216,8 @@ wav_status_t wav_parse(const uint8_t *bytes, size_t size, wav_info_t *info)
  * without floating-point registers. Magnitudes of 1 and over clamp, zero and
  * denormals are 0, NaN is 0.
  */
-static int16_t wav_float_to_s16(uint32_t negative, uint32_t exponent, uint32_t mantissa, uint32_t exponent_max)
+static int16_t
+wav_float_to_s16(uint32_t negative, uint32_t exponent, uint32_t mantissa, uint32_t exponent_max)
 {
 	uint32_t bias = exponent_max / 2U;
 
@@ -210,14 +235,19 @@ static int16_t wav_float_to_s16(uint32_t negative, uint32_t exponent, uint32_t m
 	return (int16_t)(negative ? -rounded : rounded);
 }
 
-static int16_t wav_sample_s16(const wav_info_t *info, const uint8_t *sample)
+static int16_t
+wav_sample_s16(const wav_info_t *info, const uint8_t *sample)
 {
 	if (info->encoding == WAV_ENCODING_PCM) {
 		switch (info->bits_per_sample) {
-		case 8U: return (int16_t)(((int32_t)sample[0] - 128) * 256);
-		case 16U: return (int16_t)wav_u16(sample);
-		case 24U: return (int16_t)wav_u16(sample + 1U);
-		default: return (int16_t)wav_u16(sample + 2U);
+		case 8U:
+			return (int16_t)(((int32_t)sample[0] - 128) * 256);
+		case 16U:
+			return (int16_t)wav_u16(sample);
+		case 24U:
+			return (int16_t)wav_u16(sample + 1U);
+		default:
+			return (int16_t)wav_u16(sample + 2U);
 		}
 	}
 
@@ -238,7 +268,8 @@ static int16_t wav_sample_s16(const wav_info_t *info, const uint8_t *sample)
 	return wav_float_to_s16((uint32_t)(high >> 31U), exponent, mantissa, 0x7FFU);
 }
 
-size_t wav_convert_s16_stereo(const wav_info_t *info, uint64_t first_frame, int16_t *out, size_t out_frames)
+size_t
+wav_convert_s16_stereo(const wav_info_t *info, uint64_t first_frame, int16_t *out, size_t out_frames)
 {
 	if (info == 0 || out == 0 || info->data == 0 || info->block_align == 0U || info->channels == 0U) return 0U;
 	if (first_frame >= info->frames) return 0U;

@@ -397,15 +397,19 @@ nsw_prepare(const char *package, const char *prepared_root)
 		int64_t result = nxu_mkdir(prepared_root);
 		success = result == 0 || result == -NXU_SYS_E_EXISTS;
 		if (!success) {
-			nsw_log(result == -NXU_SYS_E_DENIED ? "patchd: filesystem-write capability missing; prepare from recovery\n"
-												: "patchd: unable to create the prepared-build directory\n");
+			if (result == -NXU_SYS_E_DENIED) {
+				nsw_log("patchd: filesystem-write capability missing\n");
+				nsw_log("patchd: prepare from recovery\n");
+			} else {
+				nsw_log("patchd: unable to create the prepared-build directory\n");
+			}
 		}
 	}
 	if (success) {
 		success = nsw_path(lock, prepared_root, ".prepare-lock") && nxu_mkdir(lock) == 0;
 		locked = success;
 		if (!success) {
-			nsw_log("patchd: preparation is locked; check for an active or interrupted update\n");
+			nsw_log("patchd: preparation is locked\npatchd: check for an active or interrupted update\n");
 		}
 	}
 	if (success && !nsw_ready_available(ready)) {
@@ -447,8 +451,12 @@ nsw_prepare(const char *package, const char *prepared_root)
 		(void)nxu_rmdir(lock);
 		(void)nxu_sync();
 	}
-	nsw_log(success ? "patchd: NSW system and recovery images verified and prepared\n"
-					: "patchd: NSW preparation failed; build is not ready\n");
+	if (success) {
+		nsw_log("patchd: NSW system and recovery images verified and prepared\n");
+	} else {
+		nsw_log("patchd: NSW preparation failed\n");
+		nsw_log("patchd: build is not ready\n");
+	}
 	return success;
 }
 
@@ -558,7 +566,8 @@ nsw_schedule(const char *build)
 	if (success) {
 		nsw_log("patchd: installation queued for build ");
 		nsw_log(build);
-		nsw_log("; applying patches at the next boot\n");
+		nsw_log("\n");
+		nsw_log("patchd: applying patches at the next boot\n");
 	} else {
 		nsw_log("patchd: installation request rejected\n");
 	}
@@ -590,7 +599,8 @@ nsw_confirm_boot(void)
 		success = nxu_sync() == 0;
 	}
 	if (success) {
-		nsw_log("patchd: updated system boot confirmed; rollback backups retained\n");
+		nsw_log("patchd: updated system boot confirmed\n");
+		nsw_log("patchd: rollback backups retained\n");
 	}
 	return success;
 }

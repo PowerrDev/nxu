@@ -48,7 +48,8 @@ say_u64(uint64_t value)
 	char text[24];
 	uint32_t length = 0U;
 
-	while (count != 0U) text[length++] = digits[--count];
+	while (count != 0U)
+		text[length++] = digits[--count];
 	text[length] = '\0';
 	say(text);
 }
@@ -87,11 +88,16 @@ static const char *
 format_name(uint32_t format)
 {
 	switch (format) {
-	case NXU_AUDIO_FORMAT_U8: return "8-bit unsigned";
-	case NXU_AUDIO_FORMAT_S16: return "16-bit signed";
-	case NXU_AUDIO_FORMAT_S32: return "32-bit signed";
-	case NXU_AUDIO_FORMAT_F32: return "32-bit float";
-	default: return "unknown";
+	case NXU_AUDIO_FORMAT_U8:
+		return "8-bit unsigned";
+	case NXU_AUDIO_FORMAT_S16:
+		return "16-bit signed";
+	case NXU_AUDIO_FORMAT_S32:
+		return "32-bit signed";
+	case NXU_AUDIO_FORMAT_F32:
+		return "32-bit float";
+	default:
+		return "unknown";
 	}
 }
 
@@ -151,7 +157,8 @@ playsound(int argc, char **argv)
 	int64_t device = nxu_open(NXU_AUDIO_DEVICE_PATH, NXU_O_WRITE);
 
 	if (device < 0) {
-		if (device == -NXU_SYS_E_DENIED) return fail(10, "the audio device needs the audio capability: ", NXU_AUDIO_DEVICE_PATH);
+		if (device == -NXU_SYS_E_DENIED)
+			return fail(10, "the audio device needs the audio capability: ", NXU_AUDIO_DEVICE_PATH);
 		if (device == -NXU_SYS_E_BUSY) return fail(4, "the audio device is in use: ", NXU_AUDIO_DEVICE_PATH);
 		return fail(4, "cannot open ", NXU_AUDIO_DEVICE_PATH);
 	}
@@ -167,9 +174,10 @@ playsound(int argc, char **argv)
 		report("device rates up to ", info.rate_max, " Hz");
 	}
 
-	nxu_audio_params_t params = { .rate = wav.sample_rate, .channels = 2U, .format = NXU_AUDIO_FORMAT_S16 };
+	nxu_audio_params_t params = {.rate = wav.sample_rate, .channels = 2U, .format = NXU_AUDIO_FORMAT_S16};
 
-	if (nxu_ioctl((uint64_t)device, NXU_AUDIO_SET_PARAMS, &params) != 0) return fail(5, "the device did not accept 16-bit stereo", 0);
+	if (nxu_ioctl((uint64_t)device, NXU_AUDIO_SET_PARAMS, &params) != 0)
+		return fail(5, "the device did not accept 16-bit stereo", 0);
 
 	report("device rate ", params.rate, " Hz");
 	report("device channels ", params.channels, 0);
@@ -177,8 +185,10 @@ playsound(int argc, char **argv)
 	report("device period ", params.period_bytes, " bytes");
 	report("device buffer ", params.buffer_bytes, " bytes");
 
-	if (params.format != NXU_AUDIO_FORMAT_S16 || params.channels != 2U) return fail(5, "the device is not running 16-bit stereo", 0);
-	if (params.rate != wav.sample_rate) say("playsound: the device rate differs from the file's: the sound is not resampled\n");
+	if (params.format != NXU_AUDIO_FORMAT_S16 || params.channels != 2U)
+		return fail(5, "the device is not running 16-bit stereo", 0);
+	if (params.rate != wav.sample_rate)
+		say("playsound: the device rate differs from the file's: the sound is not resampled\n");
 
 	int16_t chunk[2U * PLAYSOUND_CHUNK_FRAMES];
 	uint64_t frame = 0ULL;

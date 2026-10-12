@@ -13,7 +13,8 @@ typedef struct {
 	uint32_t reserved;
 } nxu_ipc_peer_t;
 
-static inline bool nxu_ipc_peer_equal(const nxu_ipc_peer_t *a, const nxu_ipc_peer_t *b)
+static inline bool
+nxu_ipc_peer_equal(const nxu_ipc_peer_t *a, const nxu_ipc_peer_t *b)
 {
 	return a->pid == b->pid && a->uniqueid == b->uniqueid && a->idversion == b->idversion;
 }

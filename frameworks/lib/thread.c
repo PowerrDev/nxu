@@ -4,7 +4,8 @@
 
 #include <stdint.h>
 
-int64_t nxu_thread_spawn(void (*entry)(void *arg), void *arg, uint64_t stack_size)
+int64_t
+nxu_thread_spawn(void (*entry)(void *arg), void *arg, uint64_t stack_size)
 {
 	if (entry == 0 || stack_size == 0ULL) return -NXU_SYS_E_INVALID_ARGUMENT;
 

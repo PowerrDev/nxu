@@ -12,7 +12,8 @@
  * freestanding library small; hardware acceleration can replace it without
  * changing filesystem callers.
  */
-uint32_t crc32c(uint32_t crc, const void *buffer, size_t size)
+uint32_t
+crc32c(uint32_t crc, const void *buffer, size_t size)
 {
 	const uint8_t *bytes = buffer;
 

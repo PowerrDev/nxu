@@ -34,7 +34,8 @@ plist_match_at(const plist_parser_t *parser, uint64_t offset, const char *text)
 static void
 plist_skip_space(plist_parser_t *parser)
 {
-	while (parser->offset < parser->length && plist_is_space(parser->data[parser->offset])) parser->offset++;
+	while (parser->offset < parser->length && plist_is_space(parser->data[parser->offset]))
+		parser->offset++;
 }
 
 static plist_status_t
@@ -43,7 +44,8 @@ plist_skip_until(plist_parser_t *parser, const char *terminator)
 	while (parser->offset < parser->length) {
 		if (plist_match_at(parser, parser->offset, terminator)) {
 			uint64_t length = 0ULL;
-			while (terminator[length] != '\0') length++;
+			while (terminator[length] != '\0')
+				length++;
 			parser->offset += length;
 			return PLIST_STATUS_OK;
 		}
@@ -98,12 +100,14 @@ plist_consume_open_tag(plist_parser_t *parser, const char *name)
 
 	uint64_t index = 0ULL;
 	while (name[index] != '\0') {
-		if (parser->offset >= parser->length || parser->data[parser->offset] != name[index]) return PLIST_STATUS_MALFORMED;
+		if (parser->offset >= parser->length || parser->data[parser->offset] != name[index])
+			return PLIST_STATUS_MALFORMED;
 		parser->offset++;
 		index++;
 	}
 
-	if (parser->offset >= parser->length || !plist_tag_boundary(parser->data[parser->offset])) return PLIST_STATUS_MALFORMED;
+	if (parser->offset >= parser->length || !plist_tag_boundary(parser->data[parser->offset]))
+		return PLIST_STATUS_MALFORMED;
 
 	bool quoted = false;
 	char quote = '\0';
@@ -131,7 +135,8 @@ plist_consume_exact(plist_parser_t *parser, const char *text)
 {
 	if (!plist_match_at(parser, parser->offset, text)) return false;
 	uint64_t length = 0ULL;
-	while (text[length] != '\0') length++;
+	while (text[length] != '\0')
+		length++;
 	parser->offset += length;
 	return true;
 }
@@ -147,12 +152,7 @@ plist_decode_entity(const char *data, uint64_t length, uint64_t *offset, char *c
 	};
 
 	static const struct plist_entity entities[] = {
-		{ "&amp;", '&' },
-		{ "&lt;", '<' },
-		{ "&gt;", '>' },
-		{ "&quot;", '"' },
-		{ "&apos;", '\'' }
-	};
+		{"&amp;", '&'}, {"&lt;", '<'}, {"&gt;", '>'}, {"&quot;", '"'}, {"&apos;", '\''}};
 
 	for (uint32_t entity = 0U; entity < sizeof(entities) / sizeof(entities[0]); entity++) {
 		uint64_t index = 0ULL;
@@ -208,7 +208,8 @@ plist_integer_event(plist_parser_t *parser, plist_event_t *event)
 	}
 
 	uint64_t value = 0ULL;
-	while (parser->offset < parser->length && parser->data[parser->offset] >= '0' && parser->data[parser->offset] <= '9') {
+	while (parser->offset < parser->length && parser->data[parser->offset] >= '0' &&
+		   parser->data[parser->offset] <= '9') {
 		uint64_t digit = (uint64_t)(parser->data[parser->offset] - '0');
 		if (value > (UINT64_MAX - digit) / 10ULL) return PLIST_STATUS_UNSUPPORTED;
 		value = value * 10ULL + digit;
@@ -220,8 +221,10 @@ plist_integer_event(plist_parser_t *parser, plist_event_t *event)
 	if (negative && value > (uint64_t)INT64_MAX + 1ULL) return PLIST_STATUS_UNSUPPORTED;
 
 	event->type = PLIST_EVENT_INTEGER;
-	if (negative && value == (uint64_t)INT64_MAX + 1ULL) event->integer = INT64_MIN;
-	else event->integer = negative ? -(int64_t)value : (int64_t)value;
+	if (negative && value == (uint64_t)INT64_MAX + 1ULL)
+		event->integer = INT64_MIN;
+	else
+		event->integer = negative ? -(int64_t)value : (int64_t)value;
 	return PLIST_STATUS_OK;
 }
 
@@ -230,13 +233,8 @@ plist_parser_init(plist_parser_t *parser, const char *data, uint64_t length)
 {
 	if (parser == 0 || data == 0 || length == 0ULL) return PLIST_STATUS_INVALID_ARGUMENT;
 
-	*parser = (plist_parser_t) {
-		.data = data,
-		.length = length,
-		.offset = 0ULL,
-		.document_open = false,
-		.complete = false
-	};
+	*parser =
+		(plist_parser_t){.data = data, .length = length, .offset = 0ULL, .document_open = false, .complete = false};
 
 	if (length >= 3ULL && (uint8_t)data[0] == 0xEFU && (uint8_t)data[1] == 0xBBU && (uint8_t)data[2] == 0xBFU) {
 		parser->offset = 3ULL;
@@ -258,7 +256,7 @@ plist_parser_next(plist_parser_t *parser, plist_event_t *event)
 	if (parser == 0 || event == 0 || !parser->document_open) return PLIST_STATUS_INVALID_ARGUMENT;
 	if (parser->complete) return PLIST_STATUS_END;
 
-	*event = (plist_event_t) { 0 };
+	*event = (plist_event_t){0};
 	plist_status_t status = plist_skip_markup(parser);
 	if (status != PLIST_STATUS_OK) return status;
 
@@ -312,7 +310,8 @@ plist_parser_next(plist_parser_t *parser, plist_event_t *event)
 	}
 
 	if (plist_consume_exact(parser, "<key>")) return plist_text_event(parser, event, PLIST_EVENT_KEY, "</key>");
-	if (plist_consume_exact(parser, "<string>")) return plist_text_event(parser, event, PLIST_EVENT_STRING, "</string>");
+	if (plist_consume_exact(parser, "<string>"))
+		return plist_text_event(parser, event, PLIST_EVENT_STRING, "</string>");
 	if (plist_consume_exact(parser, "<integer>")) return plist_integer_event(parser, event);
 
 	return PLIST_STATUS_UNSUPPORTED;
@@ -322,12 +321,19 @@ const char *
 plist_status_name(plist_status_t status)
 {
 	switch (status) {
-	case PLIST_STATUS_OK: return "ok";
-	case PLIST_STATUS_END: return "end";
-	case PLIST_STATUS_INVALID_ARGUMENT: return "invalid argument";
-	case PLIST_STATUS_MALFORMED: return "malformed plist";
-	case PLIST_STATUS_UNSUPPORTED: return "unsupported plist syntax";
-	case PLIST_STATUS_TEXT_TOO_LONG: return "plist text too long";
-	default: return "unknown plist error";
+	case PLIST_STATUS_OK:
+		return "ok";
+	case PLIST_STATUS_END:
+		return "end";
+	case PLIST_STATUS_INVALID_ARGUMENT:
+		return "invalid argument";
+	case PLIST_STATUS_MALFORMED:
+		return "malformed plist";
+	case PLIST_STATUS_UNSUPPORTED:
+		return "unsupported plist syntax";
+	case PLIST_STATUS_TEXT_TOO_LONG:
+		return "plist text too long";
+	default:
+		return "unknown plist error";
 	}
 }

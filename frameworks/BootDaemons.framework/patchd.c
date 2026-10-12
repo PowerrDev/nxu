@@ -207,7 +207,8 @@ patchd_install(const char *build)
 	}
 	patchd_log("patchd: restarting to install the queued system update\n");
 	(void)nxu_system_reset();
-	patchd_log("patchd: reset unavailable; installation remains queued for the next boot\n");
+	patchd_log("patchd: reset unavailable\n");
+	patchd_log("patchd: installation remains queued for the next boot\n");
 	return true;
 }
 
@@ -228,7 +229,7 @@ patchd_install_requested(void)
 	build[length - 1] = 0;
 	/* Consume the request durably before reset so it cannot schedule a second install. */
 	if (nxu_unlink(path) != 0 || nxu_sync() != 0) {
-		patchd_log("patchd: unable to consume installation request; installation was not queued\n");
+		patchd_log("patchd: unable to consume installation request\npatchd: installation was not queued\n");
 		return;
 	}
 	if (!patchd_install(build)) {

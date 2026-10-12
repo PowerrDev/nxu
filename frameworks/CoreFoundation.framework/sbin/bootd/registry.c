@@ -25,11 +25,11 @@
 
 static bool bootd_registry_poll_one(bootd_registry_t *registry);
 
-static void bootd_registry_fill_label(char destination[NXU_BOOTSTRAP_LABEL_MAX], const char *label)
+static void
+bootd_registry_fill_label(char destination[NXU_BOOTSTRAP_LABEL_MAX], const char *label)
 {
 	uint64_t length = nxu_strlen(label);
-	if (length >= NXU_BOOTSTRAP_LABEL_MAX)
-		length = NXU_BOOTSTRAP_LABEL_MAX - 1U;
+	if (length >= NXU_BOOTSTRAP_LABEL_MAX) length = NXU_BOOTSTRAP_LABEL_MAX - 1U;
 
 	for (uint64_t index = 0ULL; index < length; index++)
 		destination[index] = label[index];
@@ -37,11 +37,11 @@ static void bootd_registry_fill_label(char destination[NXU_BOOTSTRAP_LABEL_MAX],
 		destination[index] = '\0';
 }
 
-static void bootd_registry_handle_register(bootd_registry_t *registry, const char *label, uint32_t xfer_name,
-										   uint32_t xfer_type, const nxu_ipc_peer_t *sender)
+static void
+bootd_registry_handle_register(bootd_registry_t *registry, const char *label, uint32_t xfer_name, uint32_t xfer_type,
+							   const nxu_ipc_peer_t *sender)
 {
-	if (xfer_type != NXU_IPC_XFER_PORT || xfer_name == 0U)
-		return;
+	if (xfer_type != NXU_IPC_XFER_PORT || xfer_name == 0U) return;
 	if (nxu_streq(label, WS_BOOTSTRAP_LABEL)) {
 		nxu_ipc_peer_t live;
 		if (!registry->compositor.uniqueid || !nxu_ipc_peer_equal(sender, &registry->compositor) ||
@@ -70,11 +70,11 @@ static void bootd_registry_handle_register(bootd_registry_t *registry, const cha
 	registry->entry_count++;
 }
 
-static void bootd_registry_handle_lookup(bootd_registry_t *registry, const char *label, uint32_t reply_local_name,
-										 uint32_t xfer_type)
+static void
+bootd_registry_handle_lookup(bootd_registry_t *registry, const char *label, uint32_t reply_local_name,
+							 uint32_t xfer_type)
 {
-	if (xfer_type != NXU_IPC_XFER_PORT || reply_local_name == 0U)
-		return;
+	if (xfer_type != NXU_IPC_XFER_PORT || reply_local_name == 0U) return;
 
 	uint32_t found_port_name = 0U;
 	if (nxu_streq(label, WS_BOOTSTRAP_LABEL)) {
@@ -103,15 +103,14 @@ static void bootd_registry_handle_lookup(bootd_registry_t *registry, const char 
 	(void)nxu_ipc_port_deallocate(reply_local_name);
 }
 
-bool bootd_registry_init(bootd_registry_t *registry)
+bool
+bootd_registry_init(bootd_registry_t *registry)
 {
-	if (registry == 0)
-		return false;
+	if (registry == 0) return false;
 	*registry = (bootd_registry_t){0};
 
 	int64_t port_name = nxu_ipc_port_allocate();
-	if (port_name <= 0)
-		return false;
+	if (port_name <= 0) return false;
 
 	if (nxu_ipc_register_bootstrap((uint32_t)port_name) != 0) {
 		(void)nxu_ipc_port_deallocate((uint32_t)port_name);
@@ -122,10 +121,10 @@ bool bootd_registry_init(bootd_registry_t *registry)
 	return true;
 }
 
-void bootd_registry_poll(bootd_registry_t *registry)
+void
+bootd_registry_poll(bootd_registry_t *registry)
 {
-	if (registry == 0 || registry->port_name == 0U)
-		return;
+	if (registry == 0 || registry->port_name == 0U) return;
 
 	/*
 	 * Everything queued, not one message: bootd sleeps between polls now, and
@@ -135,12 +134,12 @@ void bootd_registry_poll(bootd_registry_t *registry)
 	 * from its jobs.
 	 */
 	for (uint32_t handled = 0U; handled < BOOTD_REGISTRY_BATCH; handled++) {
-		if (!bootd_registry_poll_one(registry))
-			return;
+		if (!bootd_registry_poll_one(registry)) return;
 	}
 }
 
-static bool bootd_registry_poll_one(bootd_registry_t *registry)
+static bool
+bootd_registry_poll_one(bootd_registry_t *registry)
 {
 	nxu_bootstrap_request_t request;
 	uint32_t xfer_name = 0U;
@@ -149,11 +148,9 @@ static bool bootd_registry_poll_one(bootd_registry_t *registry)
 	nxu_ipc_peer_t sender;
 	int64_t received =
 		nxu_ipc_receive_peer(registry->port_name, &request, sizeof(request), &xfer_name, &xfer_type, &sender);
-	if (received < 0)
-		return false;
+	if (received < 0) return false;
 	if ((uint64_t)received != sizeof(request)) {
-		if (xfer_type == NXU_IPC_XFER_PORT)
-			(void)nxu_ipc_port_deallocate(xfer_name);
+		if (xfer_type == NXU_IPC_XFER_PORT) (void)nxu_ipc_port_deallocate(xfer_name);
 		return true;
 	}
 
@@ -167,8 +164,7 @@ static bool bootd_registry_poll_one(bootd_registry_t *registry)
 		bootd_registry_handle_lookup(registry, request.label, xfer_name, xfer_type);
 		break;
 	default:
-		if (xfer_type == NXU_IPC_XFER_PORT)
-			(void)nxu_ipc_port_deallocate(xfer_name);
+		if (xfer_type == NXU_IPC_XFER_PORT) (void)nxu_ipc_port_deallocate(xfer_name);
 		break;
 	}
 
@@ -176,14 +172,13 @@ static bool bootd_registry_poll_one(bootd_registry_t *registry)
 }
 
 /* The supervisor supplies the exact job lifetime, not a caller-provided PID. */
-void bootd_registry_bind_compositor(bootd_registry_t *registry, const nxu_ipc_peer_t *identity)
+void
+bootd_registry_bind_compositor(bootd_registry_t *registry, const nxu_ipc_peer_t *identity)
 {
-	if (nxu_ipc_peer_equal(&registry->compositor, identity))
-		return;
+	if (nxu_ipc_peer_equal(&registry->compositor, identity)) return;
 	registry->compositor = *identity;
 	for (uint32_t i = 0; i < registry->entry_count; i++) {
-		if (!nxu_streq(registry->entries[i].label, WS_BOOTSTRAP_LABEL))
-			continue;
+		if (!nxu_streq(registry->entries[i].label, WS_BOOTSTRAP_LABEL)) continue;
 		(void)nxu_ipc_port_deallocate(registry->entries[i].port_name);
 		registry->entries[i] = registry->entries[--registry->entry_count];
 		return;

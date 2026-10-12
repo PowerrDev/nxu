@@ -18,11 +18,11 @@
 #include <stdint.h>
 
 typedef struct {
-	int id3v2; /* an ID3v2 tag was skipped */
+	int id3v2;			/* an ID3v2 tag was skipped */
 	uint32_t id3_major; /* its version: 2, 3 or 4 */
 	uint32_t id3_bytes; /* its size, header included */
-	uint32_t mpeg; /* 1, 2 or 25 (MPEG 2.5) */
-	uint32_t layer; /* 1, 2 or 3 */
+	uint32_t mpeg;		/* 1, 2 or 25 (MPEG 2.5) */
+	uint32_t layer;		/* 1, 2 or 3 */
 	uint32_t bitrate_kbps;
 	uint32_t sample_rate;
 	uint32_t channels;

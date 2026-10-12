@@ -32,7 +32,8 @@ wstest_log(const char *message)
 }
 
 static bool
-wstest_call(uint32_t dest_name, uint32_t reply_name, const wsmsg_request_t *request, uint64_t request_size, wsmsg_reply_t *reply)
+wstest_call(uint32_t dest_name, uint32_t reply_name, const wsmsg_request_t *request, uint64_t request_size,
+			wsmsg_reply_t *reply)
 {
 	if (nxu_ipc_send(dest_name, request, request_size, reply_name) != 0) return false;
 
@@ -71,7 +72,9 @@ main(void)
 	create_request.create_window.height = WSTEST_WINDOW_HEIGHT;
 
 	wsmsg_reply_t reply;
-	if (!wstest_call(windowserver_name, (uint32_t)reply_name, &create_request, sizeof(create_request.create_window), &reply) || reply.status != 0) {
+	if (!wstest_call(windowserver_name, (uint32_t)reply_name, &create_request, sizeof(create_request.create_window),
+					 &reply) ||
+		reply.status != 0) {
 		wstest_log("wstest_client: create window failed\n");
 		return 3;
 	}
@@ -86,10 +89,13 @@ main(void)
 	render_request.render_window.height = WSTEST_WINDOW_HEIGHT;
 	render_request.render_window.stride = WSTEST_WINDOW_WIDTH;
 	render_request.render_window.pixel_count = WSTEST_WINDOW_WIDTH * WSTEST_WINDOW_HEIGHT;
-	for (uint32_t index = 0U; index < render_request.render_window.pixel_count; index++) render_request.render_window.pixels[index] = WSTEST_PIXEL_COLOR;
+	for (uint32_t index = 0U; index < render_request.render_window.pixel_count; index++)
+		render_request.render_window.pixels[index] = WSTEST_PIXEL_COLOR;
 
-	uint64_t render_request_size = 6ULL * sizeof(uint32_t) + (uint64_t)render_request.render_window.pixel_count * sizeof(uint32_t);
-	if (!wstest_call(windowserver_name, (uint32_t)reply_name, &render_request, render_request_size, &reply) || reply.status != 0) {
+	uint64_t render_request_size =
+		6ULL * sizeof(uint32_t) + (uint64_t)render_request.render_window.pixel_count * sizeof(uint32_t);
+	if (!wstest_call(windowserver_name, (uint32_t)reply_name, &render_request, render_request_size, &reply) ||
+		reply.status != 0) {
 		wstest_log("wstest_client: render window failed\n");
 		return 4;
 	}

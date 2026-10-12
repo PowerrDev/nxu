@@ -50,7 +50,8 @@ about_draw(uint32_t *pixels, uint32_t width, uint32_t height)
 {
 	for (uint32_t y = 0U; y < height; y++) {
 		uint32_t color = y < ABOUT_TITLEBAR_HEIGHT ? ABOUT_COLOR_TITLEBAR : ABOUT_COLOR_BODY;
-		for (uint32_t x = 0U; x < width; x++) pixels[(uint64_t)y * width + x] = color;
+		for (uint32_t x = 0U; x < width; x++)
+			pixels[(uint64_t)y * width + x] = color;
 	}
 
 	uint32_t mark_x = (width - ABOUT_MARK_SIZE) / 2U;
@@ -63,7 +64,8 @@ about_draw(uint32_t *pixels, uint32_t width, uint32_t height)
 }
 
 static bool
-about_call(uint32_t dest_name, uint32_t reply_name, const wsmsg_request_t *request, uint64_t request_size, wsmsg_reply_t *reply)
+about_call(uint32_t dest_name, uint32_t reply_name, const wsmsg_request_t *request, uint64_t request_size,
+		   wsmsg_reply_t *reply)
 {
 	if (nxu_ipc_send(dest_name, request, request_size, reply_name) != 0) return false;
 
@@ -100,7 +102,9 @@ main(void)
 	create_request.create_window.height = ABOUT_WINDOW_HEIGHT;
 
 	wsmsg_reply_t reply;
-	if (!about_call(windowserver_name, (uint32_t)reply_name, &create_request, sizeof(create_request.create_window), &reply) || reply.status != 0) {
+	if (!about_call(windowserver_name, (uint32_t)reply_name, &create_request, sizeof(create_request.create_window),
+					&reply) ||
+		reply.status != 0) {
 		about_log("about_sevos: create window failed\n");
 		return 3;
 	}
@@ -133,7 +137,9 @@ main(void)
 	render_request.render_window_shm.stride = ABOUT_WINDOW_WIDTH;
 	render_request.render_window_shm.shm_id = (uint32_t)shm_id;
 
-	if (!about_call(windowserver_name, (uint32_t)reply_name, &render_request, sizeof(render_request.render_window_shm), &reply) || reply.status != 0) {
+	if (!about_call(windowserver_name, (uint32_t)reply_name, &render_request, sizeof(render_request.render_window_shm),
+					&reply) ||
+		reply.status != 0) {
 		about_log("about_sevos: render window failed\n");
 		return 6;
 	}

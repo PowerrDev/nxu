@@ -73,8 +73,8 @@ int64_t nxu_sleep_us(uint64_t microseconds);
 int64_t nxu_event_wait(uint32_t timeout_us, uint32_t sequence);
 /* Blocking receive; an expired nonzero timeout returns E_AGAIN.
  * timeout_us=0 retains the indefinite wait of nxu_ipc_receive_wait. */
-int64_t nxu_ipc_receive_timed(uint32_t port, void *buffer, uint64_t capacity, uint32_t *transfer,
-                              uint32_t *type, uint32_t timeout_us);
+int64_t nxu_ipc_receive_timed(uint32_t port, void *buffer, uint64_t capacity, uint32_t *transfer, uint32_t *type,
+							  uint32_t timeout_us);
 int64_t nxu_get_boot_args(char *buffer, uint64_t capacity);
 int64_t nxu_klog_read(uint64_t *cursor, char *buffer, uint64_t capacity);
 int64_t nxu_unlink(const char *path);

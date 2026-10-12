@@ -16,7 +16,8 @@
 #define WINDOWSERVER_MAX_WIDTH 3840U
 #define WINDOWSERVER_MAX_HEIGHT 2160U
 
-static int64_t claim_record(void *record, uint64_t size)
+static int64_t
+claim_record(void *record, uint64_t size)
 {
 	int64_t status;
 
@@ -28,7 +29,8 @@ static int64_t claim_record(void *record, uint64_t size)
 	return status;
 }
 
-static bool windowserver_claim(void)
+static bool
+windowserver_claim(void)
 {
 	union {
 		nxu_gui_host_hello_t hello;
@@ -38,8 +40,7 @@ static bool windowserver_claim(void)
 	record.hello.header = (nxu_gui_host_header_t){sizeof(record.hello), 1, 0, NXU_GUI_HOST_HELLO, 0, 0, 1};
 	record.hello.required_features = record.hello.supported_features = NXU_GUI_HOST_FEATURE_LEASE;
 	record.hello.max_record_size = NXU_GUI_HOST_MAX_RECORD;
-	if (claim_record(&record, sizeof(record)))
-		return false;
+	if (claim_record(&record, sizeof(record))) return false;
 
 	uint64_t epoch = record.reply.header.session_epoch;
 	record.hello.header =
@@ -51,7 +52,8 @@ static uint32_t g_display_width;
 static uint32_t g_display_height;
 static uint32_t *g_shadow_framebuffer;
 
-static void windowserver_log(const char *message)
+static void
+windowserver_log(const char *message)
 {
 	(void)nxu_write(1U, message, nxu_strlen(message));
 }
@@ -66,7 +68,8 @@ static void windowserver_log(const char *message)
  * x/y/stride itself, the same convention display->framebuffer uses kernel-
  * side (kern/syscall/syscall.c's syscall_recovery_present).
  */
-static bool windowserver_present(void *context, uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+static bool
+windowserver_present(void *context, uint32_t x, uint32_t y, uint32_t width, uint32_t height)
 {
 	(void)context;
 	return nxu_recovery_present(g_shadow_framebuffer, g_display_width, x, y, width, height) == 0;
@@ -85,11 +88,10 @@ static int32_t g_pointer_raw_x;
 static int32_t g_pointer_raw_y;
 static bool g_pointer_baseline;
 
-static void windowserver_dispatch_button(uint32_t previous, uint32_t current, uint32_t mask, uint32_t button, int32_t x,
-										 int32_t y)
+static void
+windowserver_dispatch_button(uint32_t previous, uint32_t current, uint32_t mask, uint32_t button, int32_t x, int32_t y)
 {
-	if ((previous ^ current) & mask)
-		(void)WS_Pointer_Button(x, y, button, (current & mask) != 0U);
+	if ((previous ^ current) & mask) (void)WS_Pointer_Button(x, y, button, (current & mask) != 0U);
 }
 
 /* event.x/event.y are NXU's raw relative pointer accumulator (see mouse.c),
@@ -101,13 +103,12 @@ static void windowserver_dispatch_button(uint32_t previous, uint32_t current, ui
  * toward the real position over many small increments instead of tracking
  * the mouse directly.
  */
-static int32_t windowserver_clamp_pointer(int64_t value, uint32_t extent)
+static int32_t
+windowserver_clamp_pointer(int64_t value, uint32_t extent)
 {
-	if (extent == 0U || value < 0)
-		return 0;
+	if (extent == 0U || value < 0) return 0;
 
-	if ((uint64_t)value >= (uint64_t)extent)
-		return (int32_t)(extent - 1U);
+	if ((uint64_t)value >= (uint64_t)extent) return (int32_t)(extent - 1U);
 
 	return (int32_t)value;
 }
@@ -120,14 +121,14 @@ static int32_t windowserver_clamp_pointer(int64_t value, uint32_t extent)
  * reports current-state-per-sync, not discrete press/release like
  * WS_Pointer_Button expects.
  */
-static void windowserver_pump_input(void)
+static void
+windowserver_pump_input(void)
 {
 	nxu_recovery_input_event_t event;
 	int64_t received;
 
 	while ((received = nxu_recovery_input(&event)) > 0) {
-		if (event.kind != NXU_RECOVERY_INPUT_POINTER)
-			continue;
+		if (event.kind != NXU_RECOVERY_INPUT_POINTER) continue;
 
 		/* Adopt the first packet as the baseline instead of jumping the
 		 * cursor by motion accumulated before this process started polling. */
@@ -153,11 +154,11 @@ static void windowserver_pump_input(void)
 		g_pointer_buttons = event.buttons;
 	}
 
-	if (received < 0)
-		g_pointer_baseline = false;
+	if (received < 0) g_pointer_baseline = false;
 }
 
-static void windowserver_action(const wsmsg_request_t *request, wsmsg_reply_t *reply)
+static void
+windowserver_action(const wsmsg_request_t *request, wsmsg_reply_t *reply)
 {
 	const uint32_t *a = request->action.arguments;
 	uint32_t window = request->action.window_id;
@@ -166,8 +167,7 @@ static void windowserver_action(const wsmsg_request_t *request, wsmsg_reply_t *r
 	switch (request->action.action) {
 	case WS_ACTION_CREATE:
 	case WS_ACTION_BACKGROUND:
-		if (!a[2] || !a[3] || a[2] > WINDOWSERVER_MAX_WIDTH || a[3] > WINDOWSERVER_MAX_HEIGHT)
-			break;
+		if (!a[2] || !a[3] || a[2] > WINDOWSERVER_MAX_WIDTH || a[3] > WINDOWSERVER_MAX_HEIGHT) break;
 
 		reply->window_id = request->action.action == WS_ACTION_CREATE
 							   ? WS_Create_Window((int32_t)a[0], (int32_t)a[1], a[2], a[3], a[4] != 0, a[5])
@@ -220,15 +220,13 @@ static void windowserver_action(const wsmsg_request_t *request, wsmsg_reply_t *r
 		break;
 
 	case WS_ACTION_CURSOR:
-		if (!a[1] || !a[2] || a[1] > 256 || a[2] > 256 || a[3] != a[1])
-			break;
+		if (!a[1] || !a[2] || a[1] > 256 || a[2] > 256 || a[3] != a[1]) break;
 
 		int64_t address = nxu_shm_map_sized(a[6], (uint64_t)a[1] * a[2] * sizeof(uint32_t));
 
 		if (address > 0) {
 			accepted = WS_Set_Cursor(a[0], (void *)(uintptr_t)address, a[1], a[2], a[3], (int32_t)a[4], (int32_t)a[5]);
-			if (nxu_shm_unmap((uint64_t)address))
-				accepted = false;
+			if (nxu_shm_unmap((uint64_t)address)) accepted = false;
 		}
 		break;
 
@@ -239,14 +237,14 @@ static void windowserver_action(const wsmsg_request_t *request, wsmsg_reply_t *r
 	reply->status = accepted ? 0 : -1;
 }
 
-static void windowserver_dispatch_request(const wsmsg_request_t *request, uint64_t size, wsmsg_reply_t *reply)
+static void
+windowserver_dispatch_request(const wsmsg_request_t *request, uint64_t size, wsmsg_reply_t *reply)
 {
 	*reply = (wsmsg_reply_t){.status = -1, .window_id = 0U};
 
 	switch (request->opcode) {
 	case WSMSG_CREATE_WINDOW: {
-		if (size != sizeof(request->create_window))
-			break;
+		if (size != sizeof(request->create_window)) break;
 
 		/* No corner radius over this IPC protocol yet: a client asking this
 		 * server for a window gets a square one, unaffected by the shadow's
@@ -274,8 +272,7 @@ static void windowserver_dispatch_request(const wsmsg_request_t *request, uint64
 	}
 
 	case WSMSG_PRESENT:
-		if (size != sizeof(request->present))
-			break;
+		if (size != sizeof(request->present)) break;
 
 		reply->status = WS_Present() ? 0 : -1;
 		break;
@@ -289,8 +286,7 @@ static void windowserver_dispatch_request(const wsmsg_request_t *request, uint64
 		int64_t va = nxu_shm_map_sized(render->shm_id, (uint64_t)render->width * render->height * sizeof(uint32_t));
 		bool ok = va > 0 && WS_Render_Window(render->window_id, (const uint32_t *)(uintptr_t)va, render->width,
 											 render->height, render->stride);
-		if (va > 0 && nxu_shm_unmap((uint64_t)va))
-			ok = false;
+		if (va > 0 && nxu_shm_unmap((uint64_t)va)) ok = false;
 		reply->status = ok ? 0 : -1;
 		break;
 	}
@@ -304,8 +300,7 @@ static void windowserver_dispatch_request(const wsmsg_request_t *request, uint64
 	}
 
 	case WSMSG_ACTION:
-		if (size == sizeof(request->action))
-			windowserver_action(request, reply);
+		if (size == sizeof(request->action)) windowserver_action(request, reply);
 		break;
 
 	case WSMSG_DESTROY_WINDOW:
@@ -330,24 +325,26 @@ typedef struct {
 
 static windowserver_window_t g_windows[WINDOWSERVER_CLIENT_WINDOWS];
 
-static bool windowserver_peer_live(const nxu_ipc_peer_t *peer)
+static bool
+windowserver_peer_live(const nxu_ipc_peer_t *peer)
 {
 	nxu_ipc_peer_t live;
 	return peer->uniqueid && nxu_process_identity(peer->pid, &live) == 0 && nxu_ipc_peer_equal(peer, &live) &&
 		   (peer->capabilities & live.capabilities) == peer->capabilities;
 }
 
-static windowserver_window_t *windowserver_find(uint32_t handle, const nxu_ipc_peer_t *owner)
+static windowserver_window_t *
+windowserver_find(uint32_t handle, const nxu_ipc_peer_t *owner)
 {
 	for (uint32_t i = 0; i < WINDOWSERVER_CLIENT_WINDOWS; i++) {
 		windowserver_window_t *window = &g_windows[i];
-		if (window->handle == handle && nxu_ipc_peer_equal(&window->owner, owner))
-			return window;
+		if (window->handle == handle && nxu_ipc_peer_equal(&window->owner, owner)) return window;
 	}
 	return 0;
 }
 
-static void windowserver_reap_windows(void)
+static void
+windowserver_reap_windows(void)
 {
 	static uint32_t cursor;
 	windowserver_window_t *window = &g_windows[cursor++ % WINDOWSERVER_CLIENT_WINDOWS];
@@ -357,12 +354,12 @@ static void windowserver_reap_windows(void)
 	}
 }
 
-static void windowserver_handle_request(const wsmsg_request_t *incoming, uint64_t size, const nxu_ipc_peer_t *sender,
-										wsmsg_reply_t *reply)
+static void
+windowserver_handle_request(const wsmsg_request_t *incoming, uint64_t size, const nxu_ipc_peer_t *sender,
+							wsmsg_reply_t *reply)
 {
 	*reply = (wsmsg_reply_t){.status = -NXU_SYS_E_DENIED};
-	if (size < sizeof(uint32_t) || !windowserver_peer_live(sender))
-		return;
+	if (size < sizeof(uint32_t) || !windowserver_peer_live(sender)) return;
 
 	wsmsg_request_t request = *incoming;
 	uint32_t *handle = 0;
@@ -378,31 +375,26 @@ static void windowserver_handle_request(const wsmsg_request_t *incoming, uint64_
 		create = true;
 		break;
 	case WSMSG_RENDER_WINDOW:
-		if (size < 6 * sizeof(uint32_t))
-			return;
+		if (size < 6 * sizeof(uint32_t)) return;
 		handle = &request.render_window.window_id;
 		break;
 	case WSMSG_RENDER_WINDOW_SHM:
-		if (size != sizeof(request.render_window_shm))
-			return;
+		if (size != sizeof(request.render_window_shm)) return;
 		handle = &request.render_window_shm.window_id;
 		break;
 	case WSMSG_RESIZE_WINDOW:
-		if (size != sizeof(request.resize_window))
-			return;
+		if (size != sizeof(request.resize_window)) return;
 		handle = &request.resize_window.window_id;
 		break;
 	case WSMSG_DESTROY_WINDOW:
-		if (size != sizeof(request.destroy_window))
-			return;
+		if (size != sizeof(request.destroy_window)) return;
 		handle = &request.destroy_window.window_id;
 		break;
 	case WSMSG_PRESENT:
 		privileged = true;
 		break;
 	case WSMSG_ACTION:
-		if (size != sizeof(request.action))
-			return;
+		if (size != sizeof(request.action)) return;
 		switch (request.action.action) {
 		case WS_ACTION_CREATE:
 			create = true;
@@ -429,14 +421,12 @@ static void windowserver_handle_request(const wsmsg_request_t *incoming, uint64_
 		return;
 	}
 
-	if (privileged && !(sender->capabilities & NXU_CAP_DISPLAY))
-		return;
+	if (privileged && !(sender->capabilities & NXU_CAP_DISPLAY)) return;
 
 	windowserver_window_t *owned = 0;
 	if (handle) {
 		owned = windowserver_find(*handle, sender);
-		if (!owned)
-			return;
+		if (!owned) return;
 		*handle = owned->internal;
 	}
 
@@ -448,16 +438,13 @@ static void windowserver_handle_request(const wsmsg_request_t *incoming, uint64_
 				break;
 			}
 		}
-		if (!slot)
-			return;
+		if (!slot) return;
 	}
 
 	int64_t public_handle = create ? nxu_gui_window_handle() : 0;
-	if (create && public_handle <= 0)
-		return;
+	if (create && public_handle <= 0) return;
 	windowserver_dispatch_request(&request, size, reply);
-	if (reply->status)
-		return;
+	if (reply->status) return;
 
 	if (create) {
 		slot->owner = *sender;
@@ -469,7 +456,8 @@ static void windowserver_handle_request(const wsmsg_request_t *incoming, uint64_
 	}
 }
 
-int main(void)
+int
+main(void)
 {
 
 	if (!windowserver_claim()) {
@@ -563,8 +551,7 @@ int main(void)
 		 * locate" animation stay live between client redraws; WS_Present
 		 * itself is a no-op (no pacing spin, no syscall) when nothing is
 		 * damaged, so this costs nothing on an idle desktop. */
-		if (WS_Present())
-			did_work = true;
+		if (WS_Present()) did_work = true;
 
 		/* Replies wake clients directly; do not add a timer tick per RPC. */
 		if (did_work)

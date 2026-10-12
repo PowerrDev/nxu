@@ -14,9 +14,9 @@
  */
 typedef struct {
 	uint32_t state[8];
-	uint64_t length;                  /* bytes hashed so far */
+	uint64_t length; /* bytes hashed so far */
 	uint8_t block[SHA256_BLOCK_SIZE];
-	size_t used;                      /* bytes waiting in block */
+	size_t used; /* bytes waiting in block */
 } sha256_context_t;
 
 void sha256_init(sha256_context_t *context);
