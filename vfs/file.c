@@ -14,26 +14,30 @@ static bool g_file_slot_used[VFS_FILE_MAX];
 static file_lock_t g_file_table_lock;
 static bool g_file_table_initialized;
 
-static void file_lock(file_lock_t *lock)
+static void
+file_lock(file_lock_t *lock)
 {
 	while (__atomic_exchange_n(&lock->value, 1U, __ATOMIC_ACQUIRE) != 0U) {
 		cpu_relax();
 	}
 }
 
-static void file_unlock(file_lock_t *lock)
+static void
+file_unlock(file_lock_t *lock)
 {
 	__atomic_store_n(&lock->value, 0U, __ATOMIC_RELEASE);
 }
 
-static void filedesc_lock(filedesc_t filedesc)
+static void
+filedesc_lock(filedesc_t filedesc)
 {
 	while (__atomic_exchange_n(&filedesc->fd_lock, 1U, __ATOMIC_ACQUIRE) != 0U) {
 		cpu_relax();
 	}
 }
 
-static void filedesc_unlock(filedesc_t filedesc)
+static void
+filedesc_unlock(filedesc_t filedesc)
 {
 	__atomic_store_n(&filedesc->fd_lock, 0U, __ATOMIC_RELEASE);
 }
@@ -43,7 +47,8 @@ static void filedesc_unlock(filedesc_t filedesc)
  *
  * Return an inactive file object to the global file table.
  */
-static void file_free_locked(file_t file)
+static void
+file_free_locked(file_t file)
 {
 	if (file == 0 || file->f_slot >= VFS_FILE_MAX) return;
 
@@ -53,7 +58,8 @@ static void file_free_locked(file_t file)
 	memset(file, 0, sizeof(*file));
 }
 
-bool file_table_init(void)
+bool
+file_table_init(void)
 {
 	file_lock(&g_file_table_lock);
 
@@ -70,7 +76,8 @@ bool file_table_init(void)
 	return true;
 }
 
-void filedesc_init(filedesc_t filedesc)
+void
+filedesc_init(filedesc_t filedesc)
 {
 	if (filedesc == 0) return;
 
@@ -78,7 +85,8 @@ void filedesc_init(filedesc_t filedesc)
 	filedesc->fd_freefile = VFS_FD_FIRST_FILE;
 }
 
-vfs_status_t file_alloc(vnode_t vnode, uint32_t flags, file_t *result)
+vfs_status_t
+file_alloc(vnode_t vnode, uint32_t flags, file_t *result)
 {
 	if (result != 0) *result = 0;
 	if (!g_file_table_initialized || vnode == 0 || result == 0) return VFS_STATUS_INVALID;
@@ -96,15 +104,13 @@ vfs_status_t file_alloc(vnode_t vnode, uint32_t flags, file_t *result)
 		}
 
 		g_file_slot_used[slot] = true;
-		g_file_slots[slot] = (struct file) {
-			.f_type = FILE_TYPE_VNODE,
-			.f_vnode = vnode,
-			.f_offset = 0ULL,
-			.f_flags = flags,
-			.f_refcount = 1U,
-			.f_slot = slot,
-			.f_active = true
-		};
+		g_file_slots[slot] = (struct file){.f_type = FILE_TYPE_VNODE,
+										   .f_vnode = vnode,
+										   .f_offset = 0ULL,
+										   .f_flags = flags,
+										   .f_refcount = 1U,
+										   .f_slot = slot,
+										   .f_active = true};
 
 		*result = &g_file_slots[slot];
 		file_unlock(&g_file_table_lock);
@@ -115,7 +121,8 @@ vfs_status_t file_alloc(vnode_t vnode, uint32_t flags, file_t *result)
 	return VFS_STATUS_NO_SPACE;
 }
 
-vfs_status_t file_alloc_socket(socket_t socket, file_t *result)
+vfs_status_t
+file_alloc_socket(socket_t socket, file_t *result)
 {
 	if (result != 0) *result = 0;
 	if (!g_file_table_initialized || socket == SOCKET_NULL || result == 0) return VFS_STATUS_INVALID;
@@ -126,15 +133,13 @@ vfs_status_t file_alloc_socket(socket_t socket, file_t *result)
 		if (g_file_slot_used[slot]) continue;
 
 		g_file_slot_used[slot] = true;
-		g_file_slots[slot] = (struct file) {
-			.f_type = FILE_TYPE_SOCKET,
-			.f_socket = socket,
-			.f_offset = 0ULL,
-			.f_flags = VFS_OPEN_READ | VFS_OPEN_WRITE,
-			.f_refcount = 1U,
-			.f_slot = slot,
-			.f_active = true
-		};
+		g_file_slots[slot] = (struct file){.f_type = FILE_TYPE_SOCKET,
+										   .f_socket = socket,
+										   .f_offset = 0ULL,
+										   .f_flags = VFS_OPEN_READ | VFS_OPEN_WRITE,
+										   .f_refcount = 1U,
+										   .f_slot = slot,
+										   .f_active = true};
 
 		*result = &g_file_slots[slot];
 		file_unlock(&g_file_table_lock);
@@ -145,7 +150,8 @@ vfs_status_t file_alloc_socket(socket_t socket, file_t *result)
 	return VFS_STATUS_NO_SPACE;
 }
 
-bool filedesc_fork(filedesc_t child, filedesc_t parent)
+bool
+filedesc_fork(filedesc_t child, filedesc_t parent)
 {
 	if (child == 0 || parent == 0 || child->fd_open_count != 0U) return false;
 
@@ -175,7 +181,8 @@ bool filedesc_fork(filedesc_t child, filedesc_t parent)
 	return ok;
 }
 
-bool file_reference(file_t file)
+bool
+file_reference(file_t file)
 {
 	if (file == 0 || !file->f_active) return false;
 
@@ -188,7 +195,8 @@ bool file_reference(file_t file)
 	return valid;
 }
 
-void file_rele(file_t file)
+void
+file_rele(file_t file)
 {
 	if (file == 0) return;
 
@@ -227,7 +235,8 @@ void file_rele(file_t file)
 	}
 }
 
-vfs_status_t filedesc_install(filedesc_t filedesc, file_t file, uint32_t *descriptor)
+vfs_status_t
+filedesc_install(filedesc_t filedesc, file_t file, uint32_t *descriptor)
 {
 	if (descriptor != 0) *descriptor = UINT32_MAX;
 	if (filedesc == 0 || file == 0 || descriptor == 0 || !file->f_active) return VFS_STATUS_INVALID;
@@ -244,7 +253,8 @@ vfs_status_t filedesc_install(filedesc_t filedesc, file_t file, uint32_t *descri
 		filedesc->fd_open_count++;
 
 		uint32_t next = fd + 1U;
-		while (next < VFS_FD_MAX && filedesc->fd_ofiles[next] != 0) next++;
+		while (next < VFS_FD_MAX && filedesc->fd_ofiles[next] != 0)
+			next++;
 		filedesc->fd_freefile = next;
 
 		*descriptor = fd;
@@ -302,7 +312,8 @@ filedesc_dup2(filedesc_t filedesc, uint32_t source, uint32_t destination)
 	return VFS_STATUS_OK;
 }
 
-vfs_status_t filedesc_get(filedesc_t filedesc, uint32_t descriptor, file_t *result)
+vfs_status_t
+filedesc_get(filedesc_t filedesc, uint32_t descriptor, file_t *result)
 {
 	if (result != 0) *result = 0;
 	if (filedesc == 0 || result == 0 || descriptor >= VFS_FD_MAX) return VFS_STATUS_BAD_FD;
@@ -320,7 +331,8 @@ vfs_status_t filedesc_get(filedesc_t filedesc, uint32_t descriptor, file_t *resu
 	return VFS_STATUS_OK;
 }
 
-vfs_status_t filedesc_remove(filedesc_t filedesc, uint32_t descriptor, file_t *result)
+vfs_status_t
+filedesc_remove(filedesc_t filedesc, uint32_t descriptor, file_t *result)
 {
 	if (result != 0) *result = 0;
 	if (filedesc == 0 || result == 0 || descriptor >= VFS_FD_MAX) return VFS_STATUS_BAD_FD;
@@ -342,7 +354,8 @@ vfs_status_t filedesc_remove(filedesc_t filedesc, uint32_t descriptor, file_t *r
 	return VFS_STATUS_OK;
 }
 
-void filedesc_close_all(filedesc_t filedesc)
+void
+filedesc_close_all(filedesc_t filedesc)
 {
 	if (filedesc == 0) return;
 
@@ -352,7 +365,8 @@ void filedesc_close_all(filedesc_t filedesc)
 	}
 }
 
-vfs_status_t file_read(file_t file, void *buffer, uint64_t size, uint64_t *read_size)
+vfs_status_t
+file_read(file_t file, void *buffer, uint64_t size, uint64_t *read_size)
 {
 	if (read_size != 0) *read_size = 0ULL;
 	if (file == 0 || buffer == 0 || read_size == 0 || !file->f_active) return VFS_STATUS_INVALID;
@@ -387,7 +401,8 @@ file_readdir(file_t file, vfs_dirent_t *entry)
 	return vnode_readdir(file->f_vnode, &file->f_offset, entry);
 }
 
-vfs_status_t file_write(file_t file, const void *buffer, uint64_t size, uint64_t *written_size)
+vfs_status_t
+file_write(file_t file, const void *buffer, uint64_t size, uint64_t *written_size)
 {
 	if (written_size != 0) *written_size = 0ULL;
 	if (file == 0 || buffer == 0 || written_size == 0 || !file->f_active) return VFS_STATUS_INVALID;
@@ -401,16 +416,15 @@ vfs_status_t file_write(file_t file, const void *buffer, uint64_t size, uint64_t
 		return VFS_STATUS_OK;
 	}
 
-	uint64_t offset = (file->f_flags & VFS_OPEN_APPEND) != 0U
-		? file->f_vnode->v_size
-		: file->f_offset;
+	uint64_t offset = (file->f_flags & VFS_OPEN_APPEND) != 0U ? file->f_vnode->v_size : file->f_offset;
 
 	vfs_status_t status = vnode_write(file->f_vnode, offset, buffer, size, written_size);
 	if (status == VFS_STATUS_OK) file->f_offset = offset + *written_size;
 	return status;
 }
 
-vfs_status_t file_seek(file_t file, uint64_t offset)
+vfs_status_t
+file_seek(file_t file, uint64_t offset)
 {
 	if (file == 0 || !file->f_active) return VFS_STATUS_INVALID;
 	if (file->f_type == FILE_TYPE_SOCKET) return VFS_STATUS_NOT_SUPPORTED;
@@ -418,7 +432,8 @@ vfs_status_t file_seek(file_t file, uint64_t offset)
 	return VFS_STATUS_OK;
 }
 
-vfs_status_t file_ioctl(file_t file, uint32_t command, void *argument)
+vfs_status_t
+file_ioctl(file_t file, uint32_t command, void *argument)
 {
 	if (file == 0 || !file->f_active) return VFS_STATUS_INVALID;
 	if (file->f_type == FILE_TYPE_SOCKET) return VFS_STATUS_NOT_SUPPORTED;

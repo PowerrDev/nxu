@@ -33,22 +33,23 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-static bool vm_fault_access_satisfied(vm_fault_access_t access, vm_user_protection_t protection)
+static bool
+vm_fault_access_satisfied(vm_fault_access_t access, vm_user_protection_t protection)
 {
 	switch (access) {
-	case VM_FAULT_WRITE: return protection == VM_USER_PROTECTION_READ_WRITE;
-	case VM_FAULT_EXECUTE: return protection == VM_USER_PROTECTION_READ_EXECUTE;
-	default: return true;
+	case VM_FAULT_WRITE:
+		return protection == VM_USER_PROTECTION_READ_WRITE;
+	case VM_FAULT_EXECUTE:
+		return protection == VM_USER_PROTECTION_READ_EXECUTE;
+	default:
+		return true;
 	}
 }
 
 /* The page is mapped: resolve a write to a COW page, or accept a fault another CPU already fixed. */
-static bool vm_fault_present(
-	vm_address_space_t *space,
-	uint64_t page_va,
-	vm_fault_access_t access,
-	const vm_user_page_mapping_t *mapping
-)
+static bool
+vm_fault_present(vm_address_space_t *space, uint64_t page_va, vm_fault_access_t access,
+				 const vm_user_page_mapping_t *mapping)
 {
 	if (access == VM_FAULT_WRITE && mapping->cow) {
 		return vm_address_space_cow_break(space, page_va);
@@ -57,17 +58,10 @@ static bool vm_fault_present(
 	return vm_fault_access_satisfied(access, mapping->protection);
 }
 
-bool vm_fault_user(
-	vm_address_space_t *space,
-	uint64_t virtual_address,
-	vm_fault_access_t access
-)
+bool
+vm_fault_user(vm_address_space_t *space, uint64_t virtual_address, vm_fault_access_t access)
 {
-	if (
-		space == 0 ||
-		virtual_address < PMM_PAGE_SIZE ||
-		virtual_address >= VM_MAX_USER_ADDRESS
-	) {
+	if (space == 0 || virtual_address < PMM_PAGE_SIZE || virtual_address >= VM_MAX_USER_ADDRESS) {
 		return false;
 	}
 

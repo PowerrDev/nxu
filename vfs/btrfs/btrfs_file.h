@@ -48,9 +48,11 @@
  * (less than length only at the end of the file). The inode must be a regular
  * file or a symlink.
  */
-btrfs_status_t btrfs_file_read(btrfs_fs_t *fs, const btrfs_tree_t *subvol, const btrfs_inode_t *inode, uint64_t offset, void *buffer, uint64_t length, uint64_t *done);
+btrfs_status_t btrfs_file_read(btrfs_fs_t *fs, const btrfs_tree_t *subvol, const btrfs_inode_t *inode, uint64_t offset,
+							   void *buffer, uint64_t length, uint64_t *done);
 
 /* The target of a symlink inode: at most capacity bytes, not NUL terminated. */
-btrfs_status_t btrfs_file_readlink(btrfs_fs_t *fs, const btrfs_tree_t *subvol, const btrfs_inode_t *inode, char *buffer, size_t capacity, size_t *length);
+btrfs_status_t btrfs_file_readlink(btrfs_fs_t *fs, const btrfs_tree_t *subvol, const btrfs_inode_t *inode, char *buffer,
+								   size_t capacity, size_t *length);
 
 #endif

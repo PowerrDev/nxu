@@ -24,13 +24,15 @@
 
 /* ---- allocator ---------------------------------------------------------------- */
 
-void *btrfs_alloc(const btrfs_fs_t *fs, size_t size)
+void *
+btrfs_alloc(const btrfs_fs_t *fs, size_t size)
 {
 	if (fs == 0 || fs->env.alloc == 0 || size == 0U) return 0;
 	return fs->env.alloc(fs->env.ctx, size);
 }
 
-void btrfs_free(const btrfs_fs_t *fs, void *pointer)
+void
+btrfs_free(const btrfs_fs_t *fs, void *pointer)
 {
 	if (fs == 0 || fs->env.release == 0 || pointer == 0) return;
 	fs->env.release(fs->env.ctx, pointer);
@@ -46,19 +48,23 @@ typedef struct {
 	size_t length;
 } btrfs_sink_t;
 
-static void btrfs_sink_char(btrfs_sink_t *sink, char c)
+static void
+btrfs_sink_char(btrfs_sink_t *sink, char c)
 {
 	if (sink->length + 1U < sink->capacity) sink->out[sink->length] = c;
 	sink->length++;
 }
 
-static void btrfs_sink_string(btrfs_sink_t *sink, const char *s)
+static void
+btrfs_sink_string(btrfs_sink_t *sink, const char *s)
 {
 	if (s == 0) s = "(null)";
-	while (*s != '\0') btrfs_sink_char(sink, *s++);
+	while (*s != '\0')
+		btrfs_sink_char(sink, *s++);
 }
 
-static void btrfs_sink_number(btrfs_sink_t *sink, unsigned long long value, unsigned base)
+static void
+btrfs_sink_number(btrfs_sink_t *sink, unsigned long long value, unsigned base)
 {
 	char digits[24];
 	unsigned count = 0U;
@@ -71,10 +77,12 @@ static void btrfs_sink_number(btrfs_sink_t *sink, unsigned long long value, unsi
 		value /= base;
 	}
 
-	while (count != 0U) btrfs_sink_char(sink, digits[--count]);
+	while (count != 0U)
+		btrfs_sink_char(sink, digits[--count]);
 }
 
-static void btrfs_vformat(btrfs_sink_t *sink, const char *format, va_list args)
+static void
+btrfs_vformat(btrfs_sink_t *sink, const char *format, va_list args)
 {
 	while (*format != '\0') {
 		if (*format != '%') {
@@ -94,14 +102,23 @@ static void btrfs_vformat(btrfs_sink_t *sink, const char *format, va_list args)
 		format++;
 
 		switch (conversion) {
-		case '%': btrfs_sink_char(sink, '%'); break;
-		case 'c': btrfs_sink_char(sink, (char)va_arg(args, int)); break;
-		case 's': btrfs_sink_string(sink, va_arg(args, const char *)); break;
+		case '%':
+			btrfs_sink_char(sink, '%');
+			break;
+		case 'c':
+			btrfs_sink_char(sink, (char)va_arg(args, int));
+			break;
+		case 's':
+			btrfs_sink_string(sink, va_arg(args, const char *));
+			break;
 		case 'd': {
 			long long value;
-			if (length == 0U) value = va_arg(args, int);
-			else if (length == 1U) value = va_arg(args, long);
-			else value = va_arg(args, long long);
+			if (length == 0U)
+				value = va_arg(args, int);
+			else if (length == 1U)
+				value = va_arg(args, long);
+			else
+				value = va_arg(args, long long);
 			if (value < 0) {
 				btrfs_sink_char(sink, '-');
 				btrfs_sink_number(sink, (unsigned long long)(-(value + 1)) + 1ULL, 10U);
@@ -113,9 +130,12 @@ static void btrfs_vformat(btrfs_sink_t *sink, const char *format, va_list args)
 		case 'u':
 		case 'x': {
 			unsigned long long value;
-			if (length == 0U) value = va_arg(args, unsigned int);
-			else if (length == 1U) value = va_arg(args, unsigned long);
-			else value = va_arg(args, unsigned long long);
+			if (length == 0U)
+				value = va_arg(args, unsigned int);
+			else if (length == 1U)
+				value = va_arg(args, unsigned long);
+			else
+				value = va_arg(args, unsigned long long);
 			btrfs_sink_number(sink, value, conversion == 'u' ? 10U : 16U);
 			break;
 		}
@@ -127,12 +147,13 @@ static void btrfs_vformat(btrfs_sink_t *sink, const char *format, va_list args)
 	}
 }
 
-void btrfs_log(const btrfs_fs_t *fs, const char *format, ...)
+void
+btrfs_log(const btrfs_fs_t *fs, const char *format, ...)
 {
 	if (fs == 0 || fs->env.log == 0) return;
 
 	char line[BTRFS_LOG_LINE_MAX];
-	btrfs_sink_t sink = { line, sizeof(line), 0U };
+	btrfs_sink_t sink = {line, sizeof(line), 0U};
 	va_list args;
 
 	va_start(args, format);
@@ -145,14 +166,16 @@ void btrfs_log(const btrfs_fs_t *fs, const char *format, ...)
 
 /* ---- open / close ------------------------------------------------------------------ */
 
-static btrfs_status_t btrfs_open_fail(btrfs_fs_t *fs, btrfs_status_t status, btrfs_status_t *out)
+static btrfs_status_t
+btrfs_open_fail(btrfs_fs_t *fs, btrfs_status_t status, btrfs_status_t *out)
 {
 	fs->last_status = status;
 	*out = status;
 	return status;
 }
 
-const btrfs_device_t *btrfs_device_find(const btrfs_fs_t *fs, uint64_t devid)
+const btrfs_device_t *
+btrfs_device_find(const btrfs_fs_t *fs, uint64_t devid)
 {
 	for (uint32_t index = 0U; index < fs->device_count; index++) {
 		if (fs->devices[index].devid == devid) return &fs->devices[index];
@@ -161,7 +184,9 @@ const btrfs_device_t *btrfs_device_find(const btrfs_fs_t *fs, uint64_t devid)
 	return 0;
 }
 
-btrfs_fs_t *btrfs_fs_open(const btrfs_env_t *env, const btrfs_reader_t *reader, const btrfs_open_options_t *options, btrfs_status_t *status)
+btrfs_fs_t *
+btrfs_fs_open(const btrfs_env_t *env, const btrfs_reader_t *reader, const btrfs_open_options_t *options,
+			  btrfs_status_t *status)
 {
 	return btrfs_fs_open_devices(env, reader, 1U, options, status);
 }
@@ -171,7 +196,8 @@ btrfs_fs_t *btrfs_fs_open(const btrfs_env_t *env, const btrfs_reader_t *reader, 
  * same fsid, distinct device ids, the highest generation wins (fs->super,
  * fs->reader), and each device must be as large as its own device item says.
  */
-static btrfs_status_t btrfs_open_devices(btrfs_fs_t *fs, const btrfs_reader_t *readers, uint32_t count)
+static btrfs_status_t
+btrfs_open_devices(btrfs_fs_t *fs, const btrfs_reader_t *readers, uint32_t count)
 {
 	btrfs_super_t *candidate = btrfs_alloc(fs, sizeof(*candidate));
 	uint32_t best = 0U;
@@ -195,7 +221,8 @@ static btrfs_status_t btrfs_open_devices(btrfs_fs_t *fs, const btrfs_reader_t *r
 		memcpy(fs->devices[index].uuid, candidate->dev_uuid, BTRFS_UUID_SIZE);
 
 		if (candidate->dev_total_bytes > readers[index].size) {
-			BTRFS_LOG(fs, "device %u (id %llu) needs %llu bytes but has %llu", index, BTRFS_U64(candidate->dev_id), BTRFS_U64(candidate->dev_total_bytes), BTRFS_U64(readers[index].size));
+			BTRFS_LOG(fs, "device %u (id %llu) needs %llu bytes but has %llu", index, BTRFS_U64(candidate->dev_id),
+					  BTRFS_U64(candidate->dev_total_bytes), BTRFS_U64(readers[index].size));
 			result = BTRFS_ERR_TRUNCATED;
 			break;
 		}
@@ -230,20 +257,25 @@ static btrfs_status_t btrfs_open_devices(btrfs_fs_t *fs, const btrfs_reader_t *r
 
 	for (uint32_t index = 0U; index < count; index++) {
 		if (fs->devices[index].generation != fs->super.generation) {
-			BTRFS_LOG(fs, "device %u (id %llu) is at generation %llu, the filesystem at %llu", index, BTRFS_U64(fs->devices[index].devid), BTRFS_U64(fs->devices[index].generation), BTRFS_U64(fs->super.generation));
+			BTRFS_LOG(fs, "device %u (id %llu) is at generation %llu, the filesystem at %llu", index,
+					  BTRFS_U64(fs->devices[index].devid), BTRFS_U64(fs->devices[index].generation),
+					  BTRFS_U64(fs->super.generation));
 		}
 	}
 
 	return BTRFS_OK;
 }
 
-btrfs_fs_t *btrfs_fs_open_devices(const btrfs_env_t *env, const btrfs_reader_t *readers, uint32_t count, const btrfs_open_options_t *options, btrfs_status_t *status)
+btrfs_fs_t *
+btrfs_fs_open_devices(const btrfs_env_t *env, const btrfs_reader_t *readers, uint32_t count,
+					  const btrfs_open_options_t *options, btrfs_status_t *status)
 {
 	btrfs_status_t local;
 	if (status == 0) status = &local;
 	*status = BTRFS_ERR_INVALID;
 
-	if (env == 0 || env->alloc == 0 || env->release == 0 || readers == 0 || count == 0U || count > BTRFS_MAX_DEVICES) return 0;
+	if (env == 0 || env->alloc == 0 || env->release == 0 || readers == 0 || count == 0U || count > BTRFS_MAX_DEVICES)
+		return 0;
 	for (uint32_t index = 0U; index < count; index++) {
 		if (readers[index].read == 0) return 0;
 	}
@@ -282,7 +314,10 @@ btrfs_fs_t *btrfs_fs_open_devices(const btrfs_env_t *env, const btrfs_reader_t *
 	fs->decompressors[BTRFS_COMPRESS_LZO].ctx = &fs->codec;
 	fs->decompressors[BTRFS_COMPRESS_ZSTD].decompress = btrfs_zstd_decompress;
 	fs->decompressors[BTRFS_COMPRESS_ZSTD].ctx = &fs->codec;
-	memcpy(fs->header_fsid, (fs->super.incompat_flags & BTRFS_FEATURE_INCOMPAT_METADATA_UUID) != 0ULL ? fs->super.metadata_uuid : fs->super.fsid, BTRFS_FSID_SIZE);
+	memcpy(fs->header_fsid,
+		   (fs->super.incompat_flags & BTRFS_FEATURE_INCOMPAT_METADATA_UUID) != 0ULL ? fs->super.metadata_uuid
+																					 : fs->super.fsid,
+		   BTRFS_FSID_SIZE);
 
 	btrfs_cache_init(fs);
 
@@ -321,7 +356,8 @@ fail:
 	return 0;
 }
 
-void btrfs_fs_close(btrfs_fs_t *fs)
+void
+btrfs_fs_close(btrfs_fs_t *fs)
 {
 	if (fs == 0) return;
 
@@ -334,17 +370,26 @@ void btrfs_fs_close(btrfs_fs_t *fs)
 	env.release(env.ctx, fs);
 }
 
-void btrfs_fs_describe(const btrfs_fs_t *fs)
+void
+btrfs_fs_describe(const btrfs_fs_t *fs)
 {
 	if (fs == 0) return;
 
 	char features[128];
 	btrfs_feature_names(fs->super.incompat_flags, fs->super.compat_ro_flags, features, sizeof(features));
 
-	BTRFS_LOG(fs, "label \"%s\", generation %llu, %llu of %llu bytes used", fs->super.label, BTRFS_U64(fs->super.generation), BTRFS_U64(fs->super.bytes_used), BTRFS_U64(fs->super.total_bytes));
-	BTRFS_LOG(fs, "nodesize %u, sectorsize %u, checksum %s, superblock at %llu (%u valid copies)", fs->nodesize, fs->sectorsize, btrfs_csum_type_name(fs->super.csum_type), BTRFS_U64(fs->super_offset), fs->super_copies_valid);
+	BTRFS_LOG(fs, "label \"%s\", generation %llu, %llu of %llu bytes used", fs->super.label,
+			  BTRFS_U64(fs->super.generation), BTRFS_U64(fs->super.bytes_used), BTRFS_U64(fs->super.total_bytes));
+	BTRFS_LOG(fs, "nodesize %u, sectorsize %u, checksum %s, superblock at %llu (%u valid copies)", fs->nodesize,
+			  fs->sectorsize, btrfs_csum_type_name(fs->super.csum_type), BTRFS_U64(fs->super_offset),
+			  fs->super_copies_valid);
 	BTRFS_LOG(fs, "features: %s", features);
-	BTRFS_LOG(fs, "%u chunks, mounted subvolume %llu (default %llu), root tree at %llu level %u", fs->chunks.count, BTRFS_U64(fs->mount_subvol),BTRFS_U64(fs->default_subvol), BTRFS_U64(fs->root_tree.bytenr), (unsigned)fs->root_tree.level);
-	BTRFS_LOG(fs, "tree-block cache %u/%u blocks, %llu hits, %llu misses, %llu evictions", fs->cache.count, fs->cache.limit, BTRFS_U64(fs->cache.hits), BTRFS_U64(fs->cache.misses), BTRFS_U64(fs->cache.evictions));
-	BTRFS_LOG(fs, "device reads %llu (%llu bytes), checksum failures %llu, mirror fallbacks %llu", BTRFS_U64(fs->stats.device_reads), BTRFS_U64(fs->stats.device_bytes), BTRFS_U64(fs->stats.csum_failures), BTRFS_U64(fs->stats.mirror_fallbacks));
+	BTRFS_LOG(fs, "%u chunks, mounted subvolume %llu (default %llu), root tree at %llu level %u", fs->chunks.count,
+			  BTRFS_U64(fs->mount_subvol), BTRFS_U64(fs->default_subvol), BTRFS_U64(fs->root_tree.bytenr),
+			  (unsigned)fs->root_tree.level);
+	BTRFS_LOG(fs, "tree-block cache %u/%u blocks, %llu hits, %llu misses, %llu evictions", fs->cache.count,
+			  fs->cache.limit, BTRFS_U64(fs->cache.hits), BTRFS_U64(fs->cache.misses), BTRFS_U64(fs->cache.evictions));
+	BTRFS_LOG(fs, "device reads %llu (%llu bytes), checksum failures %llu, mirror fallbacks %llu",
+			  BTRFS_U64(fs->stats.device_reads), BTRFS_U64(fs->stats.device_bytes), BTRFS_U64(fs->stats.csum_failures),
+			  BTRFS_U64(fs->stats.mirror_fallbacks));
 }

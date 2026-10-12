@@ -24,10 +24,7 @@ typedef struct file *file_t;
 
 typedef struct filedesc *filedesc_t;
 
-typedef enum {
-	FILE_TYPE_VNODE,
-	FILE_TYPE_SOCKET
-} file_type_t;
+typedef enum { FILE_TYPE_VNODE, FILE_TYPE_SOCKET } file_type_t;
 
 /*
  * struct file
@@ -43,10 +40,12 @@ typedef enum {
  */
 struct file {
 	file_type_t f_type;
+
 	union {
 		vnode_t f_vnode;
 		socket_t f_socket;
 	};
+
 	uint64_t f_offset;
 	uint32_t f_flags;
 	uint32_t f_refcount;

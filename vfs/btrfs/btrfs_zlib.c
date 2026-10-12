@@ -38,12 +38,13 @@ typedef struct {
 } btrfs_inflate_t;
 
 typedef struct {
-	uint16_t count[INFLATE_MAX_BITS + 1U];   /* codes of each length */
-	uint16_t symbol[INFLATE_LIT_CODES];      /* symbols ordered by code */
+	uint16_t count[INFLATE_MAX_BITS + 1U]; /* codes of each length */
+	uint16_t symbol[INFLATE_LIT_CODES];	   /* symbols ordered by code */
 } btrfs_huffman_t;
 
 /* Up to 16 bits (the largest DEFLATE field is 13). */
-static bool btrfs_inflate_bits(btrfs_inflate_t *s, unsigned need, uint32_t *value)
+static bool
+btrfs_inflate_bits(btrfs_inflate_t *s, unsigned need, uint32_t *value)
 {
 	while (s->bitcnt < need) {
 		if (s->in_pos >= s->in_len) return false;
@@ -61,13 +62,16 @@ static bool btrfs_inflate_bits(btrfs_inflate_t *s, unsigned need, uint32_t *valu
  * Build a decoding table from code lengths. Returns the number of unused code
  * space: 0 for a complete code, > 0 for an incomplete one, < 0 if oversubscribed.
  */
-static int btrfs_inflate_construct(btrfs_huffman_t *h, const uint8_t *lengths, unsigned n)
+static int
+btrfs_inflate_construct(btrfs_huffman_t *h, const uint8_t *lengths, unsigned n)
 {
 	uint16_t offsets[INFLATE_MAX_BITS + 1U];
 	int left = 1;
 
-	for (unsigned len = 0U; len <= INFLATE_MAX_BITS; len++) h->count[len] = 0U;
-	for (unsigned symbol = 0U; symbol < n; symbol++) h->count[lengths[symbol]]++;
+	for (unsigned len = 0U; len <= INFLATE_MAX_BITS; len++)
+		h->count[len] = 0U;
+	for (unsigned symbol = 0U; symbol < n; symbol++)
+		h->count[lengths[symbol]]++;
 	if (h->count[0] == n) return 0;
 
 	for (unsigned len = 1U; len <= INFLATE_MAX_BITS; len++) {
@@ -77,7 +81,8 @@ static int btrfs_inflate_construct(btrfs_huffman_t *h, const uint8_t *lengths, u
 	}
 
 	offsets[1] = 0U;
-	for (unsigned len = 1U; len < INFLATE_MAX_BITS; len++) offsets[len + 1U] = (uint16_t)(offsets[len] + h->count[len]);
+	for (unsigned len = 1U; len < INFLATE_MAX_BITS; len++)
+		offsets[len + 1U] = (uint16_t)(offsets[len] + h->count[len]);
 	for (unsigned symbol = 0U; symbol < n; symbol++) {
 		if (lengths[symbol] != 0U) h->symbol[offsets[lengths[symbol]]++] = (uint16_t)symbol;
 	}
@@ -86,7 +91,8 @@ static int btrfs_inflate_construct(btrfs_huffman_t *h, const uint8_t *lengths, u
 }
 
 /* The next symbol, or -1 on a code that is not in the table or on running out of input. */
-static int btrfs_inflate_decode(btrfs_inflate_t *s, const btrfs_huffman_t *h)
+static int
+btrfs_inflate_decode(btrfs_inflate_t *s, const btrfs_huffman_t *h)
 {
 	int code = 0;
 	int first = 0;
@@ -110,21 +116,19 @@ static int btrfs_inflate_decode(btrfs_inflate_t *s, const btrfs_huffman_t *h)
 	return -1;
 }
 
-static const uint16_t btrfs_inflate_length_base[29] = {
-	3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258
-};
-static const uint8_t btrfs_inflate_length_extra[29] = {
-	0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0
-};
-static const uint16_t btrfs_inflate_dist_base[30] = {
-	1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577
-};
-static const uint8_t btrfs_inflate_dist_extra[30] = {
-	0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13
-};
+static const uint16_t btrfs_inflate_length_base[29] = {3,  4,  5,  6,  7,  8,  9,  10, 11,	13,	 15,  17,  19,	23, 27,
+													   31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258};
+static const uint8_t btrfs_inflate_length_extra[29] = {0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2,
+													   2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0};
+static const uint16_t btrfs_inflate_dist_base[30] = {1,	   2,	 3,	   4,	 5,	   7,	 9,	   13,	  17,	 25,
+													 33,   49,	 65,   97,	 129,  193,	 257,  385,	  513,	 769,
+													 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577};
+static const uint8_t btrfs_inflate_dist_extra[30] = {0, 0, 0, 0, 1, 1, 2, 2,  3,  3,  4,  4,  5,  5,  6,
+													 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13};
 
 /* The literal/length + distance symbols of one Huffman-coded block. */
-static bool btrfs_inflate_codes(btrfs_inflate_t *s, const btrfs_huffman_t *lencode, const btrfs_huffman_t *distcode)
+static bool
+btrfs_inflate_codes(btrfs_inflate_t *s, const btrfs_huffman_t *lencode, const btrfs_huffman_t *distcode)
 {
 	for (;;) {
 		int symbol = btrfs_inflate_decode(s, lencode);
@@ -162,7 +166,8 @@ static bool btrfs_inflate_codes(btrfs_inflate_t *s, const btrfs_huffman_t *lenco
 	}
 }
 
-static bool btrfs_inflate_stored(btrfs_inflate_t *s)
+static bool
+btrfs_inflate_stored(btrfs_inflate_t *s)
 {
 	/* Whatever is left of the current byte is dropped. */
 	s->bitbuf = 0U;
@@ -177,31 +182,39 @@ static bool btrfs_inflate_stored(btrfs_inflate_t *s)
 	if (length != (~inverse & 0xffffU)) return false;
 	if (length > s->in_len - s->in_pos || length > s->out_len - s->out_pos) return false;
 
-	for (uint32_t i = 0U; i < length; i++) s->out[s->out_pos++] = s->in[s->in_pos++];
+	for (uint32_t i = 0U; i < length; i++)
+		s->out[s->out_pos++] = s->in[s->in_pos++];
 	return true;
 }
 
-static bool btrfs_inflate_fixed(btrfs_inflate_t *s)
+static bool
+btrfs_inflate_fixed(btrfs_inflate_t *s)
 {
-	static const uint8_t distance_lengths[INFLATE_MAX_DCODES] = { 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5 };
+	static const uint8_t distance_lengths[INFLATE_MAX_DCODES] = {5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+																 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5};
 	btrfs_huffman_t lencode;
 	btrfs_huffman_t distcode;
 	uint8_t lengths[INFLATE_LIT_CODES];
 	unsigned symbol = 0U;
 
-	for (; symbol < 144U; symbol++) lengths[symbol] = 8U;
-	for (; symbol < 256U; symbol++) lengths[symbol] = 9U;
-	for (; symbol < 280U; symbol++) lengths[symbol] = 7U;
-	for (; symbol < INFLATE_LIT_CODES; symbol++) lengths[symbol] = 8U;
+	for (; symbol < 144U; symbol++)
+		lengths[symbol] = 8U;
+	for (; symbol < 256U; symbol++)
+		lengths[symbol] = 9U;
+	for (; symbol < 280U; symbol++)
+		lengths[symbol] = 7U;
+	for (; symbol < INFLATE_LIT_CODES; symbol++)
+		lengths[symbol] = 8U;
 
 	btrfs_inflate_construct(&lencode, lengths, INFLATE_LIT_CODES);
 	btrfs_inflate_construct(&distcode, distance_lengths, INFLATE_MAX_DCODES);
 	return btrfs_inflate_codes(s, &lencode, &distcode);
 }
 
-static bool btrfs_inflate_dynamic(btrfs_inflate_t *s)
+static bool
+btrfs_inflate_dynamic(btrfs_inflate_t *s)
 {
-	static const uint8_t order[19] = { 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15 };
+	static const uint8_t order[19] = {16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
 	btrfs_huffman_t lencode;
 	btrfs_huffman_t distcode;
 	uint8_t lengths[INFLATE_MAX_LCODES + INFLATE_MAX_DCODES + 20U];
@@ -222,7 +235,8 @@ static bool btrfs_inflate_dynamic(btrfs_inflate_t *s)
 		if (!btrfs_inflate_bits(s, 3U, &value)) return false;
 		lengths[order[index]] = (uint8_t)value;
 	}
-	for (; index < 19U; index++) lengths[order[index]] = 0U;
+	for (; index < 19U; index++)
+		lengths[order[index]] = 0U;
 
 	if (btrfs_inflate_construct(&lencode, lengths, 19U) != 0) return false;
 
@@ -253,7 +267,8 @@ static bool btrfs_inflate_dynamic(btrfs_inflate_t *s)
 		}
 
 		if (index + repeat > nlen + ndist) return false;
-		while (repeat-- != 0U) lengths[index++] = len;
+		while (repeat-- != 0U)
+			lengths[index++] = len;
 	}
 
 	/* The end-of-block symbol must be codable. */
@@ -268,7 +283,8 @@ static bool btrfs_inflate_dynamic(btrfs_inflate_t *s)
 	return btrfs_inflate_codes(s, &lencode, &distcode);
 }
 
-static uint32_t btrfs_adler32(const uint8_t *data, size_t length)
+static uint32_t
+btrfs_adler32(const uint8_t *data, size_t length)
 {
 	uint32_t a = 1U;
 	uint32_t b = 0U;
@@ -289,7 +305,8 @@ static uint32_t btrfs_adler32(const uint8_t *data, size_t length)
 	return (b << 16U) | a;
 }
 
-btrfs_status_t btrfs_zlib_decompress(void *ctx, const uint8_t *in, size_t in_len, uint8_t *out, size_t out_len)
+btrfs_status_t
+btrfs_zlib_decompress(void *ctx, const uint8_t *in, size_t in_len, uint8_t *out, size_t out_len)
 {
 	btrfs_inflate_t s;
 	bool last;
@@ -343,12 +360,14 @@ btrfs_status_t btrfs_zlib_decompress(void *ctx, const uint8_t *in, size_t in_len
 	s.bitcnt = 0U;
 	if (in_len - s.in_pos < 4U) return BTRFS_ERR_CORRUPT;
 
-	uint32_t adler = ((uint32_t)in[s.in_pos] << 24U) | ((uint32_t)in[s.in_pos + 1U] << 16U) | ((uint32_t)in[s.in_pos + 2U] << 8U) | in[s.in_pos + 3U];
+	uint32_t adler = ((uint32_t)in[s.in_pos] << 24U) | ((uint32_t)in[s.in_pos + 1U] << 16U) |
+					 ((uint32_t)in[s.in_pos + 2U] << 8U) | in[s.in_pos + 3U];
 	if (adler != btrfs_adler32(out, s.out_pos)) return BTRFS_ERR_CORRUPT;
 
 	if (s.out_pos == 0U) return BTRFS_ERR_CORRUPT;
 
 	/* Btrfs rounds the last extent up to a sector and the stream only holds the file's bytes. */
-	for (size_t i = s.out_pos; i < out_len; i++) out[i] = 0U;
+	for (size_t i = s.out_pos; i < out_len; i++)
+		out[i] = 0U;
 	return BTRFS_OK;
 }

@@ -38,44 +38,40 @@ static vfs_status_t ramfs_create(vnode_t directory, const char *name, vnode_type
 static vfs_status_t ramfs_unlink(vnode_t directory, const char *name);
 static vfs_status_t ramfs_readdir(vnode_t directory, uint64_t *offset, vfs_dirent_t *entry);
 static vfs_status_t ramfs_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint64_t *read_size);
-static vfs_status_t ramfs_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint64_t *written_size);
+static vfs_status_t ramfs_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size,
+								uint64_t *written_size);
 static vfs_status_t ramfs_truncate(vnode_t vnode, uint64_t size);
 
 static const filesystem_operations_t g_ramfs_filesystem_ops = {
-	.mount = ramfs_mount,
-	.sync = ramfs_sync,
-	.unmount = ramfs_unmount
-};
+	.mount = ramfs_mount, .sync = ramfs_sync, .unmount = ramfs_unmount};
 
-static const vnode_operations_t g_ramfs_vnode_ops = {
-	.lookup = ramfs_lookup,
-	.create = ramfs_create,
-	.unlink = ramfs_unlink,
-	.readdir = ramfs_readdir,
-	.read = ramfs_read,
-	.write = ramfs_write,
-	.truncate = ramfs_truncate
-};
+static const vnode_operations_t g_ramfs_vnode_ops = {.lookup = ramfs_lookup,
+													 .create = ramfs_create,
+													 .unlink = ramfs_unlink,
+													 .readdir = ramfs_readdir,
+													 .read = ramfs_read,
+													 .write = ramfs_write,
+													 .truncate = ramfs_truncate};
 
 static struct vfs_filesystem g_ramfs_filesystem = {
-	.fs_name = "ramfs",
-	.fs_ops = &g_ramfs_filesystem_ops,
-	.fs_registered = false
-};
+	.fs_name = "ramfs", .fs_ops = &g_ramfs_filesystem_ops, .fs_registered = false};
 
-static void ramfs_lock(ramfs_mount_data_t *data)
+static void
+ramfs_lock(ramfs_mount_data_t *data)
 {
 	while (__atomic_exchange_n(&data->lock, 1U, __ATOMIC_ACQUIRE) != 0U) {
 		cpu_relax();
 	}
 }
 
-static void ramfs_unlock(ramfs_mount_data_t *data)
+static void
+ramfs_unlock(ramfs_mount_data_t *data)
 {
 	__atomic_store_n(&data->lock, 0U, __ATOMIC_RELEASE);
 }
 
-static bool ramfs_copy_name(char destination[VFS_NAME_MAX + 1U], const char *source)
+static bool
+ramfs_copy_name(char destination[VFS_NAME_MAX + 1U], const char *source)
 {
 	uint32_t index = 0U;
 	while (index <= VFS_NAME_MAX && source[index] != '\0') {
@@ -87,13 +83,15 @@ static bool ramfs_copy_name(char destination[VFS_NAME_MAX + 1U], const char *sou
 	return true;
 }
 
-static ramfs_mount_data_t *ramfs_mount_data(vnode_t vnode)
+static ramfs_mount_data_t *
+ramfs_mount_data(vnode_t vnode)
 {
 	if (vnode == 0 || vnode->v_mount == 0) return 0;
 	return vnode->v_mount->m_data;
 }
 
-static ramfs_node_t *ramfs_node(vnode_t vnode)
+static ramfs_node_t *
+ramfs_node(vnode_t vnode)
 {
 	if (vnode == 0) return 0;
 	return vnode->v_data;
@@ -105,13 +103,8 @@ static ramfs_node_t *ramfs_node(vnode_t vnode)
  * Allocate one resident filesystem node. The vnode's initial reference is
  * the filesystem residency reference and remains held until unmount.
  */
-static ramfs_node_t *ramfs_allocate_node(
-	ramfs_mount_data_t *data,
-	mount_t mount,
-	ramfs_node_t *parent,
-	const char *name,
-	vnode_type_t type
-)
+static ramfs_node_t *
+ramfs_allocate_node(ramfs_mount_data_t *data, mount_t mount, ramfs_node_t *parent, const char *name, vnode_type_t type)
 {
 	ramfs_node_t *node = kcalloc(1U, sizeof(*node));
 	if (node == 0) return 0;
@@ -123,21 +116,15 @@ static ramfs_node_t *ramfs_allocate_node(
 
 	node->parent = parent;
 
-	vnode_init(
-		&node->vnode,
-		mount,
-		parent != 0 ? &parent->vnode : 0,
-		&g_ramfs_vnode_ops,
-		type,
-		data->next_node_id++,
-		node
-	);
+	vnode_init(&node->vnode, mount, parent != 0 ? &parent->vnode : 0, &g_ramfs_vnode_ops, type, data->next_node_id++,
+			   node);
 
 	data->node_count++;
 	return node;
 }
 
-static void ramfs_free_tree(ramfs_node_t *node)
+static void
+ramfs_free_tree(ramfs_node_t *node)
 {
 	if (node == 0) return;
 
@@ -158,7 +145,8 @@ static void ramfs_free_tree(ramfs_node_t *node)
  * Ensure that a regular file can represent required bytes. Growth is
  * geometric so sequential writes do not allocate for every byte range.
  */
-static vfs_status_t ramfs_reserve(ramfs_node_t *node, uint64_t required)
+static vfs_status_t
+ramfs_reserve(ramfs_node_t *node, uint64_t required)
 {
 	if (required <= node->capacity) return VFS_STATUS_OK;
 
@@ -190,7 +178,8 @@ static vfs_status_t ramfs_reserve(ramfs_node_t *node, uint64_t required)
 	return VFS_STATUS_OK;
 }
 
-static vfs_status_t ramfs_mount(filesystem_t filesystem, block_device_t device, mount_t mount)
+static vfs_status_t
+ramfs_mount(filesystem_t filesystem, block_device_t device, mount_t mount)
 {
 	(void)filesystem;
 
@@ -215,13 +204,15 @@ static vfs_status_t ramfs_mount(filesystem_t filesystem, block_device_t device, 
 	return VFS_STATUS_OK;
 }
 
-static vfs_status_t ramfs_sync(mount_t mount)
+static vfs_status_t
+ramfs_sync(mount_t mount)
 {
 	if (mount == 0 || mount->m_data == 0) return VFS_STATUS_INVALID;
 	return VFS_STATUS_OK;
 }
 
-static vfs_status_t ramfs_unmount(mount_t mount)
+static vfs_status_t
+ramfs_unmount(mount_t mount)
 {
 	if (mount == 0 || mount->m_data == 0) return VFS_STATUS_INVALID;
 
@@ -235,7 +226,8 @@ static vfs_status_t ramfs_unmount(mount_t mount)
 	return VFS_STATUS_OK;
 }
 
-static vfs_status_t ramfs_lookup(vnode_t directory, const char *name, vnode_t *result)
+static vfs_status_t
+ramfs_lookup(vnode_t directory, const char *name, vnode_t *result)
 {
 	*result = 0;
 
@@ -309,7 +301,8 @@ ramfs_readdir(vnode_t directory, uint64_t *offset, vfs_dirent_t *entry)
 	return VFS_STATUS_OK;
 }
 
-static vfs_status_t ramfs_create(vnode_t directory, const char *name, vnode_type_t type, vnode_t *result)
+static vfs_status_t
+ramfs_create(vnode_t directory, const char *name, vnode_type_t type, vnode_t *result)
 {
 	*result = 0;
 	if (type != VNODE_TYPE_REGULAR && type != VNODE_TYPE_DIRECTORY) return VFS_STATUS_NOT_SUPPORTED;
@@ -356,7 +349,8 @@ static vfs_status_t ramfs_create(vnode_t directory, const char *name, vnode_type
  * Remove one regular file from a directory. An open vnode is reported busy;
  * deferred deletion is left to a later general VFS lifetime lesson.
  */
-static vfs_status_t ramfs_unlink(vnode_t directory, const char *name)
+static vfs_status_t
+ramfs_unlink(vnode_t directory, const char *name)
 {
 	ramfs_node_t *directory_node = ramfs_node(directory);
 	ramfs_mount_data_t *data = ramfs_mount_data(directory);
@@ -379,8 +373,10 @@ static vfs_status_t ramfs_unlink(vnode_t directory, const char *name)
 					return VFS_STATUS_BUSY;
 				}
 
-				if (previous == 0) directory_node->children = child->next_sibling;
-				else previous->next_sibling = child->next_sibling;
+				if (previous == 0)
+					directory_node->children = child->next_sibling;
+				else
+					previous->next_sibling = child->next_sibling;
 
 				child->vnode.v_active = false;
 				if (child->data != 0) (void)kfree(child->data);
@@ -398,13 +394,8 @@ static vfs_status_t ramfs_unlink(vnode_t directory, const char *name)
 	return VFS_STATUS_NOT_FOUND;
 }
 
-static vfs_status_t ramfs_read(
-	vnode_t vnode,
-	uint64_t offset,
-	void *buffer,
-	uint64_t size,
-	uint64_t *read_size
-)
+static vfs_status_t
+ramfs_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint64_t *read_size)
 {
 	ramfs_node_t *node = ramfs_node(vnode);
 	ramfs_mount_data_t *data = ramfs_mount_data(vnode);
@@ -427,13 +418,8 @@ static vfs_status_t ramfs_read(
 	return VFS_STATUS_OK;
 }
 
-static vfs_status_t ramfs_write(
-	vnode_t vnode,
-	uint64_t offset,
-	const void *buffer,
-	uint64_t size,
-	uint64_t *written_size
-)
+static vfs_status_t
+ramfs_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint64_t *written_size)
 {
 	ramfs_node_t *node = ramfs_node(vnode);
 	ramfs_mount_data_t *data = ramfs_mount_data(vnode);
@@ -469,7 +455,8 @@ static vfs_status_t ramfs_write(
 	return VFS_STATUS_OK;
 }
 
-static vfs_status_t ramfs_truncate(vnode_t vnode, uint64_t size)
+static vfs_status_t
+ramfs_truncate(vnode_t vnode, uint64_t size)
 {
 	ramfs_node_t *node = ramfs_node(vnode);
 	ramfs_mount_data_t *data = ramfs_mount_data(vnode);
@@ -492,7 +479,8 @@ static vfs_status_t ramfs_truncate(vnode_t vnode, uint64_t size)
 	return VFS_STATUS_OK;
 }
 
-bool ramfs_register(void)
+bool
+ramfs_register(void)
 {
 	return vfs_register_filesystem(&g_ramfs_filesystem);
 }

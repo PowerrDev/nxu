@@ -38,26 +38,30 @@
 
 /* ---- helpers -------------------------------------------------------------------- */
 
-static bool btrfs_is_fstree(uint64_t id)
+static bool
+btrfs_is_fstree(uint64_t id)
 {
 	return id == BTRFS_FS_TREE_OBJECTID || (id >= BTRFS_FIRST_FREE_OBJECTID && id <= BTRFS_LAST_FREE_OBJECTID);
 }
 
-static bool btrfs_owner_matches(uint64_t tree_id, uint64_t owner)
+static bool
+btrfs_owner_matches(uint64_t tree_id, uint64_t owner)
 {
 	/* Subvolume trees share blocks with their snapshots, so any fs tree owns them. */
 	if (btrfs_is_fstree(tree_id)) return btrfs_is_fstree(owner);
 	return owner == tree_id;
 }
 
-static uint32_t btrfs_cache_bucket(uint64_t bytenr)
+static uint32_t
+btrfs_cache_bucket(uint64_t bytenr)
 {
 	return (uint32_t)((bytenr >> 12U) ^ (bytenr >> 20U) ^ (bytenr >> 28U)) & (BTRFS_CACHE_BUCKETS - 1U);
 }
 
 /* ---- item accessors ------------------------------------------------------------------ */
 
-bool btrfs_leaf_item(const btrfs_block_t *leaf, uint32_t slot, btrfs_key_t *key, const uint8_t **data, uint32_t *size)
+bool
+btrfs_leaf_item(const btrfs_block_t *leaf, uint32_t slot, btrfs_key_t *key, const uint8_t **data, uint32_t *size)
 {
 	if (leaf == 0 || leaf->level != 0U || slot >= leaf->nritems) return false;
 
@@ -74,7 +78,8 @@ bool btrfs_leaf_item(const btrfs_block_t *leaf, uint32_t slot, btrfs_key_t *key,
 	return true;
 }
 
-bool btrfs_node_slot(const btrfs_block_t *node, uint32_t slot, btrfs_key_t *key, uint64_t *blockptr, uint64_t *generation)
+bool
+btrfs_node_slot(const btrfs_block_t *node, uint32_t slot, btrfs_key_t *key, uint64_t *blockptr, uint64_t *generation)
 {
 	if (node == 0 || node->level == 0U || slot >= node->nritems) return false;
 
@@ -87,14 +92,17 @@ bool btrfs_node_slot(const btrfs_block_t *node, uint32_t slot, btrfs_key_t *key,
 }
 
 /* First key of a block that is known to be verified (nritems > 0). */
-static void btrfs_block_first_key(const btrfs_block_t *block, btrfs_key_t *key)
+static void
+btrfs_block_first_key(const btrfs_block_t *block, btrfs_key_t *key)
 {
 	btrfs_key_read(block->data + BTRFS_HEADER_SIZE, key);
 }
 
 /* ---- verification --------------------------------------------------------------------- */
 
-static btrfs_status_t btrfs_block_verify(const btrfs_fs_t *fs, btrfs_block_t *block, uint64_t bytenr, uint8_t expected_level, uint64_t expected_generation, uint64_t tree_id, bool is_root)
+static btrfs_status_t
+btrfs_block_verify(const btrfs_fs_t *fs, btrfs_block_t *block, uint64_t bytenr, uint8_t expected_level,
+				   uint64_t expected_generation, uint64_t tree_id, bool is_root)
 {
 	const uint8_t *data = block->data;
 	uint32_t size = fs->nodesize;
@@ -115,7 +123,8 @@ static btrfs_status_t btrfs_block_verify(const btrfs_fs_t *fs, btrfs_block_t *bl
 	if (block->level >= BTRFS_MAX_LEVEL || block->level != expected_level) return BTRFS_ERR_CORRUPT;
 	if (expected_generation != 0ULL && block->generation != expected_generation) return BTRFS_ERR_CORRUPT;
 	/* Log tree blocks are written by the transaction that was still open: one generation ahead of the superblock. */
-	if (block->generation > fs->super.generation + (tree_id == BTRFS_TREE_LOG_OBJECTID ? 1ULL : 0ULL)) return BTRFS_ERR_CORRUPT;
+	if (block->generation > fs->super.generation + (tree_id == BTRFS_TREE_LOG_OBJECTID ? 1ULL : 0ULL))
+		return BTRFS_ERR_CORRUPT;
 	if (!btrfs_owner_matches(tree_id, block->owner)) return BTRFS_ERR_CORRUPT;
 
 	uint64_t room = (uint64_t)size - BTRFS_HEADER_SIZE;
@@ -170,7 +179,9 @@ static btrfs_status_t btrfs_block_verify(const btrfs_fs_t *fs, btrfs_block_t *bl
 }
 
 /* The checks that depend on who is asking, re-run for a cache hit. */
-static btrfs_status_t btrfs_block_check_expectations(const btrfs_block_t *block, uint8_t expected_level, uint64_t expected_generation, uint64_t tree_id, const btrfs_key_t *first_key)
+static btrfs_status_t
+btrfs_block_check_expectations(const btrfs_block_t *block, uint8_t expected_level, uint64_t expected_generation,
+							   uint64_t tree_id, const btrfs_key_t *first_key)
 {
 	if (block->level != expected_level) return BTRFS_ERR_CORRUPT;
 	if (expected_generation != 0ULL && block->generation != expected_generation) return BTRFS_ERR_CORRUPT;
@@ -187,7 +198,8 @@ static btrfs_status_t btrfs_block_check_expectations(const btrfs_block_t *block,
 
 /* ---- cache ------------------------------------------------------------------------------ */
 
-void btrfs_cache_init(btrfs_fs_t *fs)
+void
+btrfs_cache_init(btrfs_fs_t *fs)
 {
 	uint32_t limit = fs->options.cache_blocks;
 
@@ -202,19 +214,25 @@ void btrfs_cache_init(btrfs_fs_t *fs)
 	fs->cache.limit = limit;
 }
 
-static void btrfs_cache_unlink_lru(btrfs_cache_t *cache, btrfs_block_t *block)
+static void
+btrfs_cache_unlink_lru(btrfs_cache_t *cache, btrfs_block_t *block)
 {
-	if (block->lru_newer != 0) block->lru_newer->lru_older = block->lru_older;
-	else cache->newest = block->lru_older;
+	if (block->lru_newer != 0)
+		block->lru_newer->lru_older = block->lru_older;
+	else
+		cache->newest = block->lru_older;
 
-	if (block->lru_older != 0) block->lru_older->lru_newer = block->lru_newer;
-	else cache->oldest = block->lru_newer;
+	if (block->lru_older != 0)
+		block->lru_older->lru_newer = block->lru_newer;
+	else
+		cache->oldest = block->lru_newer;
 
 	block->lru_newer = 0;
 	block->lru_older = 0;
 }
 
-static void btrfs_cache_link_newest(btrfs_cache_t *cache, btrfs_block_t *block)
+static void
+btrfs_cache_link_newest(btrfs_cache_t *cache, btrfs_block_t *block)
 {
 	block->lru_newer = 0;
 	block->lru_older = cache->newest;
@@ -223,12 +241,14 @@ static void btrfs_cache_link_newest(btrfs_cache_t *cache, btrfs_block_t *block)
 	if (cache->oldest == 0) cache->oldest = block;
 }
 
-static void btrfs_cache_remove(btrfs_fs_t *fs, btrfs_block_t *block)
+static void
+btrfs_cache_remove(btrfs_fs_t *fs, btrfs_block_t *block)
 {
 	btrfs_cache_t *cache = &fs->cache;
 	btrfs_block_t **link = &cache->buckets[btrfs_cache_bucket(block->bytenr)];
 
-	while (*link != 0 && *link != block) link = &(*link)->hash_next;
+	while (*link != 0 && *link != block)
+		link = &(*link)->hash_next;
 	if (*link == block) *link = block->hash_next;
 
 	btrfs_cache_unlink_lru(cache, block);
@@ -238,7 +258,8 @@ static void btrfs_cache_remove(btrfs_fs_t *fs, btrfs_block_t *block)
 }
 
 /* Drop unpinned blocks, oldest first, until the cache fits its limit. */
-static void btrfs_cache_trim(btrfs_fs_t *fs)
+static void
+btrfs_cache_trim(btrfs_fs_t *fs)
 {
 	btrfs_block_t *block = fs->cache.oldest;
 
@@ -254,14 +275,18 @@ static void btrfs_cache_trim(btrfs_fs_t *fs)
 	}
 }
 
-void btrfs_cache_release(btrfs_fs_t *fs)
+void
+btrfs_cache_release(btrfs_fs_t *fs)
 {
-	while (fs->cache.newest != 0) btrfs_cache_remove(fs, fs->cache.newest);
+	while (fs->cache.newest != 0)
+		btrfs_cache_remove(fs, fs->cache.newest);
 }
 
 /* ---- block get / put --------------------------------------------------------------------- */
 
-static btrfs_status_t btrfs_block_load(btrfs_fs_t *fs, btrfs_block_t *block, uint64_t bytenr, uint8_t expected_level, uint64_t expected_generation, uint64_t tree_id, const btrfs_key_t *first_key, bool is_root)
+static btrfs_status_t
+btrfs_block_load(btrfs_fs_t *fs, btrfs_block_t *block, uint64_t bytenr, uint8_t expected_level,
+				 uint64_t expected_generation, uint64_t tree_id, const btrfs_key_t *first_key, bool is_root)
 {
 	btrfs_mapping_t mapping;
 	btrfs_status_t status = btrfs_map_logical(fs, bytenr, &mapping);
@@ -276,7 +301,8 @@ static btrfs_status_t btrfs_block_load(btrfs_fs_t *fs, btrfs_block_t *block, uin
 
 		if (status == BTRFS_OK) {
 			status = btrfs_block_verify(fs, block, bytenr, expected_level, expected_generation, tree_id, is_root);
-			if (status == BTRFS_OK) status = btrfs_block_check_expectations(block, expected_level, expected_generation, tree_id, first_key);
+			if (status == BTRFS_OK)
+				status = btrfs_block_check_expectations(block, expected_level, expected_generation, tree_id, first_key);
 			if (status == BTRFS_OK) {
 				if (copy != 0U) fs->stats.mirror_fallbacks++;
 				return BTRFS_OK;
@@ -287,13 +313,17 @@ static btrfs_status_t btrfs_block_load(btrfs_fs_t *fs, btrfs_block_t *block, uin
 		BTRFS_LOG(fs, "block %llu copy %u: %s", BTRFS_U64(bytenr), copy, btrfs_status_name(status));
 
 		/* Keep the most telling failure: a checksum failure beats a structural one beats I/O. */
-		if (worst == BTRFS_ERR_IO || status == BTRFS_ERR_CSUM || (worst != BTRFS_ERR_CSUM && status == BTRFS_ERR_CORRUPT)) worst = status;
+		if (worst == BTRFS_ERR_IO || status == BTRFS_ERR_CSUM ||
+			(worst != BTRFS_ERR_CSUM && status == BTRFS_ERR_CORRUPT))
+			worst = status;
 	}
 
 	return worst;
 }
 
-btrfs_status_t btrfs_block_get(btrfs_fs_t *fs, uint64_t bytenr, uint8_t expected_level, uint64_t expected_generation, uint64_t tree_id, const btrfs_key_t *first_key, bool is_root, btrfs_block_t **out)
+btrfs_status_t
+btrfs_block_get(btrfs_fs_t *fs, uint64_t bytenr, uint8_t expected_level, uint64_t expected_generation, uint64_t tree_id,
+				const btrfs_key_t *first_key, bool is_root, btrfs_block_t **out)
 {
 	btrfs_cache_t *cache = &fs->cache;
 
@@ -303,7 +333,8 @@ btrfs_status_t btrfs_block_get(btrfs_fs_t *fs, uint64_t bytenr, uint8_t expected
 	for (btrfs_block_t *block = cache->buckets[btrfs_cache_bucket(bytenr)]; block != 0; block = block->hash_next) {
 		if (block->bytenr != bytenr) continue;
 
-		btrfs_status_t status = btrfs_block_check_expectations(block, expected_level, expected_generation, tree_id, first_key);
+		btrfs_status_t status =
+			btrfs_block_check_expectations(block, expected_level, expected_generation, tree_id, first_key);
 		if (status != BTRFS_OK) return status;
 		if (block->nritems == 0U && !is_root) return BTRFS_ERR_CORRUPT;
 
@@ -327,7 +358,8 @@ btrfs_status_t btrfs_block_get(btrfs_fs_t *fs, uint64_t bytenr, uint8_t expected
 	}
 	block->size = fs->nodesize;
 
-	btrfs_status_t status = btrfs_block_load(fs, block, bytenr, expected_level, expected_generation, tree_id, first_key, is_root);
+	btrfs_status_t status =
+		btrfs_block_load(fs, block, bytenr, expected_level, expected_generation, tree_id, first_key, is_root);
 	if (status != BTRFS_OK) {
 		btrfs_free(fs, block->data);
 		btrfs_free(fs, block);
@@ -348,7 +380,8 @@ btrfs_status_t btrfs_block_get(btrfs_fs_t *fs, uint64_t bytenr, uint8_t expected
 	return BTRFS_OK;
 }
 
-void btrfs_block_put(btrfs_fs_t *fs, btrfs_block_t *block)
+void
+btrfs_block_put(btrfs_fs_t *fs, btrfs_block_t *block)
 {
 	if (block == 0) return;
 	if (block->refs != 0U) block->refs--;
@@ -357,12 +390,14 @@ void btrfs_block_put(btrfs_fs_t *fs, btrfs_block_t *block)
 
 /* ---- paths ---------------------------------------------------------------------------------- */
 
-void btrfs_path_init(btrfs_path_t *path)
+void
+btrfs_path_init(btrfs_path_t *path)
 {
 	memset(path, 0, sizeof(*path));
 }
 
-void btrfs_path_release(btrfs_fs_t *fs, btrfs_path_t *path)
+void
+btrfs_path_release(btrfs_fs_t *fs, btrfs_path_t *path)
 {
 	for (uint32_t level = 0U; level < BTRFS_MAX_LEVEL; level++) {
 		if (path->blocks[level] != 0) btrfs_block_put(fs, path->blocks[level]);
@@ -373,7 +408,8 @@ void btrfs_path_release(btrfs_fs_t *fs, btrfs_path_t *path)
 }
 
 /* First slot of a leaf whose key is >= key (nritems when none). */
-static uint32_t btrfs_leaf_lower_bound(const btrfs_block_t *leaf, const btrfs_key_t *key, bool *exact)
+static uint32_t
+btrfs_leaf_lower_bound(const btrfs_block_t *leaf, const btrfs_key_t *key, bool *exact)
 {
 	uint32_t low = 0U;
 	uint32_t high = leaf->nritems;
@@ -398,7 +434,8 @@ static uint32_t btrfs_leaf_lower_bound(const btrfs_block_t *leaf, const btrfs_ke
 }
 
 /* Last slot of a node whose key is <= key (0 when key precedes them all). */
-static uint32_t btrfs_node_child_slot(const btrfs_block_t *node, const btrfs_key_t *key)
+static uint32_t
+btrfs_node_child_slot(const btrfs_block_t *node, const btrfs_key_t *key)
 {
 	uint32_t low = 0U;
 	uint32_t high = node->nritems;
@@ -408,21 +445,25 @@ static uint32_t btrfs_node_child_slot(const btrfs_block_t *node, const btrfs_key
 		btrfs_key_t found;
 		btrfs_key_read(node->data + BTRFS_HEADER_SIZE + (size_t)middle * BTRFS_KEY_PTR_SIZE, &found);
 
-		if (btrfs_key_cmp(&found, key) <= 0) low = middle + 1U;
-		else high = middle;
+		if (btrfs_key_cmp(&found, key) <= 0)
+			low = middle + 1U;
+		else
+			high = middle;
 	}
 
 	return low == 0U ? 0U : low - 1U;
 }
 
-btrfs_status_t btrfs_tree_search(btrfs_fs_t *fs, const btrfs_tree_t *tree, const btrfs_key_t *key, btrfs_path_t *path, bool *exact)
+btrfs_status_t
+btrfs_tree_search(btrfs_fs_t *fs, const btrfs_tree_t *tree, const btrfs_key_t *key, btrfs_path_t *path, bool *exact)
 {
 	btrfs_path_release(fs, path);
 	path->tree_id = tree->objectid;
 	path->root_level = tree->level;
 
 	btrfs_block_t *block;
-	btrfs_status_t status = btrfs_block_get(fs, tree->bytenr, tree->level, tree->generation, tree->objectid, 0, true, &block);
+	btrfs_status_t status =
+		btrfs_block_get(fs, tree->bytenr, tree->level, tree->generation, tree->objectid, 0, true, &block);
 	if (status != BTRFS_OK) return status;
 
 	for (;;) {
@@ -449,7 +490,8 @@ btrfs_status_t btrfs_tree_search(btrfs_fs_t *fs, const btrfs_tree_t *tree, const
 		}
 
 		btrfs_block_t *next;
-		status = btrfs_block_get(fs, child, (uint8_t)(level - 1U), generation, tree->objectid, &child_key, false, &next);
+		status =
+			btrfs_block_get(fs, child, (uint8_t)(level - 1U), generation, tree->objectid, &child_key, false, &next);
 		if (status != BTRFS_OK) {
 			btrfs_path_release(fs, path);
 			return status;
@@ -464,7 +506,8 @@ btrfs_status_t btrfs_tree_search(btrfs_fs_t *fs, const btrfs_tree_t *tree, const
  * step past the last slot of a leaf and to normalise a search that landed
  * beyond it. On error the path must be released.
  */
-static btrfs_status_t btrfs_path_next_leaf(btrfs_fs_t *fs, btrfs_path_t *path, const btrfs_key_t *before, bool have_before)
+static btrfs_status_t
+btrfs_path_next_leaf(btrfs_fs_t *fs, btrfs_path_t *path, const btrfs_key_t *before, bool have_before)
 {
 	uint32_t level = 1U;
 
@@ -480,9 +523,11 @@ static btrfs_status_t btrfs_path_next_leaf(btrfs_fs_t *fs, btrfs_path_t *path, c
 				uint64_t generation;
 				btrfs_block_t *next;
 
-				if (!btrfs_node_slot(path->blocks[l], path->slots[l], &child_key, &child, &generation)) return BTRFS_ERR_CORRUPT;
+				if (!btrfs_node_slot(path->blocks[l], path->slots[l], &child_key, &child, &generation))
+					return BTRFS_ERR_CORRUPT;
 
-				btrfs_status_t status = btrfs_block_get(fs, child, (uint8_t)(l - 1U), generation, path->tree_id, &child_key, false, &next);
+				btrfs_status_t status =
+					btrfs_block_get(fs, child, (uint8_t)(l - 1U), generation, path->tree_id, &child_key, false, &next);
 				if (status != BTRFS_OK) return status;
 
 				btrfs_block_put(fs, path->blocks[l - 1U]);
@@ -507,7 +552,8 @@ static btrfs_status_t btrfs_path_next_leaf(btrfs_fs_t *fs, btrfs_path_t *path, c
 	return BTRFS_ERR_END;
 }
 
-btrfs_status_t btrfs_path_next(btrfs_fs_t *fs, btrfs_path_t *path)
+btrfs_status_t
+btrfs_path_next(btrfs_fs_t *fs, btrfs_path_t *path)
 {
 	if (!path->valid || path->blocks[0] == 0) return BTRFS_ERR_INVALID;
 
@@ -528,7 +574,8 @@ btrfs_status_t btrfs_path_next(btrfs_fs_t *fs, btrfs_path_t *path)
 	return status;
 }
 
-btrfs_status_t btrfs_path_prev(btrfs_fs_t *fs, btrfs_path_t *path)
+btrfs_status_t
+btrfs_path_prev(btrfs_fs_t *fs, btrfs_path_t *path)
 {
 	if (!path->valid || path->blocks[0] == 0) return BTRFS_ERR_INVALID;
 
@@ -558,7 +605,8 @@ btrfs_status_t btrfs_path_prev(btrfs_fs_t *fs, btrfs_path_t *path)
 					return BTRFS_ERR_CORRUPT;
 				}
 
-				btrfs_status_t status = btrfs_block_get(fs, child, (uint8_t)(l - 1U), generation, path->tree_id, &child_key, false, &next);
+				btrfs_status_t status =
+					btrfs_block_get(fs, child, (uint8_t)(l - 1U), generation, path->tree_id, &child_key, false, &next);
 				if (status != BTRFS_OK) {
 					path->valid = false;
 					return status;
@@ -571,7 +619,8 @@ btrfs_status_t btrfs_path_prev(btrfs_fs_t *fs, btrfs_path_t *path)
 
 			if (have_before) {
 				btrfs_key_t last;
-				if (!btrfs_leaf_item(path->blocks[0], path->slots[0], &last, 0, 0) || btrfs_key_cmp(&last, &before) >= 0) {
+				if (!btrfs_leaf_item(path->blocks[0], path->slots[0], &last, 0, 0) ||
+					btrfs_key_cmp(&last, &before) >= 0) {
 					path->valid = false;
 					return BTRFS_ERR_CORRUPT;
 				}
@@ -586,13 +635,15 @@ btrfs_status_t btrfs_path_prev(btrfs_fs_t *fs, btrfs_path_t *path)
 	return BTRFS_ERR_END;
 }
 
-bool btrfs_path_item(const btrfs_path_t *path, btrfs_key_t *key, const uint8_t **data, uint32_t *size)
+bool
+btrfs_path_item(const btrfs_path_t *path, btrfs_key_t *key, const uint8_t **data, uint32_t *size)
 {
 	if (!path->valid || path->blocks[0] == 0) return false;
 	return btrfs_leaf_item(path->blocks[0], path->slots[0], key, data, size);
 }
 
-btrfs_status_t btrfs_tree_search_ge(btrfs_fs_t *fs, const btrfs_tree_t *tree, const btrfs_key_t *key, btrfs_path_t *path, bool *exact)
+btrfs_status_t
+btrfs_tree_search_ge(btrfs_fs_t *fs, const btrfs_tree_t *tree, const btrfs_key_t *key, btrfs_path_t *path, bool *exact)
 {
 	bool found;
 	btrfs_status_t status = btrfs_tree_search(fs, tree, key, path, &found);
@@ -612,7 +663,8 @@ btrfs_status_t btrfs_tree_search_ge(btrfs_fs_t *fs, const btrfs_tree_t *tree, co
 	return BTRFS_OK;
 }
 
-btrfs_status_t btrfs_tree_search_le(btrfs_fs_t *fs, const btrfs_tree_t *tree, const btrfs_key_t *key, btrfs_path_t *path, bool *exact)
+btrfs_status_t
+btrfs_tree_search_le(btrfs_fs_t *fs, const btrfs_tree_t *tree, const btrfs_key_t *key, btrfs_path_t *path, bool *exact)
 {
 	bool found;
 	btrfs_status_t status = btrfs_tree_search(fs, tree, key, path, &found);
@@ -625,7 +677,8 @@ btrfs_status_t btrfs_tree_search_le(btrfs_fs_t *fs, const btrfs_tree_t *tree, co
 	return btrfs_path_prev(fs, path);
 }
 
-btrfs_status_t btrfs_tree_lookup(btrfs_fs_t *fs, const btrfs_tree_t *tree, const btrfs_key_t *key, btrfs_path_t *path)
+btrfs_status_t
+btrfs_tree_lookup(btrfs_fs_t *fs, const btrfs_tree_t *tree, const btrfs_key_t *key, btrfs_path_t *path)
 {
 	bool found;
 	btrfs_status_t status = btrfs_tree_search(fs, tree, key, path, &found);

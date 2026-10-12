@@ -16,38 +16,24 @@
  * kernel reaches user memory through this software walk, so it has to do
  * what the MMU would have asked the fault handler to do.
  */
-static bool vm_user_copy_page(
-	const vm_address_space_t *space,
-	uint64_t page_address,
-	bool write,
-	vm_user_page_mapping_t *mapping
-)
+static bool
+vm_user_copy_page(const vm_address_space_t *space, uint64_t page_address, bool write, vm_user_page_mapping_t *mapping)
 {
-	if (
-		vm_address_space_query_page(space, page_address, mapping) &&
-		(!write || mapping->protection == VM_USER_PROTECTION_READ_WRITE)
-	) {
+	if (vm_address_space_query_page(space, page_address, mapping) &&
+		(!write || mapping->protection == VM_USER_PROTECTION_READ_WRITE)) {
 		return true;
 	}
 
-	if (!vm_fault_user(
-		(vm_address_space_t *)space,
-		page_address,
-		write ? VM_FAULT_WRITE : VM_FAULT_READ
-	)) {
+	if (!vm_fault_user((vm_address_space_t *)space, page_address, write ? VM_FAULT_WRITE : VM_FAULT_READ)) {
 		return false;
 	}
 
-	return
-		vm_address_space_query_page(space, page_address, mapping) &&
-		(!write || mapping->protection == VM_USER_PROTECTION_READ_WRITE);
+	return vm_address_space_query_page(space, page_address, mapping) &&
+		   (!write || mapping->protection == VM_USER_PROTECTION_READ_WRITE);
 }
 
-bool vm_copy_from_user(
-	void *destination,
-	uint64_t user_address,
-	uint64_t size
-)
+bool
+vm_copy_from_user(void *destination, uint64_t user_address, uint64_t size)
 {
 	if (size == 0ULL) {
 		return true;
@@ -82,10 +68,7 @@ bool vm_copy_from_user(
 
 		uint64_t remaining = size - copied;
 
-		uint64_t chunk_size =
-			remaining < remaining_in_page
-				? remaining
-				: remaining_in_page;
+		uint64_t chunk_size = remaining < remaining_in_page ? remaining : remaining_in_page;
 
 		vm_user_page_mapping_t mapping;
 
@@ -95,10 +78,7 @@ bool vm_copy_from_user(
 
 		uint64_t kernel_address;
 
-		if (!vmm_physical_to_higher_half(
-			mapping.physical_address,
-			&kernel_address
-		)) {
+		if (!vmm_physical_to_higher_half(mapping.physical_address, &kernel_address)) {
 			return false;
 		}
 
@@ -112,11 +92,8 @@ bool vm_copy_from_user(
 	return true;
 }
 
-bool vm_copy_to_user(
-	uint64_t user_address,
-	const void *source,
-	uint64_t size
-)
+bool
+vm_copy_to_user(uint64_t user_address, const void *source, uint64_t size)
 {
 	if (size == 0ULL) {
 		return true;
@@ -151,10 +128,7 @@ bool vm_copy_to_user(
 
 		uint64_t remaining = size - copied;
 
-		uint64_t chunk_size =
-			remaining < remaining_in_page
-				? remaining
-				: remaining_in_page;
+		uint64_t chunk_size = remaining < remaining_in_page ? remaining : remaining_in_page;
 
 		vm_user_page_mapping_t mapping;
 
@@ -164,10 +138,7 @@ bool vm_copy_to_user(
 
 		uint64_t kernel_address;
 
-		if (!vmm_physical_to_higher_half(
-			mapping.physical_address,
-			&kernel_address
-		)) {
+		if (!vmm_physical_to_higher_half(mapping.physical_address, &kernel_address)) {
 			return false;
 		}
 

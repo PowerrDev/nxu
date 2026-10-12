@@ -16,7 +16,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-static bool btrfs_host_file_read(void *ctx, uint64_t offset, void *buffer, size_t length)
+static bool
+btrfs_host_file_read(void *ctx, uint64_t offset, void *buffer, size_t length)
 {
 	btrfs_host_file_reader_t *file = ctx;
 	uint8_t *out = buffer;
@@ -35,7 +36,8 @@ static bool btrfs_host_file_read(void *ctx, uint64_t offset, void *buffer, size_
 	return true;
 }
 
-bool btrfs_host_file_reader_open(btrfs_host_file_reader_t *file, btrfs_reader_t *reader, const char *path)
+bool
+btrfs_host_file_reader_open(btrfs_host_file_reader_t *file, btrfs_reader_t *reader, const char *path)
 {
 	struct stat st;
 
@@ -55,7 +57,8 @@ bool btrfs_host_file_reader_open(btrfs_host_file_reader_t *file, btrfs_reader_t 
 	return true;
 }
 
-void btrfs_host_file_reader_close(btrfs_host_file_reader_t *file)
+void
+btrfs_host_file_reader_close(btrfs_host_file_reader_t *file)
 {
 	if (file->fd >= 0) close(file->fd);
 	file->fd = -1;
@@ -64,7 +67,8 @@ void btrfs_host_file_reader_close(btrfs_host_file_reader_t *file)
 /* Each allocation carries a size header so the free can keep the counters. */
 #define BTRFS_HOST_HEADER 16U
 
-static void *btrfs_host_alloc(void *ctx, size_t size)
+static void *
+btrfs_host_alloc(void *ctx, size_t size)
 {
 	btrfs_host_env_t *host = ctx;
 
@@ -80,7 +84,8 @@ static void *btrfs_host_alloc(void *ctx, size_t size)
 	return block + BTRFS_HOST_HEADER;
 }
 
-static void btrfs_host_release(void *ctx, void *pointer)
+static void
+btrfs_host_release(void *ctx, void *pointer)
 {
 	btrfs_host_env_t *host = ctx;
 	uint8_t *block = (uint8_t *)pointer - BTRFS_HOST_HEADER;
@@ -90,14 +95,16 @@ static void btrfs_host_release(void *ctx, void *pointer)
 	free(block);
 }
 
-static void btrfs_host_log(void *ctx, const char *line)
+static void
+btrfs_host_log(void *ctx, const char *line)
 {
 	btrfs_host_env_t *host = ctx;
 
 	if (host->verbose && !host->quiet) fprintf(stderr, "btrfs: %s\n", line);
 }
 
-void btrfs_host_env_init(btrfs_host_env_t *host, btrfs_env_t *env)
+void
+btrfs_host_env_init(btrfs_host_env_t *host, btrfs_env_t *env)
 {
 	memset(host, 0, sizeof(*host));
 	env->ctx = host;

@@ -29,7 +29,7 @@
 #include "btrfs_fs.h"
 
 typedef struct {
-	btrfs_block_t *blocks[BTRFS_MAX_LEVEL];   /* indexed by level, 0 is the leaf */
+	btrfs_block_t *blocks[BTRFS_MAX_LEVEL]; /* indexed by level, 0 is the leaf */
 	uint32_t slots[BTRFS_MAX_LEVEL];
 	uint64_t tree_id;
 	uint8_t root_level;
@@ -48,12 +48,14 @@ void btrfs_cache_release(btrfs_fs_t *fs);
  * first_key, if non-NULL, must equal the block's first key; is_root permits an
  * empty leaf. The block is pinned: release it with btrfs_block_put().
  */
-btrfs_status_t btrfs_block_get(btrfs_fs_t *fs, uint64_t bytenr, uint8_t expected_level, uint64_t expected_generation, uint64_t tree_id, const btrfs_key_t *first_key, bool is_root, btrfs_block_t **out);
+btrfs_status_t btrfs_block_get(btrfs_fs_t *fs, uint64_t bytenr, uint8_t expected_level, uint64_t expected_generation,
+							   uint64_t tree_id, const btrfs_key_t *first_key, bool is_root, btrfs_block_t **out);
 void btrfs_block_put(btrfs_fs_t *fs, btrfs_block_t *block);
 
 /* Item accessors. All are bounds-safe for any slot below nritems. */
 bool btrfs_leaf_item(const btrfs_block_t *leaf, uint32_t slot, btrfs_key_t *key, const uint8_t **data, uint32_t *size);
-bool btrfs_node_slot(const btrfs_block_t *node, uint32_t slot, btrfs_key_t *key, uint64_t *blockptr, uint64_t *generation);
+bool btrfs_node_slot(const btrfs_block_t *node, uint32_t slot, btrfs_key_t *key, uint64_t *blockptr,
+					 uint64_t *generation);
 
 /* ---- paths ---------------------------------------------------------------------------- */
 
@@ -66,13 +68,16 @@ void btrfs_path_release(btrfs_fs_t *fs, btrfs_path_t *path);
  * use the _ge/_le forms to get an actual item). *exact (optional) tells whether
  * that item's key equals key.
  */
-btrfs_status_t btrfs_tree_search(btrfs_fs_t *fs, const btrfs_tree_t *tree, const btrfs_key_t *key, btrfs_path_t *path, bool *exact);
+btrfs_status_t btrfs_tree_search(btrfs_fs_t *fs, const btrfs_tree_t *tree, const btrfs_key_t *key, btrfs_path_t *path,
+								 bool *exact);
 
 /* First item >= key. BTRFS_ERR_END if there is none. */
-btrfs_status_t btrfs_tree_search_ge(btrfs_fs_t *fs, const btrfs_tree_t *tree, const btrfs_key_t *key, btrfs_path_t *path, bool *exact);
+btrfs_status_t btrfs_tree_search_ge(btrfs_fs_t *fs, const btrfs_tree_t *tree, const btrfs_key_t *key,
+									btrfs_path_t *path, bool *exact);
 
 /* Last item <= key. BTRFS_ERR_END if there is none. */
-btrfs_status_t btrfs_tree_search_le(btrfs_fs_t *fs, const btrfs_tree_t *tree, const btrfs_key_t *key, btrfs_path_t *path, bool *exact);
+btrfs_status_t btrfs_tree_search_le(btrfs_fs_t *fs, const btrfs_tree_t *tree, const btrfs_key_t *key,
+									btrfs_path_t *path, bool *exact);
 
 /* The item with exactly this key, else BTRFS_ERR_NOT_FOUND. */
 btrfs_status_t btrfs_tree_lookup(btrfs_fs_t *fs, const btrfs_tree_t *tree, const btrfs_key_t *key, btrfs_path_t *path);

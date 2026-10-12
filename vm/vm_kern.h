@@ -26,28 +26,19 @@ bool vm_kern_init(void);
  * The returned address is aligned to PMM_PAGE_SIZE. The requested
  * size is rounded upward to a complete number of pages.
  */
-bool vm_kern_allocate(
-	size_t size,
-	vmm_protection_t protection,
-	void **address
-);
+bool vm_kern_allocate(size_t size, vmm_protection_t protection, void **address);
 
 /*
  * Release a range previously returned by vm_kern_allocate().
  *
  * The address and size must match the original allocation.
  */
-bool vm_kern_free(
-	void *address,
-	size_t size
-);
+bool vm_kern_free(void *address, size_t size);
 
 /*
  * Return whether an address is inside the kernel virtual arena.
  */
-bool vm_kern_contains(
-	const void *address
-);
+bool vm_kern_contains(const void *address);
 
 uint64_t vm_kern_get_total_pages(void);
 uint64_t vm_kern_get_used_pages(void);

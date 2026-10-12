@@ -27,9 +27,9 @@ typedef struct {
 	uint64_t live_allocations;
 	uint64_t live_bytes;
 	uint64_t total_allocations;
-	uint64_t fail_after;       /* fail the Nth allocation from now (0: never) */
-	bool quiet;                /* drop log lines */
-	bool verbose;              /* print log lines to stderr */
+	uint64_t fail_after; /* fail the Nth allocation from now (0: never) */
+	bool quiet;			 /* drop log lines */
+	bool verbose;		 /* print log lines to stderr */
 } btrfs_host_env_t;
 
 void btrfs_host_env_init(btrfs_host_env_t *host, btrfs_env_t *env);

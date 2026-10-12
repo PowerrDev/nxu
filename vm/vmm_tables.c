@@ -22,15 +22,14 @@
  */
 static nxu_rlock_t g_vmm_lock = NXU_RLOCK_INIT;
 
-uint64_t vmm_index(uint64_t address, uint32_t shift)
+uint64_t
+vmm_index(uint64_t address, uint32_t shift)
 {
 	return (address >> shift) & VMM_INDEX_MASK;
 }
 
-bool vmm_table_pointer_from_physical(
-	uint64_t physical_address,
-	uint64_t **table
-)
+bool
+vmm_table_pointer_from_physical(uint64_t physical_address, uint64_t **table)
 {
 	if (table == 0 || !vmm_physical_page_valid(physical_address)) {
 		return false;
@@ -43,10 +42,7 @@ bool vmm_table_pointer_from_physical(
 
 	uint64_t virtual_address;
 
-	if (!vmm_physical_to_higher_half(
-		physical_address,
-		&virtual_address
-	)) {
+	if (!vmm_physical_to_higher_half(physical_address, &virtual_address)) {
 		return false;
 	}
 
@@ -54,11 +50,8 @@ bool vmm_table_pointer_from_physical(
 	return true;
 }
 
-bool vmm_allocate_table(
-	uint64_t **table,
-	uint64_t *physical,
-	uint64_t *table_count
-)
+bool
+vmm_allocate_table(uint64_t **table, uint64_t *physical, uint64_t *table_count)
 {
 	if (table == 0 || physical == 0 || table_count == 0) {
 		return false;
@@ -89,20 +82,10 @@ bool vmm_allocate_table(
  * Resolve one intermediate level. Used at L1 and L2, where a valid
  * descriptor must be a table descriptor: existing blocks are never split.
  */
-static bool vmm_root_next_table(
-	uint64_t *table,
-	uint64_t index,
-	bool create,
-	uint64_t *table_count,
-	uint64_t **next_table
-)
+static bool
+vmm_root_next_table(uint64_t *table, uint64_t index, bool create, uint64_t *table_count, uint64_t **next_table)
 {
-	if (
-		table == 0 ||
-		table_count == 0 ||
-		next_table == 0 ||
-		index >= VMM_TABLE_ENTRY_COUNT
-	) {
+	if (table == 0 || table_count == 0 || next_table == 0 || index >= VMM_TABLE_ENTRY_COUNT) {
 		return false;
 	}
 
@@ -113,10 +96,7 @@ static bool vmm_root_next_table(
 			return false;
 		}
 
-		return vmm_table_pointer_from_physical(
-			descriptor & VMM_DESC_ADDRESS_MASK,
-			next_table
-		);
+		return vmm_table_pointer_from_physical(descriptor & VMM_DESC_ADDRESS_MASK, next_table);
 	}
 
 	if (!create) {
@@ -142,28 +122,18 @@ static bool vmm_root_next_table(
 	return true;
 }
 
-static bool vmm_root_get_l2_table(
-	uint64_t *root,
-	uint64_t virtual_address,
-	bool create,
-	uint64_t *table_count,
-	uint64_t **level2
-)
+static bool
+vmm_root_get_l2_table(uint64_t *root, uint64_t virtual_address, bool create, uint64_t *table_count, uint64_t **level2)
 {
 	if (root == 0 || table_count == 0 || level2 == 0) {
 		return false;
 	}
 
-	return vmm_root_next_table(
-		root,
-		vmm_index(virtual_address, VMM_L1_SHIFT),
-		create,
-		table_count,
-		level2
-	);
+	return vmm_root_next_table(root, vmm_index(virtual_address, VMM_L1_SHIFT), create, table_count, level2);
 }
 
-static bool vmm_install_descriptor(uint64_t *entry, uint64_t descriptor)
+static bool
+vmm_install_descriptor(uint64_t *entry, uint64_t descriptor)
 {
 	if (entry == 0) {
 		return false;
@@ -177,13 +147,8 @@ static bool vmm_install_descriptor(uint64_t *entry, uint64_t descriptor)
 	return *entry == descriptor;
 }
 
-bool vmm_root_get_l3_entry(
-	uint64_t *root,
-	uint64_t virtual_address,
-	bool create,
-	uint64_t *table_count,
-	uint64_t **entry
-)
+bool
+vmm_root_get_l3_entry(uint64_t *root, uint64_t virtual_address, bool create, uint64_t *table_count, uint64_t **entry)
 {
 	if (root == 0 || table_count == 0 || entry == 0) {
 		return false;
@@ -191,25 +156,13 @@ bool vmm_root_get_l3_entry(
 
 	uint64_t *level2;
 
-	if (!vmm_root_next_table(
-		root,
-		vmm_index(virtual_address, VMM_L1_SHIFT),
-		create,
-		table_count,
-		&level2
-	)) {
+	if (!vmm_root_next_table(root, vmm_index(virtual_address, VMM_L1_SHIFT), create, table_count, &level2)) {
 		return false;
 	}
 
 	uint64_t *level3;
 
-	if (!vmm_root_next_table(
-		level2,
-		vmm_index(virtual_address, VMM_L2_SHIFT),
-		create,
-		table_count,
-		&level3
-	)) {
+	if (!vmm_root_next_table(level2, vmm_index(virtual_address, VMM_L2_SHIFT), create, table_count, &level3)) {
 		return false;
 	}
 
@@ -218,11 +171,8 @@ bool vmm_root_get_l3_entry(
 	return true;
 }
 
-bool vmm_attributes(
-	vmm_memory_type_t type,
-	vmm_protection_t protection,
-	uint64_t *attributes
-)
+bool
+vmm_attributes(vmm_memory_type_t type, vmm_protection_t protection, uint64_t *attributes)
 {
 	if (attributes == 0) {
 		return false;
@@ -238,12 +188,7 @@ bool vmm_attributes(
 			return false;
 		}
 
-		result =
-			VMM_DESC_ATTR(VMM_MAIR_DEVICE_INDEX) |
-			VMM_DESC_SH_OUTER |
-			VMM_DESC_AF |
-			VMM_DESC_PXN |
-			VMM_DESC_UXN;
+		result = VMM_DESC_ATTR(VMM_MAIR_DEVICE_INDEX) | VMM_DESC_SH_OUTER | VMM_DESC_AF | VMM_DESC_PXN | VMM_DESC_UXN;
 
 		if (protection == VMM_PROTECTION_READ_ONLY) {
 			result |= VMM_DESC_AP_READ_ONLY;
@@ -254,11 +199,7 @@ bool vmm_attributes(
 		return true;
 	}
 
-	result =
-		VMM_DESC_ATTR(VMM_MAIR_NORMAL_INDEX) |
-		VMM_DESC_SH_INNER |
-		VMM_DESC_AF |
-		VMM_DESC_UXN;
+	result = VMM_DESC_ATTR(VMM_MAIR_NORMAL_INDEX) | VMM_DESC_SH_INNER | VMM_DESC_AF | VMM_DESC_UXN;
 
 	switch (protection) {
 	case VMM_PROTECTION_READ_WRITE:
@@ -294,15 +235,9 @@ bool vmm_attributes(
 	return true;
 }
 
-bool vmm_root_map_range(
-	uint64_t *root,
-	uint64_t virtual_address,
-	uint64_t physical_address,
-	uint64_t size,
-	vmm_memory_type_t memory_type,
-	vmm_protection_t protection,
-	uint64_t *table_count
-)
+bool
+vmm_root_map_range(uint64_t *root, uint64_t virtual_address, uint64_t physical_address, uint64_t size,
+				   vmm_memory_type_t memory_type, vmm_protection_t protection, uint64_t *table_count)
 {
 	if (root == 0 || table_count == 0) {
 		return false;
@@ -312,18 +247,12 @@ bool vmm_root_map_range(
 		return true;
 	}
 
-	if (
-		(virtual_address & (VMM_L3_SIZE - 1ULL)) != 0ULL ||
-		(physical_address & (VMM_L3_SIZE - 1ULL)) != 0ULL ||
-		(size & (VMM_L3_SIZE - 1ULL)) != 0ULL
-	) {
+	if ((virtual_address & (VMM_L3_SIZE - 1ULL)) != 0ULL || (physical_address & (VMM_L3_SIZE - 1ULL)) != 0ULL ||
+		(size & (VMM_L3_SIZE - 1ULL)) != 0ULL) {
 		return false;
 	}
 
-	if (
-		virtual_address > UINT64_MAX - size ||
-		physical_address > UINT64_MAX - size
-	) {
+	if (virtual_address > UINT64_MAX - size || physical_address > UINT64_MAX - size) {
 		return false;
 	}
 
@@ -337,16 +266,12 @@ bool vmm_root_map_range(
 
 	while (remaining > 0ULL) {
 		bool l1_aligned =
-			(virtual_address & (VMM_L1_SIZE - 1ULL)) == 0ULL &&
-			(physical_address & (VMM_L1_SIZE - 1ULL)) == 0ULL;
+			(virtual_address & (VMM_L1_SIZE - 1ULL)) == 0ULL && (physical_address & (VMM_L1_SIZE - 1ULL)) == 0ULL;
 
 		if (l1_aligned && remaining >= VMM_L1_SIZE) {
 			uint64_t *entry = &root[vmm_index(virtual_address, VMM_L1_SHIFT)];
 
-			uint64_t descriptor =
-				(physical_address & VMM_DESC_ADDRESS_MASK) |
-				attributes |
-				VMM_DESC_BLOCK;
+			uint64_t descriptor = (physical_address & VMM_DESC_ADDRESS_MASK) | attributes | VMM_DESC_BLOCK;
 
 			if ((*entry & VMM_DESC_VALID) == 0ULL || *entry == descriptor) {
 				if (!vmm_install_descriptor(entry, descriptor)) {
@@ -366,32 +291,19 @@ bool vmm_root_map_range(
 
 		uint64_t *level2;
 
-		if (!vmm_root_get_l2_table(
-			root,
-			virtual_address,
-			true,
-			table_count,
-			&level2
-		)) {
+		if (!vmm_root_get_l2_table(root, virtual_address, true, table_count, &level2)) {
 			return false;
 		}
 
 		bool l2_aligned =
-			(virtual_address & (VMM_L2_SIZE - 1ULL)) == 0ULL &&
-			(physical_address & (VMM_L2_SIZE - 1ULL)) == 0ULL;
+			(virtual_address & (VMM_L2_SIZE - 1ULL)) == 0ULL && (physical_address & (VMM_L2_SIZE - 1ULL)) == 0ULL;
 
 		uint64_t *level2_entry = &level2[vmm_index(virtual_address, VMM_L2_SHIFT)];
 
 		if (l2_aligned && remaining >= VMM_L2_SIZE) {
-			uint64_t descriptor =
-				(physical_address & VMM_DESC_ADDRESS_MASK) |
-				attributes |
-				VMM_DESC_BLOCK;
+			uint64_t descriptor = (physical_address & VMM_DESC_ADDRESS_MASK) | attributes | VMM_DESC_BLOCK;
 
-			if (
-				(*level2_entry & VMM_DESC_VALID) == 0ULL ||
-				*level2_entry == descriptor
-			) {
+			if ((*level2_entry & VMM_DESC_VALID) == 0ULL || *level2_entry == descriptor) {
 				if (!vmm_install_descriptor(level2_entry, descriptor)) {
 					return false;
 				}
@@ -402,34 +314,20 @@ bool vmm_root_map_range(
 				continue;
 			}
 
-			if (
-				(*level2_entry & VMM_DESC_TYPE_MASK) !=
-				VMM_DESC_TABLE_PAGE
-			) {
+			if ((*level2_entry & VMM_DESC_TYPE_MASK) != VMM_DESC_TABLE_PAGE) {
 				return false;
 			}
 		}
 
 		uint64_t *entry;
 
-		if (!vmm_root_get_l3_entry(
-			root,
-			virtual_address,
-			true,
-			table_count,
-			&entry
-		)) {
+		if (!vmm_root_get_l3_entry(root, virtual_address, true, table_count, &entry)) {
 			return false;
 		}
 
 		uint64_t descriptor;
 
-		if (!vmm_make_page_descriptor(
-			physical_address,
-			memory_type,
-			protection,
-			&descriptor
-		)) {
+		if (!vmm_make_page_descriptor(physical_address, memory_type, protection, &descriptor)) {
 			return false;
 		}
 
@@ -447,34 +345,31 @@ bool vmm_root_map_range(
 	return true;
 }
 
-bool vmm_physical_page_valid(uint64_t physical_address)
+bool
+vmm_physical_page_valid(uint64_t physical_address)
 {
 	uint64_t limit = 1ULL << g_vmm.physical_bits;
 
-	return (physical_address & (VMM_L3_SIZE - 1ULL)) == 0ULL &&
-		physical_address <= limit - VMM_L3_SIZE;
+	return (physical_address & (VMM_L3_SIZE - 1ULL)) == 0ULL && physical_address <= limit - VMM_L3_SIZE;
 }
 
-bool vmm_lower_page_valid(uint64_t virtual_address)
+bool
+vmm_lower_page_valid(uint64_t virtual_address)
 {
 	uint64_t limit = 1ULL << VMM_VA_BITS;
 
-	return (virtual_address & (VMM_L3_SIZE - 1ULL)) == 0ULL &&
-		virtual_address <= limit - VMM_L3_SIZE;
+	return (virtual_address & (VMM_L3_SIZE - 1ULL)) == 0ULL && virtual_address <= limit - VMM_L3_SIZE;
 }
 
-bool vmm_higher_page_valid(uint64_t virtual_address)
+bool
+vmm_higher_page_valid(uint64_t virtual_address)
 {
-	return vmm_is_higher_half_address(virtual_address) &&
-		(virtual_address & (VMM_L3_SIZE - 1ULL)) == 0ULL;
+	return vmm_is_higher_half_address(virtual_address) && (virtual_address & (VMM_L3_SIZE - 1ULL)) == 0ULL;
 }
 
-bool vmm_make_page_descriptor(
-	uint64_t physical_address,
-	vmm_memory_type_t memory_type,
-	vmm_protection_t protection,
-	uint64_t *descriptor
-)
+bool
+vmm_make_page_descriptor(uint64_t physical_address, vmm_memory_type_t memory_type, vmm_protection_t protection,
+						 uint64_t *descriptor)
 {
 	if (descriptor == 0 || !vmm_physical_page_valid(physical_address)) {
 		return false;
@@ -486,18 +381,13 @@ bool vmm_make_page_descriptor(
 		return false;
 	}
 
-	*descriptor =
-		(physical_address & VMM_DESC_ADDRESS_MASK) |
-		attributes |
-		VMM_DESC_TABLE_PAGE;
+	*descriptor = (physical_address & VMM_DESC_ADDRESS_MASK) | attributes | VMM_DESC_TABLE_PAGE;
 
 	return true;
 }
 
-bool vmm_descriptor_memory_type(
-	uint64_t descriptor,
-	vmm_memory_type_t *memory_type
-)
+bool
+vmm_descriptor_memory_type(uint64_t descriptor, vmm_memory_type_t *memory_type)
 {
 	if (memory_type == 0) {
 		return false;
@@ -518,10 +408,8 @@ bool vmm_descriptor_memory_type(
 	return false;
 }
 
-bool vmm_descriptor_protection(
-	uint64_t descriptor,
-	vmm_protection_t *protection
-)
+bool
+vmm_descriptor_protection(uint64_t descriptor, vmm_protection_t *protection)
 {
 	if (protection == 0) {
 		return false;
@@ -546,9 +434,7 @@ bool vmm_descriptor_protection(
 	}
 
 	if (access_permissions == VMM_DESC_AP_READ_ONLY) {
-		*protection = privileged_execute_never
-			? VMM_PROTECTION_READ_ONLY
-			: VMM_PROTECTION_READ_EXECUTE;
+		*protection = privileged_execute_never ? VMM_PROTECTION_READ_ONLY : VMM_PROTECTION_READ_EXECUTE;
 
 		return true;
 	}
@@ -556,7 +442,8 @@ bool vmm_descriptor_protection(
 	return false;
 }
 
-void vmm_publish_new_mapping(void)
+void
+vmm_publish_new_mapping(void)
 {
 	/*
 	 * The entry was previously invalid. Translation faults are not
@@ -565,16 +452,15 @@ void vmm_publish_new_mapping(void)
 	 * The DSB makes the table writes visible before the mapping is
 	 * used. ISB synchronizes subsequent execution.
 	 */
-	__asm__ volatile(
-		"dsb ish\n"
-		"isb\n"
-		:
-		:
-		: "memory"
-	);
+	__asm__ volatile("dsb ish\n"
+					 "isb\n"
+					 :
+					 :
+					 : "memory");
 }
 
-void vmm_invalidate_page(uint64_t virtual_address)
+void
+vmm_invalidate_page(uint64_t virtual_address)
 {
 	/*
 	 * For a 4 KiB granule, the TLBI operand contains the virtual page
@@ -582,18 +468,17 @@ void vmm_invalidate_page(uint64_t virtual_address)
 	 */
 	uint64_t operand = virtual_address >> VMM_L3_SHIFT;
 
-	__asm__ volatile(
-		"dsb ish\n"
-		"tlbi vaae1is, %0\n"
-		"dsb ish\n"
-		"isb\n"
-		:
-		: "r"(operand)
-		: "memory"
-	);
+	__asm__ volatile("dsb ish\n"
+					 "tlbi vaae1is, %0\n"
+					 "dsb ish\n"
+					 "isb\n"
+					 :
+					 : "r"(operand)
+					 : "memory");
 }
 
-static bool vmm_set_entry(uint64_t *entry, uint64_t descriptor)
+static bool
+vmm_set_entry(uint64_t *entry, uint64_t descriptor)
 {
 	if ((*entry & VMM_DESC_VALID) == 0ULL) {
 		*entry = descriptor;
@@ -607,7 +492,8 @@ static bool vmm_set_entry(uint64_t *entry, uint64_t descriptor)
 	return *entry == descriptor;
 }
 
-bool vmm_map_initial_l1(uint64_t address, uint64_t attributes)
+bool
+vmm_map_initial_l1(uint64_t address, uint64_t attributes)
 {
 	uint64_t descriptor = (address & ~(VMM_L1_SIZE - 1ULL)) | attributes | VMM_DESC_BLOCK;
 
@@ -616,17 +502,12 @@ bool vmm_map_initial_l1(uint64_t address, uint64_t attributes)
 	return vmm_set_entry(&g_vmm.root[index], descriptor);
 }
 
-bool vmm_map_initial_l2(uint64_t address, uint64_t attributes)
+bool
+vmm_map_initial_l2(uint64_t address, uint64_t attributes)
 {
 	uint64_t *level2;
 
-	if (!vmm_root_next_table(
-		g_vmm.root,
-		vmm_index(address, VMM_L1_SHIFT),
-		true,
-		&g_vmm.table_count,
-		&level2
-	)) {
+	if (!vmm_root_next_table(g_vmm.root, vmm_index(address, VMM_L1_SHIFT), true, &g_vmm.table_count, &level2)) {
 		return false;
 	}
 
@@ -637,24 +518,16 @@ bool vmm_map_initial_l2(uint64_t address, uint64_t attributes)
 	return vmm_set_entry(&level2[index], descriptor);
 }
 
-bool vmm_map_initial_l3(uint64_t address, uint64_t attributes)
+bool
+vmm_map_initial_l3(uint64_t address, uint64_t attributes)
 {
 	uint64_t *entry;
 
-	if (!vmm_root_get_l3_entry(
-		g_vmm.root,
-		address,
-		true,
-		&g_vmm.table_count,
-		&entry
-	)) {
+	if (!vmm_root_get_l3_entry(g_vmm.root, address, true, &g_vmm.table_count, &entry)) {
 		return false;
 	}
 
-	uint64_t descriptor =
-		(address & VMM_DESC_ADDRESS_MASK) |
-		attributes |
-		VMM_DESC_TABLE_PAGE;
+	uint64_t descriptor = (address & VMM_DESC_ADDRESS_MASK) | attributes | VMM_DESC_TABLE_PAGE;
 
 	return vmm_set_entry(entry, descriptor);
 }
@@ -665,21 +538,15 @@ bool vmm_map_initial_l3(uint64_t address, uint64_t attributes)
  * Lower canonical addresses belong to TTBR0. Upper canonical addresses
  * belong to TTBR1.
  */
-static bool vmm_select_root(
-	uint64_t virtual_address,
-	uint64_t **root,
-	uint64_t **table_count
-)
+static bool
+vmm_select_root(uint64_t virtual_address, uint64_t **root, uint64_t **table_count)
 {
 	if (root == 0 || table_count == 0) {
 		return false;
 	}
 
 	if (vmm_is_higher_half_address(virtual_address)) {
-		if (
-			!g_vmm.higher_half_enabled ||
-			!vmm_higher_page_valid(virtual_address)
-		) {
+		if (!g_vmm.higher_half_enabled || !vmm_higher_page_valid(virtual_address)) {
 			return false;
 		}
 
@@ -689,11 +556,7 @@ static bool vmm_select_root(
 		return true;
 	}
 
-	if (
-		g_vmm.ttbr0_disabled ||
-		g_vmm.root == 0 ||
-		!vmm_lower_page_valid(virtual_address)
-	) {
+	if (g_vmm.ttbr0_disabled || g_vmm.root == 0 || !vmm_lower_page_valid(virtual_address)) {
 		return false;
 	}
 
@@ -703,53 +566,32 @@ static bool vmm_select_root(
 	return true;
 }
 
-bool vmm_map_page(
-	uint64_t virtual_address,
-	uint64_t physical_address,
-	vmm_memory_type_t memory_type,
-	vmm_protection_t protection
-)
+bool
+vmm_map_page(uint64_t virtual_address, uint64_t physical_address, vmm_memory_type_t memory_type,
+			 vmm_protection_t protection)
 {
 	NXU_RLOCK_GUARD(&g_vmm_lock);
 
-	if (
-		!g_vmm.enabled ||
-		!vmm_physical_page_valid(physical_address)
-	) {
+	if (!g_vmm.enabled || !vmm_physical_page_valid(physical_address)) {
 		return false;
 	}
 
 	uint64_t *root;
 	uint64_t *table_count;
 
-	if (!vmm_select_root(
-		virtual_address,
-		&root,
-		&table_count
-	)) {
+	if (!vmm_select_root(virtual_address, &root, &table_count)) {
 		return false;
 	}
 
 	uint64_t descriptor;
 
-	if (!vmm_make_page_descriptor(
-		physical_address,
-		memory_type,
-		protection,
-		&descriptor
-	)) {
+	if (!vmm_make_page_descriptor(physical_address, memory_type, protection, &descriptor)) {
 		return false;
 	}
 
 	uint64_t *entry;
 
-	if (!vmm_root_get_l3_entry(
-		root,
-		virtual_address,
-		true,
-		table_count,
-		&entry
-	)) {
+	if (!vmm_root_get_l3_entry(root, virtual_address, true, table_count, &entry)) {
 		return false;
 	}
 
@@ -767,10 +609,8 @@ bool vmm_map_page(
 	return true;
 }
 
-bool vmm_unmap_page(
-	uint64_t virtual_address,
-	uint64_t *physical_address
-)
+bool
+vmm_unmap_page(uint64_t virtual_address, uint64_t *physical_address)
 {
 	NXU_RLOCK_GUARD(&g_vmm_lock);
 
@@ -781,38 +621,23 @@ bool vmm_unmap_page(
 	uint64_t *root;
 	uint64_t *table_count;
 
-	if (!vmm_select_root(
-		virtual_address,
-		&root,
-		&table_count
-	)) {
+	if (!vmm_select_root(virtual_address, &root, &table_count)) {
 		return false;
 	}
 
 	uint64_t *entry;
 
-	if (!vmm_root_get_l3_entry(
-		root,
-		virtual_address,
-		false,
-		table_count,
-		&entry
-	)) {
+	if (!vmm_root_get_l3_entry(root, virtual_address, false, table_count, &entry)) {
 		return false;
 	}
 
 	uint64_t descriptor = *entry;
 
-	if (
-		(descriptor & VMM_DESC_TYPE_MASK) !=
-		VMM_DESC_TABLE_PAGE
-	) {
+	if ((descriptor & VMM_DESC_TYPE_MASK) != VMM_DESC_TABLE_PAGE) {
 		return false;
 	}
 
-	uint64_t old_physical_address =
-		descriptor &
-		VMM_DESC_ADDRESS_MASK;
+	uint64_t old_physical_address = descriptor & VMM_DESC_ADDRESS_MASK;
 
 	/*
 	 * Break the mapping before invalidating its cached translation.
@@ -827,10 +652,8 @@ bool vmm_unmap_page(
 	return true;
 }
 
-bool vmm_protect_page(
-	uint64_t virtual_address,
-	vmm_protection_t protection
-)
+bool
+vmm_protect_page(uint64_t virtual_address, vmm_protection_t protection)
 {
 	NXU_RLOCK_GUARD(&g_vmm_lock);
 
@@ -841,56 +664,33 @@ bool vmm_protect_page(
 	uint64_t *root;
 	uint64_t *table_count;
 
-	if (!vmm_select_root(
-		virtual_address,
-		&root,
-		&table_count
-	)) {
+	if (!vmm_select_root(virtual_address, &root, &table_count)) {
 		return false;
 	}
 
 	uint64_t *entry;
 
-	if (!vmm_root_get_l3_entry(
-		root,
-		virtual_address,
-		false,
-		table_count,
-		&entry
-	)) {
+	if (!vmm_root_get_l3_entry(root, virtual_address, false, table_count, &entry)) {
 		return false;
 	}
 
 	uint64_t old_descriptor = *entry;
 
-	if (
-		(old_descriptor & VMM_DESC_TYPE_MASK) !=
-		VMM_DESC_TABLE_PAGE
-	) {
+	if ((old_descriptor & VMM_DESC_TYPE_MASK) != VMM_DESC_TABLE_PAGE) {
 		return false;
 	}
 
 	vmm_memory_type_t memory_type;
 
-	if (!vmm_descriptor_memory_type(
-		old_descriptor,
-		&memory_type
-	)) {
+	if (!vmm_descriptor_memory_type(old_descriptor, &memory_type)) {
 		return false;
 	}
 
-	uint64_t physical_address =
-		old_descriptor &
-		VMM_DESC_ADDRESS_MASK;
+	uint64_t physical_address = old_descriptor & VMM_DESC_ADDRESS_MASK;
 
 	uint64_t new_descriptor;
 
-	if (!vmm_make_page_descriptor(
-		physical_address,
-		memory_type,
-		protection,
-		&new_descriptor
-	)) {
+	if (!vmm_make_page_descriptor(physical_address, memory_type, protection, &new_descriptor)) {
 		return false;
 	}
 
@@ -914,10 +714,8 @@ bool vmm_protect_page(
 	return true;
 }
 
-bool vmm_query_page(
-	uint64_t virtual_address,
-	vmm_page_mapping_t *mapping
-)
+bool
+vmm_query_page(uint64_t virtual_address, vmm_page_mapping_t *mapping)
 {
 	if (!g_vmm.enabled || mapping == 0) {
 		return false;
@@ -926,52 +724,31 @@ bool vmm_query_page(
 	uint64_t *root;
 	uint64_t *table_count;
 
-	if (!vmm_select_root(
-		virtual_address,
-		&root,
-		&table_count
-	)) {
+	if (!vmm_select_root(virtual_address, &root, &table_count)) {
 		return false;
 	}
 
 	uint64_t *entry;
 
-	if (!vmm_root_get_l3_entry(
-		root,
-		virtual_address,
-		false,
-		table_count,
-		&entry
-	)) {
+	if (!vmm_root_get_l3_entry(root, virtual_address, false, table_count, &entry)) {
 		return false;
 	}
 
 	uint64_t descriptor = *entry;
 
-	if (
-		(descriptor & VMM_DESC_TYPE_MASK) !=
-		VMM_DESC_TABLE_PAGE
-	) {
+	if ((descriptor & VMM_DESC_TYPE_MASK) != VMM_DESC_TABLE_PAGE) {
 		return false;
 	}
 
-	if (!vmm_descriptor_memory_type(
-		descriptor,
-		&mapping->memory_type
-	)) {
+	if (!vmm_descriptor_memory_type(descriptor, &mapping->memory_type)) {
 		return false;
 	}
 
-	if (!vmm_descriptor_protection(
-		descriptor,
-		&mapping->protection
-	)) {
+	if (!vmm_descriptor_protection(descriptor, &mapping->protection)) {
 		return false;
 	}
 
-	mapping->physical_address =
-		descriptor &
-		VMM_DESC_ADDRESS_MASK;
+	mapping->physical_address = descriptor & VMM_DESC_ADDRESS_MASK;
 
 	return true;
 }
@@ -980,11 +757,8 @@ bool vmm_query_page(
  * Ask the hardware to translate an address exactly as an EL1 access
  * would, then interpret PAR_EL1.
  */
-static bool vmm_translate_access(
-	uint64_t virtual_address,
-	bool write,
-	uint64_t *physical_address
-)
+static bool
+vmm_translate_access(uint64_t virtual_address, bool write, uint64_t *physical_address)
 {
 	if (!g_vmm.enabled || physical_address == 0) {
 		return false;
@@ -993,42 +767,38 @@ static bool vmm_translate_access(
 	uint64_t par;
 
 	if (write) {
-		__asm__ volatile(
-			"at S1E1W, %1\n"
-			"isb\n"
-			"mrs %0, PAR_EL1\n"
-			: "=r"(par)
-			: "r"(virtual_address)
-			: "memory"
-		);
+		__asm__ volatile("at S1E1W, %1\n"
+						 "isb\n"
+						 "mrs %0, PAR_EL1\n"
+						 : "=r"(par)
+						 : "r"(virtual_address)
+						 : "memory");
 	} else {
-		__asm__ volatile(
-			"at S1E1R, %1\n"
-			"isb\n"
-			"mrs %0, PAR_EL1\n"
-			: "=r"(par)
-			: "r"(virtual_address)
-			: "memory"
-		);
+		__asm__ volatile("at S1E1R, %1\n"
+						 "isb\n"
+						 "mrs %0, PAR_EL1\n"
+						 : "=r"(par)
+						 : "r"(virtual_address)
+						 : "memory");
 	}
 
 	if ((par & 1ULL) != 0ULL) {
 		return false;
 	}
 
-	*physical_address =
-		(par & VMM_DESC_ADDRESS_MASK) |
-		(virtual_address & (VMM_L3_SIZE - 1ULL));
+	*physical_address = (par & VMM_DESC_ADDRESS_MASK) | (virtual_address & (VMM_L3_SIZE - 1ULL));
 
 	return true;
 }
 
-bool vmm_translate(uint64_t virtual_address, uint64_t *physical_address)
+bool
+vmm_translate(uint64_t virtual_address, uint64_t *physical_address)
 {
 	return vmm_translate_access(virtual_address, false, physical_address);
 }
 
-bool vmm_translate_write(uint64_t virtual_address, uint64_t *physical_address)
+bool
+vmm_translate_write(uint64_t virtual_address, uint64_t *physical_address)
 {
 	return vmm_translate_access(virtual_address, true, physical_address);
 }

@@ -38,12 +38,14 @@
 #define LZO_HEADER 4U
 #define LZO_WORST_COMPRESS(size) ((size) + ((size) / 16U) + 64U + 3U)
 
-static uint32_t btrfs_lzo_le32(const uint8_t *p)
+static uint32_t
+btrfs_lzo_le32(const uint8_t *p)
 {
 	return (uint32_t)p[0] | ((uint32_t)p[1] << 8U) | ((uint32_t)p[2] << 16U) | ((uint32_t)p[3] << 24U);
 }
 
-btrfs_status_t btrfs_lzo1x_decompress_safe(const uint8_t *in, size_t in_len, uint8_t *out, size_t out_cap, size_t *produced)
+btrfs_status_t
+btrfs_lzo1x_decompress_safe(const uint8_t *in, size_t in_len, uint8_t *out, size_t out_cap, size_t *produced)
 {
 	const uint8_t *ip = in;
 	const uint8_t *ip_end = in + in_len;
@@ -55,8 +57,14 @@ btrfs_status_t btrfs_lzo1x_decompress_safe(const uint8_t *in, size_t in_len, uin
 	size_t length;
 	unsigned state = 0U;
 
-#define LZO_NEED_IP(n) do { if ((size_t)(ip_end - ip) < (size_t)(n)) goto fail; } while (0)
-#define LZO_NEED_OP(n) do { if ((size_t)(op_end - op) < (size_t)(n)) goto fail; } while (0)
+#define LZO_NEED_IP(n)                                                                                                 \
+	do {                                                                                                               \
+		if ((size_t)(ip_end - ip) < (size_t)(n)) goto fail;                                                            \
+	} while (0)
+#define LZO_NEED_OP(n)                                                                                                 \
+	do {                                                                                                               \
+		if ((size_t)(op_end - op) < (size_t)(n)) goto fail;                                                            \
+	} while (0)
 
 	*produced = 0U;
 
@@ -73,7 +81,8 @@ btrfs_status_t btrfs_lzo1x_decompress_safe(const uint8_t *in, size_t in_len, uin
 		state = 4U;
 		LZO_NEED_IP(t);
 		LZO_NEED_OP(t);
-		while (t-- != 0U) *op++ = *ip++;
+		while (t-- != 0U)
+			*op++ = *ip++;
 	}
 
 	for (;;) {
@@ -96,7 +105,8 @@ btrfs_status_t btrfs_lzo1x_decompress_safe(const uint8_t *in, size_t in_len, uin
 				t += 3U;
 				LZO_NEED_IP(t);
 				LZO_NEED_OP(t);
-				while (t-- != 0U) *op++ = *ip++;
+				while (t-- != 0U)
+					*op++ = *ip++;
 				state = 4U;
 				continue;
 			}
@@ -173,12 +183,13 @@ btrfs_status_t btrfs_lzo1x_decompress_safe(const uint8_t *in, size_t in_len, uin
 			op++;
 		}
 
-match_next:
+	match_next:
 		/* The match is followed by 0..3 literals that ride in its low bits. */
 		state = (unsigned)next;
 		LZO_NEED_IP(next);
 		LZO_NEED_OP(next);
-		while (next-- != 0U) *op++ = *ip++;
+		while (next-- != 0U)
+			*op++ = *ip++;
 	}
 
 fail:
@@ -187,7 +198,8 @@ fail:
 	return BTRFS_ERR_CORRUPT;
 }
 
-btrfs_status_t btrfs_lzo_decompress(void *ctx, const uint8_t *in, size_t in_len, uint8_t *out, size_t out_len)
+btrfs_status_t
+btrfs_lzo_decompress(void *ctx, const uint8_t *in, size_t in_len, uint8_t *out, size_t out_len)
 {
 	const btrfs_codec_ctx_t *codec = ctx;
 	size_t sector = codec->sectorsize;
@@ -232,8 +244,10 @@ btrfs_status_t btrfs_lzo_decompress(void *ctx, const uint8_t *in, size_t in_len,
 		cursor += segment;
 	}
 
-	/* An extent that decodes to nothing is not an extent. The last one of a file is rounded up to a sector; the rest reads as zeros. */
+	/* An extent that decodes to nothing is not an extent. The last one of a file is rounded up to a sector; the rest
+	 * reads as zeros. */
 	if (produced == 0U) return BTRFS_ERR_CORRUPT;
-	for (size_t i = produced; i < out_len; i++) out[i] = 0U;
+	for (size_t i = produced; i < out_len; i++)
+		out[i] = 0U;
 	return BTRFS_OK;
 }

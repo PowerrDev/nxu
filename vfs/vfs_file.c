@@ -2,7 +2,8 @@
 
 #include <stdint.h>
 
-vfs_status_t vfs_open(filedesc_t filedesc, const char *path, uint32_t flags, uint32_t *descriptor)
+vfs_status_t
+vfs_open(filedesc_t filedesc, const char *path, uint32_t flags, uint32_t *descriptor)
 {
 	if (descriptor != 0) *descriptor = UINT32_MAX;
 	if (filedesc == 0 || path == 0 || descriptor == 0) return VFS_STATUS_INVALID;
@@ -55,7 +56,8 @@ vfs_status_t vfs_open(filedesc_t filedesc, const char *path, uint32_t flags, uin
 	return status;
 }
 
-vfs_status_t vfs_close(filedesc_t filedesc, uint32_t descriptor)
+vfs_status_t
+vfs_close(filedesc_t filedesc, uint32_t descriptor)
 {
 	file_t file;
 	vfs_status_t status = filedesc_remove(filedesc, descriptor, &file);
@@ -65,13 +67,8 @@ vfs_status_t vfs_close(filedesc_t filedesc, uint32_t descriptor)
 	return VFS_STATUS_OK;
 }
 
-vfs_status_t vfs_read(
-	filedesc_t filedesc,
-	uint32_t descriptor,
-	void *buffer,
-	uint64_t size,
-	uint64_t *read_size
-)
+vfs_status_t
+vfs_read(filedesc_t filedesc, uint32_t descriptor, void *buffer, uint64_t size, uint64_t *read_size)
 {
 	file_t file;
 	vfs_status_t status = filedesc_get(filedesc, descriptor, &file);
@@ -88,7 +85,8 @@ vfs_status_t vfs_read(
  *              Resolve a process descriptor to its open directory and return
  *              the next filesystem-independent directory entry.
  */
-vfs_status_t vfs_readdir(filedesc_t filedesc, uint32_t descriptor, vfs_dirent_t *entry)
+vfs_status_t
+vfs_readdir(filedesc_t filedesc, uint32_t descriptor, vfs_dirent_t *entry)
 {
 	file_t file;
 	vfs_status_t status = filedesc_get(filedesc, descriptor, &file);
@@ -99,13 +97,8 @@ vfs_status_t vfs_readdir(filedesc_t filedesc, uint32_t descriptor, vfs_dirent_t 
 	return status;
 }
 
-vfs_status_t vfs_write(
-	filedesc_t filedesc,
-	uint32_t descriptor,
-	const void *buffer,
-	uint64_t size,
-	uint64_t *written_size
-)
+vfs_status_t
+vfs_write(filedesc_t filedesc, uint32_t descriptor, const void *buffer, uint64_t size, uint64_t *written_size)
 {
 	file_t file;
 	vfs_status_t status = filedesc_get(filedesc, descriptor, &file);
@@ -116,7 +109,8 @@ vfs_status_t vfs_write(
 	return status;
 }
 
-vfs_status_t vfs_seek(filedesc_t filedesc, uint32_t descriptor, uint64_t offset)
+vfs_status_t
+vfs_seek(filedesc_t filedesc, uint32_t descriptor, uint64_t offset)
 {
 	file_t file;
 	vfs_status_t status = filedesc_get(filedesc, descriptor, &file);
@@ -133,7 +127,8 @@ vfs_status_t vfs_seek(filedesc_t filedesc, uint32_t descriptor, uint64_t offset)
  * A device-specific request on an open descriptor. argument is a kernel
  * buffer of the size the command encodes.
  */
-vfs_status_t vfs_ioctl(filedesc_t filedesc, uint32_t descriptor, uint32_t command, void *argument)
+vfs_status_t
+vfs_ioctl(filedesc_t filedesc, uint32_t descriptor, uint32_t command, void *argument)
 {
 	file_t file;
 	vfs_status_t status = filedesc_get(filedesc, descriptor, &file);

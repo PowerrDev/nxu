@@ -37,7 +37,8 @@
 
 #include <string.h>
 
-const char *btrfs_profile_name(uint64_t chunk_type)
+const char *
+btrfs_profile_name(uint64_t chunk_type)
 {
 	uint64_t profile = chunk_type & BTRFS_BLOCK_GROUP_PROFILE_MASK;
 
@@ -54,7 +55,8 @@ const char *btrfs_profile_name(uint64_t chunk_type)
 }
 
 /* How many devices' worth of stripes hold one copy of the chunk's data, and how many parity stripes. */
-static bool btrfs_chunk_geometry(const btrfs_chunk_t *chunk, uint32_t *data_stripes)
+static bool
+btrfs_chunk_geometry(const btrfs_chunk_t *chunk, uint32_t *data_stripes)
 {
 	uint64_t profile = chunk->type & BTRFS_BLOCK_GROUP_PROFILE_MASK;
 	uint32_t n = chunk->num_stripes;
@@ -91,7 +93,8 @@ static bool btrfs_chunk_geometry(const btrfs_chunk_t *chunk, uint32_t *data_stri
 }
 
 /* Reject a chunk the driver cannot or must not use. */
-static btrfs_status_t btrfs_chunk_check(const btrfs_fs_t *fs, const btrfs_chunk_t *chunk)
+static btrfs_status_t
+btrfs_chunk_check(const btrfs_fs_t *fs, const btrfs_chunk_t *chunk)
 {
 	uint64_t mask = fs->sectorsize - 1U;
 	uint64_t profile = chunk->type & BTRFS_BLOCK_GROUP_PROFILE_MASK;
@@ -104,7 +107,8 @@ static btrfs_status_t btrfs_chunk_check(const btrfs_fs_t *fs, const btrfs_chunk_
 
 	if ((chunk->type & ~known) != 0ULL) {
 		/* REMAPPED and other newer block-group flags. */
-		BTRFS_LOG(fs, "chunk at %llu has unknown type bits %llx", BTRFS_U64(chunk->logical), BTRFS_U64(chunk->type & ~known));
+		BTRFS_LOG(fs, "chunk at %llu has unknown type bits %llx", BTRFS_U64(chunk->logical),
+				  BTRFS_U64(chunk->type & ~known));
 		return BTRFS_ERR_UNSUPPORTED_FEATURE;
 	}
 
@@ -115,7 +119,9 @@ static btrfs_status_t btrfs_chunk_check(const btrfs_fs_t *fs, const btrfs_chunk_
 	uint64_t per_device = chunk->length;
 
 	if (data_stripes > 1U || profile == BTRFS_BLOCK_GROUP_RAID5 || profile == BTRFS_BLOCK_GROUP_RAID6) {
-		if (chunk->stripe_len < fs->sectorsize || chunk->stripe_len > (1ULL << 30U) || (chunk->stripe_len & (chunk->stripe_len - 1ULL)) != 0ULL) return BTRFS_ERR_CORRUPT;
+		if (chunk->stripe_len < fs->sectorsize || chunk->stripe_len > (1ULL << 30U) ||
+			(chunk->stripe_len & (chunk->stripe_len - 1ULL)) != 0ULL)
+			return BTRFS_ERR_CORRUPT;
 		if (chunk->length % ((uint64_t)data_stripes * chunk->stripe_len) != 0ULL) return BTRFS_ERR_CORRUPT;
 		per_device = chunk->length / data_stripes;
 	}
@@ -125,12 +131,14 @@ static btrfs_status_t btrfs_chunk_check(const btrfs_fs_t *fs, const btrfs_chunk_
 		const btrfs_device_t *device = btrfs_device_find(fs, stripe->devid);
 
 		if (device == 0) {
-			BTRFS_LOG(fs, "chunk at %llu has a stripe on device %llu, which was not supplied", BTRFS_U64(chunk->logical), BTRFS_U64(stripe->devid));
+			BTRFS_LOG(fs, "chunk at %llu has a stripe on device %llu, which was not supplied",
+					  BTRFS_U64(chunk->logical), BTRFS_U64(stripe->devid));
 			return BTRFS_ERR_MISSING_DEVICE;
 		}
 
 		if (stripe->offset + per_device < stripe->offset || stripe->offset + per_device > device->reader.size) {
-			BTRFS_LOG(fs, "chunk at %llu: stripe %u [%llu, +%llu) lies outside device %llu", BTRFS_U64(chunk->logical), index, BTRFS_U64(stripe->offset), BTRFS_U64(per_device), BTRFS_U64(stripe->devid));
+			BTRFS_LOG(fs, "chunk at %llu: stripe %u [%llu, +%llu) lies outside device %llu", BTRFS_U64(chunk->logical),
+					  index, BTRFS_U64(stripe->offset), BTRFS_U64(per_device), BTRFS_U64(stripe->devid));
 			return BTRFS_ERR_CORRUPT;
 		}
 	}
@@ -139,7 +147,8 @@ static btrfs_status_t btrfs_chunk_check(const btrfs_fs_t *fs, const btrfs_chunk_
 }
 
 /* Index of the first chunk whose end is above logical (binary search). */
-static uint32_t btrfs_chunk_lower_bound(const btrfs_chunk_map_t *map, uint64_t logical)
+static uint32_t
+btrfs_chunk_lower_bound(const btrfs_chunk_map_t *map, uint64_t logical)
 {
 	uint32_t low = 0U;
 	uint32_t high = map->count;
@@ -148,14 +157,17 @@ static uint32_t btrfs_chunk_lower_bound(const btrfs_chunk_map_t *map, uint64_t l
 		uint32_t middle = low + (high - low) / 2U;
 		const btrfs_chunk_t *chunk = &map->chunks[middle];
 
-		if (chunk->logical + chunk->length <= logical) low = middle + 1U;
-		else high = middle;
+		if (chunk->logical + chunk->length <= logical)
+			low = middle + 1U;
+		else
+			high = middle;
 	}
 
 	return low;
 }
 
-static btrfs_status_t btrfs_chunk_insert(btrfs_fs_t *fs, const btrfs_chunk_t *chunk)
+static btrfs_status_t
+btrfs_chunk_insert(btrfs_fs_t *fs, const btrfs_chunk_t *chunk)
 {
 	btrfs_chunk_map_t *map = &fs->chunks;
 	uint32_t position = btrfs_chunk_lower_bound(map, chunk->logical);
@@ -168,7 +180,8 @@ static btrfs_status_t btrfs_chunk_insert(btrfs_fs_t *fs, const btrfs_chunk_t *ch
 		}
 
 		if (existing->logical < chunk->logical + chunk->length) {
-			BTRFS_LOG(fs, "chunk at %llu overlaps the chunk at %llu", BTRFS_U64(chunk->logical), BTRFS_U64(existing->logical));
+			BTRFS_LOG(fs, "chunk at %llu overlaps the chunk at %llu", BTRFS_U64(chunk->logical),
+					  BTRFS_U64(existing->logical));
 			return BTRFS_ERR_CORRUPT;
 		}
 	}
@@ -186,13 +199,15 @@ static btrfs_status_t btrfs_chunk_insert(btrfs_fs_t *fs, const btrfs_chunk_t *ch
 		map->capacity = capacity;
 	}
 
-	for (uint32_t index = map->count; index > position; index--) map->chunks[index] = map->chunks[index - 1U];
+	for (uint32_t index = map->count; index > position; index--)
+		map->chunks[index] = map->chunks[index - 1U];
 	map->chunks[position] = *chunk;
 	map->count++;
 	return BTRFS_OK;
 }
 
-void btrfs_chunks_release(btrfs_fs_t *fs)
+void
+btrfs_chunks_release(btrfs_fs_t *fs)
 {
 	btrfs_free(fs, fs->chunks.chunks);
 	fs->chunks.chunks = 0;
@@ -200,7 +215,8 @@ void btrfs_chunks_release(btrfs_fs_t *fs)
 	fs->chunks.capacity = 0U;
 }
 
-btrfs_status_t btrfs_chunks_bootstrap(btrfs_fs_t *fs)
+btrfs_status_t
+btrfs_chunks_bootstrap(btrfs_fs_t *fs)
 {
 	const uint8_t *array = fs->super.sys_chunk_array;
 	size_t size = fs->super.sys_chunk_array_size;
@@ -218,7 +234,8 @@ btrfs_status_t btrfs_chunks_bootstrap(btrfs_fs_t *fs)
 		position += BTRFS_DISK_KEY_SIZE;
 
 		if (key.objectid != BTRFS_FIRST_CHUNK_TREE_OBJECTID || key.type != BTRFS_CHUNK_ITEM_KEY) {
-			BTRFS_LOG(fs, "sys_chunk_array holds an unexpected key (%llu, %u)", BTRFS_U64(key.objectid), (unsigned)key.type);
+			BTRFS_LOG(fs, "sys_chunk_array holds an unexpected key (%llu, %u)", BTRFS_U64(key.objectid),
+					  (unsigned)key.type);
 			return BTRFS_ERR_CORRUPT;
 		}
 
@@ -247,7 +264,8 @@ btrfs_status_t btrfs_chunks_bootstrap(btrfs_fs_t *fs)
 	return BTRFS_OK;
 }
 
-btrfs_status_t btrfs_chunks_load(btrfs_fs_t *fs)
+btrfs_status_t
+btrfs_chunks_load(btrfs_fs_t *fs)
 {
 	fs->chunk_tree.objectid = BTRFS_CHUNK_TREE_OBJECTID;
 	fs->chunk_tree.bytenr = fs->super.chunk_root;
@@ -281,13 +299,15 @@ btrfs_status_t btrfs_chunks_load(btrfs_fs_t *fs)
 		const btrfs_device_t *device = btrfs_device_find(fs, btrfs_get_le64(data + BTRFS_DEV_DEVID));
 
 		if (device == 0) {
-			BTRFS_LOG(fs, "device %llu is listed by the chunk tree but was not supplied", BTRFS_U64(btrfs_get_le64(data + BTRFS_DEV_DEVID)));
+			BTRFS_LOG(fs, "device %llu is listed by the chunk tree but was not supplied",
+					  BTRFS_U64(btrfs_get_le64(data + BTRFS_DEV_DEVID)));
 			status = BTRFS_ERR_MISSING_DEVICE;
 			break;
 		}
 
 		if (memcmp(device->uuid, data + BTRFS_DEV_UUID, BTRFS_UUID_SIZE) != 0) {
-			BTRFS_LOG(fs, "device %llu is not the device the chunk tree lists under that id (uuid differs)", BTRFS_U64(device->devid));
+			BTRFS_LOG(fs, "device %llu is not the device the chunk tree lists under that id (uuid differs)",
+					  BTRFS_U64(device->devid));
 			status = BTRFS_ERR_INVALID;
 			break;
 		}
@@ -351,15 +371,18 @@ btrfs_status_t btrfs_chunks_load(btrfs_fs_t *fs)
 	return status;
 }
 
-static unsigned btrfs_chunk_shift(uint64_t power_of_two)
+static unsigned
+btrfs_chunk_shift(uint64_t power_of_two)
 {
 	unsigned shift = 0U;
 
-	while ((1ULL << shift) < power_of_two) shift++;
+	while ((1ULL << shift) < power_of_two)
+		shift++;
 	return shift;
 }
 
-btrfs_status_t btrfs_map_logical(const btrfs_fs_t *fs, uint64_t logical, btrfs_mapping_t *mapping)
+btrfs_status_t
+btrfs_map_logical(const btrfs_fs_t *fs, uint64_t logical, btrfs_mapping_t *mapping)
 {
 	const btrfs_chunk_map_t *map = &fs->chunks;
 	uint32_t position = btrfs_chunk_lower_bound(map, logical);
@@ -373,7 +396,8 @@ btrfs_status_t btrfs_map_logical(const btrfs_fs_t *fs, uint64_t logical, btrfs_m
 
 	mapping->type = chunk->type;
 
-	if (profile != BTRFS_BLOCK_GROUP_RAID0 && profile != BTRFS_BLOCK_GROUP_RAID10 && profile != BTRFS_BLOCK_GROUP_RAID5 && profile != BTRFS_BLOCK_GROUP_RAID6) {
+	if (profile != BTRFS_BLOCK_GROUP_RAID0 && profile != BTRFS_BLOCK_GROUP_RAID10 &&
+		profile != BTRFS_BLOCK_GROUP_RAID5 && profile != BTRFS_BLOCK_GROUP_RAID6) {
 		/* SINGLE, DUP, RAID1, RAID1C3, RAID1C4: every stripe is a whole copy. */
 		mapping->copies = n;
 		mapping->length = chunk->length - inside;
@@ -428,7 +452,8 @@ btrfs_status_t btrfs_map_logical(const btrfs_fs_t *fs, uint64_t logical, btrfs_m
 	return BTRFS_OK;
 }
 
-btrfs_status_t btrfs_read_logical(btrfs_fs_t *fs, uint64_t logical, void *buffer, size_t length, uint32_t copy)
+btrfs_status_t
+btrfs_read_logical(btrfs_fs_t *fs, uint64_t logical, void *buffer, size_t length, uint32_t copy)
 {
 	uint8_t *out = buffer;
 

@@ -37,21 +37,26 @@
 #define BTRFS_SUPER_FLAG_METADUMP_V2 (1ULL << 34U)
 #define BTRFS_SUPER_FLAG_CHANGING_FSID (1ULL << 35U)
 #define BTRFS_SUPER_FLAG_CHANGING_FSID_V2 (1ULL << 36U)
-#define BTRFS_SUPER_FLAGS_REFUSED (BTRFS_SUPER_FLAG_METADUMP | BTRFS_SUPER_FLAG_METADUMP_V2 | BTRFS_SUPER_FLAG_CHANGING_FSID | BTRFS_SUPER_FLAG_CHANGING_FSID_V2)
+#define BTRFS_SUPER_FLAGS_REFUSED                                                                                      \
+	(BTRFS_SUPER_FLAG_METADUMP | BTRFS_SUPER_FLAG_METADUMP_V2 | BTRFS_SUPER_FLAG_CHANGING_FSID |                       \
+	 BTRFS_SUPER_FLAG_CHANGING_FSID_V2)
 
-static bool btrfs_is_power_of_two(uint32_t value)
+static bool
+btrfs_is_power_of_two(uint32_t value)
 {
 	return value != 0U && (value & (value - 1U)) == 0U;
 }
 
 /* Byte offset of superblock copy `mirror` (0..2). */
-static uint64_t btrfs_super_offset(uint32_t mirror)
+static uint64_t
+btrfs_super_offset(uint32_t mirror)
 {
 	if (mirror == 0U) return BTRFS_SUPER_INFO_OFFSET;
 	return 16384ULL << (BTRFS_SUPER_MIRROR_SHIFT * mirror);
 }
 
-btrfs_status_t btrfs_super_parse(const uint8_t *raw, uint64_t expected_bytenr, uint64_t device_size, btrfs_super_t *out)
+btrfs_status_t
+btrfs_super_parse(const uint8_t *raw, uint64_t expected_bytenr, uint64_t device_size, btrfs_super_t *out)
 {
 	(void)device_size;
 
@@ -63,7 +68,8 @@ btrfs_status_t btrfs_super_parse(const uint8_t *raw, uint64_t expected_bytenr, u
 	/* The superblock names its own checksum algorithm; a type nobody knows is damage, not a feature. */
 	if (btrfs_csum_type_size(out->csum_type) == 0U) return BTRFS_ERR_CORRUPT;
 
-	if (!btrfs_csum_matches(out->csum_type, raw + BTRFS_SB_CSUM, raw + BTRFS_CSUM_SIZE, BTRFS_SUPER_INFO_SIZE - BTRFS_CSUM_SIZE)) {
+	if (!btrfs_csum_matches(out->csum_type, raw + BTRFS_SB_CSUM, raw + BTRFS_CSUM_SIZE,
+							BTRFS_SUPER_INFO_SIZE - BTRFS_CSUM_SIZE)) {
 		return BTRFS_ERR_CSUM;
 	}
 
@@ -111,17 +117,24 @@ btrfs_status_t btrfs_super_parse(const uint8_t *raw, uint64_t expected_bytenr, u
 	if (out->sys_chunk_array_size > BTRFS_SYSTEM_CHUNK_ARRAY_SIZE) return BTRFS_ERR_CORRUPT;
 	memcpy(out->sys_chunk_array, raw + BTRFS_SB_SYS_CHUNK_ARRAY, BTRFS_SYSTEM_CHUNK_ARRAY_SIZE);
 
-	if (!btrfs_is_power_of_two(out->sectorsize) || out->sectorsize < BTRFS_MIN_SECTORSIZE || out->sectorsize > BTRFS_MAX_SECTORSIZE) return BTRFS_ERR_CORRUPT;
-	if (!btrfs_is_power_of_two(out->nodesize) || out->nodesize < out->sectorsize || out->nodesize > BTRFS_MAX_METADATA_BLOCKSIZE) return BTRFS_ERR_CORRUPT;
+	if (!btrfs_is_power_of_two(out->sectorsize) || out->sectorsize < BTRFS_MIN_SECTORSIZE ||
+		out->sectorsize > BTRFS_MAX_SECTORSIZE)
+		return BTRFS_ERR_CORRUPT;
+	if (!btrfs_is_power_of_two(out->nodesize) || out->nodesize < out->sectorsize ||
+		out->nodesize > BTRFS_MAX_METADATA_BLOCKSIZE)
+		return BTRFS_ERR_CORRUPT;
 	if (out->root_level >= BTRFS_MAX_LEVEL || out->chunk_root_level >= BTRFS_MAX_LEVEL) return BTRFS_ERR_CORRUPT;
 	if (out->root == 0ULL || out->chunk_root == 0ULL) return BTRFS_ERR_CORRUPT;
-	if ((out->root & (out->sectorsize - 1U)) != 0ULL || (out->chunk_root & (out->sectorsize - 1U)) != 0ULL) return BTRFS_ERR_CORRUPT;
+	if ((out->root & (out->sectorsize - 1U)) != 0ULL || (out->chunk_root & (out->sectorsize - 1U)) != 0ULL)
+		return BTRFS_ERR_CORRUPT;
 	if (out->total_bytes == 0ULL || out->num_devices == 0ULL) return BTRFS_ERR_CORRUPT;
 
 	return BTRFS_OK;
 }
 
-btrfs_status_t btrfs_super_load(const btrfs_fs_t *fs, const btrfs_reader_t *reader, btrfs_super_t *out, uint64_t *offset_used, uint32_t *copies_valid)
+btrfs_status_t
+btrfs_super_load(const btrfs_fs_t *fs, const btrfs_reader_t *reader, btrfs_super_t *out, uint64_t *offset_used,
+				 uint32_t *copies_valid)
 {
 	uint8_t *raw = btrfs_alloc(fs, BTRFS_SUPER_INFO_SIZE);
 	btrfs_super_t *candidate = btrfs_alloc(fs, sizeof(*candidate));
@@ -144,7 +157,10 @@ btrfs_status_t btrfs_super_load(const btrfs_fs_t *fs, const btrfs_reader_t *read
 
 		if (!btrfs_reader_read(reader, offset, raw, BTRFS_SUPER_INFO_SIZE)) {
 			BTRFS_LOG(fs, "superblock copy %u at %llu: read failed", mirror, BTRFS_U64(offset));
-			if (!first_error_set) { first_error = BTRFS_ERR_IO; first_error_set = true; }
+			if (!first_error_set) {
+				first_error = BTRFS_ERR_IO;
+				first_error_set = true;
+			}
 			continue;
 		}
 
@@ -186,33 +202,31 @@ typedef struct {
 	const char *name;
 } btrfs_feature_name_t;
 
-static const btrfs_feature_name_t g_incompat_names[] = {
-	{ BTRFS_FEATURE_INCOMPAT_MIXED_BACKREF, "mixed-backref" },
-	{ BTRFS_FEATURE_INCOMPAT_DEFAULT_SUBVOL, "default-subvol" },
-	{ BTRFS_FEATURE_INCOMPAT_MIXED_GROUPS, "mixed-groups" },
-	{ BTRFS_FEATURE_INCOMPAT_COMPRESS_LZO, "compress-lzo" },
-	{ BTRFS_FEATURE_INCOMPAT_COMPRESS_ZSTD, "compress-zstd" },
-	{ BTRFS_FEATURE_INCOMPAT_BIG_METADATA, "big-metadata" },
-	{ BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF, "extended-iref" },
-	{ BTRFS_FEATURE_INCOMPAT_RAID56, "raid56" },
-	{ BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA, "skinny-metadata" },
-	{ BTRFS_FEATURE_INCOMPAT_NO_HOLES, "no-holes" },
-	{ BTRFS_FEATURE_INCOMPAT_METADATA_UUID, "metadata-uuid" },
-	{ BTRFS_FEATURE_INCOMPAT_RAID1C34, "raid1c34" },
-	{ BTRFS_FEATURE_INCOMPAT_ZONED, "zoned" },
-	{ BTRFS_FEATURE_INCOMPAT_EXTENT_TREE_V2, "extent-tree-v2" },
-	{ BTRFS_FEATURE_INCOMPAT_RAID_STRIPE_TREE, "raid-stripe-tree" },
-	{ BTRFS_FEATURE_INCOMPAT_SIMPLE_QUOTA, "squota" }
-};
+static const btrfs_feature_name_t g_incompat_names[] = {{BTRFS_FEATURE_INCOMPAT_MIXED_BACKREF, "mixed-backref"},
+														{BTRFS_FEATURE_INCOMPAT_DEFAULT_SUBVOL, "default-subvol"},
+														{BTRFS_FEATURE_INCOMPAT_MIXED_GROUPS, "mixed-groups"},
+														{BTRFS_FEATURE_INCOMPAT_COMPRESS_LZO, "compress-lzo"},
+														{BTRFS_FEATURE_INCOMPAT_COMPRESS_ZSTD, "compress-zstd"},
+														{BTRFS_FEATURE_INCOMPAT_BIG_METADATA, "big-metadata"},
+														{BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF, "extended-iref"},
+														{BTRFS_FEATURE_INCOMPAT_RAID56, "raid56"},
+														{BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA, "skinny-metadata"},
+														{BTRFS_FEATURE_INCOMPAT_NO_HOLES, "no-holes"},
+														{BTRFS_FEATURE_INCOMPAT_METADATA_UUID, "metadata-uuid"},
+														{BTRFS_FEATURE_INCOMPAT_RAID1C34, "raid1c34"},
+														{BTRFS_FEATURE_INCOMPAT_ZONED, "zoned"},
+														{BTRFS_FEATURE_INCOMPAT_EXTENT_TREE_V2, "extent-tree-v2"},
+														{BTRFS_FEATURE_INCOMPAT_RAID_STRIPE_TREE, "raid-stripe-tree"},
+														{BTRFS_FEATURE_INCOMPAT_SIMPLE_QUOTA, "squota"}};
 
 static const btrfs_feature_name_t g_compat_ro_names[] = {
-	{ BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE, "free-space-tree" },
-	{ BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE_VALID, "free-space-tree-valid" },
-	{ BTRFS_FEATURE_COMPAT_RO_VERITY, "verity" },
-	{ BTRFS_FEATURE_COMPAT_RO_BLOCK_GROUP_TREE, "block-group-tree" }
-};
+	{BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE, "free-space-tree"},
+	{BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE_VALID, "free-space-tree-valid"},
+	{BTRFS_FEATURE_COMPAT_RO_VERITY, "verity"},
+	{BTRFS_FEATURE_COMPAT_RO_BLOCK_GROUP_TREE, "block-group-tree"}};
 
-static size_t btrfs_append(char *out, size_t capacity, size_t length, const char *text)
+static size_t
+btrfs_append(char *out, size_t capacity, size_t length, const char *text)
 {
 	while (*text != '\0') {
 		if (length + 1U < capacity) out[length] = *text;
@@ -222,7 +236,8 @@ static size_t btrfs_append(char *out, size_t capacity, size_t length, const char
 	return length;
 }
 
-static size_t btrfs_append_number(char *out, size_t capacity, size_t length, unsigned value)
+static size_t
+btrfs_append_number(char *out, size_t capacity, size_t length, unsigned value)
 {
 	char digits[12];
 	unsigned count = 0U;
@@ -235,12 +250,14 @@ static size_t btrfs_append_number(char *out, size_t capacity, size_t length, uns
 
 	char text[13];
 	unsigned position = 0U;
-	while (count != 0U) text[position++] = digits[--count];
+	while (count != 0U)
+		text[position++] = digits[--count];
 	text[position] = '\0';
 	return btrfs_append(out, capacity, length, text);
 }
 
-void btrfs_feature_names(uint64_t incompat, uint64_t compat_ro, char *out, size_t capacity)
+void
+btrfs_feature_names(uint64_t incompat, uint64_t compat_ro, char *out, size_t capacity)
 {
 	size_t length = 0U;
 	bool first = true;
@@ -278,7 +295,8 @@ void btrfs_feature_names(uint64_t incompat, uint64_t compat_ro, char *out, size_
 	out[length < capacity ? length : capacity - 1U] = '\0';
 }
 
-btrfs_status_t btrfs_super_check_support(const btrfs_fs_t *fs, const btrfs_super_t *super)
+btrfs_status_t
+btrfs_super_check_support(const btrfs_fs_t *fs, const btrfs_super_t *super)
 {
 	char names[128];
 
@@ -290,7 +308,8 @@ btrfs_status_t btrfs_super_check_support(const btrfs_fs_t *fs, const btrfs_super
 	}
 
 	if ((super->flags & BTRFS_SUPER_FLAGS_REFUSED) != 0ULL) {
-		BTRFS_LOG(fs, "superblock flags %llx mark a metadata dump or an fsid change in progress", BTRFS_U64(super->flags));
+		BTRFS_LOG(fs, "superblock flags %llx mark a metadata dump or an fsid change in progress",
+				  BTRFS_U64(super->flags));
 		return BTRFS_ERR_UNSUPPORTED_FEATURE;
 	}
 
@@ -307,7 +326,8 @@ btrfs_status_t btrfs_super_check_support(const btrfs_fs_t *fs, const btrfs_super
 
 	uint64_t device_bytes = super->dev_total_bytes != 0ULL ? super->dev_total_bytes : super->total_bytes;
 	if (device_bytes > fs->reader.size) {
-		BTRFS_LOG(fs, "filesystem needs %llu bytes but the device has %llu", BTRFS_U64(device_bytes), BTRFS_U64(fs->reader.size));
+		BTRFS_LOG(fs, "filesystem needs %llu bytes but the device has %llu", BTRFS_U64(device_bytes),
+				  BTRFS_U64(fs->reader.size));
 		return BTRFS_ERR_TRUNCATED;
 	}
 

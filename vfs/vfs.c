@@ -20,19 +20,22 @@ static uint32_t g_mount_count;
 static vfs_lock_t g_vfs_lock;
 static bool g_vfs_initialized;
 
-static void vfs_lock(vfs_lock_t *lock)
+static void
+vfs_lock(vfs_lock_t *lock)
 {
 	while (__atomic_exchange_n(&lock->value, 1U, __ATOMIC_ACQUIRE) != 0U) {
 		cpu_relax();
 	}
 }
 
-static void vfs_unlock(vfs_lock_t *lock)
+static void
+vfs_unlock(vfs_lock_t *lock)
 {
 	__atomic_store_n(&lock->value, 0U, __ATOMIC_RELEASE);
 }
 
-static uint32_t vfs_string_length(const char *string, uint32_t limit)
+static uint32_t
+vfs_string_length(const char *string, uint32_t limit)
 {
 	uint32_t length = 0U;
 	while (length < limit && string[length] != '\0')
@@ -40,10 +43,10 @@ static uint32_t vfs_string_length(const char *string, uint32_t limit)
 	return length;
 }
 
-static bool vfs_copy_string(char *destination, uint32_t capacity, const char *source)
+static bool
+vfs_copy_string(char *destination, uint32_t capacity, const char *source)
 {
-	if (destination == 0 || source == 0 || capacity == 0U)
-		return false;
+	if (destination == 0 || source == 0 || capacity == 0U) return false;
 
 	uint32_t index = 0U;
 	while (index + 1U < capacity && source[index] != '\0') {
@@ -51,23 +54,21 @@ static bool vfs_copy_string(char *destination, uint32_t capacity, const char *so
 		index++;
 	}
 
-	if (source[index] != '\0')
-		return false;
+	if (source[index] != '\0') return false;
 	destination[index] = '\0';
 	return true;
 }
 
-static filesystem_t vfs_find_filesystem_locked(const char *name)
+static filesystem_t
+vfs_find_filesystem_locked(const char *name)
 {
 	for (uint32_t index = 0U; index < VFS_FILESYSTEM_MAX; index++) {
 		filesystem_t filesystem = g_filesystems[index];
-		if (filesystem == 0 || !filesystem->fs_registered)
-			continue;
+		if (filesystem == 0 || !filesystem->fs_registered) continue;
 
 		uint32_t left = vfs_string_length(filesystem->fs_name, VFS_FILESYSTEM_NAME_MAX + 1U);
 		uint32_t right = vfs_string_length(name, VFS_FILESYSTEM_NAME_MAX + 1U);
-		if (left != right)
-			continue;
+		if (left != right) continue;
 
 		bool equal = true;
 		for (uint32_t offset = 0U; offset < left; offset++) {
@@ -77,14 +78,14 @@ static filesystem_t vfs_find_filesystem_locked(const char *name)
 			}
 		}
 
-		if (equal)
-			return filesystem;
+		if (equal) return filesystem;
 	}
 
 	return 0;
 }
 
-bool vfs_init(void)
+bool
+vfs_init(void)
 {
 	vfs_lock(&g_vfs_lock);
 
@@ -114,13 +115,12 @@ bool vfs_init(void)
  * Publish one filesystem type. Registration does not create a mount or take
  * ownership of filesystem storage.
  */
-bool vfs_register_filesystem(filesystem_t filesystem)
+bool
+vfs_register_filesystem(filesystem_t filesystem)
 {
-	if (!g_vfs_initialized || filesystem == 0 || filesystem->fs_ops == 0)
-		return false;
+	if (!g_vfs_initialized || filesystem == 0 || filesystem->fs_ops == 0) return false;
 
-	if (filesystem->fs_name[0] == '\0')
-		return false;
+	if (filesystem->fs_name[0] == '\0') return false;
 
 	vfs_lock(&g_vfs_lock);
 
@@ -130,8 +130,7 @@ bool vfs_register_filesystem(filesystem_t filesystem)
 	}
 
 	for (uint32_t index = 0U; index < VFS_FILESYSTEM_MAX; index++) {
-		if (g_filesystems[index] != 0)
-			continue;
+		if (g_filesystems[index] != 0) continue;
 
 		g_filesystems[index] = filesystem;
 		filesystem->fs_registered = true;
@@ -146,17 +145,15 @@ bool vfs_register_filesystem(filesystem_t filesystem)
 	return false;
 }
 
-vfs_status_t vfs_mount(const char *filesystem_name, block_device_t device, const char *path)
+vfs_status_t
+vfs_mount(const char *filesystem_name, block_device_t device, const char *path)
 {
-	if (!g_vfs_initialized || filesystem_name == 0 || path == 0 || path[0] != '/')
-		return VFS_STATUS_INVALID;
+	if (!g_vfs_initialized || filesystem_name == 0 || path == 0 || path[0] != '/') return VFS_STATUS_INVALID;
 
 	uint32_t path_length = vfs_string_length(path, VFS_PATH_MAX);
-	if (path_length == VFS_PATH_MAX)
-		return VFS_STATUS_PATH_TOO_LONG;
+	if (path_length == VFS_PATH_MAX) return VFS_STATUS_PATH_TOO_LONG;
 
-	if (path_length > 1U && path[path_length - 1U] == '/')
-		return VFS_STATUS_INVALID;
+	if (path_length > 1U && path[path_length - 1U] == '/') return VFS_STATUS_INVALID;
 
 	filesystem_t filesystem;
 	struct mount *mount = 0;
@@ -193,8 +190,7 @@ vfs_status_t vfs_mount(const char *filesystem_name, block_device_t device, const
 			continue;
 		}
 
-		if (mount == 0)
-			mount = &g_mounts[index];
+		if (mount == 0) mount = &g_mounts[index];
 	}
 
 	if (mount == 0) {
@@ -251,69 +247,59 @@ vfs_status_t vfs_mount(const char *filesystem_name, block_device_t device, const
 	return VFS_STATUS_OK;
 }
 
-static bool vfs_path_equal(const char *left, const char *right)
+static bool
+vfs_path_equal(const char *left, const char *right)
 {
 	uint32_t left_length = vfs_string_length(left, VFS_PATH_MAX);
 	uint32_t right_length = vfs_string_length(right, VFS_PATH_MAX);
-	if (left_length != right_length)
-		return false;
+	if (left_length != right_length) return false;
 	for (uint32_t index = 0U; index < left_length; index++) {
-		if (left[index] != right[index])
-			return false;
+		if (left[index] != right[index]) return false;
 	}
 	return true;
 }
 
-static bool vfs_mount_contains_mount(mount_t parent, mount_t child)
+static bool
+vfs_mount_contains_mount(mount_t parent, mount_t child)
 {
-	if (parent == 0 || child == 0 || parent == child)
-		return false;
+	if (parent == 0 || child == 0 || parent == child) return false;
 	uint32_t parent_length = vfs_string_length(parent->m_path, VFS_PATH_MAX);
 	uint32_t child_length = vfs_string_length(child->m_path, VFS_PATH_MAX);
-	if (parent_length >= child_length)
-		return false;
+	if (parent_length >= child_length) return false;
 
-	if (parent_length == 1U && parent->m_path[0] == '/')
-		return true;
+	if (parent_length == 1U && parent->m_path[0] == '/') return true;
 	for (uint32_t index = 0U; index < parent_length; index++) {
-		if (parent->m_path[index] != child->m_path[index])
-			return false;
+		if (parent->m_path[index] != child->m_path[index]) return false;
 	}
 	return child->m_path[parent_length] == '/';
 }
 
-vfs_status_t vfs_sync_all(void)
+vfs_status_t
+vfs_sync_all(void)
 {
-	if (!g_vfs_initialized)
-		return VFS_STATUS_INVALID;
+	if (!g_vfs_initialized) return VFS_STATUS_INVALID;
 
 	for (uint32_t index = 0U; index < VFS_MOUNT_MAX; index++) {
 		mount_t mount = &g_mounts[index];
-		if (!mount->m_active)
-			continue;
+		if (!mount->m_active) continue;
 
-		if (mount->m_filesystem == 0 || mount->m_filesystem->fs_ops == 0)
-			return VFS_STATUS_IO_ERROR;
-		if (mount->m_filesystem->fs_ops->sync == 0)
-			continue;
+		if (mount->m_filesystem == 0 || mount->m_filesystem->fs_ops == 0) return VFS_STATUS_IO_ERROR;
+		if (mount->m_filesystem->fs_ops->sync == 0) continue;
 		vfs_status_t status = mount->m_filesystem->fs_ops->sync(mount);
-		if (status != VFS_STATUS_OK)
-			return status;
+		if (status != VFS_STATUS_OK) return status;
 	}
 
 	return VFS_STATUS_OK;
 }
 
-vfs_status_t vfs_unmount(const char *path)
+vfs_status_t
+vfs_unmount(const char *path)
 {
-	if (!g_vfs_initialized || path == 0 || path[0] != '/')
-		return VFS_STATUS_INVALID;
+	if (!g_vfs_initialized || path == 0 || path[0] != '/') return VFS_STATUS_INVALID;
 	uint32_t path_length = vfs_string_length(path, VFS_PATH_MAX);
-	if (path_length == 0U || path_length == VFS_PATH_MAX)
-		return VFS_STATUS_PATH_TOO_LONG;
+	if (path_length == 0U || path_length == VFS_PATH_MAX) return VFS_STATUS_PATH_TOO_LONG;
 
-	if (path_length > 1U && path[path_length - 1U] == '/')
-		return VFS_STATUS_INVALID;
+	if (path_length > 1U && path[path_length - 1U] == '/') return VFS_STATUS_INVALID;
 
 	mount_t target = 0;
 	vfs_lock(&g_vfs_lock);
@@ -344,20 +330,19 @@ vfs_status_t vfs_unmount(const char *path)
 	}
 
 	vfs_status_t status = filesystem->fs_ops->unmount(target);
-	if (status != VFS_STATUS_OK)
-		return status;
+	if (status != VFS_STATUS_OK) return status;
 
 	vfs_lock(&g_vfs_lock);
 	uint32_t slot = target->m_slot;
 	memset(target, 0, sizeof(*target));
 	target->m_slot = slot;
-	if (g_mount_count != 0U)
-		g_mount_count--;
+	if (g_mount_count != 0U) g_mount_count--;
 	vfs_unlock(&g_vfs_lock);
 	return VFS_STATUS_OK;
 }
 
-mount_t vfs_root_mount(void)
+mount_t
+vfs_root_mount(void)
 {
 	for (uint32_t index = 0U; index < VFS_MOUNT_MAX; index++) {
 		if (g_mounts[index].m_active && g_mounts[index].m_path[0] == '/' && g_mounts[index].m_path[1] == '\0')
@@ -367,30 +352,30 @@ mount_t vfs_root_mount(void)
 	return 0;
 }
 
-uint32_t vfs_mount_count(void)
+uint32_t
+vfs_mount_count(void)
 {
 	return g_mount_count;
 }
 
-uint32_t vfs_filesystem_count(void)
+uint32_t
+vfs_filesystem_count(void)
 {
 	return g_filesystem_count;
 }
 
-bool vfs_mount_get(uint32_t index, vfs_mount_info_t *info)
+bool
+vfs_mount_get(uint32_t index, vfs_mount_info_t *info)
 {
-	if (!g_vfs_initialized || info == 0)
-		return false;
+	if (!g_vfs_initialized || info == 0) return false;
 	*info = (vfs_mount_info_t){.device_index = UINT32_MAX};
 
 	uint32_t current = 0U;
 	vfs_lock(&g_vfs_lock);
 	for (uint32_t slot = 0U; slot < VFS_MOUNT_MAX; slot++) {
 		mount_t mount = &g_mounts[slot];
-		if (!mount->m_active)
-			continue;
-		if (current++ != index)
-			continue;
+		if (!mount->m_active) continue;
+		if (current++ != index) continue;
 
 		if (mount->m_filesystem != 0)
 			(void)vfs_copy_string(info->filesystem, sizeof(info->filesystem), mount->m_filesystem->fs_name);
@@ -416,18 +401,17 @@ bool vfs_mount_get(uint32_t index, vfs_mount_info_t *info)
 	return false;
 }
 
-vfs_status_t vfs_space_info(const char *path, vfs_space_info_t *info)
+vfs_status_t
+vfs_space_info(const char *path, vfs_space_info_t *info)
 {
-	if (!g_vfs_initialized || path == 0 || info == 0)
-		return VFS_STATUS_INVALID;
+	if (!g_vfs_initialized || path == 0 || info == 0) return VFS_STATUS_INVALID;
 	*info = (vfs_space_info_t){0};
 
 	mount_t mount;
 	const char *relative;
 	vfs_status_t status = vfs_path_select_mount(path, &mount, &relative);
 	(void)relative;
-	if (status != VFS_STATUS_OK)
-		return status;
+	if (status != VFS_STATUS_OK) return status;
 	if (mount->m_filesystem == 0 || mount->m_filesystem->fs_ops == 0 || mount->m_filesystem->fs_ops->space_info == 0) {
 		return VFS_STATUS_NOT_SUPPORTED;
 	}
@@ -435,7 +419,8 @@ vfs_status_t vfs_space_info(const char *path, vfs_space_info_t *info)
 	return mount->m_filesystem->fs_ops->space_info(mount, info);
 }
 
-const char *vfs_status_name(vfs_status_t status)
+const char *
+vfs_status_name(vfs_status_t status)
 {
 	switch (status) {
 	case VFS_STATUS_OK:
@@ -483,7 +468,8 @@ const char *vfs_status_name(vfs_status_t status)
 	}
 }
 
-void vfs_dump(void)
+void
+vfs_dump(void)
 {
 	kputs("IOVirtualFSDriver filesystems: ");
 	kputu64(g_filesystem_count);
@@ -493,8 +479,7 @@ void vfs_dump(void)
 
 	for (uint32_t index = 0U; index < VFS_MOUNT_MAX; index++) {
 		mount_t mount = &g_mounts[index];
-		if (!mount->m_active)
-			continue;
+		if (!mount->m_active) continue;
 
 		kputs("IOVirtualFSDriver mount ");
 		kputs(mount->m_path);
@@ -512,18 +497,15 @@ void vfs_dump(void)
  * Select the longest mount path which contains the absolute pathname. The
  * returned relative path begins at the first component inside that mount.
  */
-vfs_status_t vfs_path_select_mount(const char *path, mount_t *result, const char **relative_path)
+vfs_status_t
+vfs_path_select_mount(const char *path, mount_t *result, const char **relative_path)
 {
-	if (result != 0)
-		*result = 0;
-	if (relative_path != 0)
-		*relative_path = 0;
-	if (path == 0 || result == 0 || relative_path == 0 || path[0] != '/')
-		return VFS_STATUS_INVALID;
+	if (result != 0) *result = 0;
+	if (relative_path != 0) *relative_path = 0;
+	if (path == 0 || result == 0 || relative_path == 0 || path[0] != '/') return VFS_STATUS_INVALID;
 
 	uint32_t path_length = vfs_string_length(path, VFS_PATH_MAX);
-	if (path_length == VFS_PATH_MAX)
-		return VFS_STATUS_PATH_TOO_LONG;
+	if (path_length == VFS_PATH_MAX) return VFS_STATUS_PATH_TOO_LONG;
 
 	mount_t best = 0;
 	uint32_t best_length = 0U;
@@ -532,12 +514,10 @@ vfs_status_t vfs_path_select_mount(const char *path, mount_t *result, const char
 
 	for (uint32_t index = 0U; index < VFS_MOUNT_MAX; index++) {
 		mount_t mount = &g_mounts[index];
-		if (!mount->m_active)
-			continue;
+		if (!mount->m_active) continue;
 
 		uint32_t length = vfs_string_length(mount->m_path, VFS_PATH_MAX);
-		if (length < best_length || length > path_length)
-			continue;
+		if (length < best_length || length > path_length) continue;
 
 		bool match = true;
 		for (uint32_t offset = 0U; offset < length; offset++) {
@@ -547,11 +527,9 @@ vfs_status_t vfs_path_select_mount(const char *path, mount_t *result, const char
 			}
 		}
 
-		if (!match)
-			continue;
+		if (!match) continue;
 
-		if (length != 1U && path[length] != '\0' && path[length] != '/')
-			continue;
+		if (length != 1U && path[length] != '\0' && path[length] != '/') continue;
 
 		best = mount;
 		best_length = length;
@@ -559,8 +537,7 @@ vfs_status_t vfs_path_select_mount(const char *path, mount_t *result, const char
 
 	vfs_unlock(&g_vfs_lock);
 
-	if (best == 0)
-		return VFS_STATUS_NOT_FOUND;
+	if (best == 0) return VFS_STATUS_NOT_FOUND;
 
 	const char *relative = path + best_length;
 	while (*relative == '/')

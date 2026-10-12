@@ -39,7 +39,8 @@ typedef struct {
 
 static pmm_shared_entry_t g_pmm_shared[PMM_SHARED_MAX];
 
-static pmm_shared_entry_t *pmm_shared_find(uint64_t physical_address)
+static pmm_shared_entry_t *
+pmm_shared_find(uint64_t physical_address)
 {
 	for (uint32_t index = 0U; index < PMM_SHARED_MAX; index++) {
 		if (g_pmm_shared[index].used && g_pmm_shared[index].physical_address == physical_address) {
@@ -50,7 +51,8 @@ static pmm_shared_entry_t *pmm_shared_find(uint64_t physical_address)
 	return 0;
 }
 
-static pmm_shared_entry_t *pmm_shared_alloc(uint64_t physical_address)
+static pmm_shared_entry_t *
+pmm_shared_alloc(uint64_t physical_address)
 {
 	for (uint32_t index = 0U; index < PMM_SHARED_MAX; index++) {
 		if (!g_pmm_shared[index].used) {
@@ -64,12 +66,14 @@ static pmm_shared_entry_t *pmm_shared_alloc(uint64_t physical_address)
 	return 0;
 }
 
-static bool pmm_kernel_symbol_physical(const void *symbol, uint64_t *physical_address)
+static bool
+pmm_kernel_symbol_physical(const void *symbol, uint64_t *physical_address)
 {
 	return vmm_kernel_address_to_physical((uint64_t)symbol, physical_address);
 }
 
-static bool pmm_pointer_from_physical(uint64_t physical_address, void **pointer)
+static bool
+pmm_pointer_from_physical(uint64_t physical_address, void **pointer)
 {
 	if (pointer == 0) {
 		return false;
@@ -90,12 +94,14 @@ static bool pmm_pointer_from_physical(uint64_t physical_address, void **pointer)
 	return true;
 }
 
-static uint64_t pmm_align_down(uint64_t value, uint64_t alignment)
+static uint64_t
+pmm_align_down(uint64_t value, uint64_t alignment)
 {
 	return value & ~(alignment - 1ULL);
 }
 
-static bool pmm_align_up(uint64_t value, uint64_t alignment, uint64_t *result)
+static bool
+pmm_align_up(uint64_t value, uint64_t alignment, uint64_t *result)
 {
 	if (result == 0 || alignment == 0ULL || (alignment & (alignment - 1ULL)) != 0ULL) {
 		return false;
@@ -112,7 +118,8 @@ static bool pmm_align_up(uint64_t value, uint64_t alignment, uint64_t *result)
 	return true;
 }
 
-static bool pmm_add(uint64_t left, uint64_t right, uint64_t *result)
+static bool
+pmm_add(uint64_t left, uint64_t right, uint64_t *result)
 {
 	if (result == 0 || left > UINT64_MAX - right) {
 		return false;
@@ -123,12 +130,14 @@ static bool pmm_add(uint64_t left, uint64_t right, uint64_t *result)
 	return true;
 }
 
-static bool pmm_ranges_overlap(uint64_t first_start, uint64_t first_end, uint64_t second_start, uint64_t second_end)
+static bool
+pmm_ranges_overlap(uint64_t first_start, uint64_t first_end, uint64_t second_start, uint64_t second_end)
 {
 	return first_start < second_end && second_start < first_end;
 }
 
-static bool pmm_address_to_index(uint64_t address, uint64_t *index)
+static bool
+pmm_address_to_index(uint64_t address, uint64_t *index)
 {
 	if (index == 0 || address < g_pmm.memory_base || address >= g_pmm.memory_end) {
 		return false;
@@ -139,7 +148,8 @@ static bool pmm_address_to_index(uint64_t address, uint64_t *index)
 	return true;
 }
 
-static bool pmm_bitmap_is_used(uint64_t page_index)
+static bool
+pmm_bitmap_is_used(uint64_t page_index)
 {
 	uint64_t byte_index = page_index >> 3U;
 	uint8_t bit_mask = (uint8_t)(1U << (page_index & 7U));
@@ -147,7 +157,8 @@ static bool pmm_bitmap_is_used(uint64_t page_index)
 	return (g_pmm.bitmap[byte_index] & bit_mask) != 0U;
 }
 
-static void pmm_bitmap_set_used(uint64_t page_index)
+static void
+pmm_bitmap_set_used(uint64_t page_index)
 {
 	uint64_t byte_index = page_index >> 3U;
 	uint8_t bit_mask = (uint8_t)(1U << (page_index & 7U));
@@ -155,7 +166,8 @@ static void pmm_bitmap_set_used(uint64_t page_index)
 	g_pmm.bitmap[byte_index] |= bit_mask;
 }
 
-static void pmm_bitmap_set_free(uint64_t page_index)
+static void
+pmm_bitmap_set_free(uint64_t page_index)
 {
 	uint64_t byte_index = page_index >> 3U;
 	uint8_t bit_mask = (uint8_t)(1U << (page_index & 7U));
@@ -163,7 +175,8 @@ static void pmm_bitmap_set_free(uint64_t page_index)
 	g_pmm.bitmap[byte_index] &= (uint8_t)~bit_mask;
 }
 
-static void pmm_reserve_page(uint64_t page_index)
+static void
+pmm_reserve_page(uint64_t page_index)
 {
 	if (page_index >= g_pmm.page_count) {
 		return;
@@ -179,7 +192,8 @@ static void pmm_reserve_page(uint64_t page_index)
 	g_pmm.used_page_count++;
 }
 
-static void pmm_reserve_range(uint64_t start, uint64_t size)
+static void
+pmm_reserve_range(uint64_t start, uint64_t size)
 {
 	if (size == 0ULL) {
 		return;
@@ -220,8 +234,8 @@ static void pmm_reserve_range(uint64_t start, uint64_t size)
 
 #if !defined(__i386__)
 
-static bool pmm_find_bitmap_location(uint64_t kernel_end, uint64_t bitmap_storage_bytes, const dtb_t *dtb,
-									 uint64_t *bitmap_address)
+static bool
+pmm_find_bitmap_location(uint64_t kernel_end, uint64_t bitmap_storage_bytes, const dtb_t *dtb, uint64_t *bitmap_address)
 {
 	uint64_t candidate;
 
@@ -261,7 +275,8 @@ static bool pmm_find_bitmap_location(uint64_t kernel_end, uint64_t bitmap_storag
 	return true;
 }
 
-bool pmm_init(const platform_t *platform, const dtb_t *dtb)
+bool
+pmm_init(const platform_t *platform, const dtb_t *dtb)
 {
 	if (platform == 0 || dtb == 0 || platform->memory_region_count == 0U) {
 		return false;
@@ -374,7 +389,8 @@ typedef struct {
 static pmm_boot_range_t g_pmm_boot_ranges[PMM_BOOT_RANGE_MAX];
 static uint32_t g_pmm_boot_range_count;
 
-bool pmm_reserve_boot_range(uint64_t base, uint64_t size)
+bool
+pmm_reserve_boot_range(uint64_t base, uint64_t size)
 {
 	if (g_pmm.initialized || size == 0ULL || g_pmm_boot_range_count >= PMM_BOOT_RANGE_MAX) {
 		return false;
@@ -395,7 +411,8 @@ bool pmm_reserve_boot_range(uint64_t base, uint64_t size)
  * First page-aligned physical address at or above `start` where
  * `bytes` fit without touching a registered boot range.
  */
-static bool pmm_find_free_gap(uint64_t start, uint64_t bytes, uint64_t *address)
+static bool
+pmm_find_free_gap(uint64_t start, uint64_t bytes, uint64_t *address)
 {
 	uint64_t candidate;
 
@@ -429,7 +446,8 @@ static bool pmm_find_free_gap(uint64_t start, uint64_t bytes, uint64_t *address)
 	return false;
 }
 
-bool pmm_init(const platform_t *platform, const dtb_t *dtb)
+bool
+pmm_init(const platform_t *platform, const dtb_t *dtb)
 {
 	(void)dtb;
 
@@ -546,7 +564,8 @@ bool pmm_init(const platform_t *platform, const dtb_t *dtb)
 
 #endif /* __i386__ */
 
-bool pmm_allocate_page(uint64_t *physical_address)
+bool
+pmm_allocate_page(uint64_t *physical_address)
 {
 	NXU_RLOCK_GUARD(&g_pmm_lock);
 
@@ -597,7 +616,8 @@ bool pmm_allocate_page(uint64_t *physical_address)
  * base as a single backing segment while the higher-half direct map provides
  * a matching contiguous CPU virtual range.
  */
-bool pmm_allocate_contiguous_pages(uint64_t page_count, uint64_t *physical_address)
+bool
+pmm_allocate_contiguous_pages(uint64_t page_count, uint64_t *physical_address)
 {
 	NXU_RLOCK_GUARD(&g_pmm_lock);
 
@@ -610,15 +630,13 @@ bool pmm_allocate_contiguous_pages(uint64_t page_count, uint64_t *physical_addre
 		bool available = true;
 
 		for (uint64_t offset = 0ULL; offset < page_count; offset++) {
-			if (!pmm_bitmap_is_used(start + offset))
-				continue;
+			if (!pmm_bitmap_is_used(start + offset)) continue;
 			available = false;
 			start += offset;
 			break;
 		}
 
-		if (!available)
-			continue;
+		if (!available) continue;
 
 		for (uint64_t offset = 0ULL; offset < page_count; offset++) {
 			pmm_bitmap_set_used(start + offset);
@@ -642,8 +660,7 @@ bool pmm_allocate_contiguous_pages(uint64_t page_count, uint64_t *physical_addre
 			return false;
 		}
 
-		if (page_count > UINT64_MAX / PMM_PAGE_SIZE)
-			return false;
+		if (page_count > UINT64_MAX / PMM_PAGE_SIZE) return false;
 		memset(pointer, 0, page_count * PMM_PAGE_SIZE);
 		*physical_address = address;
 		return true;
@@ -658,7 +675,8 @@ bool pmm_allocate_contiguous_pages(uint64_t page_count, uint64_t *physical_addre
  * Release a run previously returned by pmm_allocate_contiguous_pages(). The
  * whole range is validated before the bitmap is changed.
  */
-bool pmm_free_contiguous_pages(uint64_t physical_address, uint64_t page_count)
+bool
+pmm_free_contiguous_pages(uint64_t physical_address, uint64_t page_count)
 {
 	NXU_RLOCK_GUARD(&g_pmm_lock);
 
@@ -667,15 +685,12 @@ bool pmm_free_contiguous_pages(uint64_t physical_address, uint64_t page_count)
 	}
 
 	uint64_t first;
-	if (!pmm_address_to_index(physical_address, &first))
-		return false;
+	if (!pmm_address_to_index(physical_address, &first)) return false;
 
-	if (page_count > g_pmm.page_count - first)
-		return false;
+	if (page_count > g_pmm.page_count - first) return false;
 
 	for (uint64_t offset = 0ULL; offset < page_count; offset++) {
-		if (!pmm_bitmap_is_used(first + offset))
-			return false;
+		if (!pmm_bitmap_is_used(first + offset)) return false;
 	}
 
 	/*
@@ -698,23 +713,21 @@ bool pmm_free_contiguous_pages(uint64_t physical_address, uint64_t page_count)
 			continue;
 		}
 
-		if (entry != 0)
-			entry->used = false;
+		if (entry != 0) entry->used = false;
 
 		pmm_bitmap_set_free(page_index);
 		freed_count++;
-		if (page_index < lowest_freed)
-			lowest_freed = page_index;
+		if (page_index < lowest_freed) lowest_freed = page_index;
 	}
 
 	g_pmm.free_page_count += freed_count;
 	g_pmm.used_page_count -= freed_count;
-	if (freed_count != 0ULL && lowest_freed < g_pmm.next_hint)
-		g_pmm.next_hint = lowest_freed;
+	if (freed_count != 0ULL && lowest_freed < g_pmm.next_hint) g_pmm.next_hint = lowest_freed;
 	return true;
 }
 
-bool pmm_page_retain(uint64_t physical_address)
+bool
+pmm_page_retain(uint64_t physical_address)
 {
 	NXU_RLOCK_GUARD(&g_pmm_lock);
 
@@ -723,41 +736,35 @@ bool pmm_page_retain(uint64_t physical_address)
 	}
 
 	uint64_t page_index;
-	if (!pmm_address_to_index(physical_address, &page_index))
-		return false;
-	if (!pmm_bitmap_is_used(page_index))
-		return false;
+	if (!pmm_address_to_index(physical_address, &page_index)) return false;
+	if (!pmm_bitmap_is_used(page_index)) return false;
 
 	pmm_shared_entry_t *entry = pmm_shared_find(physical_address);
-	if (entry == 0)
-		entry = pmm_shared_alloc(physical_address);
-	if (entry == 0)
-		return false;
+	if (entry == 0) entry = pmm_shared_alloc(physical_address);
+	if (entry == 0) return false;
 
-	if (entry->extra_references == UINT32_MAX)
-		return false;
+	if (entry->extra_references == UINT32_MAX) return false;
 	entry->extra_references++;
 	return true;
 }
 
-uint32_t pmm_page_refcount(uint64_t physical_address)
+uint32_t
+pmm_page_refcount(uint64_t physical_address)
 {
 	NXU_RLOCK_GUARD(&g_pmm_lock);
 
-	if (!g_pmm.initialized || (physical_address & (PMM_PAGE_SIZE - 1ULL)) != 0ULL)
-		return 0U;
+	if (!g_pmm.initialized || (physical_address & (PMM_PAGE_SIZE - 1ULL)) != 0ULL) return 0U;
 
 	uint64_t page_index;
-	if (!pmm_address_to_index(physical_address, &page_index))
-		return 0U;
-	if (!pmm_bitmap_is_used(page_index))
-		return 0U;
+	if (!pmm_address_to_index(physical_address, &page_index)) return 0U;
+	if (!pmm_bitmap_is_used(page_index)) return 0U;
 
 	const pmm_shared_entry_t *entry = pmm_shared_find(physical_address);
 	return 1U + (entry != 0 ? entry->extra_references : 0U);
 }
 
-bool pmm_free_page(uint64_t physical_address)
+bool
+pmm_free_page(uint64_t physical_address)
 {
 	NXU_RLOCK_GUARD(&g_pmm_lock);
 
@@ -797,7 +804,8 @@ bool pmm_free_page(uint64_t physical_address)
 	return true;
 }
 
-bool pmm_enter_higher_half(void)
+bool
+pmm_enter_higher_half(void)
 {
 	if (!g_pmm.initialized || g_pmm.higher_half || !vmm_higher_half_direct_map_enabled()) {
 		return false;
@@ -815,36 +823,40 @@ bool pmm_enter_higher_half(void)
 	return true;
 }
 
-bool pmm_higher_half_enabled(void)
+bool
+pmm_higher_half_enabled(void)
 {
 	return g_pmm.higher_half;
 }
 
-uint64_t pmm_get_page_count(void)
+uint64_t
+pmm_get_page_count(void)
 {
 	return g_pmm.page_count;
 }
 
-uint64_t pmm_get_free_page_count(void)
+uint64_t
+pmm_get_free_page_count(void)
 {
 	NXU_RLOCK_GUARD(&g_pmm_lock);
 	return g_pmm.free_page_count;
 }
 
-uint64_t pmm_get_used_page_count(void)
+uint64_t
+pmm_get_used_page_count(void)
 {
 	NXU_RLOCK_GUARD(&g_pmm_lock);
 	return g_pmm.used_page_count;
 }
 
-void pmm_dump(void)
+void
+pmm_dump(void)
 {
 	kprintf("pmm: total pages: %llu\n", (unsigned long long)g_pmm.page_count);
 	kprintf("pmm: used pages: %llu\n", (unsigned long long)g_pmm.used_page_count);
 	kprintf("pmm: free pages: %llu\n", (unsigned long long)g_pmm.free_page_count);
 
-	if (!kconsole_verbose())
-		return;
+	if (!kconsole_verbose()) return;
 
 	kprintf("pmm: RAM range: 0x%llx-0x%llx\n", (unsigned long long)g_pmm.memory_base,
 			(unsigned long long)g_pmm.memory_end);

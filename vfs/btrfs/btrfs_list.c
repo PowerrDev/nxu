@@ -48,21 +48,30 @@ typedef struct {
 	char *link;
 } list_walk_t;
 
-static char list_type_char(vnode_type_t type)
+static char
+list_type_char(vnode_type_t type)
 {
 	switch (type) {
-	case VNODE_TYPE_DIRECTORY: return 'd';
-	case VNODE_TYPE_SYMLINK: return 'l';
-	case VNODE_TYPE_CHARACTER: return 'c';
-	case VNODE_TYPE_BLOCK: return 'b';
-	case VNODE_TYPE_FIFO: return 'p';
-	case VNODE_TYPE_SOCKET: return 's';
-	default: return '-';
+	case VNODE_TYPE_DIRECTORY:
+		return 'd';
+	case VNODE_TYPE_SYMLINK:
+		return 'l';
+	case VNODE_TYPE_CHARACTER:
+		return 'c';
+	case VNODE_TYPE_BLOCK:
+		return 'b';
+	case VNODE_TYPE_FIFO:
+		return 'p';
+	case VNODE_TYPE_SOCKET:
+		return 's';
+	default:
+		return '-';
 	}
 }
 
 /* Nine rwx characters from the permission bits. */
-static void list_mode_string(uint32_t mode, char out[10])
+static void
+list_mode_string(uint32_t mode, char out[10])
 {
 	for (uint32_t group = 0U; group < 3U; group++) {
 		uint32_t shift = (2U - group) * 3U;
@@ -75,14 +84,19 @@ static void list_mode_string(uint32_t mode, char out[10])
 	out[9] = '\0';
 }
 
-static void list_print_entry(list_walk_t *walk, vnode_t vnode, vnode_type_t type, const char *path)
+static void
+list_print_entry(list_walk_t *walk, vnode_t vnode, vnode_type_t type, const char *path)
 {
 	walk->entries++;
 
-	if (type == VNODE_TYPE_DIRECTORY) walk->directories++;
-	else if (type == VNODE_TYPE_REGULAR) walk->files++;
-	else if (type == VNODE_TYPE_SYMLINK) walk->symlinks++;
-	else walk->others++;
+	if (type == VNODE_TYPE_DIRECTORY)
+		walk->directories++;
+	else if (type == VNODE_TYPE_REGULAR)
+		walk->files++;
+	else if (type == VNODE_TYPE_SYMLINK)
+		walk->symlinks++;
+	else
+		walk->others++;
 
 	vnode_attr_t attr;
 
@@ -113,13 +127,15 @@ static void list_print_entry(list_walk_t *walk, vnode_t vnode, vnode_type_t type
 		}
 
 		walk->link[length < LIST_LINK_MAX ? length : LIST_LINK_MAX - 1U] = '\0';
-		kprintf("%c%s %u %llu %s -> %s\n", list_type_char(type), mode, attr.va_nlink, (unsigned long long)attr.va_size, path, walk->link);
+		kprintf("%c%s %u %llu %s -> %s\n", list_type_char(type), mode, attr.va_nlink, (unsigned long long)attr.va_size,
+				path, walk->link);
 	} else {
 		kprintf("%c%s %u %llu %s\n", list_type_char(type), mode, attr.va_nlink, (unsigned long long)attr.va_size, path);
 	}
 }
 
-static void list_walk(list_walk_t *walk, vnode_t directory, char *path, uint32_t depth)
+static void
+list_walk(list_walk_t *walk, vnode_t directory, char *path, uint32_t depth)
 {
 	size_t base = strlen(path);
 	uint64_t cursor = 0ULL;
@@ -142,7 +158,9 @@ static void list_walk(list_walk_t *walk, vnode_t directory, char *path, uint32_t
 			break;
 		}
 
-		if ((entry->name_length == 1U && entry->name[0] == '.') || (entry->name_length == 2U && entry->name[0] == '.' && entry->name[1] == '.')) continue;
+		if ((entry->name_length == 1U && entry->name[0] == '.') ||
+			(entry->name_length == 2U && entry->name[0] == '.' && entry->name[1] == '.'))
+			continue;
 
 		if (base + 1U + entry->name_length + 1U >= LIST_PATH_MAX) {
 			walk->errors++;
@@ -166,7 +184,8 @@ static void list_walk(list_walk_t *walk, vnode_t directory, char *path, uint32_t
 			if (child->v_type == VNODE_TYPE_DIRECTORY) {
 				if (depth + 1U > LIST_DEPTH_MAX) {
 					walk->errors++;
-					kprintf("btrfs_list_run: %s is nested deeper than %u levels, not descended\n", path, LIST_DEPTH_MAX);
+					kprintf("btrfs_list_run: %s is nested deeper than %u levels, not descended\n", path,
+							LIST_DEPTH_MAX);
 				} else {
 					list_walk(walk, child, path, depth + 1U);
 				}
@@ -182,7 +201,8 @@ static void list_walk(list_walk_t *walk, vnode_t directory, char *path, uint32_t
 }
 
 /* Resolve a path relative to the mount root one component at a time (no length limit per name). */
-static vfs_status_t list_resolve(vnode_t root, const char *path, vnode_t *result)
+static vfs_status_t
+list_resolve(vnode_t root, const char *path, vnode_t *result)
 {
 	vnode_t current = root;
 
@@ -191,7 +211,8 @@ static vfs_status_t list_resolve(vnode_t root, const char *path, vnode_t *result
 	const char *cursor = path;
 
 	while (*cursor != '\0') {
-		while (*cursor == '/') cursor++;
+		while (*cursor == '/')
+			cursor++;
 		if (*cursor == '\0') break;
 
 		char name[VFS_DIRENT_NAME_MAX + 1U];
@@ -224,7 +245,8 @@ static vfs_status_t list_resolve(vnode_t root, const char *path, vnode_t *result
 	return VFS_STATUS_OK;
 }
 
-static bool list_cat(vnode_t root, const char *path)
+static bool
+list_cat(vnode_t root, const char *path)
 {
 	vnode_t file;
 	vfs_status_t status = list_resolve(root, path, &file);
@@ -264,14 +286,17 @@ static bool list_cat(vnode_t root, const char *path)
 		return false;
 	}
 
-	kprintf("btrfs_list_run: %s: %llu bytes%s\n", path, (unsigned long long)attr.va_size, attr.va_size > want ? " (first part shown)" : "");
+	kprintf("btrfs_list_run: %s: %llu bytes%s\n", path, (unsigned long long)attr.va_size,
+			attr.va_size > want ? " (first part shown)" : "");
 	kputln("---- begin file ----");
 
 	for (uint64_t index = 0ULL; index < got; index++) {
 		uint8_t byte = buffer[index];
 
-		if (byte == '\n' || (byte >= 0x20U && byte < 0x7FU)) kputc((char)byte);
-		else kputc('.');
+		if (byte == '\n' || (byte >= 0x20U && byte < 0x7FU))
+			kputc((char)byte);
+		else
+			kputc('.');
 	}
 
 	if (got != 0ULL && buffer[got - 1ULL] != '\n') kputc('\n');
@@ -281,7 +306,8 @@ static bool list_cat(vnode_t root, const char *path)
 	return true;
 }
 
-bool btrfs_list_run(const btrfs_list_request_t *request)
+bool
+btrfs_list_run(const btrfs_list_request_t *request)
 {
 	static bool registered;
 
@@ -307,7 +333,8 @@ bool btrfs_list_run(const btrfs_list_request_t *request)
 	mount_path[6] = (char)('0' + (request->device_index % 10U));
 	mount_path[7] = '\0';
 
-	kprintf("btrfs_list_run: mounting %s (%llu sectors) at %s%s\n", device->name, (unsigned long long)device->sector_count, mount_path, request->noverify ? ", data checksums off" : "");
+	kprintf("btrfs_list_run: mounting %s (%llu sectors) at %s%s\n", device->name,
+			(unsigned long long)device->sector_count, mount_path, request->noverify ? ", data checksums off" : "");
 
 	vfs_status_t status = vfs_mkdir(mount_path);
 
@@ -316,7 +343,7 @@ bool btrfs_list_run(const btrfs_list_request_t *request)
 		return false;
 	}
 
-	btrfs_mount_options_t options = { request->subvolume, false, false, request->noverify, { 0, 0, 0 }, 0U };
+	btrfs_mount_options_t options = {request->subvolume, false, false, request->noverify, {0, 0, 0}, 0U};
 
 	btrfs_set_next_mount_options(&options);
 
@@ -353,15 +380,9 @@ bool btrfs_list_run(const btrfs_list_request_t *request)
 				list_walk(&walk, root, path, 0U);
 				kputln("---- end tree ----");
 
-				kprintf(
-					"btrfs_list_run: %u entries: %u directories, %u files (%llu bytes), %u symlinks, %u other\n",
-					walk.entries,
-					walk.directories,
-					walk.files,
-					(unsigned long long)walk.bytes,
-					walk.symlinks,
-					walk.others
-				);
+				kprintf("btrfs_list_run: %u entries: %u directories, %u files (%llu bytes), %u symlinks, %u other\n",
+						walk.entries, walk.directories, walk.files, (unsigned long long)walk.bytes, walk.symlinks,
+						walk.others);
 
 				if (walk.entries > walk.printed) {
 					kprintf("btrfs_list_run: only the first %u entries were printed (raise btrfs-max)\n", walk.printed);

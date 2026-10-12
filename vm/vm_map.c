@@ -23,21 +23,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-bool vm_map_anon(
-	vm_address_space_t *space,
-	uint64_t size_bytes,
-	vm_user_protection_t protection,
-	uint64_t *out_va
-)
+bool
+vm_map_anon(vm_address_space_t *space, uint64_t size_bytes, vm_user_protection_t protection, uint64_t *out_va)
 {
 	if (out_va != 0) *out_va = 0ULL;
 
-	if (
-		space == 0 ||
-		out_va == 0 ||
-		size_bytes == 0ULL ||
-		size_bytes > VM_MAP_MAX_BYTES
-	) {
+	if (space == 0 || out_va == 0 || size_bytes == 0ULL || size_bytes > VM_MAP_MAX_BYTES) {
 		return false;
 	}
 
@@ -49,10 +40,7 @@ bool vm_map_anon(
 	uint64_t base_va = space->mmap_next_va;
 	if (base_va < VM_MAP_BASE) base_va = VM_MAP_BASE;
 
-	if (
-		span > VM_MAP_WINDOW_SIZE ||
-		base_va - VM_MAP_BASE > VM_MAP_WINDOW_SIZE - span
-	) {
+	if (span > VM_MAP_WINDOW_SIZE || base_va - VM_MAP_BASE > VM_MAP_WINDOW_SIZE - span) {
 		nxu_spin_unlock(&space->lock);
 		return false;
 	}
@@ -77,7 +65,8 @@ bool vm_map_anon(
 	nxu_spin_lock(&space->lock);
 
 	vm_map_entry_t *lazy_link = &space->mmap_entries;
-	while (*lazy_link != 0) lazy_link = &(*lazy_link)->next;
+	while (*lazy_link != 0)
+		lazy_link = &(*lazy_link)->next;
 	*lazy_link = lazy_entry;
 
 	nxu_spin_unlock(&space->lock);
@@ -142,7 +131,8 @@ bool vm_map_anon(
 	nxu_spin_lock(&space->lock);
 
 	vm_map_entry_t *link = &space->mmap_entries;
-	while (*link != 0) link = &(*link)->next;
+	while (*link != 0)
+		link = &(*link)->next;
 	*link = entry;
 
 	nxu_spin_unlock(&space->lock);
@@ -152,20 +142,11 @@ bool vm_map_anon(
 #endif
 }
 
-bool vm_map_reserve(
-	vm_address_space_t *space,
-	uint64_t start_va,
-	uint64_t end_va,
-	vm_user_protection_t protection
-)
+bool
+vm_map_reserve(vm_address_space_t *space, uint64_t start_va, uint64_t end_va, vm_user_protection_t protection)
 {
-	if (
-		space == 0 ||
-		start_va >= end_va ||
-		(start_va & (PMM_PAGE_SIZE - 1ULL)) != 0ULL ||
-		(end_va & (PMM_PAGE_SIZE - 1ULL)) != 0ULL ||
-		end_va > VM_MAX_USER_ADDRESS
-	) {
+	if (space == 0 || start_va >= end_va || (start_va & (PMM_PAGE_SIZE - 1ULL)) != 0ULL ||
+		(end_va & (PMM_PAGE_SIZE - 1ULL)) != 0ULL || end_va > VM_MAX_USER_ADDRESS) {
 		return false;
 	}
 
@@ -181,7 +162,8 @@ bool vm_map_reserve(
 
 	/* Keep the list sorted by address and refuse any overlap. */
 	vm_map_entry_t *link = &space->mmap_entries;
-	while (*link != 0 && (*link)->end_va <= start_va) link = &(*link)->next;
+	while (*link != 0 && (*link)->end_va <= start_va)
+		link = &(*link)->next;
 
 	if (*link != 0 && (*link)->start_va < end_va) {
 		nxu_spin_unlock(&space->lock);
@@ -197,11 +179,8 @@ bool vm_map_reserve(
 	return true;
 }
 
-bool vm_map_region_at_locked(
-	const vm_address_space_t *space,
-	uint64_t va,
-	vm_user_protection_t *out_protection
-)
+bool
+vm_map_region_at_locked(const vm_address_space_t *space, uint64_t va, vm_user_protection_t *out_protection)
 {
 	if (space == 0) return false;
 
@@ -215,13 +194,9 @@ bool vm_map_region_at_locked(
 	return false;
 }
 
-bool vm_map_region_at(
-	const vm_address_space_t *space,
-	uint64_t va,
-	vm_user_protection_t *out_protection,
-	uint64_t *out_start_va,
-	uint64_t *out_end_va
-)
+bool
+vm_map_region_at(const vm_address_space_t *space, uint64_t va, vm_user_protection_t *out_protection,
+				 uint64_t *out_start_va, uint64_t *out_end_va)
 {
 	if (space == 0) return false;
 
@@ -245,10 +220,8 @@ bool vm_map_region_at(
 	return found;
 }
 
-bool vm_map_fork(
-	const vm_address_space_t *parent,
-	vm_address_space_t *child
-)
+bool
+vm_map_fork(const vm_address_space_t *parent, vm_address_space_t *child)
 {
 	if (parent == 0 || child == 0 || child->mmap_entries != 0) return false;
 
@@ -294,11 +267,8 @@ bool vm_map_fork(
 	return true;
 }
 
-bool vm_map_free(
-	vm_address_space_t *space,
-	uint64_t va,
-	uint64_t size_bytes
-)
+bool
+vm_map_free(vm_address_space_t *space, uint64_t va, uint64_t size_bytes)
 {
 	if (space == 0 || size_bytes == 0ULL) return false;
 
@@ -370,12 +340,8 @@ bool vm_map_free(
 	return true;
 }
 
-bool vm_map_lookup(
-	const vm_address_space_t *space,
-	uint64_t va,
-	uint64_t *out_start_va,
-	uint64_t *out_end_va
-)
+bool
+vm_map_lookup(const vm_address_space_t *space, uint64_t va, uint64_t *out_start_va, uint64_t *out_end_va)
 {
 	if (space == 0) return false;
 
@@ -401,7 +367,8 @@ bool vm_map_lookup(
 	return found;
 }
 
-void vm_map_destroy_all(vm_address_space_t *space)
+void
+vm_map_destroy_all(vm_address_space_t *space)
 {
 	if (space == 0) return;
 

@@ -43,7 +43,7 @@
 
 typedef struct {
 	btrfs_key_t key;
-	uint32_t offset;           /* of the item's bytes in btrfs_replay_t.data */
+	uint32_t offset; /* of the item's bytes in btrfs_replay_t.data */
 	uint32_t size;
 } btrfs_log_item_t;
 
@@ -52,9 +52,9 @@ typedef struct {
 	uint64_t dir;
 	uint64_t index;
 	uint64_t ino;
-	uint32_t name_offset;      /* into data */
+	uint32_t name_offset; /* into data */
 	uint16_t name_len;
-	uint8_t type;              /* BTRFS_FT_* */
+	uint8_t type; /* BTRFS_FT_* */
 } btrfs_log_dirent_t;
 
 typedef struct {
@@ -65,17 +65,17 @@ typedef struct {
 struct btrfs_replay {
 	btrfs_replay_t *next;
 	uint64_t subvol;
-	btrfs_log_item_t *items;   /* sorted by key */
+	btrfs_log_item_t *items; /* sorted by key */
 	uint32_t count;
 	uint32_t capacity;
 	uint8_t *data;
 	size_t data_size;
 	size_t data_capacity;
-	btrfs_log_dirent_t *dirents;   /* sorted by (dir, index) */
+	btrfs_log_dirent_t *dirents; /* sorted by (dir, index) */
 	uint32_t dirent_count;
-	btrfs_log_gone_t *gone;        /* entries of the fs tree that the log removes by name */
+	btrfs_log_gone_t *gone; /* entries of the fs tree that the log removes by name */
 	uint32_t gone_count;
-	uint32_t csum_first;           /* index of the first EXTENT_CSUM item (count: none) */
+	uint32_t csum_first; /* index of the first EXTENT_CSUM item (count: none) */
 };
 
 /*
@@ -94,7 +94,8 @@ const btrfs_log_item_t *btrfs_replay_item(const btrfs_replay_t *replay, const bt
 /* Index of the first item with a key >= key (replay->count if none). */
 uint32_t btrfs_replay_lower_bound(const btrfs_replay_t *replay, const btrfs_key_t *key);
 
-static inline const uint8_t *btrfs_replay_bytes(const btrfs_replay_t *replay, const btrfs_log_item_t *item)
+static inline const uint8_t *
+btrfs_replay_bytes(const btrfs_replay_t *replay, const btrfs_log_item_t *item)
 {
 	return replay->data + item->offset;
 }

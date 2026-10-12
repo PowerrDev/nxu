@@ -18,7 +18,8 @@
 #define BTRFS_SECTOR_SHIFT 9U
 #define BTRFS_SECTOR_MASK (BLOCK_SECTOR_SIZE - 1U)
 
-static bool btrfs_block_read(void *context, uint64_t offset, void *buffer, size_t length)
+static bool
+btrfs_block_read(void *context, uint64_t offset, void *buffer, size_t length)
 {
 	btrfs_block_reader_t *storage = context;
 	block_device_t device = storage->device;
@@ -56,7 +57,8 @@ static bool btrfs_block_read(void *context, uint64_t offset, void *buffer, size_
 	return true;
 }
 
-void btrfs_block_reader_init(btrfs_block_reader_t *storage, btrfs_reader_t *reader, block_device_t device)
+void
+btrfs_block_reader_init(btrfs_block_reader_t *storage, btrfs_reader_t *reader, block_device_t device)
 {
 	storage->device = device;
 	reader->ctx = storage;

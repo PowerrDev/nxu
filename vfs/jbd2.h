@@ -68,15 +68,8 @@ typedef struct {
  * checksum-v3 transactions and rejects fast-commit and asynchronous-commit
  * journals.
  */
-jbd2_status_t jbd2_init(
-	jbd2_t *journal,
-	block_device_t device,
-	uint32_t block_size,
-	uint64_t filesystem_blocks,
-	const uint64_t *journal_block_map,
-	uint32_t journal_blocks,
-	const uint8_t expected_uuid[16]
-);
+jbd2_status_t jbd2_init(jbd2_t *journal, block_device_t device, uint32_t block_size, uint64_t filesystem_blocks,
+						const uint64_t *journal_block_map, uint32_t journal_blocks, const uint8_t expected_uuid[16]);
 
 void jbd2_destroy(jbd2_t *journal);
 

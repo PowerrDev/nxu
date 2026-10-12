@@ -14,7 +14,8 @@
 
 #include <string.h>
 
-uint32_t btrfs_inode_type(uint32_t mode)
+uint32_t
+btrfs_inode_type(uint32_t mode)
 {
 	uint32_t type = mode & BTRFS_S_IFMT;
 
@@ -33,7 +34,8 @@ uint32_t btrfs_inode_type(uint32_t mode)
 }
 
 /* The committed inode item, without the log. */
-static btrfs_status_t btrfs_inode_read_committed(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t ino, btrfs_inode_item_t *item)
+static btrfs_status_t
+btrfs_inode_read_committed(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t ino, btrfs_inode_item_t *item)
 {
 	btrfs_path_t path;
 	btrfs_key_t key = btrfs_key_make(ino, BTRFS_INODE_ITEM_KEY, 0ULL);
@@ -57,7 +59,8 @@ static btrfs_status_t btrfs_inode_read_committed(btrfs_fs_t *fs, const btrfs_tre
  * a directory that exists only in the log starts from the logged size. Diffing
  * the committed listing against the merged one gives the same numbers.
  */
-static btrfs_status_t btrfs_inode_replayed_dir_size(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t dir, uint64_t base, uint64_t *size)
+static btrfs_status_t
+btrfs_inode_replayed_dir_size(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t dir, uint64_t base, uint64_t *size)
 {
 	uint64_t committed_cursor = 0ULL;
 	uint64_t merged_cursor = 0ULL;
@@ -74,7 +77,8 @@ static btrfs_status_t btrfs_inode_replayed_dir_size(btrfs_fs_t *fs, const btrfs_
 		bool take_committed = cs == BTRFS_OK && (ms != BTRFS_OK || committed.index <= merged.index);
 		bool take_merged = ms == BTRFS_OK && (cs != BTRFS_OK || merged.index <= committed.index);
 
-		if (take_committed && take_merged && committed.name_len == merged.name_len && memcmp(committed.name, merged.name, merged.name_len) == 0) {
+		if (take_committed && take_merged && committed.name_len == merged.name_len &&
+			memcmp(committed.name, merged.name, merged.name_len) == 0) {
 			/* Unchanged. */
 		} else {
 			if (take_committed) total -= 2ULL * committed.name_len;
@@ -92,7 +96,8 @@ static btrfs_status_t btrfs_inode_replayed_dir_size(btrfs_fs_t *fs, const btrfs_
 	return BTRFS_OK;
 }
 
-btrfs_status_t btrfs_inode_read(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t ino, btrfs_inode_t *out)
+btrfs_status_t
+btrfs_inode_read(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t ino, btrfs_inode_t *out)
 {
 	const btrfs_replay_t *replay = btrfs_replay_find(fs, subvol->objectid);
 	btrfs_key_t key = btrfs_key_make(ino, BTRFS_INODE_ITEM_KEY, 0ULL);
@@ -112,8 +117,10 @@ btrfs_status_t btrfs_inode_read(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint
 		btrfs_inode_item_t old;
 
 		status = btrfs_inode_read_committed(fs, subvol, ino, &old);
-		if (status == BTRFS_OK) item.size = old.size;
-		else if (status != BTRFS_ERR_NOT_FOUND) return status;
+		if (status == BTRFS_OK)
+			item.size = old.size;
+		else if (status != BTRFS_ERR_NOT_FOUND)
+			return status;
 
 		status = btrfs_inode_replayed_dir_size(fs, subvol, ino, item.size, &item.size);
 		if (status != BTRFS_OK) return status;
@@ -128,7 +135,9 @@ btrfs_status_t btrfs_inode_read(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint
 	return BTRFS_OK;
 }
 
-btrfs_status_t btrfs_inode_refs(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t ino, btrfs_inode_ref_fn callback, void *context, uint32_t *count)
+btrfs_status_t
+btrfs_inode_refs(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t ino, btrfs_inode_ref_fn callback, void *context,
+				 uint32_t *count)
 {
 	btrfs_path_t path;
 	btrfs_key_t target = btrfs_key_make(ino, BTRFS_INODE_REF_KEY, 0ULL);
@@ -171,14 +180,20 @@ btrfs_status_t btrfs_inode_refs(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint
 
 			if (key.type == BTRFS_INODE_REF_KEY) {
 				header = 10U; /* index u64, name_len u16 */
-				if (remaining < header) { status = BTRFS_ERR_CORRUPT; break; }
+				if (remaining < header) {
+					status = BTRFS_ERR_CORRUPT;
+					break;
+				}
 				ref.parent = key.offset;
 				ref.index = btrfs_get_le64(data + position);
 				ref.name_len = btrfs_get_le16(data + position + 8);
 				ref.extended = false;
 			} else {
 				header = 18U; /* parent u64, index u64, name_len u16 */
-				if (remaining < header) { status = BTRFS_ERR_CORRUPT; break; }
+				if (remaining < header) {
+					status = BTRFS_ERR_CORRUPT;
+					break;
+				}
 				ref.parent = btrfs_get_le64(data + position);
 				ref.index = btrfs_get_le64(data + position + 8);
 				ref.name_len = btrfs_get_le16(data + position + 16);

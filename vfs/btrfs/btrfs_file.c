@@ -25,10 +25,12 @@
 
 /* ---- data checksums ---------------------------------------------------------------------- */
 
-static unsigned btrfs_log2_u32(uint32_t value)
+static unsigned
+btrfs_log2_u32(uint32_t value)
 {
 	unsigned shift = 0U;
-	while ((1U << shift) < value) shift++;
+	while ((1U << shift) < value)
+		shift++;
 	return shift;
 }
 
@@ -41,12 +43,13 @@ static unsigned btrfs_log2_u32(uint32_t value)
  */
 typedef struct {
 	btrfs_path_t path;
-	const uint8_t *window;   /* checksums of [window_start, window_end), pinned by path */
+	const uint8_t *window; /* checksums of [window_start, window_end), pinned by path */
 	uint64_t window_start;
 	uint64_t window_end;
 } btrfs_csum_scan_t;
 
-static void btrfs_csum_scan_init(btrfs_csum_scan_t *scan)
+static void
+btrfs_csum_scan_init(btrfs_csum_scan_t *scan)
 {
 	btrfs_path_init(&scan->path);
 	scan->window = 0;
@@ -54,13 +57,15 @@ static void btrfs_csum_scan_init(btrfs_csum_scan_t *scan)
 	scan->window_end = 0ULL;
 }
 
-static void btrfs_csum_scan_done(btrfs_fs_t *fs, btrfs_csum_scan_t *scan)
+static void
+btrfs_csum_scan_done(btrfs_fs_t *fs, btrfs_csum_scan_t *scan)
 {
 	btrfs_path_release(fs, &scan->path);
 	scan->window = 0;
 }
 
-static btrfs_status_t btrfs_csum_tree_open(btrfs_fs_t *fs)
+static btrfs_status_t
+btrfs_csum_tree_open(btrfs_fs_t *fs)
 {
 	if (fs->have_csum_tree) return BTRFS_OK;
 
@@ -79,7 +84,8 @@ static btrfs_status_t btrfs_csum_tree_open(btrfs_fs_t *fs)
  * the caller decides what that means. The pointer stays valid until the next
  * call on this cursor.
  */
-static btrfs_status_t btrfs_csum_scan_find(btrfs_fs_t *fs, btrfs_csum_scan_t *scan, uint64_t address, const uint8_t **expected)
+static btrfs_status_t
+btrfs_csum_scan_find(btrfs_fs_t *fs, btrfs_csum_scan_t *scan, uint64_t address, const uint8_t **expected)
 {
 	*expected = 0;
 
@@ -95,7 +101,8 @@ static btrfs_status_t btrfs_csum_scan_find(btrfs_fs_t *fs, btrfs_csum_scan_t *sc
 			scan->window = logged;
 			scan->window_start = logged_start;
 			scan->window_end = logged_end;
-			*expected = scan->window + ((address - scan->window_start) >> btrfs_log2_u32(fs->sectorsize)) * fs->csum_size;
+			*expected =
+				scan->window + ((address - scan->window_start) >> btrfs_log2_u32(fs->sectorsize)) * fs->csum_size;
 			return BTRFS_OK;
 		}
 
@@ -112,7 +119,9 @@ static btrfs_status_t btrfs_csum_scan_find(btrfs_fs_t *fs, btrfs_csum_scan_t *sc
 		if (status == BTRFS_ERR_END) return BTRFS_OK;
 		if (status != BTRFS_OK) return status;
 
-		if (!btrfs_path_item(&scan->path, &key, &item, &size) || key.objectid != BTRFS_EXTENT_CSUM_OBJECTID || key.type != BTRFS_EXTENT_CSUM_KEY) return BTRFS_OK;
+		if (!btrfs_path_item(&scan->path, &key, &item, &size) || key.objectid != BTRFS_EXTENT_CSUM_OBJECTID ||
+			key.type != BTRFS_EXTENT_CSUM_KEY)
+			return BTRFS_OK;
 		if ((key.offset & (fs->sectorsize - 1U)) != 0ULL) return BTRFS_ERR_CORRUPT;
 
 		uint64_t covered = ((uint64_t)(size / fs->csum_size)) << btrfs_log2_u32(fs->sectorsize);
@@ -136,7 +145,9 @@ static btrfs_status_t btrfs_csum_scan_find(btrfs_fs_t *fs, btrfs_csum_scan_t *sc
  * Returns BTRFS_ERR_CSUM for a mismatch or a missing checksum; *missing tells
  * which (another copy of the data cannot supply a checksum that is not there).
  */
-static btrfs_status_t btrfs_verify_sectors(btrfs_fs_t *fs, btrfs_csum_scan_t *scan, uint64_t logical, const uint8_t *data, size_t length, bool *missing)
+static btrfs_status_t
+btrfs_verify_sectors(btrfs_fs_t *fs, btrfs_csum_scan_t *scan, uint64_t logical, const uint8_t *data, size_t length,
+					 bool *missing)
 {
 	uint32_t sector = fs->sectorsize;
 
@@ -174,7 +185,8 @@ static btrfs_status_t btrfs_verify_sectors(btrfs_fs_t *fs, btrfs_csum_scan_t *sc
  * for files without data checksums (NODATASUM), and for mounts that opted out
  * with noverify.
  */
-static btrfs_status_t btrfs_read_data_plain(btrfs_fs_t *fs, uint64_t logical, uint8_t *buffer, size_t length)
+static btrfs_status_t
+btrfs_read_data_plain(btrfs_fs_t *fs, uint64_t logical, uint8_t *buffer, size_t length)
 {
 	while (length != 0U) {
 		btrfs_mapping_t mapping;
@@ -209,7 +221,8 @@ static btrfs_status_t btrfs_read_data_plain(btrfs_fs_t *fs, uint64_t logical, ui
  * error) and nothing further is read: a bad extent is an I/O error for the
  * read that touches it, never silently wrong data.
  */
-static btrfs_status_t btrfs_read_data_verified(btrfs_fs_t *fs, uint64_t logical, uint8_t *buffer, size_t length)
+static btrfs_status_t
+btrfs_read_data_verified(btrfs_fs_t *fs, uint64_t logical, uint8_t *buffer, size_t length)
 {
 	uint64_t mask = fs->sectorsize - 1U;
 	uint64_t start = logical & ~mask;
@@ -250,7 +263,8 @@ static btrfs_status_t btrfs_read_data_verified(btrfs_fs_t *fs, uint64_t logical,
 		/* Copy out the part of this chunk the caller asked for. */
 		uint64_t copy_start = position < logical ? logical : position;
 		uint64_t copy_end = position + amount > logical + length ? logical + length : position + amount;
-		if (copy_end > copy_start) memcpy(buffer + (copy_start - logical), scratch + (copy_start - position), (size_t)(copy_end - copy_start));
+		if (copy_end > copy_start)
+			memcpy(buffer + (copy_start - logical), scratch + (copy_start - position), (size_t)(copy_end - copy_start));
 
 		position += amount;
 	}
@@ -266,12 +280,14 @@ static btrfs_status_t btrfs_read_data_verified(btrfs_fs_t *fs, uint64_t logical,
 typedef struct {
 	btrfs_key_t key;
 	btrfs_file_extent_t extent;
-	const uint8_t *item;     /* the item bytes (pinned by the path) */
+	const uint8_t *item; /* the item bytes (pinned by the path) */
 	uint32_t item_size;
-	uint64_t length;         /* bytes of the file this extent covers */
+	uint64_t length; /* bytes of the file this extent covers */
 } btrfs_extent_view_t;
 
-static btrfs_status_t btrfs_extent_parse(btrfs_fs_t *fs, const btrfs_key_t *key, const uint8_t *item, uint32_t size, btrfs_extent_view_t *view)
+static btrfs_status_t
+btrfs_extent_parse(btrfs_fs_t *fs, const btrfs_key_t *key, const uint8_t *item, uint32_t size,
+				   btrfs_extent_view_t *view)
 {
 	if (!btrfs_file_extent_parse(item, size, &view->extent)) return BTRFS_ERR_CORRUPT;
 
@@ -317,7 +333,9 @@ static btrfs_status_t btrfs_extent_parse(btrfs_fs_t *fs, const btrfs_key_t *key,
  * unless the file or the mount says otherwise; the csum covers what is on disk,
  * so the compressed form is what gets verified).
  */
-static btrfs_status_t btrfs_read_data(btrfs_fs_t *fs, const btrfs_inode_t *inode, uint64_t logical, uint8_t *buffer, size_t length, bool *verified)
+static btrfs_status_t
+btrfs_read_data(btrfs_fs_t *fs, const btrfs_inode_t *inode, uint64_t logical, uint8_t *buffer, size_t length,
+				bool *verified)
 {
 	*verified = !fs->options.skip_data_csums && (inode->item.flags & BTRFS_INODE_NODATASUM) == 0ULL;
 
@@ -337,12 +355,15 @@ static btrfs_status_t btrfs_read_data(btrfs_fs_t *fs, const btrfs_inode_t *inode
  * A failed decode leaves the cache empty. Inline extents are small: decoded
  * into a temporary buffer, not cached.
  */
-static btrfs_status_t btrfs_read_compressed(btrfs_fs_t *fs, const btrfs_inode_t *inode, const btrfs_extent_view_t *view, uint64_t skip, uint8_t *buffer, size_t amount)
+static btrfs_status_t
+btrfs_read_compressed(btrfs_fs_t *fs, const btrfs_inode_t *inode, const btrfs_extent_view_t *view, uint64_t skip,
+					  uint8_t *buffer, size_t amount)
 {
 	const btrfs_file_extent_t *e = &view->extent;
 	btrfs_extent_cache_t *cache = &fs->extent_cache;
 
-	if (e->compression >= 4U || fs->decompressors[e->compression].decompress == 0) return BTRFS_ERR_UNSUPPORTED_COMPRESSION;
+	if (e->compression >= 4U || fs->decompressors[e->compression].decompress == 0)
+		return BTRFS_ERR_UNSUPPORTED_COMPRESSION;
 	if (e->ram_bytes == 0ULL || e->ram_bytes > BTRFS_MAX_COMPRESSED_EXTENT) return BTRFS_ERR_CORRUPT;
 
 	size_t decoded = (size_t)e->ram_bytes;
@@ -353,7 +374,9 @@ static btrfs_status_t btrfs_read_compressed(btrfs_fs_t *fs, const btrfs_inode_t 
 
 	bool need_verified = !fs->options.skip_data_csums && (inode->item.flags & BTRFS_INODE_NODATASUM) == 0ULL;
 
-	if (!inline_extent && cache->data != 0 && cache->disk_bytenr == e->disk_bytenr && cache->disk_num_bytes == e->disk_num_bytes && cache->ram_bytes == e->ram_bytes && cache->compression == e->compression && (cache->verified || !need_verified)) {
+	if (!inline_extent && cache->data != 0 && cache->disk_bytenr == e->disk_bytenr &&
+		cache->disk_num_bytes == e->disk_num_bytes && cache->ram_bytes == e->ram_bytes &&
+		cache->compression == e->compression && (cache->verified || !need_verified)) {
 		fs->stats.extent_cache_hits++;
 		memcpy(buffer, cache->data + (size_t)start, amount);
 		return BTRFS_OK;
@@ -393,11 +416,13 @@ static btrfs_status_t btrfs_read_compressed(btrfs_fs_t *fs, const btrfs_inode_t 
 		packed = packed_copy;
 	}
 
-	status = fs->decompressors[e->compression].decompress(fs->decompressors[e->compression].ctx, packed, packed_size, out, decoded);
+	status = fs->decompressors[e->compression].decompress(fs->decompressors[e->compression].ctx, packed, packed_size,
+														  out, decoded);
 	btrfs_free(fs, packed_copy);
 
 	if (status != BTRFS_OK) {
-		BTRFS_LOG(fs, "inode %llu: %s extent at %llu does not decode: %s", BTRFS_U64(inode->ino), btrfs_compression_name(e->compression), BTRFS_U64(e->disk_bytenr), btrfs_status_name(status));
+		BTRFS_LOG(fs, "inode %llu: %s extent at %llu does not decode: %s", BTRFS_U64(inode->ino),
+				  btrfs_compression_name(e->compression), BTRFS_U64(e->disk_bytenr), btrfs_status_name(status));
 		if (inline_extent) btrfs_free(fs, out);
 		return status == BTRFS_ERR_NOMEM ? status : BTRFS_ERR_CORRUPT;
 	}
@@ -421,7 +446,9 @@ static btrfs_status_t btrfs_read_compressed(btrfs_fs_t *fs, const btrfs_inode_t 
 /*
  * Copy `amount` bytes of the file starting `skip` bytes into this extent.
  */
-static btrfs_status_t btrfs_read_extent(btrfs_fs_t *fs, const btrfs_inode_t *inode, const btrfs_extent_view_t *view, uint64_t skip, uint8_t *buffer, size_t amount)
+static btrfs_status_t
+btrfs_read_extent(btrfs_fs_t *fs, const btrfs_inode_t *inode, const btrfs_extent_view_t *view, uint64_t skip,
+				  uint8_t *buffer, size_t amount)
 {
 	const btrfs_file_extent_t *e = &view->extent;
 
@@ -470,16 +497,19 @@ typedef struct {
 	uint32_t capacity;
 } btrfs_merged_t;
 
-static void btrfs_merged_free(btrfs_fs_t *fs, btrfs_merged_t *m)
+static void
+btrfs_merged_free(btrfs_fs_t *fs, btrfs_merged_t *m)
 {
-	for (uint32_t i = 0U; i < m->count; i++) btrfs_free(fs, m->list[i].inline_copy);
+	for (uint32_t i = 0U; i < m->count; i++)
+		btrfs_free(fs, m->list[i].inline_copy);
 	btrfs_free(fs, m->list);
 	m->list = 0;
 	m->count = 0U;
 	m->capacity = 0U;
 }
 
-static btrfs_status_t btrfs_merged_reserve(btrfs_fs_t *fs, btrfs_merged_t *m, uint32_t needed)
+static btrfs_status_t
+btrfs_merged_reserve(btrfs_fs_t *fs, btrfs_merged_t *m, uint32_t needed)
 {
 	if (needed <= m->capacity) return BTRFS_OK;
 	if (needed > BTRFS_MERGED_EXTENTS_MAX) return BTRFS_ERR_UNSUPPORTED;
@@ -502,7 +532,8 @@ static btrfs_status_t btrfs_merged_reserve(btrfs_fs_t *fs, btrfs_merged_t *m, ui
 }
 
 /* Append a parsed extent; an inline one gets a private copy of its item. */
-static btrfs_status_t btrfs_merged_append(btrfs_fs_t *fs, btrfs_merged_t *m, const btrfs_extent_view_t *view)
+static btrfs_status_t
+btrfs_merged_append(btrfs_fs_t *fs, btrfs_merged_t *m, const btrfs_extent_view_t *view)
 {
 	btrfs_status_t status = btrfs_merged_reserve(fs, m, m->count + 1U);
 	if (status != BTRFS_OK) return status;
@@ -530,9 +561,10 @@ static btrfs_status_t btrfs_merged_append(btrfs_fs_t *fs, btrfs_merged_t *m, con
  * before and after the logged range (the tail starts further into the disk
  * extent); an inline extent cannot be cut from the front.
  */
-static btrfs_status_t btrfs_merged_lay(btrfs_fs_t *fs, btrfs_merged_t *m, const btrfs_extent_view_t *logged)
+static btrfs_status_t
+btrfs_merged_lay(btrfs_fs_t *fs, btrfs_merged_t *m, const btrfs_extent_view_t *logged)
 {
-	btrfs_merged_t out = { 0, 0U, 0U };
+	btrfs_merged_t out = {0, 0U, 0U};
 	uint64_t cut_start = logged->key.offset;
 	uint64_t cut_end = cut_start + logged->length;
 	bool inserted = false;
@@ -598,9 +630,11 @@ static btrfs_status_t btrfs_merged_lay(btrfs_fs_t *fs, btrfs_merged_t *m, const 
 	return BTRFS_OK;
 }
 
-static btrfs_status_t btrfs_file_read_merged(btrfs_fs_t *fs, const btrfs_tree_t *subvol, const btrfs_replay_t *replay, const btrfs_inode_t *inode, uint64_t offset, uint8_t *out, uint64_t end)
+static btrfs_status_t
+btrfs_file_read_merged(btrfs_fs_t *fs, const btrfs_tree_t *subvol, const btrfs_replay_t *replay,
+					   const btrfs_inode_t *inode, uint64_t offset, uint8_t *out, uint64_t end)
 {
-	btrfs_merged_t merged = { 0, 0U, 0U };
+	btrfs_merged_t merged = {0, 0U, 0U};
 	btrfs_path_t path;
 	btrfs_key_t key;
 	const uint8_t *item;
@@ -668,7 +702,8 @@ static btrfs_status_t btrfs_file_read_merged(btrfs_fs_t *fs, const btrfs_tree_t 
 
 		uint64_t stop = extent_end < end ? extent_end : end;
 
-		status = btrfs_read_extent(fs, inode, view, position - extent_start, out + (position - offset), (size_t)(stop - position));
+		status = btrfs_read_extent(fs, inode, view, position - extent_start, out + (position - offset),
+								   (size_t)(stop - position));
 		if (status == BTRFS_OK) position = stop;
 	}
 
@@ -678,7 +713,9 @@ static btrfs_status_t btrfs_file_read_merged(btrfs_fs_t *fs, const btrfs_tree_t 
 
 /* ---- the read loop ---------------------------------------------------------------------------- */
 
-btrfs_status_t btrfs_file_read(btrfs_fs_t *fs, const btrfs_tree_t *subvol, const btrfs_inode_t *inode, uint64_t offset, void *buffer, uint64_t length, uint64_t *done)
+btrfs_status_t
+btrfs_file_read(btrfs_fs_t *fs, const btrfs_tree_t *subvol, const btrfs_inode_t *inode, uint64_t offset, void *buffer,
+				uint64_t length, uint64_t *done)
 {
 	uint8_t *out = buffer;
 	uint64_t size = inode->item.size;
@@ -700,7 +737,8 @@ btrfs_status_t btrfs_file_read(btrfs_fs_t *fs, const btrfs_tree_t *subvol, const
 		btrfs_key_t logged_first = btrfs_key_make(inode->ino, BTRFS_EXTENT_DATA_KEY, 0ULL);
 		uint32_t index = btrfs_replay_lower_bound(replay, &logged_first);
 
-		if (index < replay->count && replay->items[index].key.objectid == inode->ino && replay->items[index].key.type == BTRFS_EXTENT_DATA_KEY) {
+		if (index < replay->count && replay->items[index].key.objectid == inode->ino &&
+			replay->items[index].key.type == BTRFS_EXTENT_DATA_KEY) {
 			btrfs_status_t merged_status = btrfs_file_read_merged(fs, subvol, replay, inode, offset, out, end);
 
 			if (merged_status != BTRFS_OK) return merged_status;
@@ -725,7 +763,8 @@ btrfs_status_t btrfs_file_read(btrfs_fs_t *fs, const btrfs_tree_t *subvol, const
 
 	if (status != BTRFS_OK && status != BTRFS_ERR_END) return status;
 
-	if (positioned && (!btrfs_path_item(&path, &key, 0, 0) || key.objectid != inode->ino || key.type != BTRFS_EXTENT_DATA_KEY)) {
+	if (positioned &&
+		(!btrfs_path_item(&path, &key, 0, 0) || key.objectid != inode->ino || key.type != BTRFS_EXTENT_DATA_KEY)) {
 		/* No extent starts at or before the offset: begin at the first one after it. */
 		status = btrfs_tree_search_ge(fs, subvol, &target, &path, 0);
 		positioned = status == BTRFS_OK;
@@ -739,7 +778,8 @@ btrfs_status_t btrfs_file_read(btrfs_fs_t *fs, const btrfs_tree_t *subvol, const
 	status = BTRFS_OK;
 
 	while (position < end) {
-		bool have = positioned && btrfs_path_item(&path, &key, &item, &item_size) && key.objectid == inode->ino && key.type == BTRFS_EXTENT_DATA_KEY;
+		bool have = positioned && btrfs_path_item(&path, &key, &item, &item_size) && key.objectid == inode->ino &&
+					key.type == BTRFS_EXTENT_DATA_KEY;
 
 		if (!have) {
 			/* Nothing but a hole (or the end of the tree) remains. */
@@ -751,7 +791,8 @@ btrfs_status_t btrfs_file_read(btrfs_fs_t *fs, const btrfs_tree_t *subvol, const
 		btrfs_extent_view_t view;
 		status = btrfs_extent_parse(fs, &key, item, item_size, &view);
 		if (status != BTRFS_OK) {
-			BTRFS_LOG(fs, "inode %llu: bad extent item at file offset %llu", BTRFS_U64(inode->ino), BTRFS_U64(key.offset));
+			BTRFS_LOG(fs, "inode %llu: bad extent item at file offset %llu", BTRFS_U64(inode->ino),
+					  BTRFS_U64(key.offset));
 			break;
 		}
 
@@ -794,7 +835,9 @@ btrfs_status_t btrfs_file_read(btrfs_fs_t *fs, const btrfs_tree_t *subvol, const
 	return BTRFS_OK;
 }
 
-btrfs_status_t btrfs_file_readlink(btrfs_fs_t *fs, const btrfs_tree_t *subvol, const btrfs_inode_t *inode, char *buffer, size_t capacity, size_t *length)
+btrfs_status_t
+btrfs_file_readlink(btrfs_fs_t *fs, const btrfs_tree_t *subvol, const btrfs_inode_t *inode, char *buffer,
+					size_t capacity, size_t *length)
 {
 	uint64_t done;
 

@@ -8,16 +8,9 @@
 
 #include <kern/machine/vm_param.h>
 
-typedef enum {
-	VMM_MEMORY_NORMAL,
-	VMM_MEMORY_DEVICE
-} vmm_memory_type_t;
+typedef enum { VMM_MEMORY_NORMAL, VMM_MEMORY_DEVICE } vmm_memory_type_t;
 
-typedef enum {
-	VMM_PROTECTION_READ_WRITE,
-	VMM_PROTECTION_READ_ONLY,
-	VMM_PROTECTION_READ_EXECUTE
-} vmm_protection_t;
+typedef enum { VMM_PROTECTION_READ_WRITE, VMM_PROTECTION_READ_ONLY, VMM_PROTECTION_READ_EXECUTE } vmm_protection_t;
 
 typedef struct {
 	uint64_t physical_address;
@@ -38,12 +31,8 @@ bool vmm_init(const platform_t *platform);
  * This remains an early-boot interface. Use vmm_map_page() for
  * live mappings after vmm_init().
  */
-bool vmm_map_identity(
-	uint64_t physical_address,
-	uint64_t size,
-	vmm_memory_type_t memory_type,
-	vmm_protection_t protection
-);
+bool vmm_map_identity(uint64_t physical_address, uint64_t size, vmm_memory_type_t memory_type,
+					  vmm_protection_t protection);
 
 /*
  * Install one live 4 KiB page mapping.
@@ -51,12 +40,8 @@ bool vmm_map_identity(
  * Both addresses must be page-aligned. The virtual address must
  * currently be unmapped.
  */
-bool vmm_map_page(
-	uint64_t virtual_address,
-	uint64_t physical_address,
-	vmm_memory_type_t memory_type,
-	vmm_protection_t protection
-);
+bool vmm_map_page(uint64_t virtual_address, uint64_t physical_address, vmm_memory_type_t memory_type,
+				  vmm_protection_t protection);
 
 /*
  * Remove one live 4 KiB page mapping.
@@ -64,43 +49,28 @@ bool vmm_map_page(
  * If physical_address is not null, it receives the old physical
  * page address.
  */
-bool vmm_unmap_page(
-	uint64_t virtual_address,
-	uint64_t *physical_address
-);
+bool vmm_unmap_page(uint64_t virtual_address, uint64_t *physical_address);
 
 /*
  * Change the permissions of an existing L3 page mapping using
  * break-before-make.
  */
-bool vmm_protect_page(
-	uint64_t virtual_address,
-	vmm_protection_t protection
-);
+bool vmm_protect_page(uint64_t virtual_address, vmm_protection_t protection);
 
 /*
  * Read the descriptor for an existing L3 page mapping.
  */
-bool vmm_query_page(
-	uint64_t virtual_address,
-	vmm_page_mapping_t *mapping
-);
+bool vmm_query_page(uint64_t virtual_address, vmm_page_mapping_t *mapping);
 
 /*
  * Test an EL1 read translation through AT S1E1R.
  */
-bool vmm_translate(
-	uint64_t virtual_address,
-	uint64_t *physical_address
-);
+bool vmm_translate(uint64_t virtual_address, uint64_t *physical_address);
 
 /*
  * Test an EL1 write translation through AT S1E1W.
  */
-bool vmm_translate_write(
-	uint64_t virtual_address,
-	uint64_t *physical_address
-);
+bool vmm_translate_write(uint64_t virtual_address, uint64_t *physical_address);
 
 /*
  * Build a private translation root that identity-maps [physical_address,
@@ -114,11 +84,7 @@ bool vmm_translate_write(
  * root as its TTBR0 for the few instructions it needs, and disables TTBR0
  * again once it has branched to its higher-half address.
  */
-bool vmm_create_identity_stub(
-	uint64_t physical_address,
-	uint64_t size,
-	uint64_t *root_physical
-);
+bool vmm_create_identity_stub(uint64_t physical_address, uint64_t size, uint64_t *root_physical);
 
 bool vmm_validate_kernel_permissions(void);
 bool vmm_validate_linked_kernel_layout(void);
@@ -146,10 +112,7 @@ bool vmm_init_higher_half_alias(void);
  *
  * Return: true when the address fits in the configured 39-bit region.
  */
-bool vmm_physical_to_higher_half(
-	uint64_t physical_address,
-	uint64_t *virtual_address
-);
+bool vmm_physical_to_higher_half(uint64_t physical_address, uint64_t *virtual_address);
 
 /**
  * vmm_higher_half_to_physical - Convert a direct-map alias back to PA.
@@ -158,10 +121,7 @@ bool vmm_physical_to_higher_half(
  *
  * Return: true when @virtual_address belongs to the higher-half region.
  */
-bool vmm_higher_half_to_physical(
-	uint64_t virtual_address,
-	uint64_t *physical_address
-);
+bool vmm_higher_half_to_physical(uint64_t virtual_address, uint64_t *physical_address);
 
 /**
  * vmm_kernel_address_to_physical - Resolve either kernel alias to its PA.
@@ -172,14 +132,9 @@ bool vmm_higher_half_to_physical(
  * the TTBR1 transition the same linked symbols resolve in the higher half.
  * This helper accepts either representation and returns the common PA.
  */
-bool vmm_kernel_address_to_physical(
-	uint64_t kernel_address,
-	uint64_t *physical_address
-);
+bool vmm_kernel_address_to_physical(uint64_t kernel_address, uint64_t *physical_address);
 
-bool vmm_is_higher_half_address(
-	uint64_t virtual_address
-);
+bool vmm_is_higher_half_address(uint64_t virtual_address);
 
 bool vmm_higher_half_enabled(void);
 

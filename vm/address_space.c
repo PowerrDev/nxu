@@ -53,14 +53,16 @@
  */
 static bool vm_address_in_shm_window(uint64_t address);
 
-static vm_address_space_t *vm_cpu_space(void)
+static vm_address_space_t *
+vm_cpu_space(void)
 {
 	processor_t processor = current_processor();
 
 	return processor == 0 ? 0 : processor->active_space;
 }
 
-static bool vm_user_descriptor(uint64_t physical_address, vm_user_protection_t protection, uint64_t *descriptor)
+static bool
+vm_user_descriptor(uint64_t physical_address, vm_user_protection_t protection, uint64_t *descriptor)
 {
 	if (descriptor == 0 || !vmm_physical_page_valid(physical_address)) {
 		return false;
@@ -94,7 +96,8 @@ static bool vm_user_descriptor(uint64_t physical_address, vm_user_protection_t p
 	return true;
 }
 
-static bool vm_user_descriptor_protection(uint64_t descriptor, vm_user_protection_t *protection)
+static bool
+vm_user_descriptor_protection(uint64_t descriptor, vm_user_protection_t *protection)
 {
 	if (protection == 0) {
 		return false;
@@ -124,8 +127,9 @@ static bool vm_user_descriptor_protection(uint64_t descriptor, vm_user_protectio
 	return false;
 }
 
-static bool vm_address_space_translate(const vm_address_space_t *space, uint64_t virtual_address, bool write,
-									   uint64_t *physical_address)
+static bool
+vm_address_space_translate(const vm_address_space_t *space, uint64_t virtual_address, bool write,
+						   uint64_t *physical_address)
 {
 	if (!vm_address_space_is_active(space) || physical_address == 0) {
 		return false;
@@ -158,12 +162,14 @@ static bool vm_address_space_translate(const vm_address_space_t *space, uint64_t
 	return true;
 }
 
-const vm_address_space_t *vm_address_space_current(void)
+const vm_address_space_t *
+vm_address_space_current(void)
 {
 	return vm_cpu_space();
 }
 
-bool vm_address_space_create(vm_address_space_t *space)
+bool
+vm_address_space_create(vm_address_space_t *space)
 {
 	if (space == 0 || !g_vmm.enabled || !g_vmm.higher_half_enabled || !g_vmm.higher_half_direct_map_enabled ||
 		!g_vmm.kernel_pointers_rebased || space->root != 0 || space->root_physical != 0ULL ||
@@ -186,14 +192,16 @@ bool vm_address_space_create(vm_address_space_t *space)
  * another root (or disabled TTBR0) and flushed its TLB: from then on it can no
  * longer walk the space's tables.
  */
-static void vm_space_leave(vm_address_space_t *space, processor_t cpu)
+static void
+vm_space_leave(vm_address_space_t *space, processor_t cpu)
 {
 	cpuset_remove_atomic(&space->active_cpus, cpu->cpu_id);
 	__atomic_store_n(&space->active, !cpuset_empty(&space->active_cpus), __ATOMIC_RELEASE);
 }
 
 /* Stop this CPU's TTBR0 walks and drop what it cached (local: nobody else's TTBR0 changed). */
-static void vm_ttbr0_disable_local(void)
+static void
+vm_ttbr0_disable_local(void)
 {
 	uint64_t tcr = vmm_read_tcr() | VMM_TCR_EPD0;
 
@@ -220,7 +228,8 @@ static void vm_ttbr0_disable_local(void)
  * of the pairing with the load in vm_address_space_quiesce). It leaves the
  * previous space only afterwards.
  */
-bool vm_address_space_activate(vm_address_space_t *space)
+bool
+vm_address_space_activate(vm_address_space_t *space)
 {
 	if (space == 0 || space->root == 0 || space->root_physical == 0ULL || space->table_count == 0ULL ||
 		!g_vmm.enabled || !g_vmm.kernel_pointers_rebased) {
@@ -264,17 +273,16 @@ bool vm_address_space_activate(vm_address_space_t *space)
 
 	cpu->active_space = space;
 
-	if (previous != 0)
-		vm_space_leave(previous, cpu);
+	if (previous != 0) vm_space_leave(previous, cpu);
 
 	ml_irq_restore(irq_state);
 	return true;
 }
 
-bool vm_address_space_deactivate(void)
+bool
+vm_address_space_deactivate(void)
 {
-	if (!g_vmm.enabled || !g_vmm.kernel_pointers_rebased)
-		return false;
+	if (!g_vmm.enabled || !g_vmm.kernel_pointers_rebased) return false;
 
 	uint64_t irq_state = ml_irq_save();
 	processor_t cpu = current_processor();
@@ -284,8 +292,7 @@ bool vm_address_space_deactivate(void)
 		/* Nothing loaded. The boot CPU's boot-time identity map is torn down once, here or in kern_init. */
 		bool ok = true;
 
-		if (cpu->cpu_id == 0U && !g_vmm.ttbr0_disabled)
-			ok = vmm_disable_ttbr0();
+		if (cpu->cpu_id == 0U && !g_vmm.ttbr0_disabled) ok = vmm_disable_ttbr0();
 
 		ml_irq_restore(irq_state);
 		return ok;
@@ -317,15 +324,14 @@ bool vm_address_space_deactivate(void)
  * Returns false (without freeing anything: the caller must leak rather than free)
  * if the set has not emptied after about two seconds.
  */
-bool vm_address_space_quiesce(vm_address_space_t *space)
+bool
+vm_address_space_quiesce(vm_address_space_t *space)
 {
-	if (space == 0 || space->root == 0)
-		return false;
+	if (space == 0 || space->root == 0) return false;
 
 	processor_t self = current_processor();
 
-	if (self->active_space == space)
-		(void)vm_address_space_deactivate();
+	if (self->active_space == space) (void)vm_address_space_deactivate();
 
 	uint64_t deadline = timer_get_microseconds() + 2000000ULL;
 	uint64_t next_kick = 0ULL;
@@ -333,13 +339,11 @@ bool vm_address_space_quiesce(vm_address_space_t *space)
 	for (;;) {
 		__asm__ volatile("dsb ish" ::: "memory");
 
-		if (cpuset_empty(&space->active_cpus))
-			return true;
+		if (cpuset_empty(&space->active_cpus)) return true;
 
 		uint64_t now = timer_get_microseconds();
 
-		if (now > deadline)
-			return false;
+		if (now > deadline) return false;
 
 		if (now >= next_kick) {
 			next_kick = now + 500ULL;
@@ -362,7 +366,8 @@ bool vm_address_space_quiesce(vm_address_space_t *space)
  * the barrier that makes the descriptor visible to the table walkers of every
  * CPU before the mapping is used.
  */
-static bool vm_space_install_locked(vm_address_space_t *space, uint64_t virtual_address, uint64_t descriptor)
+static bool
+vm_space_install_locked(vm_address_space_t *space, uint64_t virtual_address, uint64_t descriptor)
 {
 	uint64_t *entry;
 
@@ -370,19 +375,18 @@ static bool vm_space_install_locked(vm_address_space_t *space, uint64_t virtual_
 		return false;
 	}
 
-	if ((*entry & VMM_DESC_VALID) != 0ULL)
-		return false;
+	if ((*entry & VMM_DESC_VALID) != 0ULL) return false;
 
 	*entry = descriptor;
 	space->resident_pages++;
-	if (vm_address_in_shm_window(virtual_address))
-		space->shared_pages++;
+	if (vm_address_in_shm_window(virtual_address)) space->shared_pages++;
 	vmm_publish_new_mapping();
 	return true;
 }
 
-bool vm_address_space_map_page_locked(vm_address_space_t *space, uint64_t virtual_address, uint64_t physical_address,
-									  vm_user_protection_t protection)
+bool
+vm_address_space_map_page_locked(vm_address_space_t *space, uint64_t virtual_address, uint64_t physical_address,
+								 vm_user_protection_t protection)
 {
 	if (space == 0 || space->root == 0 || virtual_address < VM_USER_NULL_GUARD_SIZE ||
 		!vmm_lower_page_valid(virtual_address) || !vmm_physical_page_valid(physical_address)) {
@@ -391,14 +395,14 @@ bool vm_address_space_map_page_locked(vm_address_space_t *space, uint64_t virtua
 
 	uint64_t descriptor;
 
-	if (!vm_user_descriptor(physical_address, protection, &descriptor))
-		return false;
+	if (!vm_user_descriptor(physical_address, protection, &descriptor)) return false;
 
 	return vm_space_install_locked(space, virtual_address, descriptor);
 }
 
-bool vm_address_space_map_page(vm_address_space_t *space, uint64_t virtual_address, uint64_t physical_address,
-							   vm_user_protection_t protection)
+bool
+vm_address_space_map_page(vm_address_space_t *space, uint64_t virtual_address, uint64_t physical_address,
+						  vm_user_protection_t protection)
 {
 	if (space == 0 || space->root == 0 || virtual_address < VM_USER_NULL_GUARD_SIZE ||
 		!vmm_lower_page_valid(virtual_address) || !vmm_physical_page_valid(physical_address)) {
@@ -420,7 +424,8 @@ bool vm_address_space_map_page(vm_address_space_t *space, uint64_t virtual_addre
 	return installed;
 }
 
-bool vm_address_space_unmap_page(vm_address_space_t *space, uint64_t virtual_address)
+bool
+vm_address_space_unmap_page(vm_address_space_t *space, uint64_t virtual_address)
 {
 	if (space == 0 || space->root == 0 || virtual_address < VM_USER_NULL_GUARD_SIZE ||
 		!vmm_lower_page_valid(virtual_address)) {
@@ -450,8 +455,7 @@ bool vm_address_space_unmap_page(vm_address_space_t *space, uint64_t virtual_add
 	 * like vmm_unmap_page does for the kernel TTBR1 side. */
 	*entry = 0ULL;
 	space->resident_pages--;
-	if (vm_address_in_shm_window(virtual_address))
-		space->shared_pages--;
+	if (vm_address_in_shm_window(virtual_address)) space->shared_pages--;
 
 	/*
 	 * Inner-shareable, by address, whether or not the space is loaded anywhere:
@@ -467,10 +471,10 @@ bool vm_address_space_unmap_page(vm_address_space_t *space, uint64_t virtual_add
 	return true;
 }
 
-bool vm_address_space_restrict_page(vm_address_space_t *space, uint64_t address)
+bool
+vm_address_space_restrict_page(vm_address_space_t *space, uint64_t address)
 {
-	if (!space || !space->root || address < VM_USER_NULL_GUARD_SIZE || !vmm_lower_page_valid(address))
-		return false;
+	if (!space || !space->root || address < VM_USER_NULL_GUARD_SIZE || !vmm_lower_page_valid(address)) return false;
 	nxu_spin_lock(&space->lock);
 	uint64_t tables = space->table_count, *entry;
 	bool ok = vmm_root_get_l3_entry(space->root, address, false, &tables, &entry);
@@ -487,8 +491,8 @@ bool vm_address_space_restrict_page(vm_address_space_t *space, uint64_t address)
 	return true;
 }
 
-bool vm_address_space_query_page(const vm_address_space_t *space, uint64_t virtual_address,
-								 vm_user_page_mapping_t *mapping)
+bool
+vm_address_space_query_page(const vm_address_space_t *space, uint64_t virtual_address, vm_user_page_mapping_t *mapping)
 {
 	if (space == 0 || space->root == 0 || mapping == 0 || !vmm_lower_page_valid(virtual_address)) {
 		return false;
@@ -529,30 +533,33 @@ bool vm_address_space_query_page(const vm_address_space_t *space, uint64_t virtu
 	return true;
 }
 
-bool vm_address_space_translate_read(const vm_address_space_t *space, uint64_t virtual_address,
-									 uint64_t *physical_address)
+bool
+vm_address_space_translate_read(const vm_address_space_t *space, uint64_t virtual_address, uint64_t *physical_address)
 {
 	return vm_address_space_translate(space, virtual_address, false, physical_address);
 }
 
-bool vm_address_space_translate_write(const vm_address_space_t *space, uint64_t virtual_address,
-									  uint64_t *physical_address)
+bool
+vm_address_space_translate_write(const vm_address_space_t *space, uint64_t virtual_address, uint64_t *physical_address)
 {
 	return vm_address_space_translate(space, virtual_address, true, physical_address);
 }
 
-bool vm_address_space_is_active(const vm_address_space_t *space)
+bool
+vm_address_space_is_active(const vm_address_space_t *space)
 {
 	/* "Is it the space this CPU walks?" -- the calling CPU's TTBR0, no one else's. */
 	return space != 0 && space == vm_cpu_space();
 }
 
-uint64_t vm_address_space_root_physical(const vm_address_space_t *space)
+uint64_t
+vm_address_space_root_physical(const vm_address_space_t *space)
 {
 	return space == 0 ? 0ULL : space->root_physical;
 }
 
-uint64_t vm_address_space_table_count(const vm_address_space_t *space)
+uint64_t
+vm_address_space_table_count(const vm_address_space_t *space)
 {
 	return space == 0 ? 0ULL : space->table_count;
 }
@@ -563,15 +570,16 @@ uint64_t vm_address_space_table_count(const vm_address_space_t *space)
  * mapping a 4 KiB leaf.
  */
 
-static bool vm_table_from_descriptor(uint64_t descriptor, uint64_t **table)
+static bool
+vm_table_from_descriptor(uint64_t descriptor, uint64_t **table)
 {
-	if ((descriptor & VMM_DESC_TYPE_MASK) != VMM_DESC_TABLE_PAGE)
-		return false;
+	if ((descriptor & VMM_DESC_TYPE_MASK) != VMM_DESC_TABLE_PAGE) return false;
 
 	return vmm_table_pointer_from_physical(descriptor & VMM_DESC_ADDRESS_MASK, table);
 }
 
-static bool vm_address_in_shm_window(uint64_t virtual_address)
+static bool
+vm_address_in_shm_window(uint64_t virtual_address)
 {
 	return virtual_address >= VM_SHM_BASE && virtual_address < VM_SHM_BASE + VM_SHM_WINDOW_SIZE;
 }
@@ -582,7 +590,8 @@ static bool vm_address_in_shm_window(uint64_t virtual_address)
  * inner-shareable: threads of the space may be on any CPU, and a CPU that is not
  * running it holds nothing that matters and loses nothing it cannot refill.
  */
-static void vm_address_space_flush_if_active(const vm_address_space_t *space)
+static void
+vm_address_space_flush_if_active(const vm_address_space_t *space)
 {
 	(void)space;
 
@@ -605,7 +614,8 @@ static void vm_address_space_flush_if_active(const vm_address_space_t *space)
  * looked at again. If somebody else has already made it writable, that is success:
  * the faulting instruction can simply run again.
  */
-bool vm_address_space_cow_break(vm_address_space_t *space, uint64_t virtual_address)
+bool
+vm_address_space_cow_break(vm_address_space_t *space, uint64_t virtual_address)
 {
 	if (space == 0 || space->root == 0 || virtual_address < VM_USER_NULL_GUARD_SIZE ||
 		!vmm_lower_page_valid(virtual_address)) {
@@ -656,8 +666,7 @@ bool vm_address_space_cow_break(vm_address_space_t *space, uint64_t virtual_addr
 
 		uint64_t new_physical;
 
-		if (!pmm_allocate_page(&new_physical))
-			return false;
+		if (!pmm_allocate_page(&new_physical)) return false;
 
 		uint64_t old_kernel;
 		uint64_t new_kernel;
@@ -695,10 +704,10 @@ bool vm_address_space_cow_break(vm_address_space_t *space, uint64_t virtual_addr
 	return false;
 }
 
-uint64_t vm_address_space_release_pages(vm_address_space_t *space)
+uint64_t
+vm_address_space_release_pages(vm_address_space_t *space)
 {
-	if (space == 0 || space->root == 0)
-		return 0ULL;
+	if (space == 0 || space->root == 0) return 0ULL;
 
 	uint64_t released = 0ULL;
 
@@ -706,17 +715,14 @@ uint64_t vm_address_space_release_pages(vm_address_space_t *space)
 
 	for (uint32_t l1 = 0U; l1 < VM_TABLE_ENTRIES; l1++) {
 		uint64_t *level2;
-		if (!vm_table_from_descriptor(space->root[l1], &level2))
-			continue;
+		if (!vm_table_from_descriptor(space->root[l1], &level2)) continue;
 
 		for (uint32_t l2 = 0U; l2 < VM_TABLE_ENTRIES; l2++) {
 			uint64_t *level3;
-			if (!vm_table_from_descriptor(level2[l2], &level3))
-				continue;
+			if (!vm_table_from_descriptor(level2[l2], &level3)) continue;
 
 			for (uint32_t l3 = 0U; l3 < VM_TABLE_ENTRIES; l3++) {
-				if ((level3[l3] & VMM_DESC_TYPE_MASK) != VMM_DESC_TABLE_PAGE)
-					continue;
+				if ((level3[l3] & VMM_DESC_TYPE_MASK) != VMM_DESC_TABLE_PAGE) continue;
 
 				(void)pmm_free_page(level3[l3] & VMM_DESC_ADDRESS_MASK);
 				level3[l3] = 0ULL;
@@ -734,10 +740,10 @@ uint64_t vm_address_space_release_pages(vm_address_space_t *space)
 	return released;
 }
 
-bool vm_address_space_destroy(vm_address_space_t *space)
+bool
+vm_address_space_destroy(vm_address_space_t *space)
 {
-	if (space == 0 || space->root == 0)
-		return false;
+	if (space == 0 || space->root == 0) return false;
 
 	/*
 	 * Never free tables a CPU can still walk: this CPU leaves the space, and
@@ -752,12 +758,10 @@ bool vm_address_space_destroy(vm_address_space_t *space)
 
 	for (uint32_t l1 = 0U; l1 < VM_TABLE_ENTRIES; l1++) {
 		uint64_t *level2;
-		if (!vm_table_from_descriptor(space->root[l1], &level2))
-			continue;
+		if (!vm_table_from_descriptor(space->root[l1], &level2)) continue;
 
 		for (uint32_t l2 = 0U; l2 < VM_TABLE_ENTRIES; l2++) {
-			if ((level2[l2] & VMM_DESC_TYPE_MASK) != VMM_DESC_TABLE_PAGE)
-				continue;
+			if ((level2[l2] & VMM_DESC_TYPE_MASK) != VMM_DESC_TABLE_PAGE) continue;
 
 			(void)pmm_free_page(level2[l2] & VMM_DESC_ADDRESS_MASK);
 		}
@@ -772,12 +776,11 @@ bool vm_address_space_destroy(vm_address_space_t *space)
 	return true;
 }
 
-bool vm_address_space_fork(vm_address_space_t *parent, vm_address_space_t *child)
+bool
+vm_address_space_fork(vm_address_space_t *parent, vm_address_space_t *child)
 {
-	if (parent == 0 || child == 0 || parent->root == 0)
-		return false;
-	if (!vm_address_space_create(child))
-		return false;
+	if (parent == 0 || child == 0 || parent->root == 0) return false;
+	if (!vm_address_space_create(child)) return false;
 
 	bool ok = true;
 	bool parent_changed = false;
@@ -786,18 +789,15 @@ bool vm_address_space_fork(vm_address_space_t *parent, vm_address_space_t *child
 
 	for (uint32_t l1 = 0U; ok && l1 < VM_TABLE_ENTRIES; l1++) {
 		uint64_t *level2;
-		if (!vm_table_from_descriptor(parent->root[l1], &level2))
-			continue;
+		if (!vm_table_from_descriptor(parent->root[l1], &level2)) continue;
 
 		for (uint32_t l2 = 0U; ok && l2 < VM_TABLE_ENTRIES; l2++) {
 			uint64_t *level3;
-			if (!vm_table_from_descriptor(level2[l2], &level3))
-				continue;
+			if (!vm_table_from_descriptor(level2[l2], &level3)) continue;
 
 			for (uint32_t l3 = 0U; ok && l3 < VM_TABLE_ENTRIES; l3++) {
 				uint64_t descriptor = level3[l3];
-				if ((descriptor & VMM_DESC_TYPE_MASK) != VMM_DESC_TABLE_PAGE)
-					continue;
+				if ((descriptor & VMM_DESC_TYPE_MASK) != VMM_DESC_TABLE_PAGE) continue;
 
 				uint64_t virtual_address =
 					((uint64_t)l1 << VMM_L1_SHIFT) | ((uint64_t)l2 << VMM_L2_SHIFT) | ((uint64_t)l3 << VMM_L3_SHIFT);
@@ -827,8 +827,7 @@ bool vm_address_space_fork(vm_address_space_t *parent, vm_address_space_t *child
 
 				*entry = child_descriptor;
 				child->resident_pages++;
-				if (vm_address_in_shm_window(virtual_address))
-					child->shared_pages++;
+				if (vm_address_in_shm_window(virtual_address)) child->shared_pages++;
 
 				if (child_descriptor != descriptor) {
 					level3[l3] = child_descriptor;
@@ -838,8 +837,7 @@ bool vm_address_space_fork(vm_address_space_t *parent, vm_address_space_t *child
 		}
 	}
 
-	if (parent_changed)
-		vm_address_space_flush_if_active(parent);
+	if (parent_changed) vm_address_space_flush_if_active(parent);
 
 	nxu_spin_unlock(&parent->lock);
 

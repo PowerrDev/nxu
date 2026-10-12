@@ -72,23 +72,14 @@ uint64_t vm_shm_physical_page(vm_shm_region_t region, uint64_t index);
  * the mapped range only on success). Retains a PMM reference on each page
  * for the duration of this mapping; see vm_shm_unmap_from.
  */
-bool vm_shm_map_into(
-	vm_address_space_t *space,
-	uint64_t *next_va,
-	vm_shm_region_t region,
-	vm_user_protection_t protection,
-	uint64_t *out_va
-);
+bool vm_shm_map_into(vm_address_space_t *space, uint64_t *next_va, vm_shm_region_t region,
+					 vm_user_protection_t protection, uint64_t *out_va);
 
 /*
  * Unmaps region's pages from space starting at va (as returned by
  * vm_shm_map_into) and releases the PMM reference that mapping held.
  * Does not touch region's own handle reference count.
  */
-bool vm_shm_unmap_from(
-	vm_address_space_t *space,
-	uint64_t va,
-	vm_shm_region_t region
-);
+bool vm_shm_unmap_from(vm_address_space_t *space, uint64_t va, vm_shm_region_t region);
 
 #endif

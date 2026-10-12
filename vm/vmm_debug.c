@@ -7,7 +7,8 @@
 
 /* Diagnostics and self-validation. Nothing here participates in mapping. */
 
-static uint64_t vmm_kernel_symbol_physical(const void *symbol)
+static uint64_t
+vmm_kernel_symbol_physical(const void *symbol)
 {
 	uint64_t physical_address = 0ULL;
 
@@ -18,7 +19,8 @@ static uint64_t vmm_kernel_symbol_physical(const void *symbol)
 	return physical_address;
 }
 
-static bool vmm_validate_read_only_section(uint64_t start, uint64_t end)
+static bool
+vmm_validate_read_only_section(uint64_t start, uint64_t end)
 {
 	if (start == end) return true;
 
@@ -29,17 +31,15 @@ static bool vmm_validate_read_only_section(uint64_t start, uint64_t end)
 		return false;
 	}
 
-	if (
-		!vmm_translate(start, &physical_address) ||
-		physical_address != expected_address
-	) {
+	if (!vmm_translate(start, &physical_address) || physical_address != expected_address) {
 		return false;
 	}
 
 	return !vmm_translate_write(start, &physical_address);
 }
 
-static bool vmm_validate_writable_section(uint64_t start, uint64_t end)
+static bool
+vmm_validate_writable_section(uint64_t start, uint64_t end)
 {
 	if (start == end) return true;
 
@@ -55,49 +55,32 @@ static bool vmm_validate_writable_section(uint64_t start, uint64_t end)
 	return physical_address == expected_address;
 }
 
-bool vmm_validate_kernel_permissions(void)
+bool
+vmm_validate_kernel_permissions(void)
 {
 	if (!g_vmm.enabled) return false;
 
-	if (!vmm_validate_read_only_section(
-		(uint64_t)__text_start,
-		(uint64_t)__text_end
-	)) {
+	if (!vmm_validate_read_only_section((uint64_t)__text_start, (uint64_t)__text_end)) {
 		return false;
 	}
 
-	if (!vmm_validate_read_only_section(
-		(uint64_t)__rodata_start,
-		(uint64_t)__rodata_end
-	)) {
+	if (!vmm_validate_read_only_section((uint64_t)__rodata_start, (uint64_t)__rodata_end)) {
 		return false;
 	}
 
-	if (!vmm_validate_writable_section(
-		(uint64_t)__data_start,
-		(uint64_t)__data_end
-	)) {
+	if (!vmm_validate_writable_section((uint64_t)__data_start, (uint64_t)__data_end)) {
 		return false;
 	}
 
-	return vmm_validate_writable_section(
-		(uint64_t)__bss_start,
-		(uint64_t)__bss_end
-	);
+	return vmm_validate_writable_section((uint64_t)__bss_start, (uint64_t)__bss_end);
 }
 
-static bool vmm_validate_linked_section(
-	uint64_t start,
-	uint64_t end,
-	bool writable
-)
+static bool
+vmm_validate_linked_section(uint64_t start, uint64_t end, bool writable)
 {
 	if (start == end) return true;
 
-	if (
-		!vmm_is_higher_half_address(start) ||
-		!vmm_is_higher_half_address(end - 1ULL)
-	) {
+	if (!vmm_is_higher_half_address(start) || !vmm_is_higher_half_address(end - 1ULL)) {
 		return false;
 	}
 
@@ -108,10 +91,7 @@ static bool vmm_validate_linked_section(
 		return false;
 	}
 
-	if (
-		!vmm_translate(start, &physical_address) ||
-		physical_address != expected_address
-	) {
+	if (!vmm_translate(start, &physical_address) || physical_address != expected_address) {
 		return false;
 	}
 
@@ -122,45 +102,28 @@ static bool vmm_validate_linked_section(
 	return !write_translation || physical_address == expected_address;
 }
 
-bool vmm_validate_linked_kernel_layout(void)
+bool
+vmm_validate_linked_kernel_layout(void)
 {
 	if (!g_vmm.higher_half_enabled) return false;
 
-	if (!vmm_validate_linked_section(
-		(uint64_t)__text_start,
-		(uint64_t)__text_end,
-		false
-	)) {
+	if (!vmm_validate_linked_section((uint64_t)__text_start, (uint64_t)__text_end, false)) {
 		return false;
 	}
 
-	if (!vmm_validate_linked_section(
-		(uint64_t)__rodata_start,
-		(uint64_t)__rodata_end,
-		false
-	)) {
+	if (!vmm_validate_linked_section((uint64_t)__rodata_start, (uint64_t)__rodata_end, false)) {
 		return false;
 	}
 
-	if (!vmm_validate_linked_section(
-		(uint64_t)__data_start,
-		(uint64_t)__data_end,
-		true
-	)) {
+	if (!vmm_validate_linked_section((uint64_t)__data_start, (uint64_t)__data_end, true)) {
 		return false;
 	}
 
-	return vmm_validate_linked_section(
-		(uint64_t)__bss_start,
-		(uint64_t)__bss_end,
-		true
-	);
+	return vmm_validate_linked_section((uint64_t)__bss_start, (uint64_t)__bss_end, true);
 }
 
-static bool vmm_validate_higher_alias(
-	uint64_t physical_address,
-	bool writable
-)
+static bool
+vmm_validate_higher_alias(uint64_t physical_address, bool writable)
 {
 	uint64_t virtual_address;
 
@@ -181,21 +144,16 @@ static bool vmm_validate_higher_alias(
 	return !write_translation || translated_address == physical_address;
 }
 
-bool vmm_validate_higher_half_direct_map(const platform_t *platform)
+bool
+vmm_validate_higher_half_direct_map(const platform_t *platform)
 {
 	if (platform == 0 || !g_vmm.higher_half_direct_map_enabled) return false;
 
-	if (!vmm_validate_higher_alias(
-		vmm_kernel_symbol_physical(__text_start),
-		false
-	)) {
+	if (!vmm_validate_higher_alias(vmm_kernel_symbol_physical(__text_start), false)) {
 		return false;
 	}
 
-	if (!vmm_validate_higher_alias(
-		vmm_kernel_symbol_physical(__rodata_start),
-		false
-	)) {
+	if (!vmm_validate_higher_alias(vmm_kernel_symbol_physical(__rodata_start), false)) {
 		return false;
 	}
 
@@ -206,32 +164,20 @@ bool vmm_validate_higher_half_direct_map(const platform_t *platform)
 		return false;
 	}
 
-	if (!vmm_validate_higher_alias(
-		vmm_kernel_symbol_physical(__bss_start),
-		true
-	)) {
+	if (!vmm_validate_higher_alias(vmm_kernel_symbol_physical(__bss_start), true)) {
 		return false;
 	}
 
 	for (uint32_t index = 0U; index < platform->memory_region_count; index++) {
-		if (
-			platform->memory_regions[index].size != 0ULL &&
-			!vmm_validate_higher_alias(
-				platform->memory_regions[index].base,
-				true
-			)
-		) {
+		if (platform->memory_regions[index].size != 0ULL &&
+			!vmm_validate_higher_alias(platform->memory_regions[index].base, true)) {
 			return false;
 		}
 	}
 
 	if (!vmm_validate_higher_alias(platform->uart.base, true)) return false;
 
-
-	if (
-		platform->fw_cfg.size != 0ULL &&
-		!vmm_validate_higher_alias(platform->fw_cfg.base, true)
-	) {
+	if (platform->fw_cfg.size != 0ULL && !vmm_validate_higher_alias(platform->fw_cfg.base, true)) {
 		return false;
 	}
 
@@ -243,18 +189,12 @@ bool vmm_validate_higher_half_direct_map(const platform_t *platform)
 		return false;
 	}
 
-	if (
-		platform->pcie_ecam.size != 0ULL &&
-		!vmm_validate_higher_alias(platform->pcie_ecam.base, true)
-	) {
+	if (platform->pcie_ecam.size != 0ULL && !vmm_validate_higher_alias(platform->pcie_ecam.base, true)) {
 		return false;
 	}
 
 	for (uint32_t index = 0U; index < platform->virtio_mmio_count; index++) {
-		if (!vmm_validate_higher_alias(
-			platform->virtio_mmio[index].base,
-			true
-		)) {
+		if (!vmm_validate_higher_alias(platform->virtio_mmio[index].base, true)) {
 			return false;
 		}
 	}
@@ -262,17 +202,14 @@ bool vmm_validate_higher_half_direct_map(const platform_t *platform)
 	return true;
 }
 
-static void vmm_dump_section(
-	const char *name,
-	uint64_t start,
-	uint64_t end,
-	const char *permissions
-)
+static void
+vmm_dump_section(const char *name, uint64_t start, uint64_t end, const char *permissions)
 {
 	kprintf("vmm: %s: %p-%p %s\n", name, (void *)start, (void *)end, permissions);
 }
 
-void vmm_dump(void)
+void
+vmm_dump(void)
 {
 	kprintf("vmm: stage-1 translation: %s\n", (vmm_read_sctlr() & VMM_SCTLR_M) != 0ULL ? "enabled" : "disabled");
 
@@ -293,7 +230,8 @@ void vmm_dump(void)
 	kprintf("vmm: SCTLR_EL1: %p\n", (void *)vmm_read_sctlr());
 }
 
-void vmm_dump_higher_half(void)
+void
+vmm_dump_higher_half(void)
 {
 	uint64_t ttbr1 = vmm_read_ttbr1();
 	uint64_t tcr = vmm_read_tcr();

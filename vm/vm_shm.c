@@ -29,7 +29,8 @@ struct vm_shm_region {
 	volatile uint32_t lock;
 };
 
-static void vm_shm_lock(vm_shm_region_t region)
+static void
+vm_shm_lock(vm_shm_region_t region)
 {
 	while (__atomic_exchange_n(&region->lock, 1U, __ATOMIC_ACQUIRE) != 0U) {
 #if defined(__i386__) || defined(__x86_64__)
@@ -40,12 +41,14 @@ static void vm_shm_lock(vm_shm_region_t region)
 	}
 }
 
-static void vm_shm_unlock(vm_shm_region_t region)
+static void
+vm_shm_unlock(vm_shm_region_t region)
 {
 	__atomic_store_n(&region->lock, 0U, __ATOMIC_RELEASE);
 }
 
-bool vm_shm_create(uint64_t size_bytes, vm_shm_region_t *regionp)
+bool
+vm_shm_create(uint64_t size_bytes, vm_shm_region_t *regionp)
 {
 	if (regionp != 0) *regionp = VM_SHM_REGION_NULL;
 	if (regionp == 0 || size_bytes == 0ULL || size_bytes > VM_SHM_MAX_BYTES) return false;
@@ -67,7 +70,8 @@ bool vm_shm_create(uint64_t size_bytes, vm_shm_region_t *regionp)
 	}
 
 	if (allocated != page_count) {
-		for (uint64_t index = 0ULL; index < allocated; index++) (void)pmm_free_page(pages[index]);
+		for (uint64_t index = 0ULL; index < allocated; index++)
+			(void)pmm_free_page(pages[index]);
 		(void)kfree(pages);
 		(void)kfree(region);
 		return false;
@@ -83,7 +87,8 @@ bool vm_shm_create(uint64_t size_bytes, vm_shm_region_t *regionp)
 	return true;
 }
 
-bool vm_shm_reference(vm_shm_region_t region)
+bool
+vm_shm_reference(vm_shm_region_t region)
 {
 	if (region == VM_SHM_REGION_NULL) return false;
 
@@ -94,7 +99,8 @@ bool vm_shm_reference(vm_shm_region_t region)
 	return valid;
 }
 
-void vm_shm_release(vm_shm_region_t region)
+void
+vm_shm_release(vm_shm_region_t region)
 {
 	if (region == VM_SHM_REGION_NULL) return;
 
@@ -119,29 +125,28 @@ void vm_shm_release(vm_shm_region_t region)
 	(void)kfree(region);
 }
 
-uint64_t vm_shm_size(vm_shm_region_t region)
+uint64_t
+vm_shm_size(vm_shm_region_t region)
 {
 	return region == VM_SHM_REGION_NULL ? 0ULL : region->size_bytes;
 }
 
-uint64_t vm_shm_page_count(vm_shm_region_t region)
+uint64_t
+vm_shm_page_count(vm_shm_region_t region)
 {
 	return region == VM_SHM_REGION_NULL ? 0ULL : region->page_count;
 }
 
-uint64_t vm_shm_physical_page(vm_shm_region_t region, uint64_t index)
+uint64_t
+vm_shm_physical_page(vm_shm_region_t region, uint64_t index)
 {
 	if (region == VM_SHM_REGION_NULL || index >= region->page_count) return 0ULL;
 	return region->physical_pages[index];
 }
 
-bool vm_shm_map_into(
-	vm_address_space_t *space,
-	uint64_t *next_va,
-	vm_shm_region_t region,
-	vm_user_protection_t protection,
-	uint64_t *out_va
-)
+bool
+vm_shm_map_into(vm_address_space_t *space, uint64_t *next_va, vm_shm_region_t region, vm_user_protection_t protection,
+				uint64_t *out_va)
 {
 	if (out_va != 0) *out_va = 0ULL;
 	if (space == 0 || next_va == 0 || region == VM_SHM_REGION_NULL || out_va == 0) return false;
@@ -194,11 +199,8 @@ bool vm_shm_map_into(
 	return true;
 }
 
-bool vm_shm_unmap_from(
-	vm_address_space_t *space,
-	uint64_t va,
-	vm_shm_region_t region
-)
+bool
+vm_shm_unmap_from(vm_address_space_t *space, uint64_t va, vm_shm_region_t region)
 {
 	if (space == 0 || region == VM_SHM_REGION_NULL) return false;
 

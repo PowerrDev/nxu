@@ -11,11 +11,9 @@
 #include <stdint.h>
 #include <string.h>
 
-#define VM_KERN_PAGE_COUNT \
-	(VM_KERN_SIZE / PMM_PAGE_SIZE)
+#define VM_KERN_PAGE_COUNT (VM_KERN_SIZE / PMM_PAGE_SIZE)
 
-#define VM_KERN_BITMAP_SIZE \
-	((VM_KERN_PAGE_COUNT + 7ULL) / 8ULL)
+#define VM_KERN_BITMAP_SIZE ((VM_KERN_PAGE_COUNT + 7ULL) / 8ULL)
 
 #define VM_KERN_MAX_ALLOCATIONS 256U
 
@@ -29,8 +27,7 @@ typedef struct {
 typedef struct {
 	uint8_t bitmap[VM_KERN_BITMAP_SIZE];
 
-	vm_kern_allocation_t
-		allocations[VM_KERN_MAX_ALLOCATIONS];
+	vm_kern_allocation_t allocations[VM_KERN_MAX_ALLOCATIONS];
 
 	uint64_t used_pages;
 	uint64_t allocation_count;
@@ -47,15 +44,10 @@ static vm_kern_state_t g_vm_kern;
  */
 static nxu_rlock_t g_vm_kern_lock = NXU_RLOCK_INIT;
 
-static bool vm_kern_size_to_pages(
-	size_t size,
-	uint64_t *page_count
-)
+static bool
+vm_kern_size_to_pages(size_t size, uint64_t *page_count)
 {
-	if (
-		size == 0U ||
-		page_count == 0
-	) {
+	if (size == 0U || page_count == 0) {
 		return false;
 	}
 
@@ -67,14 +59,9 @@ static bool vm_kern_size_to_pages(
 		return false;
 	}
 
-	uint64_t pages =
-		(value + mask) /
-		PMM_PAGE_SIZE;
+	uint64_t pages = (value + mask) / PMM_PAGE_SIZE;
 
-	if (
-		pages == 0ULL ||
-		pages > VM_KERN_PAGE_COUNT
-	) {
+	if (pages == 0ULL || pages > VM_KERN_PAGE_COUNT) {
 		return false;
 	}
 
@@ -83,61 +70,40 @@ static bool vm_kern_size_to_pages(
 	return true;
 }
 
-static bool vm_kern_range_valid(
-	uint64_t start_page,
-	uint64_t page_count
-)
+static bool
+vm_kern_range_valid(uint64_t start_page, uint64_t page_count)
 {
-	if (
-		page_count == 0ULL ||
-		start_page >= VM_KERN_PAGE_COUNT
-	) {
+	if (page_count == 0ULL || start_page >= VM_KERN_PAGE_COUNT) {
 		return false;
 	}
 
-	return
-		page_count <= VM_KERN_PAGE_COUNT - start_page;
+	return page_count <= VM_KERN_PAGE_COUNT - start_page;
 }
 
-static uint64_t vm_kern_page_address(
-	uint64_t page_index
-)
+static uint64_t
+vm_kern_page_address(uint64_t page_index)
 {
-	return
-		VM_KERN_BASE +
-		page_index * PMM_PAGE_SIZE;
+	return VM_KERN_BASE + page_index * PMM_PAGE_SIZE;
 }
 
-static bool vm_kern_page_used(
-	uint64_t page_index
-)
+static bool
+vm_kern_page_used(uint64_t page_index)
 {
 	uint64_t byte_index = page_index >> 3U;
 
-	uint32_t bit_index =
-		(uint32_t)(
-			page_index & 7ULL
-		);
+	uint32_t bit_index = (uint32_t)(page_index & 7ULL);
 
 	uint8_t mask = (uint8_t)(1U << bit_index);
 
-	return (
-		g_vm_kern.bitmap[byte_index] &
-		mask
-	) != 0U;
+	return (g_vm_kern.bitmap[byte_index] & mask) != 0U;
 }
 
-static void vm_kern_set_page_used(
-	uint64_t page_index,
-	bool used
-)
+static void
+vm_kern_set_page_used(uint64_t page_index, bool used)
 {
 	uint64_t byte_index = page_index >> 3U;
 
-	uint32_t bit_index =
-		(uint32_t)(
-			page_index & 7ULL
-		);
+	uint32_t bit_index = (uint32_t)(page_index & 7ULL);
 
 	uint8_t mask = (uint8_t)(1U << bit_index);
 
@@ -148,26 +114,17 @@ static void vm_kern_set_page_used(
 	}
 }
 
-static bool vm_kern_find_free_run(
-	uint64_t page_count,
-	uint64_t *start_page
-)
+static bool
+vm_kern_find_free_run(uint64_t page_count, uint64_t *start_page)
 {
-	if (
-		page_count == 0ULL ||
-		start_page == 0
-	) {
+	if (page_count == 0ULL || start_page == 0) {
 		return false;
 	}
 
 	uint64_t run_start = 0ULL;
 	uint64_t run_length = 0ULL;
 
-	for (
-		uint64_t page = 0ULL;
-		page < VM_KERN_PAGE_COUNT;
-		page++
-	) {
+	for (uint64_t page = 0ULL; page < VM_KERN_PAGE_COUNT; page++) {
 		if (vm_kern_page_used(page)) {
 			run_length = 0ULL;
 			continue;
@@ -188,39 +145,21 @@ static bool vm_kern_find_free_run(
 	return false;
 }
 
-static bool vm_kern_reserve_run(
-	uint64_t start_page,
-	uint64_t page_count
-)
+static bool
+vm_kern_reserve_run(uint64_t start_page, uint64_t page_count)
 {
-	if (!vm_kern_range_valid(
-		start_page,
-		page_count
-	)) {
+	if (!vm_kern_range_valid(start_page, page_count)) {
 		return false;
 	}
 
-	for (
-		uint64_t index = 0ULL;
-		index < page_count;
-		index++
-	) {
-		if (vm_kern_page_used(
-			start_page + index
-		)) {
+	for (uint64_t index = 0ULL; index < page_count; index++) {
+		if (vm_kern_page_used(start_page + index)) {
 			return false;
 		}
 	}
 
-	for (
-		uint64_t index = 0ULL;
-		index < page_count;
-		index++
-	) {
-		vm_kern_set_page_used(
-			start_page + index,
-			true
-		);
+	for (uint64_t index = 0ULL; index < page_count; index++) {
+		vm_kern_set_page_used(start_page + index, true);
 	}
 
 	g_vm_kern.used_pages += page_count;
@@ -228,42 +167,21 @@ static bool vm_kern_reserve_run(
 	return true;
 }
 
-static bool vm_kern_release_run(
-	uint64_t start_page,
-	uint64_t page_count
-)
+static bool
+vm_kern_release_run(uint64_t start_page, uint64_t page_count)
 {
-	if (
-		!vm_kern_range_valid(
-			start_page,
-			page_count
-		) ||
-		g_vm_kern.used_pages < page_count
-	) {
+	if (!vm_kern_range_valid(start_page, page_count) || g_vm_kern.used_pages < page_count) {
 		return false;
 	}
 
-	for (
-		uint64_t index = 0ULL;
-		index < page_count;
-		index++
-	) {
-		if (!vm_kern_page_used(
-			start_page + index
-		)) {
+	for (uint64_t index = 0ULL; index < page_count; index++) {
+		if (!vm_kern_page_used(start_page + index)) {
 			return false;
 		}
 	}
 
-	for (
-		uint64_t index = 0ULL;
-		index < page_count;
-		index++
-	) {
-		vm_kern_set_page_used(
-			start_page + index,
-			false
-		);
+	for (uint64_t index = 0ULL; index < page_count; index++) {
+		vm_kern_set_page_used(start_page + index, false);
 	}
 
 	g_vm_kern.used_pages -= page_count;
@@ -274,19 +192,9 @@ static bool vm_kern_release_run(
 static vm_kern_allocation_t *
 vm_kern_find_free_record(void)
 {
-	for (
-		uint32_t index = 0U;
-		index < VM_KERN_MAX_ALLOCATIONS;
-		index++
-	) {
-		if (
-			!g_vm_kern
-				.allocations[index]
-				.active
-		) {
-			return
-				&g_vm_kern
-					.allocations[index];
+	for (uint32_t index = 0U; index < VM_KERN_MAX_ALLOCATIONS; index++) {
+		if (!g_vm_kern.allocations[index].active) {
+			return &g_vm_kern.allocations[index];
 		}
 	}
 
@@ -294,25 +202,12 @@ vm_kern_find_free_record(void)
 }
 
 static vm_kern_allocation_t *
-vm_kern_find_record(
-	uint64_t start_page,
-	uint64_t page_count
-)
+vm_kern_find_record(uint64_t start_page, uint64_t page_count)
 {
-	for (
-		uint32_t index = 0U;
-		index < VM_KERN_MAX_ALLOCATIONS;
-		index++
-	) {
+	for (uint32_t index = 0U; index < VM_KERN_MAX_ALLOCATIONS; index++) {
 		vm_kern_allocation_t *record = &g_vm_kern.allocations[index];
 
-		if (
-			record->active &&
-			record->start_page ==
-				start_page &&
-			record->page_count ==
-				page_count
-		) {
+		if (record->active && record->start_page == start_page && record->page_count == page_count) {
 			return record;
 		}
 	}
@@ -320,32 +215,21 @@ vm_kern_find_record(
 	return 0;
 }
 
-static bool vm_kern_rollback_mappings(
-	uint64_t start_page,
-	uint64_t mapped_pages
-)
+static bool
+vm_kern_rollback_mappings(uint64_t start_page, uint64_t mapped_pages)
 {
 	while (mapped_pages > 0ULL) {
 		mapped_pages--;
 
-		uint64_t virtual_address =
-			vm_kern_page_address(
-				start_page +
-				mapped_pages
-			);
+		uint64_t virtual_address = vm_kern_page_address(start_page + mapped_pages);
 
 		uint64_t physical_address;
 
-		if (!vmm_unmap_page(
-			virtual_address,
-			&physical_address
-		)) {
+		if (!vmm_unmap_page(virtual_address, &physical_address)) {
 			return false;
 		}
 
-		if (!pmm_free_page(
-			physical_address
-		)) {
+		if (!pmm_free_page(physical_address)) {
 			return false;
 		}
 	}
@@ -353,41 +237,28 @@ static bool vm_kern_rollback_mappings(
 	return true;
 }
 
-bool vm_kern_init(void)
+bool
+vm_kern_init(void)
 {
-	if (
-		g_vm_kern.initialized ||
-		!vmm_is_enabled()
-	) {
+	if (g_vm_kern.initialized || !vmm_is_enabled()) {
 		return false;
 	}
 
-	memset(
-		&g_vm_kern,
-		0,
-		sizeof(g_vm_kern)
-	);
+	memset(&g_vm_kern, 0, sizeof(g_vm_kern));
 
 	g_vm_kern.initialized = true;
 
 	return true;
 }
 
-bool vm_kern_allocate(
-	size_t size,
-	vmm_protection_t protection,
-	void **address
-)
+bool
+vm_kern_allocate(size_t size, vmm_protection_t protection, void **address)
 {
 	NXU_RLOCK_GUARD(&g_vm_kern_lock);
 
-	if (
-		!g_vm_kern.initialized ||
-		address == 0
-	) {
+	if (!g_vm_kern.initialized || address == 0) {
 		kprintf("vm_kern: DEBUG entry check failed, initialized=%lu address=%lu\n",
-			(unsigned long)g_vm_kern.initialized,
-			(unsigned long)(uintptr_t)address);
+				(unsigned long)g_vm_kern.initialized, (unsigned long)(uintptr_t)address);
 		return false;
 	}
 
@@ -395,10 +266,7 @@ bool vm_kern_allocate(
 
 	uint64_t page_count;
 
-	if (!vm_kern_size_to_pages(
-		size,
-		&page_count
-	)) {
+	if (!vm_kern_size_to_pages(size, &page_count)) {
 		kprintf("vm_kern: DEBUG vm_kern_size_to_pages failed for size=%lu\n", (unsigned long)size);
 		return false;
 	}
@@ -412,78 +280,42 @@ bool vm_kern_allocate(
 
 	uint64_t start_page;
 
-	if (!vm_kern_find_free_run(
-		page_count,
-		&start_page
-	)) {
+	if (!vm_kern_find_free_run(page_count, &start_page)) {
 		kprintf("vm_kern: DEBUG no free run of %lu page(s), used_pages=%lu allocation_count=%lu\n",
-			(unsigned long)page_count,
-			(unsigned long)g_vm_kern.used_pages,
-			(unsigned long)g_vm_kern.allocation_count);
+				(unsigned long)page_count, (unsigned long)g_vm_kern.used_pages,
+				(unsigned long)g_vm_kern.allocation_count);
 		return false;
 	}
 
-	if (!vm_kern_reserve_run(
-		start_page,
-		page_count
-	)) {
+	if (!vm_kern_reserve_run(start_page, page_count)) {
 		kputln("vm_kern: DEBUG reserve_run failed");
 		return false;
 	}
 
 	uint64_t mapped_pages = 0ULL;
 
-	for (
-		uint64_t index = 0ULL;
-		index < page_count;
-		index++
-	) {
+	for (uint64_t index = 0ULL; index < page_count; index++) {
 		uint64_t physical_address;
 
-		if (!pmm_allocate_page(
-			&physical_address
-		)) {
+		if (!pmm_allocate_page(&physical_address)) {
 			kprintf("vm_kern: DEBUG pmm_allocate_page failed, free=%lu used=%lu total=%lu\n",
-				(unsigned long)pmm_get_free_page_count(),
-				(unsigned long)pmm_get_used_page_count(),
-				(unsigned long)pmm_get_page_count());
-			if (vm_kern_rollback_mappings(
-				start_page,
-				mapped_pages
-			)) {
-				(void)vm_kern_release_run(
-					start_page,
-					page_count
-				);
+					(unsigned long)pmm_get_free_page_count(), (unsigned long)pmm_get_used_page_count(),
+					(unsigned long)pmm_get_page_count());
+			if (vm_kern_rollback_mappings(start_page, mapped_pages)) {
+				(void)vm_kern_release_run(start_page, page_count);
 			}
 
 			return false;
 		}
 
-		uint64_t virtual_address =
-			vm_kern_page_address(
-				start_page + index
-			);
+		uint64_t virtual_address = vm_kern_page_address(start_page + index);
 
-		if (!vmm_map_page(
-			virtual_address,
-			physical_address,
-			VMM_MEMORY_NORMAL,
-			protection
-		)) {
+		if (!vmm_map_page(virtual_address, physical_address, VMM_MEMORY_NORMAL, protection)) {
 			kputln("vm_kern: DEBUG vmm_map_page failed");
-			(void)pmm_free_page(
-				physical_address
-			);
+			(void)pmm_free_page(physical_address);
 
-			if (vm_kern_rollback_mappings(
-				start_page,
-				mapped_pages
-			)) {
-				(void)vm_kern_release_run(
-					start_page,
-					page_count
-				);
+			if (vm_kern_rollback_mappings(start_page, mapped_pages)) {
+				(void)vm_kern_release_run(start_page, page_count);
 			}
 
 			return false;
@@ -498,60 +330,36 @@ bool vm_kern_allocate(
 
 	g_vm_kern.allocation_count++;
 
-	*address = (void *)
-		vm_kern_page_address(start_page);
+	*address = (void *)vm_kern_page_address(start_page);
 
 	return true;
 }
 
-bool vm_kern_free(
-	void *address,
-	size_t size
-)
+bool
+vm_kern_free(void *address, size_t size)
 {
 	NXU_RLOCK_GUARD(&g_vm_kern_lock);
 
-	if (
-		!g_vm_kern.initialized ||
-		address == 0
-	) {
+	if (!g_vm_kern.initialized || address == 0) {
 		return false;
 	}
 
 	uint64_t virtual_address = (uint64_t)address;
 
-	if (
-		virtual_address < VM_KERN_BASE ||
-		virtual_address >= VM_KERN_END ||
-		(
-			virtual_address &
-			(PMM_PAGE_SIZE - 1ULL)
-		) != 0ULL
-	) {
+	if (virtual_address < VM_KERN_BASE || virtual_address >= VM_KERN_END ||
+		(virtual_address & (PMM_PAGE_SIZE - 1ULL)) != 0ULL) {
 		return false;
 	}
 
 	uint64_t page_count;
 
-	if (!vm_kern_size_to_pages(
-		size,
-		&page_count
-	)) {
+	if (!vm_kern_size_to_pages(size, &page_count)) {
 		return false;
 	}
 
-	uint64_t start_page =
-		(
-			virtual_address -
-			VM_KERN_BASE
-		) /
-		PMM_PAGE_SIZE;
+	uint64_t start_page = (virtual_address - VM_KERN_BASE) / PMM_PAGE_SIZE;
 
-	vm_kern_allocation_t *record =
-		vm_kern_find_record(
-			start_page,
-			page_count
-		);
+	vm_kern_allocation_t *record = vm_kern_find_record(start_page, page_count);
 
 	if (record == 0) {
 		return false;
@@ -560,58 +368,33 @@ bool vm_kern_free(
 	/*
 	 * Validate every mapping before changing any page table.
 	 */
-	for (
-		uint64_t index = 0ULL;
-		index < page_count;
-		index++
-	) {
+	for (uint64_t index = 0ULL; index < page_count; index++) {
 		vmm_page_mapping_t mapping;
 
-		if (!vmm_query_page(
-			virtual_address +
-				index * PMM_PAGE_SIZE,
-			&mapping
-		)) {
+		if (!vmm_query_page(virtual_address + index * PMM_PAGE_SIZE, &mapping)) {
 			return false;
 		}
 
-		if (
-			mapping.memory_type !=
-			VMM_MEMORY_NORMAL
-		) {
+		if (mapping.memory_type != VMM_MEMORY_NORMAL) {
 			return false;
 		}
 	}
 
-	for (
-		uint64_t index = 0ULL;
-		index < page_count;
-		index++
-	) {
-		uint64_t page_address =
-			virtual_address +
-			index * PMM_PAGE_SIZE;
+	for (uint64_t index = 0ULL; index < page_count; index++) {
+		uint64_t page_address = virtual_address + index * PMM_PAGE_SIZE;
 
 		uint64_t physical_address;
 
-		if (!vmm_unmap_page(
-			page_address,
-			&physical_address
-		)) {
+		if (!vmm_unmap_page(page_address, &physical_address)) {
 			return false;
 		}
 
-		if (!pmm_free_page(
-			physical_address
-		)) {
+		if (!pmm_free_page(physical_address)) {
 			return false;
 		}
 	}
 
-	if (!vm_kern_release_run(
-		start_page,
-		page_count
-	)) {
+	if (!vm_kern_release_run(start_page, page_count)) {
 		return false;
 	}
 
@@ -622,9 +405,8 @@ bool vm_kern_free(
 	return true;
 }
 
-bool vm_kern_contains(
-	const void *address
-)
+bool
+vm_kern_contains(const void *address)
 {
 	if (address == 0) {
 		return false;
@@ -632,34 +414,35 @@ bool vm_kern_contains(
 
 	uint64_t value = (uint64_t)address;
 
-	return
-		value >= VM_KERN_BASE &&
-		value < VM_KERN_END;
+	return value >= VM_KERN_BASE && value < VM_KERN_END;
 }
 
-uint64_t vm_kern_get_total_pages(void)
+uint64_t
+vm_kern_get_total_pages(void)
 {
 	return VM_KERN_PAGE_COUNT;
 }
 
-uint64_t vm_kern_get_used_pages(void)
+uint64_t
+vm_kern_get_used_pages(void)
 {
 	return g_vm_kern.used_pages;
 }
 
-uint64_t vm_kern_get_free_pages(void)
+uint64_t
+vm_kern_get_free_pages(void)
 {
-	return
-		VM_KERN_PAGE_COUNT -
-		g_vm_kern.used_pages;
+	return VM_KERN_PAGE_COUNT - g_vm_kern.used_pages;
 }
 
-uint64_t vm_kern_get_allocation_count(void)
+uint64_t
+vm_kern_get_allocation_count(void)
 {
 	return g_vm_kern.allocation_count;
 }
 
-void vm_kern_dump(void)
+void
+vm_kern_dump(void)
 {
 	kprintf("vm_kern: range: 0x%llx-0x%llx\n", (unsigned long long)VM_KERN_BASE, (unsigned long long)VM_KERN_END);
 	kprintf("vm_kern: free pages: %llu\n", (unsigned long long)(VM_KERN_PAGE_COUNT - g_vm_kern.used_pages));

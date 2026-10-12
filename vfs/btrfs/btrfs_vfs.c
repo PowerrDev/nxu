@@ -55,11 +55,11 @@ typedef struct btrfs_mount btrfs_mount_t;
 
 struct btrfs_node {
 	struct vnode vnode;
-	btrfs_tree_t tree;         /* the subvolume the inode lives in */
+	btrfs_tree_t tree; /* the subvolume the inode lives in */
 	btrfs_inode_t inode;
-	bool synthetic;            /* a placeholder directory: no inode item on disk */
-	btrfs_node_t *hash_next;   /* the (tree, inode) index; not used by placeholders */
-	btrfs_node_t *all_next;    /* every node, for teardown */
+	bool synthetic;			 /* a placeholder directory: no inode item on disk */
+	btrfs_node_t *hash_next; /* the (tree, inode) index; not used by placeholders */
+	btrfs_node_t *all_next;	 /* every node, for teardown */
 };
 
 struct btrfs_mount {
@@ -87,35 +87,27 @@ static vfs_status_t btrfs_create(vnode_t directory, const char *name, vnode_type
 static vfs_status_t btrfs_unlink(vnode_t directory, const char *name);
 static vfs_status_t btrfs_readdir(vnode_t directory, uint64_t *offset, vfs_dirent_t *entry);
 static vfs_status_t btrfs_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint64_t *read_size);
-static vfs_status_t btrfs_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint64_t *written_size);
+static vfs_status_t btrfs_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size,
+								uint64_t *written_size);
 static vfs_status_t btrfs_truncate(vnode_t vnode, uint64_t size);
 static vfs_status_t btrfs_getattr(vnode_t vnode, vnode_attr_t *attr);
 static vfs_status_t btrfs_readlink(vnode_t vnode, char *buffer, uint64_t capacity, uint64_t *length);
 
 static const filesystem_operations_t g_btrfs_filesystem_operations = {
-	.mount = btrfs_mount_op,
-	.sync = btrfs_sync_op,
-	.unmount = btrfs_unmount_op,
-	.space_info = btrfs_space_info_op
-};
+	.mount = btrfs_mount_op, .sync = btrfs_sync_op, .unmount = btrfs_unmount_op, .space_info = btrfs_space_info_op};
 
-static const vnode_operations_t g_btrfs_vnode_operations = {
-	.lookup = btrfs_lookup,
-	.create = btrfs_create,
-	.unlink = btrfs_unlink,
-	.rmdir = btrfs_unlink,
-	.readdir = btrfs_readdir,
-	.read = btrfs_read,
-	.write = btrfs_write,
-	.truncate = btrfs_truncate,
-	.getattr = btrfs_getattr,
-	.readlink = btrfs_readlink
-};
+static const vnode_operations_t g_btrfs_vnode_operations = {.lookup = btrfs_lookup,
+															.create = btrfs_create,
+															.unlink = btrfs_unlink,
+															.rmdir = btrfs_unlink,
+															.readdir = btrfs_readdir,
+															.read = btrfs_read,
+															.write = btrfs_write,
+															.truncate = btrfs_truncate,
+															.getattr = btrfs_getattr,
+															.readlink = btrfs_readlink};
 
-static struct vfs_filesystem g_btrfs_filesystem = {
-	.fs_name = "btrfs",
-	.fs_ops = &g_btrfs_filesystem_operations
-};
+static struct vfs_filesystem g_btrfs_filesystem = {.fs_name = "btrfs", .fs_ops = &g_btrfs_filesystem_operations};
 
 static btrfs_mount_t *g_btrfs_mounts[BTRFS_MOUNT_MAX];
 static uint32_t g_btrfs_mount_count;
@@ -125,19 +117,22 @@ static btrfs_status_t g_last_mount_status = BTRFS_OK;
 
 /* ---- environment for the core ------------------------------------------------------ */
 
-static void *btrfs_env_alloc(void *context, size_t size)
+static void *
+btrfs_env_alloc(void *context, size_t size)
 {
 	(void)context;
 	return kcalloc(1U, size);
 }
 
-static void btrfs_env_release(void *context, void *pointer)
+static void
+btrfs_env_release(void *context, void *pointer)
 {
 	(void)context;
 	(void)kfree(pointer);
 }
 
-static void btrfs_env_log(void *context, const char *line)
+static void
+btrfs_env_log(void *context, const char *line)
 {
 	(void)context;
 	kputs(line);
@@ -146,40 +141,55 @@ static void btrfs_env_log(void *context, const char *line)
 
 /* ---- helpers ----------------------------------------------------------------------------- */
 
-static void btrfs_lock(btrfs_mount_t *data)
+static void
+btrfs_lock(btrfs_mount_t *data)
 {
-	while (__atomic_exchange_n(&data->lock, 1U, __ATOMIC_ACQUIRE) != 0U) cpu_relax();
+	while (__atomic_exchange_n(&data->lock, 1U, __ATOMIC_ACQUIRE) != 0U)
+		cpu_relax();
 }
 
-static void btrfs_unlock(btrfs_mount_t *data)
+static void
+btrfs_unlock(btrfs_mount_t *data)
 {
 	__atomic_store_n(&data->lock, 0U, __ATOMIC_RELEASE);
 }
 
-static btrfs_mount_t *btrfs_data(vnode_t vnode)
+static btrfs_mount_t *
+btrfs_data(vnode_t vnode)
 {
 	if (vnode == 0 || vnode->v_mount == 0) return 0;
 	return vnode->v_mount->m_data;
 }
 
-static btrfs_node_t *btrfs_node(vnode_t vnode)
+static btrfs_node_t *
+btrfs_node(vnode_t vnode)
 {
 	return vnode == 0 ? 0 : vnode->v_data;
 }
 
 /* The VFS status set is coarse; see btrfs_last_mount_status() for the exact cause. */
-static vfs_status_t btrfs_vfs_status(btrfs_status_t status)
+static vfs_status_t
+btrfs_vfs_status(btrfs_status_t status)
 {
 	switch (status) {
-	case BTRFS_OK: return VFS_STATUS_OK;
-	case BTRFS_ERR_INVALID: return VFS_STATUS_INVALID;
-	case BTRFS_ERR_NOMEM: return VFS_STATUS_NO_MEMORY;
-	case BTRFS_ERR_BAD_MAGIC: return VFS_STATUS_INVALID;
-	case BTRFS_ERR_NOT_FOUND: return VFS_STATUS_NOT_FOUND;
-	case BTRFS_ERR_END: return VFS_STATUS_END_OF_DIRECTORY;
-	case BTRFS_ERR_NOT_DIRECTORY: return VFS_STATUS_NOT_DIRECTORY;
-	case BTRFS_ERR_IS_DIRECTORY: return VFS_STATUS_IS_DIRECTORY;
-	case BTRFS_ERR_NAME_TOO_LONG: return VFS_STATUS_NAME_TOO_LONG;
+	case BTRFS_OK:
+		return VFS_STATUS_OK;
+	case BTRFS_ERR_INVALID:
+		return VFS_STATUS_INVALID;
+	case BTRFS_ERR_NOMEM:
+		return VFS_STATUS_NO_MEMORY;
+	case BTRFS_ERR_BAD_MAGIC:
+		return VFS_STATUS_INVALID;
+	case BTRFS_ERR_NOT_FOUND:
+		return VFS_STATUS_NOT_FOUND;
+	case BTRFS_ERR_END:
+		return VFS_STATUS_END_OF_DIRECTORY;
+	case BTRFS_ERR_NOT_DIRECTORY:
+		return VFS_STATUS_NOT_DIRECTORY;
+	case BTRFS_ERR_IS_DIRECTORY:
+		return VFS_STATUS_IS_DIRECTORY;
+	case BTRFS_ERR_NAME_TOO_LONG:
+		return VFS_STATUS_NAME_TOO_LONG;
 	case BTRFS_ERR_UNSUPPORTED:
 	case BTRFS_ERR_UNSUPPORTED_FEATURE:
 	case BTRFS_ERR_UNSUPPORTED_CSUM:
@@ -198,35 +208,54 @@ static vfs_status_t btrfs_vfs_status(btrfs_status_t status)
 	}
 }
 
-static vnode_type_t btrfs_vnode_type(uint32_t mode)
+static vnode_type_t
+btrfs_vnode_type(uint32_t mode)
 {
 	switch (btrfs_inode_type(mode)) {
-	case BTRFS_S_IFREG: return VNODE_TYPE_REGULAR;
-	case BTRFS_S_IFDIR: return VNODE_TYPE_DIRECTORY;
-	case BTRFS_S_IFLNK: return VNODE_TYPE_SYMLINK;
-	case BTRFS_S_IFCHR: return VNODE_TYPE_CHARACTER;
-	case BTRFS_S_IFBLK: return VNODE_TYPE_BLOCK;
-	case BTRFS_S_IFIFO: return VNODE_TYPE_FIFO;
-	case BTRFS_S_IFSOCK: return VNODE_TYPE_SOCKET;
-	default: return VNODE_TYPE_NONE;
+	case BTRFS_S_IFREG:
+		return VNODE_TYPE_REGULAR;
+	case BTRFS_S_IFDIR:
+		return VNODE_TYPE_DIRECTORY;
+	case BTRFS_S_IFLNK:
+		return VNODE_TYPE_SYMLINK;
+	case BTRFS_S_IFCHR:
+		return VNODE_TYPE_CHARACTER;
+	case BTRFS_S_IFBLK:
+		return VNODE_TYPE_BLOCK;
+	case BTRFS_S_IFIFO:
+		return VNODE_TYPE_FIFO;
+	case BTRFS_S_IFSOCK:
+		return VNODE_TYPE_SOCKET;
+	default:
+		return VNODE_TYPE_NONE;
 	}
 }
 
-static vnode_type_t btrfs_ft_type(uint8_t type)
+static vnode_type_t
+btrfs_ft_type(uint8_t type)
 {
 	switch (type) {
-	case BTRFS_FT_REG_FILE: return VNODE_TYPE_REGULAR;
-	case BTRFS_FT_DIR: return VNODE_TYPE_DIRECTORY;
-	case BTRFS_FT_CHRDEV: return VNODE_TYPE_CHARACTER;
-	case BTRFS_FT_BLKDEV: return VNODE_TYPE_BLOCK;
-	case BTRFS_FT_FIFO: return VNODE_TYPE_FIFO;
-	case BTRFS_FT_SOCK: return VNODE_TYPE_SOCKET;
-	case BTRFS_FT_SYMLINK: return VNODE_TYPE_SYMLINK;
-	default: return VNODE_TYPE_NONE;
+	case BTRFS_FT_REG_FILE:
+		return VNODE_TYPE_REGULAR;
+	case BTRFS_FT_DIR:
+		return VNODE_TYPE_DIRECTORY;
+	case BTRFS_FT_CHRDEV:
+		return VNODE_TYPE_CHARACTER;
+	case BTRFS_FT_BLKDEV:
+		return VNODE_TYPE_BLOCK;
+	case BTRFS_FT_FIFO:
+		return VNODE_TYPE_FIFO;
+	case BTRFS_FT_SOCK:
+		return VNODE_TYPE_SOCKET;
+	case BTRFS_FT_SYMLINK:
+		return VNODE_TYPE_SYMLINK;
+	default:
+		return VNODE_TYPE_NONE;
 	}
 }
 
-static uint32_t btrfs_node_bucket(uint64_t tree_id, uint64_t ino)
+static uint32_t
+btrfs_node_bucket(uint64_t tree_id, uint64_t ino)
 {
 	return (uint32_t)((ino * 0x9E3779B1ULL) ^ (tree_id * 0x85EBCA6BULL)) & (BTRFS_NODE_BUCKETS - 1U);
 }
@@ -235,7 +264,9 @@ static uint32_t btrfs_node_bucket(uint64_t tree_id, uint64_t ino)
  * Return a vnode for (tree, ino) with one caller reference, creating and
  * caching it on first use. `inode` is the already-read inode item.
  */
-static vfs_status_t btrfs_get_node_locked(btrfs_mount_t *data, const btrfs_tree_t *tree, const btrfs_inode_t *inode, bool synthetic, vnode_t parent, vnode_t *result)
+static vfs_status_t
+btrfs_get_node_locked(btrfs_mount_t *data, const btrfs_tree_t *tree, const btrfs_inode_t *inode, bool synthetic,
+					  vnode_t parent, vnode_t *result)
 {
 	*result = 0;
 
@@ -280,7 +311,8 @@ static vfs_status_t btrfs_get_node_locked(btrfs_mount_t *data, const btrfs_tree_
 	return VFS_STATUS_OK;
 }
 
-static void btrfs_destroy_mount(btrfs_mount_t *data)
+static void
+btrfs_destroy_mount(btrfs_mount_t *data)
 {
 	btrfs_node_t *node = data->all;
 
@@ -296,7 +328,8 @@ static void btrfs_destroy_mount(btrfs_mount_t *data)
 
 /* ---- mount ------------------------------------------------------------------------------------ */
 
-void btrfs_set_next_mount_options(const btrfs_mount_options_t *options)
+void
+btrfs_set_next_mount_options(const btrfs_mount_options_t *options)
 {
 	if (options == 0) {
 		g_next_options_set = false;
@@ -307,27 +340,31 @@ void btrfs_set_next_mount_options(const btrfs_mount_options_t *options)
 	g_next_options_set = true;
 }
 
-btrfs_status_t btrfs_last_mount_status(void)
+btrfs_status_t
+btrfs_last_mount_status(void)
 {
 	return g_last_mount_status;
 }
 
-const char *btrfs_last_mount_status_name(void)
+const char *
+btrfs_last_mount_status_name(void)
 {
 	return btrfs_status_name(g_last_mount_status);
 }
 
-static vfs_status_t btrfs_mount_fail(btrfs_status_t status)
+static vfs_status_t
+btrfs_mount_fail(btrfs_status_t status)
 {
 	g_last_mount_status = status;
 	return btrfs_vfs_status(status);
 }
 
-static vfs_status_t btrfs_mount_op(filesystem_t filesystem, block_device_t device, mount_t mount)
+static vfs_status_t
+btrfs_mount_op(filesystem_t filesystem, block_device_t device, mount_t mount)
 {
 	(void)filesystem;
 
-	btrfs_mount_options_t options = { 0ULL, false, false, false, { 0, 0, 0 }, 0U };
+	btrfs_mount_options_t options = {0ULL, false, false, false, {0, 0, 0}, 0U};
 	if (g_next_options_set) options = g_next_options;
 	g_next_options_set = false;
 	g_last_mount_status = BTRFS_OK;
@@ -337,7 +374,8 @@ static vfs_status_t btrfs_mount_op(filesystem_t filesystem, block_device_t devic
 	if (options.extra_count > BTRFS_MOUNT_EXTRA_DEVICES) return btrfs_mount_fail(BTRFS_ERR_INVALID);
 
 	for (uint32_t index = 0U; index < options.extra_count; index++) {
-		if (options.extra_devices[index] == 0 || !options.extra_devices[index]->registered) return btrfs_mount_fail(BTRFS_ERR_INVALID);
+		if (options.extra_devices[index] == 0 || !options.extra_devices[index]->registered)
+			return btrfs_mount_fail(BTRFS_ERR_INVALID);
 	}
 	if (g_btrfs_mount_count >= BTRFS_MOUNT_MAX) return VFS_STATUS_NO_SPACE;
 
@@ -348,11 +386,13 @@ static vfs_status_t btrfs_mount_op(filesystem_t filesystem, block_device_t devic
 	data->device = device;
 	data->devices[0] = device;
 	data->device_count = 1U + options.extra_count;
-	for (uint32_t index = 1U; index < data->device_count; index++) data->devices[index] = options.extra_devices[index - 1U];
-	for (uint32_t index = 0U; index < data->device_count; index++) btrfs_block_reader_init(&data->block[index], &data->reader[index], data->devices[index]);
+	for (uint32_t index = 1U; index < data->device_count; index++)
+		data->devices[index] = options.extra_devices[index - 1U];
+	for (uint32_t index = 0U; index < data->device_count; index++)
+		btrfs_block_reader_init(&data->block[index], &data->reader[index], data->devices[index]);
 
-	btrfs_env_t env = { data, btrfs_env_alloc, btrfs_env_release, btrfs_env_log };
-	btrfs_open_options_t open_options = { options.subvol_id, options.noverify, options.ignore_log_tree, 0U };
+	btrfs_env_t env = {data, btrfs_env_alloc, btrfs_env_release, btrfs_env_log};
+	btrfs_open_options_t open_options = {options.subvol_id, options.noverify, options.ignore_log_tree, 0U};
 	btrfs_status_t status;
 
 	data->fs = btrfs_fs_open_devices(&env, data->reader, data->device_count, &open_options, &status);
@@ -392,14 +432,16 @@ static vfs_status_t btrfs_mount_op(filesystem_t filesystem, block_device_t devic
 	return VFS_STATUS_OK;
 }
 
-static vfs_status_t btrfs_sync_op(mount_t mount)
+static vfs_status_t
+btrfs_sync_op(mount_t mount)
 {
 	/* Nothing is ever dirty: the mount is read-only. */
 	if (mount == 0 || mount->m_data == 0) return VFS_STATUS_INVALID;
 	return VFS_STATUS_OK;
 }
 
-static vfs_status_t btrfs_space_info_op(mount_t mount, vfs_space_info_t *info)
+static vfs_status_t
+btrfs_space_info_op(mount_t mount, vfs_space_info_t *info)
 {
 	if (mount == 0 || info == 0) return VFS_STATUS_INVALID;
 
@@ -409,12 +451,10 @@ static vfs_status_t btrfs_space_info_op(mount_t mount, vfs_space_info_t *info)
 	uint64_t total = data->fs->super.total_bytes;
 	uint64_t used = data->fs->super.bytes_used;
 
-	*info = (vfs_space_info_t) {
-		.total_bytes = total,
-		.free_bytes = used < total ? total - used : 0ULL,
-		.block_size = data->fs->sectorsize,
-		.read_only = true
-	};
+	*info = (vfs_space_info_t){.total_bytes = total,
+							   .free_bytes = used < total ? total - used : 0ULL,
+							   .block_size = data->fs->sectorsize,
+							   .read_only = true};
 	return VFS_STATUS_OK;
 }
 
@@ -422,7 +462,8 @@ static vfs_status_t btrfs_space_info_op(mount_t mount, vfs_space_info_t *info)
  * Every resident vnode holds one residency reference; the root holds one more
  * for the mount. Anything above that is a live path or open file: BUSY.
  */
-static vfs_status_t btrfs_unmount_op(mount_t mount)
+static vfs_status_t
+btrfs_unmount_op(mount_t mount)
 {
 	if (mount == 0 || mount->m_data == 0 || mount->m_root == 0) return VFS_STATUS_INVALID;
 
@@ -438,14 +479,16 @@ static vfs_status_t btrfs_unmount_op(mount_t mount)
 		}
 	}
 
-	for (btrfs_node_t *node = data->all; node != 0; node = node->all_next) node->vnode.v_active = false;
+	for (btrfs_node_t *node = data->all; node != 0; node = node->all_next)
+		node->vnode.v_active = false;
 	data->active = false;
 	btrfs_unlock(data);
 
 	for (uint32_t index = 0U; index < g_btrfs_mount_count; index++) {
 		if (g_btrfs_mounts[index] != data) continue;
 
-		for (uint32_t move = index + 1U; move < g_btrfs_mount_count; move++) g_btrfs_mounts[move - 1U] = g_btrfs_mounts[move];
+		for (uint32_t move = index + 1U; move < g_btrfs_mount_count; move++)
+			g_btrfs_mounts[move - 1U] = g_btrfs_mounts[move];
 		g_btrfs_mount_count--;
 		g_btrfs_mounts[g_btrfs_mount_count] = 0;
 		break;
@@ -464,7 +507,8 @@ static vfs_status_t btrfs_unmount_op(mount_t mount)
  * subvolume's own tree at its root directory inode; a point that has no
  * subvolume behind it (a snapshot's placeholder) is an empty directory.
  */
-static vfs_status_t btrfs_entry_to_vnode_locked(btrfs_mount_t *data, btrfs_node_t *directory, const btrfs_dirent_t *entry, vnode_t *result)
+static vfs_status_t
+btrfs_entry_to_vnode_locked(btrfs_mount_t *data, btrfs_node_t *directory, const btrfs_dirent_t *entry, vnode_t *result)
 {
 	btrfs_fs_t *fs = data->fs;
 	btrfs_inode_t inode;
@@ -475,7 +519,8 @@ static vfs_status_t btrfs_entry_to_vnode_locked(btrfs_mount_t *data, btrfs_node_
 	if (btrfs_dirent_is_subvol(entry)) {
 		btrfs_subvol_t subvol;
 
-		status = btrfs_root_resolve_point(fs, directory->tree.objectid, directory->inode.ino, entry->name, entry->name_len, entry->location.objectid, &subvol);
+		status = btrfs_root_resolve_point(fs, directory->tree.objectid, directory->inode.ino, entry->name,
+										  entry->name_len, entry->location.objectid, &subvol);
 
 		if (status == BTRFS_OK) {
 			tree = subvol.tree;
@@ -497,7 +542,8 @@ static vfs_status_t btrfs_entry_to_vnode_locked(btrfs_mount_t *data, btrfs_node_
 	return btrfs_get_node_locked(data, &tree, &inode, synthetic, &directory->vnode, result);
 }
 
-static vfs_status_t btrfs_lookup(vnode_t directory, const char *name, vnode_t *result)
+static vfs_status_t
+btrfs_lookup(vnode_t directory, const char *name, vnode_t *result)
 {
 	if (result != 0) *result = 0;
 	if (directory == 0 || name == 0 || result == 0) return VFS_STATUS_INVALID;
@@ -517,17 +563,21 @@ static vfs_status_t btrfs_lookup(vnode_t directory, const char *name, vnode_t *r
 	btrfs_lock(data);
 
 	btrfs_dirent_t entry;
-	btrfs_status_t status = btrfs_dir_lookup(data->fs, &node->tree, node->inode.ino, (const uint8_t *)name, length, &entry);
+	btrfs_status_t status =
+		btrfs_dir_lookup(data->fs, &node->tree, node->inode.ino, (const uint8_t *)name, length, &entry);
 	vfs_status_t vfs_status;
 
-	if (status != BTRFS_OK) vfs_status = btrfs_vfs_status(status);
-	else vfs_status = btrfs_entry_to_vnode_locked(data, node, &entry, result);
+	if (status != BTRFS_OK)
+		vfs_status = btrfs_vfs_status(status);
+	else
+		vfs_status = btrfs_entry_to_vnode_locked(data, node, &entry, result);
 
 	btrfs_unlock(data);
 	return vfs_status;
 }
 
-static vfs_status_t btrfs_readdir(vnode_t directory, uint64_t *offset, vfs_dirent_t *result)
+static vfs_status_t
+btrfs_readdir(vnode_t directory, uint64_t *offset, vfs_dirent_t *result)
 {
 	if (directory == 0 || offset == 0 || result == 0) return VFS_STATUS_INVALID;
 
@@ -570,7 +620,8 @@ static vfs_status_t btrfs_readdir(vnode_t directory, uint64_t *offset, vfs_diren
 	return btrfs_vfs_status(status);
 }
 
-static vfs_status_t btrfs_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint64_t *read_size)
+static vfs_status_t
+btrfs_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint64_t *read_size)
 {
 	if (read_size != 0) *read_size = 0ULL;
 	if (vnode == 0 || buffer == 0 || read_size == 0) return VFS_STATUS_INVALID;
@@ -590,33 +641,33 @@ static vfs_status_t btrfs_read(vnode_t vnode, uint64_t offset, void *buffer, uin
 	return btrfs_vfs_status(status);
 }
 
-static vfs_status_t btrfs_getattr(vnode_t vnode, vnode_attr_t *attr)
+static vfs_status_t
+btrfs_getattr(vnode_t vnode, vnode_attr_t *attr)
 {
 	btrfs_node_t *node = btrfs_node(vnode);
 	if (node == 0 || attr == 0) return VFS_STATUS_INVALID;
 
 	const btrfs_inode_item_t *item = &node->inode.item;
 
-	*attr = (vnode_attr_t) {
-		.va_inode = node->inode.ino,
-		.va_type = vnode->v_type,
-		.va_mode = item->mode,
-		.va_uid = item->uid,
-		.va_gid = item->gid,
-		.va_nlink = item->nlink,
-		.va_size = item->size,
-		.va_rdev = item->rdev,
-		.va_atime_sec = item->atime.sec,
-		.va_atime_nsec = item->atime.nsec,
-		.va_mtime_sec = item->mtime.sec,
-		.va_mtime_nsec = item->mtime.nsec,
-		.va_ctime_sec = item->ctime.sec,
-		.va_ctime_nsec = item->ctime.nsec
-	};
+	*attr = (vnode_attr_t){.va_inode = node->inode.ino,
+						   .va_type = vnode->v_type,
+						   .va_mode = item->mode,
+						   .va_uid = item->uid,
+						   .va_gid = item->gid,
+						   .va_nlink = item->nlink,
+						   .va_size = item->size,
+						   .va_rdev = item->rdev,
+						   .va_atime_sec = item->atime.sec,
+						   .va_atime_nsec = item->atime.nsec,
+						   .va_mtime_sec = item->mtime.sec,
+						   .va_mtime_nsec = item->mtime.nsec,
+						   .va_ctime_sec = item->ctime.sec,
+						   .va_ctime_nsec = item->ctime.nsec};
 	return VFS_STATUS_OK;
 }
 
-static vfs_status_t btrfs_readlink(vnode_t vnode, char *buffer, uint64_t capacity, uint64_t *length)
+static vfs_status_t
+btrfs_readlink(vnode_t vnode, char *buffer, uint64_t capacity, uint64_t *length)
 {
 	if (length != 0) *length = 0ULL;
 	if (vnode == 0 || buffer == 0 || length == 0) return VFS_STATUS_INVALID;
@@ -628,7 +679,8 @@ static vfs_status_t btrfs_readlink(vnode_t vnode, char *buffer, uint64_t capacit
 	size_t produced = 0U;
 
 	btrfs_lock(data);
-	btrfs_status_t status = btrfs_file_readlink(data->fs, &node->tree, &node->inode, buffer, (size_t)capacity, &produced);
+	btrfs_status_t status =
+		btrfs_file_readlink(data->fs, &node->tree, &node->inode, buffer, (size_t)capacity, &produced);
 	btrfs_unlock(data);
 
 	if (status == BTRFS_OK) *length = produced;
@@ -637,7 +689,8 @@ static vfs_status_t btrfs_readlink(vnode_t vnode, char *buffer, uint64_t capacit
 
 /* ---- every mutation is refused ------------------------------------------------------------------------ */
 
-static vfs_status_t btrfs_create(vnode_t directory, const char *name, vnode_type_t type, vnode_t *result)
+static vfs_status_t
+btrfs_create(vnode_t directory, const char *name, vnode_type_t type, vnode_t *result)
 {
 	(void)directory;
 	(void)name;
@@ -646,14 +699,16 @@ static vfs_status_t btrfs_create(vnode_t directory, const char *name, vnode_type
 	return VFS_STATUS_READ_ONLY;
 }
 
-static vfs_status_t btrfs_unlink(vnode_t directory, const char *name)
+static vfs_status_t
+btrfs_unlink(vnode_t directory, const char *name)
 {
 	(void)directory;
 	(void)name;
 	return VFS_STATUS_READ_ONLY;
 }
 
-static vfs_status_t btrfs_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint64_t *written_size)
+static vfs_status_t
+btrfs_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint64_t *written_size)
 {
 	(void)vnode;
 	(void)offset;
@@ -663,7 +718,8 @@ static vfs_status_t btrfs_write(vnode_t vnode, uint64_t offset, const void *buff
 	return VFS_STATUS_READ_ONLY;
 }
 
-static vfs_status_t btrfs_truncate(vnode_t vnode, uint64_t size)
+static vfs_status_t
+btrfs_truncate(vnode_t vnode, uint64_t size)
 {
 	(void)vnode;
 	(void)size;
@@ -672,24 +728,28 @@ static vfs_status_t btrfs_truncate(vnode_t vnode, uint64_t size)
 
 /* ---- registration and diagnostics ---------------------------------------------------------------------------- */
 
-bool btrfs_register(void)
+bool
+btrfs_register(void)
 {
 	return vfs_register_filesystem(&g_btrfs_filesystem);
 }
 
-uint32_t btrfs_mount_count(void)
+uint32_t
+btrfs_mount_count(void)
 {
 	return g_btrfs_mount_count;
 }
 
-void btrfs_dump(void)
+void
+btrfs_dump(void)
 {
 	for (uint32_t index = 0U; index < g_btrfs_mount_count; index++) {
 		btrfs_mount_t *data = g_btrfs_mounts[index];
 
 		if (data == 0 || !data->active) continue;
 
-		kprintf("btrfs_dump: mount %s, device %s, %u devices, %u resident vnodes\n", data->mount->m_path, data->device->name, data->device_count, data->node_count);
+		kprintf("btrfs_dump: mount %s, device %s, %u devices, %u resident vnodes\n", data->mount->m_path,
+				data->device->name, data->device_count, data->node_count);
 		btrfs_fs_describe(data->fs);
 	}
 }

@@ -32,15 +32,14 @@
 #define JBD2_DESCRIPTOR_TAIL_BYTES 4U
 #define JBD2_TAG3_BYTES 16U
 
-static uint32_t jbd2_be32(const uint8_t *bytes)
+static uint32_t
+jbd2_be32(const uint8_t *bytes)
 {
-	return ((uint32_t)bytes[0] << 24U)
-		| ((uint32_t)bytes[1] << 16U)
-		| ((uint32_t)bytes[2] << 8U)
-		| (uint32_t)bytes[3];
+	return ((uint32_t)bytes[0] << 24U) | ((uint32_t)bytes[1] << 16U) | ((uint32_t)bytes[2] << 8U) | (uint32_t)bytes[3];
 }
 
-static void jbd2_set_be32(uint8_t *bytes, uint32_t value)
+static void
+jbd2_set_be32(uint8_t *bytes, uint32_t value)
 {
 	bytes[0] = (uint8_t)(value >> 24U);
 	bytes[1] = (uint8_t)(value >> 16U);
@@ -48,7 +47,8 @@ static void jbd2_set_be32(uint8_t *bytes, uint32_t value)
 	bytes[3] = (uint8_t)value;
 }
 
-static bool jbd2_uuid_equal(const uint8_t a[16], const uint8_t b[16])
+static bool
+jbd2_uuid_equal(const uint8_t a[16], const uint8_t b[16])
 {
 	for (uint32_t index = 0U; index < 16U; index++) {
 		if (a[index] != b[index]) return false;
@@ -57,33 +57,38 @@ static bool jbd2_uuid_equal(const uint8_t a[16], const uint8_t b[16])
 	return true;
 }
 
-static bool jbd2_read_fs_block(jbd2_t *journal, uint64_t block, void *buffer)
+static bool
+jbd2_read_fs_block(jbd2_t *journal, uint64_t block, void *buffer)
 {
 	if (block >= journal->filesystem_blocks) return false;
 	uint64_t sectors = journal->block_size / BLOCK_SECTOR_SIZE;
 	return block_device_read(journal->device, block * sectors, (uint32_t)sectors, buffer);
 }
 
-static bool jbd2_write_fs_block(jbd2_t *journal, uint64_t block, const void *buffer)
+static bool
+jbd2_write_fs_block(jbd2_t *journal, uint64_t block, const void *buffer)
 {
 	if (block >= journal->filesystem_blocks) return false;
 	uint64_t sectors = journal->block_size / BLOCK_SECTOR_SIZE;
 	return block_device_write(journal->device, block * sectors, (uint32_t)sectors, buffer);
 }
 
-static bool jbd2_read_log_block(jbd2_t *journal, uint32_t logical, void *buffer)
+static bool
+jbd2_read_log_block(jbd2_t *journal, uint32_t logical, void *buffer)
 {
 	if (logical >= journal->journal_blocks) return false;
 	return jbd2_read_fs_block(journal, journal->journal_block_map[logical], buffer);
 }
 
-static bool jbd2_write_log_block(jbd2_t *journal, uint32_t logical, const void *buffer)
+static bool
+jbd2_write_log_block(jbd2_t *journal, uint32_t logical, const void *buffer)
 {
 	if (logical >= journal->journal_blocks) return false;
 	return jbd2_write_fs_block(journal, journal->journal_block_map[logical], buffer);
 }
 
-static uint32_t jbd2_next_log_block(const jbd2_t *journal, uint32_t block)
+static uint32_t
+jbd2_next_log_block(const jbd2_t *journal, uint32_t block)
 {
 	block++;
 	if (block >= journal->maximum) block = journal->first;
@@ -96,7 +101,8 @@ static uint32_t jbd2_next_log_block(const jbd2_t *journal, uint32_t block)
  * Return true when a filesystem block belongs to the internal journal file.
  * Journal extents need not be physically contiguous.
  */
-static bool jbd2_is_journal_block(const jbd2_t *journal, uint64_t block)
+static bool
+jbd2_is_journal_block(const jbd2_t *journal, uint64_t block)
 {
 	for (uint32_t index = 0U; index < journal->journal_blocks; index++) {
 		if (journal->journal_block_map[index] == block) return true;
@@ -111,7 +117,8 @@ static bool jbd2_is_journal_block(const jbd2_t *journal, uint64_t block)
  * Compute the CRC32C covering the complete 1024-byte journal superblock with
  * s_checksum cleared. JBD2 superblock fields remain big-endian on disk.
  */
-static uint32_t jbd2_superblock_checksum(uint8_t superblock[JBD2_SUPERBLOCK_BYTES])
+static uint32_t
+jbd2_superblock_checksum(uint8_t superblock[JBD2_SUPERBLOCK_BYTES])
 {
 	uint32_t saved = jbd2_be32(superblock + 0xFCU);
 	jbd2_set_be32(superblock + 0xFCU, 0U);
@@ -120,30 +127,30 @@ static uint32_t jbd2_superblock_checksum(uint8_t superblock[JBD2_SUPERBLOCK_BYTE
 	return checksum;
 }
 
-static bool jbd2_write_superblock(jbd2_t *journal, uint32_t start, uint32_t sequence, uint32_t head)
+static bool
+jbd2_write_superblock(jbd2_t *journal, uint32_t start, uint32_t sequence, uint32_t head)
 {
 	jbd2_set_be32(journal->superblock + 0x18U, sequence);
 	jbd2_set_be32(journal->superblock + 0x1CU, start);
 	jbd2_set_be32(journal->superblock + 0x58U, head);
 	jbd2_set_be32(journal->superblock + 0xFCU, 0U);
-	jbd2_set_be32(
-		journal->superblock + 0xFCU,
-		crc32c(~0U, journal->superblock, JBD2_SUPERBLOCK_BYTES)
-	);
+	jbd2_set_be32(journal->superblock + 0xFCU, crc32c(~0U, journal->superblock, JBD2_SUPERBLOCK_BYTES));
 
 	memset(journal->io_block, 0, journal->block_size);
 	memcpy(journal->io_block, journal->superblock, JBD2_SUPERBLOCK_BYTES);
 	return jbd2_write_log_block(journal, 0U, journal->io_block);
 }
 
-static uint32_t jbd2_descriptor_checksum(jbd2_t *journal, uint8_t *block)
+static uint32_t
+jbd2_descriptor_checksum(jbd2_t *journal, uint8_t *block)
 {
 	uint32_t offset = journal->block_size - JBD2_DESCRIPTOR_TAIL_BYTES;
 	jbd2_set_be32(block + offset, 0U);
 	return crc32c(journal->checksum_seed, block, journal->block_size);
 }
 
-static uint32_t jbd2_tag_checksum(jbd2_t *journal, uint32_t sequence, const void *block)
+static uint32_t
+jbd2_tag_checksum(jbd2_t *journal, uint32_t sequence, const void *block)
 {
 	uint8_t sequence_bytes[4];
 	jbd2_set_be32(sequence_bytes, sequence);
@@ -151,7 +158,8 @@ static uint32_t jbd2_tag_checksum(jbd2_t *journal, uint32_t sequence, const void
 	return crc32c(checksum, block, journal->block_size);
 }
 
-static uint32_t jbd2_commit_checksum(jbd2_t *journal, uint8_t *block)
+static uint32_t
+jbd2_commit_checksum(jbd2_t *journal, uint8_t *block)
 {
 	jbd2_set_be32(block + 0x10U, 0U);
 	return crc32c(journal->checksum_seed, block, journal->block_size);
@@ -165,21 +173,14 @@ static uint32_t jbd2_commit_checksum(jbd2_t *journal, uint8_t *block)
  * Only an inactive journal may be converted. Existing committed journal
  * contents are never reinterpreted under a different tag format.
  */
-static bool jbd2_enable_checksum_v3(
-	jbd2_t *journal,
-	uint32_t feature_incompat
-)
+static bool
+jbd2_enable_checksum_v3(jbd2_t *journal, uint32_t feature_incompat)
 {
 	uint32_t start = jbd2_be32(journal->superblock + 0x1CU);
 
 	if (start != 0U) return false;
 
-
-	if (
-		(feature_incompat &
-			(JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT |
-			JBD2_FEATURE_INCOMPAT_FAST_COMMIT)) != 0U
-	) {
+	if ((feature_incompat & (JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT | JBD2_FEATURE_INCOMPAT_FAST_COMMIT)) != 0U) {
 		return false;
 	}
 
@@ -187,45 +188,24 @@ static bool jbd2_enable_checksum_v3(
 
 	feature_incompat |= JBD2_FEATURE_INCOMPAT_CSUM_V3;
 
-	jbd2_set_be32(
-		journal->superblock + 0x28U,
-		feature_incompat
-	);
+	jbd2_set_be32(journal->superblock + 0x28U, feature_incompat);
 
 	journal->superblock[0x50U] = JBD2_CHECKSUM_CRC32C;
 
-	jbd2_set_be32(
-		journal->superblock + 0xFCU,
-		0U
-	);
+	jbd2_set_be32(journal->superblock + 0xFCU, 0U);
 
-	jbd2_set_be32(
-		journal->superblock + 0xFCU,
-		jbd2_superblock_checksum(journal->superblock)
-	);
+	jbd2_set_be32(journal->superblock + 0xFCU, jbd2_superblock_checksum(journal->superblock));
 
 	/* Validate an empty legacy journal in memory without modifying an image. */
 	if (journal->device->read_only) {
 		return true;
 	}
 
-	memset(
-		journal->io_block,
-		0,
-		journal->block_size
-	);
+	memset(journal->io_block, 0, journal->block_size);
 
-	memcpy(
-		journal->io_block,
-		journal->superblock,
-		JBD2_SUPERBLOCK_BYTES
-	);
+	memcpy(journal->io_block, journal->superblock, JBD2_SUPERBLOCK_BYTES);
 
-	if (!jbd2_write_log_block(
-		journal,
-		0U,
-		journal->io_block
-	)) {
+	if (!jbd2_write_log_block(journal, 0U, journal->io_block)) {
 		return false;
 	}
 
@@ -244,21 +224,12 @@ static bool jbd2_enable_checksum_v3(
  * transaction; the controlled NXU filesystem profile guarantees that this
  * is sufficient for every metadata operation generated by the kernel.
  */
-jbd2_status_t jbd2_init(
-	jbd2_t *journal,
-	block_device_t device,
-	uint32_t block_size,
-	uint64_t filesystem_blocks,
-	const uint64_t *journal_block_map,
-	uint32_t journal_blocks,
-	const uint8_t expected_uuid[16]
-)
+jbd2_status_t
+jbd2_init(jbd2_t *journal, block_device_t device, uint32_t block_size, uint64_t filesystem_blocks,
+		  const uint64_t *journal_block_map, uint32_t journal_blocks, const uint8_t expected_uuid[16])
 {
-	if (
-		journal == 0 || device == 0 || journal_block_map == 0 || expected_uuid == 0 ||
-		block_size < BLOCK_SECTOR_SIZE || (block_size % BLOCK_SECTOR_SIZE) != 0U ||
-		journal_blocks < 8U
-	) {
+	if (journal == 0 || device == 0 || journal_block_map == 0 || expected_uuid == 0 || block_size < BLOCK_SECTOR_SIZE ||
+		(block_size % BLOCK_SECTOR_SIZE) != 0U || journal_blocks < 8U) {
 		return JBD2_STATUS_INVALID;
 	}
 
@@ -271,7 +242,8 @@ jbd2_status_t jbd2_init(
 	journal->superblock = kmalloc(JBD2_SUPERBLOCK_BYTES);
 	journal->io_block = kmalloc(block_size);
 	journal->transaction_storage = kmalloc((uint64_t)JBD2_TRANSACTION_MAX_BLOCKS * block_size);
-	if (journal->journal_block_map == 0 || journal->superblock == 0 || journal->io_block == 0 || journal->transaction_storage == 0) {
+	if (journal->journal_block_map == 0 || journal->superblock == 0 || journal->io_block == 0 ||
+		journal->transaction_storage == 0) {
 		jbd2_destroy(journal);
 		return JBD2_STATUS_NO_MEMORY;
 	}
@@ -292,11 +264,9 @@ jbd2_status_t jbd2_init(
 	}
 	memcpy(journal->superblock, journal->io_block, JBD2_SUPERBLOCK_BYTES);
 
-	if (
-		jbd2_be32(journal->superblock + 0x00U) != JBD2_MAGIC ||
+	if (jbd2_be32(journal->superblock + 0x00U) != JBD2_MAGIC ||
 		jbd2_be32(journal->superblock + 0x04U) != JBD2_SUPERBLOCK_V2 ||
-		jbd2_be32(journal->superblock + 0x0CU) != block_size
-	) {
+		jbd2_be32(journal->superblock + 0x0CU) != block_size) {
 		jbd2_destroy(journal);
 		return JBD2_STATUS_NOT_SUPPORTED;
 	}
@@ -311,10 +281,7 @@ jbd2_status_t jbd2_init(
 	}
 
 	if ((feature_incompat & JBD2_FEATURE_INCOMPAT_CSUM_V3) == 0U) {
-		if (!jbd2_enable_checksum_v3(
-			journal,
-			feature_incompat
-		)) {
+		if (!jbd2_enable_checksum_v3(journal, feature_incompat)) {
 			jbd2_destroy(journal);
 			return JBD2_STATUS_NOT_SUPPORTED;
 		}
@@ -322,7 +289,8 @@ jbd2_status_t jbd2_init(
 		feature_incompat = jbd2_be32(journal->superblock + 0x28U);
 	}
 
-	if ((feature_incompat & (JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT | JBD2_FEATURE_INCOMPAT_CSUM_V2 | JBD2_FEATURE_INCOMPAT_FAST_COMMIT)) != 0U) {
+	if ((feature_incompat & (JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT | JBD2_FEATURE_INCOMPAT_CSUM_V2 |
+							 JBD2_FEATURE_INCOMPAT_FAST_COMMIT)) != 0U) {
 		jbd2_destroy(journal);
 		return JBD2_STATUS_NOT_SUPPORTED;
 	}
@@ -362,7 +330,8 @@ jbd2_status_t jbd2_init(
 	return JBD2_STATUS_OK;
 }
 
-void jbd2_destroy(jbd2_t *journal)
+void
+jbd2_destroy(jbd2_t *journal)
 {
 	if (journal == 0) return;
 
@@ -373,7 +342,8 @@ void jbd2_destroy(jbd2_t *journal)
 	memset(journal, 0, sizeof(*journal));
 }
 
-jbd2_status_t jbd2_begin(jbd2_t *journal)
+jbd2_status_t
+jbd2_begin(jbd2_t *journal)
 {
 	if (journal == 0 || !journal->active || journal->transaction_active) return JBD2_STATUS_INVALID;
 	journal->entry_count = 0U;
@@ -381,14 +351,16 @@ jbd2_status_t jbd2_begin(jbd2_t *journal)
 	return JBD2_STATUS_OK;
 }
 
-void jbd2_abort(jbd2_t *journal)
+void
+jbd2_abort(jbd2_t *journal)
 {
 	if (journal == 0) return;
 	journal->entry_count = 0U;
 	journal->transaction_active = false;
 }
 
-jbd2_status_t jbd2_stage(jbd2_t *journal, uint64_t home_block, const void *block)
+jbd2_status_t
+jbd2_stage(jbd2_t *journal, uint64_t home_block, const void *block)
 {
 	if (journal == 0 || block == 0 || !journal->transaction_active) return JBD2_STATUS_INVALID;
 
@@ -408,7 +380,8 @@ jbd2_status_t jbd2_stage(jbd2_t *journal, uint64_t home_block, const void *block
 	return JBD2_STATUS_OK;
 }
 
-bool jbd2_overlay(const jbd2_t *journal, uint64_t home_block, void *block)
+bool
+jbd2_overlay(const jbd2_t *journal, uint64_t home_block, void *block)
 {
 	if (journal == 0 || block == 0 || !journal->transaction_active) return false;
 	for (uint32_t index = 0U; index < journal->entry_count; index++) {
@@ -419,19 +392,22 @@ bool jbd2_overlay(const jbd2_t *journal, uint64_t home_block, void *block)
 	return false;
 }
 
-bool jbd2_is_transaction_active(const jbd2_t *journal)
+bool
+jbd2_is_transaction_active(const jbd2_t *journal)
 {
 	return journal != 0 && journal->transaction_active;
 }
 
-void jbd2_set_crash_after_commit(jbd2_t *journal, bool enabled)
+void
+jbd2_set_crash_after_commit(jbd2_t *journal, bool enabled)
 {
 	if (journal == 0) return;
 	journal->crash_after_commit = enabled;
 	if (enabled) journal->crash_point_reached = false;
 }
 
-bool jbd2_crash_point_reached(const jbd2_t *journal)
+bool
+jbd2_crash_point_reached(const jbd2_t *journal)
 {
 	return journal != 0 && journal->crash_point_reached;
 }
@@ -443,7 +419,8 @@ bool jbd2_crash_point_reached(const jbd2_t *journal)
  * home block. The first tag carries the journal UUID; later tags set
  * SAME_UUID. LAST_TAG terminates parsing without relying on unused bytes.
  */
-static bool jbd2_build_descriptor(jbd2_t *journal, uint32_t sequence, uint8_t *descriptor)
+static bool
+jbd2_build_descriptor(jbd2_t *journal, uint32_t sequence, uint8_t *descriptor)
 {
 	memset(descriptor, 0, journal->block_size);
 	jbd2_set_be32(descriptor + 0x00U, JBD2_MAGIC);
@@ -455,7 +432,8 @@ static bool jbd2_build_descriptor(jbd2_t *journal, uint32_t sequence, uint8_t *d
 		bool first = index == 0U;
 		bool last = index + 1U == journal->entry_count;
 		uint32_t need = JBD2_TAG3_BYTES + (first ? 16U : 0U);
-		if (offset > journal->block_size - JBD2_DESCRIPTOR_TAIL_BYTES || need > journal->block_size - JBD2_DESCRIPTOR_TAIL_BYTES - offset) {
+		if (offset > journal->block_size - JBD2_DESCRIPTOR_TAIL_BYTES ||
+			need > journal->block_size - JBD2_DESCRIPTOR_TAIL_BYTES - offset) {
 			return false;
 		}
 
@@ -478,10 +456,8 @@ static bool jbd2_build_descriptor(jbd2_t *journal, uint32_t sequence, uint8_t *d
 		}
 	}
 
-	jbd2_set_be32(
-		descriptor + journal->block_size - JBD2_DESCRIPTOR_TAIL_BYTES,
-		jbd2_descriptor_checksum(journal, descriptor)
-	);
+	jbd2_set_be32(descriptor + journal->block_size - JBD2_DESCRIPTOR_TAIL_BYTES,
+				  jbd2_descriptor_checksum(journal, descriptor));
 	return true;
 }
 
@@ -493,7 +469,8 @@ static bool jbd2_build_descriptor(jbd2_t *journal, uint32_t sequence, uint8_t *d
  * checkpoint home metadata. A debug crash point returns after the durable
  * commit and before checkpointing so the next boot must replay the log.
  */
-jbd2_status_t jbd2_commit(jbd2_t *journal)
+jbd2_status_t
+jbd2_commit(jbd2_t *journal)
 {
 	if (journal == 0 || !journal->active || !journal->transaction_active) return JBD2_STATUS_INVALID;
 
@@ -577,7 +554,8 @@ jbd2_status_t jbd2_commit(jbd2_t *journal)
  * is checkpointed immediately after every normal commit, so at most one
  * committed transaction can remain after a simulated or real power loss.
  */
-jbd2_status_t jbd2_recover(jbd2_t *journal)
+jbd2_status_t
+jbd2_recover(jbd2_t *journal)
 {
 	if (journal == 0 || !journal->active) return JBD2_STATUS_INVALID;
 	uint32_t start = jbd2_be32(journal->superblock + 0x1CU);
@@ -596,11 +574,8 @@ jbd2_status_t jbd2_recover(jbd2_t *journal)
 	if (!jbd2_read_log_block(journal, start, descriptor)) goto io_fail;
 	uint32_t cursor = start;
 
-	if (
-		jbd2_be32(descriptor + 0x00U) != JBD2_MAGIC ||
-		jbd2_be32(descriptor + 0x04U) != JBD2_DESCRIPTOR_BLOCK ||
-		jbd2_be32(descriptor + 0x08U) != sequence
-	) {
+	if (jbd2_be32(descriptor + 0x00U) != JBD2_MAGIC || jbd2_be32(descriptor + 0x04U) != JBD2_DESCRIPTOR_BLOCK ||
+		jbd2_be32(descriptor + 0x08U) != sequence) {
 		goto discard;
 	}
 	uint32_t expected_descriptor = jbd2_be32(descriptor + journal->block_size - JBD2_DESCRIPTOR_TAIL_BYTES);
@@ -638,19 +613,17 @@ jbd2_status_t jbd2_recover(jbd2_t *journal)
 	}
 
 	if (!jbd2_read_log_block(journal, cursor, data_block)) goto io_fail;
-	if (
-		jbd2_be32(data_block + 0x00U) != JBD2_MAGIC ||
-		jbd2_be32(data_block + 0x04U) != JBD2_COMMIT_BLOCK ||
-		jbd2_be32(data_block + 0x08U) != sequence ||
-		data_block[0x0CU] != JBD2_CHECKSUM_CRC32C || data_block[0x0DU] != 4U
-	) {
+	if (jbd2_be32(data_block + 0x00U) != JBD2_MAGIC || jbd2_be32(data_block + 0x04U) != JBD2_COMMIT_BLOCK ||
+		jbd2_be32(data_block + 0x08U) != sequence || data_block[0x0CU] != JBD2_CHECKSUM_CRC32C ||
+		data_block[0x0DU] != 4U) {
 		goto discard;
 	}
 	uint32_t expected_commit = jbd2_be32(data_block + 0x10U);
 	if (jbd2_commit_checksum(journal, data_block) != expected_commit) goto checksum_fail;
 
 	for (uint32_t index = 0U; index < recovered; index++) {
-		if (!jbd2_write_fs_block(journal, journal->entries[index].home_block, journal->entries[index].data)) goto io_fail;
+		if (!jbd2_write_fs_block(journal, journal->entries[index].home_block, journal->entries[index].data))
+			goto io_fail;
 	}
 
 	if (!block_device_flush(journal->device)) goto io_fail;
@@ -660,7 +633,7 @@ jbd2_status_t jbd2_recover(jbd2_t *journal)
 	journal->last_replay_blocks = recovered;
 	goto finish;
 
-	discard:
+discard:
 	journal->discard_count++;
 
 finish:

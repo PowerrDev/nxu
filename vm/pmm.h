@@ -26,10 +26,7 @@ typedef struct {
 	bool higher_half;
 } pmm_state_t;
 
-bool pmm_init(
-	const platform_t *platform,
-	const dtb_t *dtb
-);
+bool pmm_init(const platform_t *platform, const dtb_t *dtb);
 
 /*
  * Ports without a device tree (i386) keep boot-time data out of the
@@ -37,23 +34,14 @@ bool pmm_init(
  * reads them alongside the kernel image. Only implemented for those ports:
  * the arm64 pmm learns the same from its dtb.
  */
-bool pmm_reserve_boot_range(
-	uint64_t base,
-	uint64_t size
-);
+bool pmm_reserve_boot_range(uint64_t base, uint64_t size);
 
 bool pmm_allocate_page(uint64_t *physical_address);
 bool pmm_free_page(uint64_t physical_address);
 
-bool pmm_allocate_contiguous_pages(
-	uint64_t page_count,
-	uint64_t *physical_address
-);
+bool pmm_allocate_contiguous_pages(uint64_t page_count, uint64_t *physical_address);
 
-bool pmm_free_contiguous_pages(
-	uint64_t physical_address,
-	uint64_t page_count
-);
+bool pmm_free_contiguous_pages(uint64_t physical_address, uint64_t page_count);
 
 /*
  * Extra ownership on an already-allocated page, for memory mapped into more

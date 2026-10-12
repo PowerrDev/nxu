@@ -30,16 +30,16 @@
 typedef struct {
 	uint64_t id;
 	btrfs_root_item_t item;
-	btrfs_tree_t tree;         /* ready to pass to the search functions */
-	bool read_only;            /* ROOT_SUBVOL_RDONLY: a read-only snapshot */
+	btrfs_tree_t tree; /* ready to pass to the search functions */
+	bool read_only;	   /* ROOT_SUBVOL_RDONLY: a read-only snapshot */
 } btrfs_subvol_t;
 
 /* A subvolume relationship read from ROOT_REF / ROOT_BACKREF. */
 typedef struct {
-	uint64_t parent_id;        /* tree containing the subvolume point */
+	uint64_t parent_id; /* tree containing the subvolume point */
 	uint64_t child_id;
-	uint64_t dirid;            /* directory inode in parent_id holding the point */
-	uint64_t sequence;         /* its DIR_INDEX */
+	uint64_t dirid;	   /* directory inode in parent_id holding the point */
+	uint64_t sequence; /* its DIR_INDEX */
 	uint16_t name_len;
 	char name[BTRFS_NAME_LEN + 1U];
 } btrfs_root_ref_info_t;
@@ -64,7 +64,8 @@ btrfs_status_t btrfs_root_select_default(btrfs_fs_t *fs);
  * so Linux shows an empty directory there (inode 2, mode 0755, size 0); so
  * should we. The same answer covers a subvolume that is being deleted.
  */
-btrfs_status_t btrfs_root_resolve_point(btrfs_fs_t *fs, uint64_t parent_id, uint64_t dir_ino, const uint8_t *name, size_t name_len, uint64_t child_id, btrfs_subvol_t *out);
+btrfs_status_t btrfs_root_resolve_point(btrfs_fs_t *fs, uint64_t parent_id, uint64_t dir_ino, const uint8_t *name,
+										size_t name_len, uint64_t child_id, btrfs_subvol_t *out);
 
 /* Where a subvolume hangs: its ROOT_BACKREF (NOT_FOUND for the top level or a rootless tree). */
 btrfs_status_t btrfs_root_backref(btrfs_fs_t *fs, uint64_t child_id, btrfs_root_ref_info_t *out);

@@ -3,15 +3,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-void vnode_init(
-	vnode_t vnode,
-	mount_t mount,
-	vnode_t parent,
-	const vnode_operations_t *operations,
-	vnode_type_t type,
-	uint64_t identifier,
-	void *data
-)
+void
+vnode_init(vnode_t vnode, mount_t mount, vnode_t parent, const vnode_operations_t *operations, vnode_type_t type,
+		   uint64_t identifier, void *data)
 {
 	if (vnode == 0) return;
 
@@ -26,7 +20,8 @@ void vnode_init(
 	vnode->v_active = true;
 }
 
-bool vnode_reference(vnode_t vnode)
+bool
+vnode_reference(vnode_t vnode)
 {
 	if (vnode == 0 || !vnode->v_active) return false;
 
@@ -35,40 +30,30 @@ bool vnode_reference(vnode_t vnode)
 	for (;;) {
 		if (old == UINT32_MAX) return false;
 
-		if (__atomic_compare_exchange_n(
-			&vnode->v_refcount,
-			&old,
-			old + 1U,
-			false,
-			__ATOMIC_ACQ_REL,
-			__ATOMIC_ACQUIRE
-		)) {
+		if (__atomic_compare_exchange_n(&vnode->v_refcount, &old, old + 1U, false, __ATOMIC_ACQ_REL,
+										__ATOMIC_ACQUIRE)) {
 			return true;
 		}
 	}
 }
 
-void vnode_rele(vnode_t vnode)
+void
+vnode_rele(vnode_t vnode)
 {
 	if (vnode == 0) return;
 
 	uint32_t old = __atomic_load_n(&vnode->v_refcount, __ATOMIC_ACQUIRE);
 
 	while (old != 0U) {
-		if (__atomic_compare_exchange_n(
-			&vnode->v_refcount,
-			&old,
-			old - 1U,
-			false,
-			__ATOMIC_ACQ_REL,
-			__ATOMIC_ACQUIRE
-		)) {
+		if (__atomic_compare_exchange_n(&vnode->v_refcount, &old, old - 1U, false, __ATOMIC_ACQ_REL,
+										__ATOMIC_ACQUIRE)) {
 			return;
 		}
 	}
 }
 
-vfs_status_t vnode_lookup(vnode_t directory, const char *name, vnode_t *result)
+vfs_status_t
+vnode_lookup(vnode_t directory, const char *name, vnode_t *result)
 {
 	if (result != 0) *result = 0;
 
@@ -82,7 +67,8 @@ vfs_status_t vnode_lookup(vnode_t directory, const char *name, vnode_t *result)
 	return directory->v_ops->lookup(directory, name, result);
 }
 
-vfs_status_t vnode_create(vnode_t directory, const char *name, vnode_type_t type, vnode_t *result)
+vfs_status_t
+vnode_create(vnode_t directory, const char *name, vnode_type_t type, vnode_t *result)
 {
 	if (result != 0) *result = 0;
 
@@ -103,7 +89,8 @@ vfs_status_t vnode_create(vnode_t directory, const char *name, vnode_type_t type
  * delegated to the filesystem so on-disk link counts and storage ownership
  * remain filesystem responsibilities.
  */
-vfs_status_t vnode_unlink(vnode_t directory, const char *name)
+vfs_status_t
+vnode_unlink(vnode_t directory, const char *name)
 {
 	if (directory == 0 || name == 0) return VFS_STATUS_INVALID;
 
@@ -135,13 +122,8 @@ vnode_readdir(vnode_t directory, uint64_t *offset, vfs_dirent_t *entry)
 	return directory->v_ops->readdir(directory, offset, entry);
 }
 
-vfs_status_t vnode_read(
-	vnode_t vnode,
-	uint64_t offset,
-	void *buffer,
-	uint64_t size,
-	uint64_t *read_size
-)
+vfs_status_t
+vnode_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint64_t *read_size)
 {
 	if (read_size != 0) *read_size = 0ULL;
 
@@ -155,13 +137,8 @@ vfs_status_t vnode_read(
 	return vnode->v_ops->read(vnode, offset, buffer, size, read_size);
 }
 
-vfs_status_t vnode_write(
-	vnode_t vnode,
-	uint64_t offset,
-	const void *buffer,
-	uint64_t size,
-	uint64_t *written_size
-)
+vfs_status_t
+vnode_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint64_t *written_size)
 {
 	if (written_size != 0) *written_size = 0ULL;
 
@@ -175,7 +152,8 @@ vfs_status_t vnode_write(
 	return vnode->v_ops->write(vnode, offset, buffer, size, written_size);
 }
 
-vfs_status_t vnode_truncate(vnode_t vnode, uint64_t size)
+vfs_status_t
+vnode_truncate(vnode_t vnode, uint64_t size)
 {
 	if (vnode == 0 || !vnode->v_active) return VFS_STATUS_INVALID;
 
@@ -185,7 +163,8 @@ vfs_status_t vnode_truncate(vnode_t vnode, uint64_t size)
 	return vnode->v_ops->truncate(vnode, size);
 }
 
-vfs_status_t vnode_getattr(vnode_t vnode, vnode_attr_t *attr)
+vfs_status_t
+vnode_getattr(vnode_t vnode, vnode_attr_t *attr)
 {
 	if (vnode == 0 || attr == 0 || !vnode->v_active) return VFS_STATUS_INVALID;
 
@@ -201,7 +180,8 @@ vfs_status_t vnode_getattr(vnode_t vnode, vnode_attr_t *attr)
  * *length receives the target length; a target longer than capacity fails
  * with NAME_TOO_LONG rather than being truncated.
  */
-vfs_status_t vnode_readlink(vnode_t vnode, char *buffer, uint64_t capacity, uint64_t *length)
+vfs_status_t
+vnode_readlink(vnode_t vnode, char *buffer, uint64_t capacity, uint64_t *length)
 {
 	if (length != 0) *length = 0ULL;
 
@@ -219,7 +199,8 @@ vfs_status_t vnode_readlink(vnode_t vnode, char *buffer, uint64_t capacity, uint
  * Tell a vnode that a file is being opened on it. Only device vnodes have
  * anything to say; for every other kind the open always goes ahead.
  */
-vfs_status_t vnode_open(vnode_t vnode, uint32_t flags)
+vfs_status_t
+vnode_open(vnode_t vnode, uint32_t flags)
 {
 	if (vnode == 0 || !vnode->v_active) return VFS_STATUS_INVALID;
 
@@ -228,14 +209,16 @@ vfs_status_t vnode_open(vnode_t vnode, uint32_t flags)
 	return vnode->v_ops->open(vnode, flags);
 }
 
-void vnode_close(vnode_t vnode, uint32_t flags)
+void
+vnode_close(vnode_t vnode, uint32_t flags)
 {
 	if (vnode == 0 || vnode->v_ops == 0 || vnode->v_ops->close == 0) return;
 
 	vnode->v_ops->close(vnode, flags);
 }
 
-vfs_status_t vnode_ioctl(vnode_t vnode, uint32_t command, void *argument)
+vfs_status_t
+vnode_ioctl(vnode_t vnode, uint32_t command, void *argument)
 {
 	if (vnode == 0 || !vnode->v_active) return VFS_STATUS_INVALID;
 

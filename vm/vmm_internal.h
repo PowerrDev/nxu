@@ -121,15 +121,8 @@ typedef struct {
 	bool ttbr0_disabled;
 } vmm_state_t;
 
-bool vmm_root_map_range(
-	uint64_t *root,
-	uint64_t virtual_address,
-	uint64_t physical_address,
-	uint64_t size,
-	vmm_memory_type_t memory_type,
-	vmm_protection_t protection,
-	uint64_t *table_count
-);
+bool vmm_root_map_range(uint64_t *root, uint64_t virtual_address, uint64_t physical_address, uint64_t size,
+						vmm_memory_type_t memory_type, vmm_protection_t protection, uint64_t *table_count);
 
 /*
  * Defined once in vmm.c. The symbol stays internal to the VMM because
@@ -143,47 +136,26 @@ uint64_t vmm_index(uint64_t address, uint32_t shift);
  * Convert a physical translation-table address into the kernel pointer
  * appropriate for the current boot phase.
  */
-bool vmm_table_pointer_from_physical(
-	uint64_t physical_address,
-	uint64_t **table
-);
+bool vmm_table_pointer_from_physical(uint64_t physical_address, uint64_t **table);
 
 /*
  * Allocate one zeroed translation table and account for it in the
  * counter belonging to the owning root.
  */
-bool vmm_allocate_table(
-	uint64_t **table,
-	uint64_t *physical,
-	uint64_t *table_count
-);
+bool vmm_allocate_table(uint64_t **table, uint64_t *physical, uint64_t *table_count);
 
-bool vmm_attributes(
-	vmm_memory_type_t type,
-	vmm_protection_t protection,
-	uint64_t *attributes
-);
+bool vmm_attributes(vmm_memory_type_t type, vmm_protection_t protection, uint64_t *attributes);
 
 bool vmm_physical_page_valid(uint64_t physical_address);
 bool vmm_lower_page_valid(uint64_t virtual_address);
 bool vmm_higher_page_valid(uint64_t virtual_address);
 
-bool vmm_make_page_descriptor(
-	uint64_t physical_address,
-	vmm_memory_type_t memory_type,
-	vmm_protection_t protection,
-	uint64_t *descriptor
-);
+bool vmm_make_page_descriptor(uint64_t physical_address, vmm_memory_type_t memory_type, vmm_protection_t protection,
+							  uint64_t *descriptor);
 
-bool vmm_descriptor_memory_type(
-	uint64_t descriptor,
-	vmm_memory_type_t *memory_type
-);
+bool vmm_descriptor_memory_type(uint64_t descriptor, vmm_memory_type_t *memory_type);
 
-bool vmm_descriptor_protection(
-	uint64_t descriptor,
-	vmm_protection_t *protection
-);
+bool vmm_descriptor_protection(uint64_t descriptor, vmm_protection_t *protection);
 
 /*
  * Walk any root down to the L3 entry describing virtual_address.
@@ -191,13 +163,8 @@ bool vmm_descriptor_protection(
  * When create is true, missing L1 and L2 tables are allocated and
  * charged to table_count. Block descriptors are never split.
  */
-bool vmm_root_get_l3_entry(
-	uint64_t *root,
-	uint64_t virtual_address,
-	bool create,
-	uint64_t *table_count,
-	uint64_t **entry
-);
+bool vmm_root_get_l3_entry(uint64_t *root, uint64_t virtual_address, bool create, uint64_t *table_count,
+						   uint64_t **entry);
 
 /*
  * Shared block/page installers used while building the initial TTBR0

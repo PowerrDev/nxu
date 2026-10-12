@@ -12,7 +12,8 @@
 
 #include <string.h>
 
-btrfs_status_t btrfs_root_lookup(btrfs_fs_t *fs, uint64_t id, btrfs_subvol_t *out)
+btrfs_status_t
+btrfs_root_lookup(btrfs_fs_t *fs, uint64_t id, btrfs_subvol_t *out)
 {
 	btrfs_path_t path;
 	btrfs_key_t target = btrfs_key_make(id, BTRFS_ROOT_ITEM_KEY, UINT64_MAX);
@@ -38,7 +39,8 @@ btrfs_status_t btrfs_root_lookup(btrfs_fs_t *fs, uint64_t id, btrfs_subvol_t *ou
 	if (!parsed) return BTRFS_ERR_CORRUPT;
 
 	if (item.bytenr == 0ULL || (item.bytenr & (fs->sectorsize - 1U)) != 0ULL || item.level >= BTRFS_MAX_LEVEL) {
-		BTRFS_LOG(fs, "root item of tree %llu is malformed (bytenr %llu level %u)", BTRFS_U64(id), BTRFS_U64(item.bytenr), (unsigned)item.level);
+		BTRFS_LOG(fs, "root item of tree %llu is malformed (bytenr %llu level %u)", BTRFS_U64(id),
+				  BTRFS_U64(item.bytenr), (unsigned)item.level);
 		return BTRFS_ERR_CORRUPT;
 	}
 
@@ -52,10 +54,12 @@ btrfs_status_t btrfs_root_lookup(btrfs_fs_t *fs, uint64_t id, btrfs_subvol_t *ou
 	return BTRFS_OK;
 }
 
-btrfs_status_t btrfs_root_default_id(btrfs_fs_t *fs, uint64_t *id)
+btrfs_status_t
+btrfs_root_default_id(btrfs_fs_t *fs, uint64_t *id)
 {
-	static const uint8_t name[] = { 'd', 'e', 'f', 'a', 'u', 'l', 't' };
-	btrfs_key_t target = btrfs_key_make(BTRFS_ROOT_TREE_DIR_OBJECTID, BTRFS_DIR_ITEM_KEY, btrfs_name_hash(name, sizeof(name)));
+	static const uint8_t name[] = {'d', 'e', 'f', 'a', 'u', 'l', 't'};
+	btrfs_key_t target =
+		btrfs_key_make(BTRFS_ROOT_TREE_DIR_OBJECTID, BTRFS_DIR_ITEM_KEY, btrfs_name_hash(name, sizeof(name)));
 	btrfs_path_t path;
 	const uint8_t *data;
 	uint32_t size;
@@ -104,7 +108,8 @@ btrfs_status_t btrfs_root_default_id(btrfs_fs_t *fs, uint64_t *id)
 	return status;
 }
 
-btrfs_status_t btrfs_root_select_default(btrfs_fs_t *fs)
+btrfs_status_t
+btrfs_root_select_default(btrfs_fs_t *fs)
 {
 	uint64_t id;
 	btrfs_status_t status = btrfs_root_default_id(fs, &id);
@@ -131,7 +136,8 @@ btrfs_status_t btrfs_root_select_default(btrfs_fs_t *fs)
 	return BTRFS_OK;
 }
 
-static btrfs_status_t btrfs_root_ref_read(const uint8_t *data, uint32_t size, uint64_t parent, uint64_t child, btrfs_root_ref_info_t *out)
+static btrfs_status_t
+btrfs_root_ref_read(const uint8_t *data, uint32_t size, uint64_t parent, uint64_t child, btrfs_root_ref_info_t *out)
 {
 	btrfs_root_ref_t ref;
 
@@ -147,7 +153,8 @@ static btrfs_status_t btrfs_root_ref_read(const uint8_t *data, uint32_t size, ui
 	return BTRFS_OK;
 }
 
-btrfs_status_t btrfs_root_backref(btrfs_fs_t *fs, uint64_t child_id, btrfs_root_ref_info_t *out)
+btrfs_status_t
+btrfs_root_backref(btrfs_fs_t *fs, uint64_t child_id, btrfs_root_ref_info_t *out)
 {
 	btrfs_path_t path;
 	btrfs_key_t target = btrfs_key_make(child_id, BTRFS_ROOT_BACKREF_KEY, 0ULL);
@@ -171,7 +178,8 @@ btrfs_status_t btrfs_root_backref(btrfs_fs_t *fs, uint64_t child_id, btrfs_root_
 	return status;
 }
 
-btrfs_status_t btrfs_root_next_child(btrfs_fs_t *fs, uint64_t parent_id, uint64_t *cursor, btrfs_root_ref_info_t *out)
+btrfs_status_t
+btrfs_root_next_child(btrfs_fs_t *fs, uint64_t parent_id, uint64_t *cursor, btrfs_root_ref_info_t *out)
 {
 	btrfs_path_t path;
 	btrfs_key_t target = btrfs_key_make(parent_id, BTRFS_ROOT_REF_KEY, *cursor);
@@ -195,7 +203,8 @@ btrfs_status_t btrfs_root_next_child(btrfs_fs_t *fs, uint64_t parent_id, uint64_
 	return status;
 }
 
-btrfs_status_t btrfs_root_next_subvol(btrfs_fs_t *fs, uint64_t *cursor, uint64_t *id)
+btrfs_status_t
+btrfs_root_next_subvol(btrfs_fs_t *fs, uint64_t *cursor, uint64_t *id)
 {
 	btrfs_path_t path;
 	uint64_t start = *cursor < BTRFS_FS_TREE_OBJECTID ? BTRFS_FS_TREE_OBJECTID : *cursor;
@@ -220,7 +229,8 @@ btrfs_status_t btrfs_root_next_subvol(btrfs_fs_t *fs, uint64_t *cursor, uint64_t
 			break;
 		}
 
-		if (key.type == BTRFS_ROOT_ITEM_KEY && (key.objectid == BTRFS_FS_TREE_OBJECTID || key.objectid >= BTRFS_FIRST_FREE_OBJECTID)) {
+		if (key.type == BTRFS_ROOT_ITEM_KEY &&
+			(key.objectid == BTRFS_FS_TREE_OBJECTID || key.objectid >= BTRFS_FIRST_FREE_OBJECTID)) {
 			*id = key.objectid;
 			*cursor = key.objectid + 1ULL;
 			btrfs_path_release(fs, &path);
@@ -234,7 +244,9 @@ btrfs_status_t btrfs_root_next_subvol(btrfs_fs_t *fs, uint64_t *cursor, uint64_t
 	return status;
 }
 
-btrfs_status_t btrfs_root_resolve_point(btrfs_fs_t *fs, uint64_t parent_id, uint64_t dir_ino, const uint8_t *name, size_t name_len, uint64_t child_id, btrfs_subvol_t *out)
+btrfs_status_t
+btrfs_root_resolve_point(btrfs_fs_t *fs, uint64_t parent_id, uint64_t dir_ino, const uint8_t *name, size_t name_len,
+						 uint64_t child_id, btrfs_subvol_t *out)
 {
 	btrfs_path_t path;
 	btrfs_key_t target = btrfs_key_make(parent_id, BTRFS_ROOT_REF_KEY, child_id);

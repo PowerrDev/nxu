@@ -57,9 +57,9 @@ void btrfs_log(const btrfs_fs_t *fs, const char *format, ...) __attribute__((for
  * update bytenr/generation/level when a COW transaction commits a new root.
  */
 typedef struct {
-	uint64_t objectid;       /* tree id (the owner recorded in its blocks) */
-	uint64_t bytenr;         /* logical address of the root node */
-	uint64_t generation;     /* generation the root must carry (0: unchecked) */
+	uint64_t objectid;	 /* tree id (the owner recorded in its blocks) */
+	uint64_t bytenr;	 /* logical address of the root node */
+	uint64_t generation; /* generation the root must carry (0: unchecked) */
 	uint8_t level;
 } btrfs_tree_t;
 
@@ -75,11 +75,11 @@ struct btrfs_block {
 	uint64_t generation;
 	uint64_t owner;
 	uint8_t *data;
-	uint32_t size;           /* nodesize */
+	uint32_t size; /* nodesize */
 	uint32_t nritems;
 	uint32_t refs;
 	uint8_t level;
-	bool dirty;              /* reserved for the write path */
+	bool dirty; /* reserved for the write path */
 	btrfs_block_t *hash_next;
 	btrfs_block_t *lru_newer;
 	btrfs_block_t *lru_older;
@@ -101,7 +101,7 @@ typedef struct {
 /* ---- chunk map ------------------------------------------------------------------ */
 
 typedef struct {
-	btrfs_chunk_t *chunks;   /* sorted by logical, non-overlapping */
+	btrfs_chunk_t *chunks; /* sorted by logical, non-overlapping */
 	uint32_t count;
 	uint32_t capacity;
 } btrfs_chunk_map_t;
@@ -115,10 +115,10 @@ typedef struct {
  */
 typedef struct {
 	uint32_t copies;
-	uint64_t devid[BTRFS_CHUNK_MAX_STRIPES];      /* the device each copy is on */
-	uint64_t physical[BTRFS_CHUNK_MAX_STRIPES];   /* byte offset on that device */
+	uint64_t devid[BTRFS_CHUNK_MAX_STRIPES];	/* the device each copy is on */
+	uint64_t physical[BTRFS_CHUNK_MAX_STRIPES]; /* byte offset on that device */
 	uint64_t length;
-	uint64_t type;           /* the chunk's BTRFS_BLOCK_GROUP_* flags */
+	uint64_t type; /* the chunk's BTRFS_BLOCK_GROUP_* flags */
 } btrfs_mapping_t;
 
 /* ---- devices ---------------------------------------------------------------------------- */
@@ -129,7 +129,7 @@ typedef struct {
 typedef struct {
 	btrfs_reader_t reader;
 	uint64_t devid;
-	uint64_t generation;       /* of the best valid superblock on it */
+	uint64_t generation; /* of the best valid superblock on it */
 	uint8_t uuid[BTRFS_UUID_SIZE];
 } btrfs_device_t;
 
@@ -145,7 +145,8 @@ typedef struct btrfs_replay btrfs_replay_t;
  * A decoder that is not registered makes the read path return
  * BTRFS_ERR_UNSUPPORTED_COMPRESSION for that extent, never garbage.
  */
-typedef btrfs_status_t (*btrfs_decompress_fn)(void *ctx, const uint8_t *in, size_t in_len, uint8_t *out, size_t out_len);
+typedef btrfs_status_t (*btrfs_decompress_fn)(void *ctx, const uint8_t *in, size_t in_len, uint8_t *out,
+											  size_t out_len);
 
 typedef struct {
 	btrfs_decompress_fn decompress;
@@ -154,8 +155,8 @@ typedef struct {
 
 /* What the shipped decoders need from the filesystem (the ctx they are registered with). */
 typedef struct {
-	const btrfs_env_t *env;    /* for work memory (ZSTD tables) */
-	uint32_t sectorsize;       /* LZO segments are cut at sector boundaries */
+	const btrfs_env_t *env; /* for work memory (ZSTD tables) */
+	uint32_t sectorsize;	/* LZO segments are cut at sector boundaries */
 } btrfs_codec_ctx_t;
 
 /*
@@ -166,68 +167,68 @@ typedef struct {
  * memory while a decode runs.
  */
 typedef struct {
-	uint8_t *data;             /* NULL until first use */
-	uint64_t disk_bytenr;      /* which extent data holds; 0: nothing */
+	uint8_t *data;		  /* NULL until first use */
+	uint64_t disk_bytenr; /* which extent data holds; 0: nothing */
 	uint64_t disk_num_bytes;
-	uint64_t ram_bytes;        /* bytes of data that are valid */
+	uint64_t ram_bytes; /* bytes of data that are valid */
 	uint32_t compression;
-	bool verified;             /* the compressed bytes passed the csum check */
+	bool verified; /* the compressed bytes passed the csum check */
 } btrfs_extent_cache_t;
 
 /* ---- open options ------------------------------------------------------------------------ */
 
 typedef struct {
-	uint64_t subvol_id;        /* 0: the filesystem's default subvolume */
-	bool skip_data_csums;      /* do NOT check data checksums (the default is to check) */
-	bool ignore_log_tree;      /* do not replay the log tree: show the state of the last commit */
-	uint32_t cache_blocks;     /* tree-block cache size in blocks; 0: automatic */
+	uint64_t subvol_id;	   /* 0: the filesystem's default subvolume */
+	bool skip_data_csums;  /* do NOT check data checksums (the default is to check) */
+	bool ignore_log_tree;  /* do not replay the log tree: show the state of the last commit */
+	uint32_t cache_blocks; /* tree-block cache size in blocks; 0: automatic */
 } btrfs_open_options_t;
 
 typedef struct {
-	uint64_t device_reads;     /* reader calls */
+	uint64_t device_reads; /* reader calls */
 	uint64_t device_bytes;
-	uint64_t csum_failures;    /* tree blocks or data that failed a checksum */
-	uint64_t mirror_fallbacks; /* a second copy served after the first failed */
-	uint64_t data_csum_checked;  /* data sectors compared with the csum tree */
-	uint64_t data_csum_missing;  /* data sectors of a checksummed file that had no csum item */
-	uint64_t data_bad_reads;     /* file reads refused because no copy of some extent verified */
-	uint64_t extents_decoded;    /* compressed extents run through a decoder */
-	uint64_t extent_cache_hits;  /* reads served from the decoded-extent cache */
+	uint64_t csum_failures;		/* tree blocks or data that failed a checksum */
+	uint64_t mirror_fallbacks;	/* a second copy served after the first failed */
+	uint64_t data_csum_checked; /* data sectors compared with the csum tree */
+	uint64_t data_csum_missing; /* data sectors of a checksummed file that had no csum item */
+	uint64_t data_bad_reads;	/* file reads refused because no copy of some extent verified */
+	uint64_t extents_decoded;	/* compressed extents run through a decoder */
+	uint64_t extent_cache_hits; /* reads served from the decoded-extent cache */
 } btrfs_stats_t;
 
 /* ---- the filesystem ------------------------------------------------------------------------ */
 
 struct btrfs_fs {
 	btrfs_env_t env;
-	btrfs_reader_t reader;         /* the device the superblock in use came from */
+	btrfs_reader_t reader; /* the device the superblock in use came from */
 	btrfs_device_t devices[BTRFS_MAX_DEVICES];
 	uint32_t device_count;
 	btrfs_open_options_t options;
 
 	btrfs_super_t super;
-	uint64_t super_offset;         /* which mirror was used */
+	uint64_t super_offset; /* which mirror was used */
 	uint32_t super_copies_valid;
 	uint8_t header_fsid[BTRFS_FSID_SIZE];
 	uint32_t sectorsize;
 	uint32_t nodesize;
-	uint32_t csum_type;            /* BTRFS_CSUM_TYPE_*, from the superblock */
-	uint32_t csum_size;            /* bytes per checksum: 4, 8 or 32 */
+	uint32_t csum_type; /* BTRFS_CSUM_TYPE_*, from the superblock */
+	uint32_t csum_size; /* bytes per checksum: 4, 8 or 32 */
 
 	btrfs_chunk_map_t chunks;
 	btrfs_cache_t cache;
 	btrfs_tree_t chunk_tree;
 	btrfs_tree_t root_tree;
-	btrfs_tree_t csum_tree;        /* opened on first use by the data checksum path */
+	btrfs_tree_t csum_tree; /* opened on first use by the data checksum path */
 	bool have_csum_tree;
-	uint64_t default_subvol;      /* the filesystem's default subvolume id */
-	uint64_t mount_subvol;         /* the subvolume this mount serves */
+	uint64_t default_subvol; /* the filesystem's default subvolume id */
+	uint64_t mount_subvol;	 /* the subvolume this mount serves */
 
-	btrfs_replay_t *replays;       /* the log tree, layered over the fs trees (btrfs_replay.h) */
-	btrfs_decompressor_t decompressors[4];   /* indexed by BTRFS_COMPRESS_* */
+	btrfs_replay_t *replays;			   /* the log tree, layered over the fs trees (btrfs_replay.h) */
+	btrfs_decompressor_t decompressors[4]; /* indexed by BTRFS_COMPRESS_* */
 	btrfs_codec_ctx_t codec;
 	btrfs_extent_cache_t extent_cache;
 	btrfs_stats_t stats;
-	btrfs_status_t last_status;    /* the most recent failure, for diagnostics */
+	btrfs_status_t last_status; /* the most recent failure, for diagnostics */
 };
 
 /* ---- superblock (btrfs_super.c) --------------------------------------------------------------- */
@@ -238,13 +239,15 @@ struct btrfs_fs {
  * is valid when its magic, its own byte number, its checksum and its basic
  * geometry are all right.
  */
-btrfs_status_t btrfs_super_load(const btrfs_fs_t *fs, const btrfs_reader_t *reader, btrfs_super_t *out, uint64_t *offset_used, uint32_t *copies_valid);
+btrfs_status_t btrfs_super_load(const btrfs_fs_t *fs, const btrfs_reader_t *reader, btrfs_super_t *out,
+								uint64_t *offset_used, uint32_t *copies_valid);
 
 /* Refuse what the driver cannot read: features, missing devices, undersized devices. */
 btrfs_status_t btrfs_super_check_support(const btrfs_fs_t *fs, const btrfs_super_t *super);
 
 /* Parse one 4096-byte superblock image; verifies magic/bytenr/checksum/geometry. */
-btrfs_status_t btrfs_super_parse(const uint8_t *raw, uint64_t expected_bytenr, uint64_t device_size, btrfs_super_t *out);
+btrfs_status_t btrfs_super_parse(const uint8_t *raw, uint64_t expected_bytenr, uint64_t device_size,
+								 btrfs_super_t *out);
 
 /* Names of the feature bits set in flags, for logs ("no-holes,skinny-metadata"). */
 void btrfs_feature_names(uint64_t incompat, uint64_t compat_ro, char *out, size_t capacity);
@@ -267,7 +270,8 @@ const char *btrfs_profile_name(uint64_t chunk_type);
  * Open a filesystem. On failure returns NULL and stores the reason in *status;
  * the failure has already been logged. The returned filesystem is read-only.
  */
-btrfs_fs_t *btrfs_fs_open(const btrfs_env_t *env, const btrfs_reader_t *reader, const btrfs_open_options_t *options, btrfs_status_t *status);
+btrfs_fs_t *btrfs_fs_open(const btrfs_env_t *env, const btrfs_reader_t *reader, const btrfs_open_options_t *options,
+						  btrfs_status_t *status);
 
 /*
  * The same for a filesystem on several devices (up to BTRFS_MAX_DEVICES), given
@@ -277,7 +281,8 @@ btrfs_fs_t *btrfs_fs_open(const btrfs_env_t *env, const btrfs_reader_t *reader, 
  * device is refused with BTRFS_ERR_MISSING_DEVICE, never mounted degraded.
  * Device uuids are matched against the DEV_ITEMs of the chunk tree.
  */
-btrfs_fs_t *btrfs_fs_open_devices(const btrfs_env_t *env, const btrfs_reader_t *readers, uint32_t count, const btrfs_open_options_t *options, btrfs_status_t *status);
+btrfs_fs_t *btrfs_fs_open_devices(const btrfs_env_t *env, const btrfs_reader_t *readers, uint32_t count,
+								  const btrfs_open_options_t *options, btrfs_status_t *status);
 
 /* The supplied device with this id, or NULL. */
 const btrfs_device_t *btrfs_device_find(const btrfs_fs_t *fs, uint64_t devid);

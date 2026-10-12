@@ -30,11 +30,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-typedef enum {
-	VM_FAULT_READ,
-	VM_FAULT_WRITE,
-	VM_FAULT_EXECUTE
-} vm_fault_access_t;
+typedef enum { VM_FAULT_READ, VM_FAULT_WRITE, VM_FAULT_EXECUTE } vm_fault_access_t;
 
 /*
  * vm_fault_user
@@ -43,10 +39,6 @@ typedef enum {
  * page is now mapped so the access can be retried; false when the access is
  * genuinely invalid (or memory ran out), in which case nothing changed.
  */
-bool vm_fault_user(
-	vm_address_space_t *space,
-	uint64_t virtual_address,
-	vm_fault_access_t access
-);
+bool vm_fault_user(vm_address_space_t *space, uint64_t virtual_address, vm_fault_access_t access);
 
 #endif

@@ -27,33 +27,37 @@
 typedef struct {
 	btrfs_key_t location;
 	uint64_t transid;
-	uint64_t index;            /* DIR_INDEX; 0 for an entry found by name */
-	uint8_t type;              /* BTRFS_FT_* */
+	uint64_t index; /* DIR_INDEX; 0 for an entry found by name */
+	uint8_t type;	/* BTRFS_FT_* */
 	uint16_t name_len;
-	uint8_t name[BTRFS_NAME_LEN + 1U];   /* NUL terminated */
+	uint8_t name[BTRFS_NAME_LEN + 1U]; /* NUL terminated */
 } btrfs_dirent_t;
 
 /* True if the entry leads into another subvolume. */
-static inline bool btrfs_dirent_is_subvol(const btrfs_dirent_t *entry)
+static inline bool
+btrfs_dirent_is_subvol(const btrfs_dirent_t *entry)
 {
 	return entry->location.type == BTRFS_ROOT_ITEM_KEY;
 }
 
 /* Find `name` (length bytes) in directory `dir`. BTRFS_ERR_NOT_FOUND if absent. */
-btrfs_status_t btrfs_dir_lookup(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t dir, const uint8_t *name, size_t length, btrfs_dirent_t *out);
+btrfs_status_t btrfs_dir_lookup(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t dir, const uint8_t *name,
+								size_t length, btrfs_dirent_t *out);
 
 /*
  * The first entry with DIR_INDEX >= *cursor. On success *cursor becomes the
  * entry's index + 1, so passing it back resumes exactly after this entry.
  * BTRFS_ERR_END when the directory is exhausted. Start with *cursor = 0.
  */
-btrfs_status_t btrfs_dir_next(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t dir, uint64_t *cursor, btrfs_dirent_t *out);
+btrfs_status_t btrfs_dir_next(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t dir, uint64_t *cursor,
+							  btrfs_dirent_t *out);
 
 /*
  * The same over the committed tree alone, ignoring the log (btrfs_replay.h).
  * btrfs_dir_next and btrfs_dir_lookup layer the log's additions and removals
  * over it, so a directory shows what a replay of the log tree would leave.
  */
-btrfs_status_t btrfs_dir_next_committed(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t dir, uint64_t *cursor, btrfs_dirent_t *out);
+btrfs_status_t btrfs_dir_next_committed(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t dir, uint64_t *cursor,
+										btrfs_dirent_t *out);
 
 #endif

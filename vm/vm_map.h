@@ -55,12 +55,7 @@ typedef struct vm_map_entry {
  * pmm_allocate_page) and maps them at a freshly bump-allocated VA in space,
  * recording one new region. On any failure space is left unchanged.
  */
-bool vm_map_anon(
-	vm_address_space_t *space,
-	uint64_t size_bytes,
-	vm_user_protection_t protection,
-	uint64_t *out_va
-);
+bool vm_map_anon(vm_address_space_t *space, uint64_t size_bytes, vm_user_protection_t protection, uint64_t *out_va);
 
 /*
  * Records [start_va, end_va) as a region at a caller-chosen address without
@@ -69,35 +64,21 @@ bool vm_map_anon(
  * VM_MAX_USER_ADDRESS and clear of every existing region. On a port without
  * demand paging the caller has to map the pages itself.
  */
-bool vm_map_reserve(
-	vm_address_space_t *space,
-	uint64_t start_va,
-	uint64_t end_va,
-	vm_user_protection_t protection
-);
+bool vm_map_reserve(vm_address_space_t *space, uint64_t start_va, uint64_t end_va, vm_user_protection_t protection);
 
 /*
  * Like vm_map_lookup, and also reports the region's protection -- what the
  * fault handler needs to decide whether an untouched page may be populated.
  */
-bool vm_map_region_at(
-	const vm_address_space_t *space,
-	uint64_t va,
-	vm_user_protection_t *out_protection,
-	uint64_t *out_start_va,
-	uint64_t *out_end_va
-);
+bool vm_map_region_at(const vm_address_space_t *space, uint64_t va, vm_user_protection_t *out_protection,
+					  uint64_t *out_start_va, uint64_t *out_end_va);
 
 /*
  * vm_map_region_at for a caller that already holds space->lock: the fault handler
  * checks that a page is still inside a region and installs it in one critical
  * section, so an munmap on another CPU cannot slip between the two.
  */
-bool vm_map_region_at_locked(
-	const vm_address_space_t *space,
-	uint64_t va,
-	vm_user_protection_t *out_protection
-);
+bool vm_map_region_at_locked(const vm_address_space_t *space, uint64_t va, vm_user_protection_t *out_protection);
 
 /*
  * Copies parent's region list and placement cursor into child (an address
@@ -105,10 +86,7 @@ bool vm_map_region_at_locked(
  * anonymous mappings. Pages are not touched: vm_address_space_fork shares
  * them copy-on-write, and untouched pages stay untouched in both.
  */
-bool vm_map_fork(
-	const vm_address_space_t *parent,
-	vm_address_space_t *child
-);
+bool vm_map_fork(const vm_address_space_t *parent, vm_address_space_t *child);
 
 /*
  * Unmaps and frees the pages covering [va, va + size_bytes) and updates the
@@ -117,23 +95,14 @@ bool vm_map_fork(
  * tracked region fully covers [va, va + size_bytes); this call cannot split
  * work across more than one existing region.
  */
-bool vm_map_free(
-	vm_address_space_t *space,
-	uint64_t va,
-	uint64_t size_bytes
-);
+bool vm_map_free(vm_address_space_t *space, uint64_t va, uint64_t size_bytes);
 
 /*
  * True and (if non-null) fills out_start_va/out_end_va with the tracked
  * region containing va, false if va falls outside every vm_map_anon'd
  * region in space.
  */
-bool vm_map_lookup(
-	const vm_address_space_t *space,
-	uint64_t va,
-	uint64_t *out_start_va,
-	uint64_t *out_end_va
-);
+bool vm_map_lookup(const vm_address_space_t *space, uint64_t va, uint64_t *out_start_va, uint64_t *out_end_va);
 
 /*
  * Unmaps and frees every remaining vm_map_anon'd region in space. Called

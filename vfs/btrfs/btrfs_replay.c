@@ -32,7 +32,8 @@
 
 /* ---- growing arrays (the environment has no realloc) ---------------------------------------------- */
 
-static btrfs_status_t btrfs_replay_grow(btrfs_fs_t *fs, void **array, uint32_t *capacity, uint32_t needed, size_t element, uint32_t limit)
+static btrfs_status_t
+btrfs_replay_grow(btrfs_fs_t *fs, void **array, uint32_t *capacity, uint32_t needed, size_t element, uint32_t limit)
 {
 	if (needed <= *capacity) return BTRFS_OK;
 	if (needed > limit) return BTRFS_ERR_LOG_TREE;
@@ -54,9 +55,11 @@ static btrfs_status_t btrfs_replay_grow(btrfs_fs_t *fs, void **array, uint32_t *
 	return BTRFS_OK;
 }
 
-static btrfs_status_t btrfs_replay_append_item(btrfs_fs_t *fs, btrfs_replay_t *r, const btrfs_key_t *key, const uint8_t *bytes, uint32_t size)
+static btrfs_status_t
+btrfs_replay_append_item(btrfs_fs_t *fs, btrfs_replay_t *r, const btrfs_key_t *key, const uint8_t *bytes, uint32_t size)
 {
-	btrfs_status_t status = btrfs_replay_grow(fs, (void **)&r->items, &r->capacity, r->count + 1U, sizeof(*r->items), BTRFS_REPLAY_ITEMS_MAX);
+	btrfs_status_t status = btrfs_replay_grow(fs, (void **)&r->items, &r->capacity, r->count + 1U, sizeof(*r->items),
+											  BTRFS_REPLAY_ITEMS_MAX);
 	if (status != BTRFS_OK) return status;
 
 	if ((uint64_t)r->data_size + size > BTRFS_REPLAY_BYTES_MAX) return BTRFS_ERR_LOG_TREE;
@@ -64,7 +67,8 @@ static btrfs_status_t btrfs_replay_append_item(btrfs_fs_t *fs, btrfs_replay_t *r
 	if (r->data_size + size > r->data_capacity) {
 		size_t grown = r->data_capacity == 0U ? 65536U : r->data_capacity * 2U;
 
-		while (grown < r->data_size + size) grown *= 2U;
+		while (grown < r->data_size + size)
+			grown *= 2U;
 
 		uint8_t *bigger = btrfs_alloc(fs, grown);
 		if (bigger == 0) return BTRFS_ERR_NOMEM;
@@ -89,7 +93,8 @@ static btrfs_status_t btrfs_replay_append_item(btrfs_fs_t *fs, btrfs_replay_t *r
 
 /* ---- lookups --------------------------------------------------------------------------------------- */
 
-uint32_t btrfs_replay_lower_bound(const btrfs_replay_t *replay, const btrfs_key_t *key)
+uint32_t
+btrfs_replay_lower_bound(const btrfs_replay_t *replay, const btrfs_key_t *key)
 {
 	uint32_t low = 0U;
 	uint32_t high = replay->count;
@@ -97,14 +102,17 @@ uint32_t btrfs_replay_lower_bound(const btrfs_replay_t *replay, const btrfs_key_
 	while (low < high) {
 		uint32_t middle = low + (high - low) / 2U;
 
-		if (btrfs_key_cmp(&replay->items[middle].key, key) < 0) low = middle + 1U;
-		else high = middle;
+		if (btrfs_key_cmp(&replay->items[middle].key, key) < 0)
+			low = middle + 1U;
+		else
+			high = middle;
 	}
 
 	return low;
 }
 
-const btrfs_log_item_t *btrfs_replay_item(const btrfs_replay_t *replay, const btrfs_key_t *key)
+const btrfs_log_item_t *
+btrfs_replay_item(const btrfs_replay_t *replay, const btrfs_key_t *key)
 {
 	uint32_t index = btrfs_replay_lower_bound(replay, key);
 
@@ -112,7 +120,8 @@ const btrfs_log_item_t *btrfs_replay_item(const btrfs_replay_t *replay, const bt
 	return 0;
 }
 
-const btrfs_replay_t *btrfs_replay_find(const btrfs_fs_t *fs, uint64_t subvol)
+const btrfs_replay_t *
+btrfs_replay_find(const btrfs_fs_t *fs, uint64_t subvol)
 {
 	for (const btrfs_replay_t *r = fs->replays; r != 0; r = r->next) {
 		if (r->subvol == subvol) return r;
@@ -121,7 +130,8 @@ const btrfs_replay_t *btrfs_replay_find(const btrfs_fs_t *fs, uint64_t subvol)
 	return 0;
 }
 
-const btrfs_log_dirent_t *btrfs_replay_dirent_ge(const btrfs_replay_t *replay, uint64_t dir, uint64_t index)
+const btrfs_log_dirent_t *
+btrfs_replay_dirent_ge(const btrfs_replay_t *replay, uint64_t dir, uint64_t index)
 {
 	uint32_t low = 0U;
 	uint32_t high = replay->dirent_count;
@@ -130,15 +140,18 @@ const btrfs_log_dirent_t *btrfs_replay_dirent_ge(const btrfs_replay_t *replay, u
 		uint32_t middle = low + (high - low) / 2U;
 		const btrfs_log_dirent_t *d = &replay->dirents[middle];
 
-		if (d->dir < dir || (d->dir == dir && d->index < index)) low = middle + 1U;
-		else high = middle;
+		if (d->dir < dir || (d->dir == dir && d->index < index))
+			low = middle + 1U;
+		else
+			high = middle;
 	}
 
 	if (low < replay->dirent_count && replay->dirents[low].dir == dir) return &replay->dirents[low];
 	return 0;
 }
 
-bool btrfs_replay_dir_removes(const btrfs_replay_t *replay, uint64_t dir, uint64_t index)
+bool
+btrfs_replay_dir_removes(const btrfs_replay_t *replay, uint64_t dir, uint64_t index)
 {
 	btrfs_key_t start = btrfs_key_make(dir, BTRFS_DIR_LOG_INDEX_KEY, 0ULL);
 
@@ -159,14 +172,17 @@ bool btrfs_replay_dir_removes(const btrfs_replay_t *replay, uint64_t dir, uint64
 	return false;
 }
 
-bool btrfs_replay_dir_touched(const btrfs_replay_t *replay, uint64_t dir)
+bool
+btrfs_replay_dir_touched(const btrfs_replay_t *replay, uint64_t dir)
 {
 	if (btrfs_replay_dirent_ge(replay, dir, 0ULL) != 0) return true;
 
 	btrfs_key_t start = btrfs_key_make(dir, BTRFS_DIR_LOG_INDEX_KEY, 0ULL);
 	uint32_t i = btrfs_replay_lower_bound(replay, &start);
 
-	if (i < replay->count && replay->items[i].key.objectid == dir && replay->items[i].key.type == BTRFS_DIR_LOG_INDEX_KEY) return true;
+	if (i < replay->count && replay->items[i].key.objectid == dir &&
+		replay->items[i].key.type == BTRFS_DIR_LOG_INDEX_KEY)
+		return true;
 
 	for (i = 0U; i < replay->gone_count; i++) {
 		if (replay->gone[i].dir == dir) return true;
@@ -175,7 +191,8 @@ bool btrfs_replay_dir_touched(const btrfs_replay_t *replay, uint64_t dir)
 	return false;
 }
 
-const uint8_t *btrfs_replay_csum(const btrfs_fs_t *fs, uint64_t address, uint64_t *start, uint64_t *end)
+const uint8_t *
+btrfs_replay_csum(const btrfs_fs_t *fs, uint64_t address, uint64_t *start, uint64_t *end)
 {
 	btrfs_key_t target = btrfs_key_make(BTRFS_EXTENT_CSUM_OBJECTID, BTRFS_EXTENT_CSUM_KEY, address);
 
@@ -187,8 +204,10 @@ const uint8_t *btrfs_replay_csum(const btrfs_fs_t *fs, uint64_t address, uint64_
 		while (low < high) {
 			uint32_t middle = low + (high - low) / 2U;
 
-			if (btrfs_key_cmp(&r->items[middle].key, &target) <= 0) low = middle + 1U;
-			else high = middle;
+			if (btrfs_key_cmp(&r->items[middle].key, &target) <= 0)
+				low = middle + 1U;
+			else
+				high = middle;
 		}
 
 		if (low == r->csum_first) continue;
@@ -209,7 +228,9 @@ const uint8_t *btrfs_replay_csum(const btrfs_fs_t *fs, uint64_t address, uint64_
 /* ---- building the derived tables ------------------------------------------------------------ */
 
 /* The next name of a packed INODE_REF item (index u64, name_len u16, name). */
-static bool btrfs_replay_ref_next(const uint8_t *data, uint32_t size, uint32_t *position, uint64_t *index, uint32_t *name_at, uint16_t *name_len)
+static bool
+btrfs_replay_ref_next(const uint8_t *data, uint32_t size, uint32_t *position, uint64_t *index, uint32_t *name_at,
+					  uint16_t *name_len)
 {
 	uint32_t at = *position;
 
@@ -225,23 +246,35 @@ static bool btrfs_replay_ref_next(const uint8_t *data, uint32_t size, uint32_t *
 	return true;
 }
 
-static uint8_t btrfs_replay_ft(uint32_t mode)
+static uint8_t
+btrfs_replay_ft(uint32_t mode)
 {
 	switch (btrfs_inode_type(mode)) {
-	case BTRFS_S_IFREG: return BTRFS_FT_REG_FILE;
-	case BTRFS_S_IFDIR: return BTRFS_FT_DIR;
-	case BTRFS_S_IFCHR: return BTRFS_FT_CHRDEV;
-	case BTRFS_S_IFBLK: return BTRFS_FT_BLKDEV;
-	case BTRFS_S_IFIFO: return BTRFS_FT_FIFO;
-	case BTRFS_S_IFSOCK: return BTRFS_FT_SOCK;
-	case BTRFS_S_IFLNK: return BTRFS_FT_SYMLINK;
-	default: return BTRFS_FT_UNKNOWN;
+	case BTRFS_S_IFREG:
+		return BTRFS_FT_REG_FILE;
+	case BTRFS_S_IFDIR:
+		return BTRFS_FT_DIR;
+	case BTRFS_S_IFCHR:
+		return BTRFS_FT_CHRDEV;
+	case BTRFS_S_IFBLK:
+		return BTRFS_FT_BLKDEV;
+	case BTRFS_S_IFIFO:
+		return BTRFS_FT_FIFO;
+	case BTRFS_S_IFSOCK:
+		return BTRFS_FT_SOCK;
+	case BTRFS_S_IFLNK:
+		return BTRFS_FT_SYMLINK;
+	default:
+		return BTRFS_FT_UNKNOWN;
 	}
 }
 
-static btrfs_status_t btrfs_replay_add_dirent(btrfs_fs_t *fs, btrfs_replay_t *r, uint32_t *capacity, uint64_t dir, uint64_t index, uint64_t ino, uint32_t name_offset, uint16_t name_len, uint8_t type)
+static btrfs_status_t
+btrfs_replay_add_dirent(btrfs_fs_t *fs, btrfs_replay_t *r, uint32_t *capacity, uint64_t dir, uint64_t index,
+						uint64_t ino, uint32_t name_offset, uint16_t name_len, uint8_t type)
 {
-	btrfs_status_t status = btrfs_replay_grow(fs, (void **)&r->dirents, capacity, r->dirent_count + 1U, sizeof(*r->dirents), BTRFS_REPLAY_DIRENTS_MAX);
+	btrfs_status_t status = btrfs_replay_grow(fs, (void **)&r->dirents, capacity, r->dirent_count + 1U,
+											  sizeof(*r->dirents), BTRFS_REPLAY_DIRENTS_MAX);
 	if (status != BTRFS_OK) return status;
 
 	btrfs_log_dirent_t *d = &r->dirents[r->dirent_count++];
@@ -255,9 +288,11 @@ static btrfs_status_t btrfs_replay_add_dirent(btrfs_fs_t *fs, btrfs_replay_t *r,
 	return BTRFS_OK;
 }
 
-static btrfs_status_t btrfs_replay_add_gone(btrfs_fs_t *fs, btrfs_replay_t *r, uint32_t *capacity, uint64_t dir, uint64_t index)
+static btrfs_status_t
+btrfs_replay_add_gone(btrfs_fs_t *fs, btrfs_replay_t *r, uint32_t *capacity, uint64_t dir, uint64_t index)
 {
-	btrfs_status_t status = btrfs_replay_grow(fs, (void **)&r->gone, capacity, r->gone_count + 1U, sizeof(*r->gone), BTRFS_REPLAY_DIRENTS_MAX);
+	btrfs_status_t status = btrfs_replay_grow(fs, (void **)&r->gone, capacity, r->gone_count + 1U, sizeof(*r->gone),
+											  BTRFS_REPLAY_DIRENTS_MAX);
 	if (status != BTRFS_OK) return status;
 
 	r->gone[r->gone_count].dir = dir;
@@ -267,7 +302,8 @@ static btrfs_status_t btrfs_replay_add_gone(btrfs_fs_t *fs, btrfs_replay_t *r, u
 }
 
 /* The mode of a logged or committed inode, or 0 if there is none. */
-static uint32_t btrfs_replay_mode_of(btrfs_fs_t *fs, const btrfs_replay_t *r, const btrfs_tree_t *subvol, uint64_t ino)
+static uint32_t
+btrfs_replay_mode_of(btrfs_fs_t *fs, const btrfs_replay_t *r, const btrfs_tree_t *subvol, uint64_t ino)
 {
 	btrfs_key_t key = btrfs_key_make(ino, BTRFS_INODE_ITEM_KEY, 0ULL);
 	const btrfs_log_item_t *logged = btrfs_replay_item(r, &key);
@@ -281,7 +317,8 @@ static uint32_t btrfs_replay_mode_of(btrfs_fs_t *fs, const btrfs_replay_t *r, co
 	return 0U;
 }
 
-static btrfs_status_t btrfs_replay_derive(btrfs_fs_t *fs, btrfs_replay_t *r, const btrfs_tree_t *subvol)
+static btrfs_status_t
+btrfs_replay_derive(btrfs_fs_t *fs, btrfs_replay_t *r, const btrfs_tree_t *subvol)
 {
 	uint32_t dirent_capacity = 0U;
 	uint32_t gone_capacity = 0U;
@@ -295,13 +332,17 @@ static btrfs_status_t btrfs_replay_derive(btrfs_fs_t *fs, btrfs_replay_t *r, con
 
 		if (item->key.type != BTRFS_DIR_INDEX_KEY) continue;
 
-		if (!btrfs_dir_item_parse(btrfs_replay_bytes(r, item), item->size, &entry, &used) || used != item->size) return BTRFS_ERR_CORRUPT;
+		if (!btrfs_dir_item_parse(btrfs_replay_bytes(r, item), item->size, &entry, &used) || used != item->size)
+			return BTRFS_ERR_CORRUPT;
 		if (entry.location.type != BTRFS_INODE_ITEM_KEY) {
 			BTRFS_LOG(fs, "log tree: a directory entry leads into another subvolume");
 			return BTRFS_ERR_LOG_TREE;
 		}
 
-		status = btrfs_replay_add_dirent(fs, r, &dirent_capacity, item->key.objectid, item->key.offset, entry.location.objectid, (uint32_t)(item->offset + (uint32_t)(entry.name - btrfs_replay_bytes(r, item))), entry.name_len, entry.type);
+		status = btrfs_replay_add_dirent(
+			fs, r, &dirent_capacity, item->key.objectid, item->key.offset, entry.location.objectid,
+			(uint32_t)(item->offset + (uint32_t)(entry.name - btrfs_replay_bytes(r, item))), entry.name_len,
+			entry.type);
 		if (status != BTRFS_OK) return status;
 	}
 
@@ -328,9 +369,11 @@ static btrfs_status_t btrfs_replay_derive(btrfs_fs_t *fs, btrfs_replay_t *r, con
 		}
 
 		while (position < item->size) {
-			if (!btrfs_replay_ref_next(btrfs_replay_bytes(r, item), item->size, &position, &index, &name_at, &name_len)) return BTRFS_ERR_CORRUPT;
+			if (!btrfs_replay_ref_next(btrfs_replay_bytes(r, item), item->size, &position, &index, &name_at, &name_len))
+				return BTRFS_ERR_CORRUPT;
 
-			status = btrfs_replay_add_dirent(fs, r, &dirent_capacity, parent, index, ino, item->offset + name_at, name_len, btrfs_replay_ft(mode));
+			status = btrfs_replay_add_dirent(fs, r, &dirent_capacity, parent, index, ino, item->offset + name_at,
+											 name_len, btrfs_replay_ft(mode));
 			if (status != BTRFS_OK) return status;
 		}
 
@@ -366,9 +409,12 @@ static btrfs_status_t btrfs_replay_derive(btrfs_fs_t *fs, btrfs_replay_t *r, con
 
 			position = 0U;
 			while (position < item->size) {
-				if (!btrfs_replay_ref_next(btrfs_replay_bytes(r, item), item->size, &position, &index, &name_at, &name_len)) break;
+				if (!btrfs_replay_ref_next(btrfs_replay_bytes(r, item), item->size, &position, &index, &name_at,
+										   &name_len))
+					break;
 
-				if (index == old_index && name_len == old_len && memcmp(btrfs_replay_bytes(r, item) + name_at, old + old_name_at, name_len) == 0) {
+				if (index == old_index && name_len == old_len &&
+					memcmp(btrfs_replay_bytes(r, item) + name_at, old + old_name_at, name_len) == 0) {
 					kept = true;
 					break;
 				}
@@ -386,7 +432,8 @@ static btrfs_status_t btrfs_replay_derive(btrfs_fs_t *fs, btrfs_replay_t *r, con
 		btrfs_log_dirent_t held = r->dirents[i];
 		uint32_t j = i;
 
-		while (j > 0U && (r->dirents[j - 1U].dir > held.dir || (r->dirents[j - 1U].dir == held.dir && r->dirents[j - 1U].index > held.index))) {
+		while (j > 0U && (r->dirents[j - 1U].dir > held.dir ||
+						  (r->dirents[j - 1U].dir == held.dir && r->dirents[j - 1U].index > held.index))) {
 			r->dirents[j] = r->dirents[j - 1U];
 			j--;
 		}
@@ -397,7 +444,9 @@ static btrfs_status_t btrfs_replay_derive(btrfs_fs_t *fs, btrfs_replay_t *r, con
 	uint32_t out = 0U;
 
 	for (uint32_t i = 0U; i < r->dirent_count; i++) {
-		if (out != 0U && r->dirents[out - 1U].dir == r->dirents[i].dir && r->dirents[out - 1U].index == r->dirents[i].index) continue;
+		if (out != 0U && r->dirents[out - 1U].dir == r->dirents[i].dir &&
+			r->dirents[out - 1U].index == r->dirents[i].index)
+			continue;
 		r->dirents[out++] = r->dirents[i];
 	}
 
@@ -407,7 +456,8 @@ static btrfs_status_t btrfs_replay_derive(btrfs_fs_t *fs, btrfs_replay_t *r, con
 
 /* ---- loading one subvolume's log ------------------------------------------------------------- */
 
-static bool btrfs_replay_known(const btrfs_key_t *key)
+static bool
+btrfs_replay_known(const btrfs_key_t *key)
 {
 	switch (key->type) {
 	case BTRFS_INODE_ITEM_KEY:
@@ -425,7 +475,8 @@ static bool btrfs_replay_known(const btrfs_key_t *key)
 	}
 }
 
-static void btrfs_replay_free(btrfs_fs_t *fs, btrfs_replay_t *r)
+static void
+btrfs_replay_free(btrfs_fs_t *fs, btrfs_replay_t *r)
 {
 	btrfs_free(fs, r->items);
 	btrfs_free(fs, r->data);
@@ -434,7 +485,8 @@ static void btrfs_replay_free(btrfs_fs_t *fs, btrfs_replay_t *r)
 	btrfs_free(fs, r);
 }
 
-static btrfs_status_t btrfs_replay_load(btrfs_fs_t *fs, uint64_t subvol_id, const btrfs_tree_t *log, const btrfs_tree_t *subvol)
+static btrfs_status_t
+btrfs_replay_load(btrfs_fs_t *fs, uint64_t subvol_id, const btrfs_tree_t *log, const btrfs_tree_t *subvol)
 {
 	btrfs_replay_t *r = btrfs_alloc(fs, sizeof(*r));
 	if (r == 0) return BTRFS_ERR_NOMEM;
@@ -459,7 +511,8 @@ static btrfs_status_t btrfs_replay_load(btrfs_fs_t *fs, uint64_t subvol_id, cons
 		}
 
 		if (!btrfs_replay_known(&key)) {
-			BTRFS_LOG(fs, "log tree of subvolume %llu has an item this driver cannot replay: (%llu, %u, %llu)", BTRFS_U64(subvol_id), BTRFS_U64(key.objectid), (unsigned)key.type, BTRFS_U64(key.offset));
+			BTRFS_LOG(fs, "log tree of subvolume %llu has an item this driver cannot replay: (%llu, %u, %llu)",
+					  BTRFS_U64(subvol_id), BTRFS_U64(key.objectid), (unsigned)key.type, BTRFS_U64(key.offset));
 			status = BTRFS_ERR_LOG_TREE;
 			break;
 		}
@@ -493,11 +546,13 @@ static btrfs_status_t btrfs_replay_load(btrfs_fs_t *fs, uint64_t subvol_id, cons
 	r->next = fs->replays;
 	fs->replays = r;
 
-	BTRFS_LOG(fs, "log tree of subvolume %llu: %u items, %u directory entries added, %u removed by name", BTRFS_U64(subvol_id), r->count, r->dirent_count, r->gone_count);
+	BTRFS_LOG(fs, "log tree of subvolume %llu: %u items, %u directory entries added, %u removed by name",
+			  BTRFS_U64(subvol_id), r->count, r->dirent_count, r->gone_count);
 	return BTRFS_OK;
 }
 
-btrfs_status_t btrfs_replay_open(btrfs_fs_t *fs)
+btrfs_status_t
+btrfs_replay_open(btrfs_fs_t *fs)
 {
 	if (fs->super.log_root == 0ULL || fs->options.ignore_log_tree) return BTRFS_OK;
 
@@ -573,7 +628,8 @@ btrfs_status_t btrfs_replay_open(btrfs_fs_t *fs)
 	return BTRFS_OK;
 }
 
-void btrfs_replay_close(btrfs_fs_t *fs)
+void
+btrfs_replay_close(btrfs_fs_t *fs)
 {
 	while (fs->replays != 0) {
 		btrfs_replay_t *r = fs->replays;

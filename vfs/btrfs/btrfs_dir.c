@@ -14,10 +14,12 @@
 #include <string.h>
 
 /* Validate one parsed entry and copy it into the caller's form. */
-static btrfs_status_t btrfs_dirent_fill(const btrfs_dir_item_t *entry, uint64_t index, btrfs_dirent_t *out)
+static btrfs_status_t
+btrfs_dirent_fill(const btrfs_dir_item_t *entry, uint64_t index, btrfs_dirent_t *out)
 {
 	if (entry->type == BTRFS_FT_UNKNOWN || entry->type >= BTRFS_FT_XATTR) return BTRFS_ERR_CORRUPT;
-	if (entry->location.type != BTRFS_INODE_ITEM_KEY && entry->location.type != BTRFS_ROOT_ITEM_KEY) return BTRFS_ERR_CORRUPT;
+	if (entry->location.type != BTRFS_INODE_ITEM_KEY && entry->location.type != BTRFS_ROOT_ITEM_KEY)
+		return BTRFS_ERR_CORRUPT;
 
 	/* A file name can hold anything but NUL and '/'. */
 	for (uint32_t position = 0U; position < entry->name_len; position++) {
@@ -34,7 +36,9 @@ static btrfs_status_t btrfs_dirent_fill(const btrfs_dir_item_t *entry, uint64_t 
 	return BTRFS_OK;
 }
 
-static btrfs_status_t btrfs_dir_lookup_committed(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t dir, const uint8_t *name, size_t length, btrfs_dirent_t *out)
+static btrfs_status_t
+btrfs_dir_lookup_committed(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t dir, const uint8_t *name, size_t length,
+						   btrfs_dirent_t *out)
 {
 	if (length == 0U) return BTRFS_ERR_NOT_FOUND;
 	if (length > BTRFS_NAME_LEN) return BTRFS_ERR_NAME_TOO_LONG;
@@ -79,7 +83,9 @@ static btrfs_status_t btrfs_dir_lookup_committed(btrfs_fs_t *fs, const btrfs_tre
 	return status;
 }
 
-btrfs_status_t btrfs_dir_next_committed(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t dir, uint64_t *cursor, btrfs_dirent_t *out)
+btrfs_status_t
+btrfs_dir_next_committed(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t dir, uint64_t *cursor,
+						 btrfs_dirent_t *out)
 {
 	btrfs_key_t target = btrfs_key_make(dir, BTRFS_DIR_INDEX_KEY, *cursor);
 	btrfs_path_t path;
@@ -122,7 +128,8 @@ btrfs_status_t btrfs_dir_next_committed(btrfs_fs_t *fs, const btrfs_tree_t *subv
 
 /* ---- the log's view of a directory ---------------------------------------------------------- */
 
-static void btrfs_dirent_from_log(const btrfs_replay_t *replay, const btrfs_log_dirent_t *logged, btrfs_dirent_t *out)
+static void
+btrfs_dirent_from_log(const btrfs_replay_t *replay, const btrfs_log_dirent_t *logged, btrfs_dirent_t *out)
 {
 	out->location = btrfs_key_make(logged->ino, BTRFS_INODE_ITEM_KEY, 0ULL);
 	out->transid = 0ULL;
@@ -138,11 +145,13 @@ static void btrfs_dirent_from_log(const btrfs_replay_t *replay, const btrfs_log_
  * it: what a replay would leave. Log entries win an index they share with the
  * committed tree (Linux unlinks the old name there).
  */
-btrfs_status_t btrfs_dir_next(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t dir, uint64_t *cursor, btrfs_dirent_t *out)
+btrfs_status_t
+btrfs_dir_next(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t dir, uint64_t *cursor, btrfs_dirent_t *out)
 {
 	const btrfs_replay_t *replay = btrfs_replay_find(fs, subvol->objectid);
 
-	if (replay == 0 || !btrfs_replay_dir_touched(replay, dir)) return btrfs_dir_next_committed(fs, subvol, dir, cursor, out);
+	if (replay == 0 || !btrfs_replay_dir_touched(replay, dir))
+		return btrfs_dir_next_committed(fs, subvol, dir, cursor, out);
 
 	uint64_t from = *cursor;
 
@@ -174,11 +183,14 @@ btrfs_status_t btrfs_dir_next(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64
 	}
 }
 
-btrfs_status_t btrfs_dir_lookup(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t dir, const uint8_t *name, size_t length, btrfs_dirent_t *out)
+btrfs_status_t
+btrfs_dir_lookup(btrfs_fs_t *fs, const btrfs_tree_t *subvol, uint64_t dir, const uint8_t *name, size_t length,
+				 btrfs_dirent_t *out)
 {
 	const btrfs_replay_t *replay = btrfs_replay_find(fs, subvol->objectid);
 
-	if (replay == 0 || !btrfs_replay_dir_touched(replay, dir)) return btrfs_dir_lookup_committed(fs, subvol, dir, name, length, out);
+	if (replay == 0 || !btrfs_replay_dir_touched(replay, dir))
+		return btrfs_dir_lookup_committed(fs, subvol, dir, name, length, out);
 
 	if (length == 0U) return BTRFS_ERR_NOT_FOUND;
 	if (length > BTRFS_NAME_LEN) return BTRFS_ERR_NAME_TOO_LONG;

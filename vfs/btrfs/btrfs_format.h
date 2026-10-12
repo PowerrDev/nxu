@@ -37,48 +37,52 @@
 
 typedef enum {
 	BTRFS_OK = 0,
-	BTRFS_ERR_INVALID,             /* bad argument */
+	BTRFS_ERR_INVALID, /* bad argument */
 	BTRFS_ERR_NOMEM,
-	BTRFS_ERR_IO,                  /* the device failed a read */
-	BTRFS_ERR_BAD_MAGIC,           /* no Btrfs superblock */
-	BTRFS_ERR_CSUM,                /* a checksum did not match */
-	BTRFS_ERR_CORRUPT,             /* structurally invalid metadata */
-	BTRFS_ERR_TRUNCATED,           /* the device is smaller than the filesystem */
+	BTRFS_ERR_IO,		 /* the device failed a read */
+	BTRFS_ERR_BAD_MAGIC, /* no Btrfs superblock */
+	BTRFS_ERR_CSUM,		 /* a checksum did not match */
+	BTRFS_ERR_CORRUPT,	 /* structurally invalid metadata */
+	BTRFS_ERR_TRUNCATED, /* the device is smaller than the filesystem */
 	BTRFS_ERR_NOT_FOUND,
-	BTRFS_ERR_END,                 /* iteration finished (not an error) */
+	BTRFS_ERR_END, /* iteration finished (not an error) */
 	BTRFS_ERR_NOT_DIRECTORY,
 	BTRFS_ERR_IS_DIRECTORY,
 	BTRFS_ERR_NAME_TOO_LONG,
-	BTRFS_ERR_UNSUPPORTED,         /* generic: valid but not implemented */
+	BTRFS_ERR_UNSUPPORTED,		   /* generic: valid but not implemented */
 	BTRFS_ERR_UNSUPPORTED_FEATURE, /* unknown or unsupported incompat/compat_ro bits */
-	BTRFS_ERR_UNSUPPORTED_CSUM,    /* checksum algorithm this driver does not know (none today) */
+	BTRFS_ERR_UNSUPPORTED_CSUM,	   /* checksum algorithm this driver does not know (none today) */
 	BTRFS_ERR_UNSUPPORTED_PROFILE, /* RAID / multi-device chunk or filesystem */
 	BTRFS_ERR_UNSUPPORTED_COMPRESSION,
 	BTRFS_ERR_UNSUPPORTED_ENCRYPTION,
-	BTRFS_ERR_LOG_TREE,            /* the log tree holds something the replay layer does not understand */
-	BTRFS_ERR_MISSING_DEVICE       /* a device of the filesystem was not supplied (degraded mounts are refused) */
+	BTRFS_ERR_LOG_TREE,		 /* the log tree holds something the replay layer does not understand */
+	BTRFS_ERR_MISSING_DEVICE /* a device of the filesystem was not supplied (degraded mounts are refused) */
 } btrfs_status_t;
 
 const char *btrfs_status_name(btrfs_status_t status);
 
 /* ---- little-endian accessors --------------------------------------------- */
 
-static inline uint16_t btrfs_get_le16(const uint8_t *p)
+static inline uint16_t
+btrfs_get_le16(const uint8_t *p)
 {
 	return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8U));
 }
 
-static inline uint32_t btrfs_get_le32(const uint8_t *p)
+static inline uint32_t
+btrfs_get_le32(const uint8_t *p)
 {
 	return (uint32_t)p[0] | ((uint32_t)p[1] << 8U) | ((uint32_t)p[2] << 16U) | ((uint32_t)p[3] << 24U);
 }
 
-static inline uint64_t btrfs_get_le64(const uint8_t *p)
+static inline uint64_t
+btrfs_get_le64(const uint8_t *p)
 {
 	return (uint64_t)btrfs_get_le32(p) | ((uint64_t)btrfs_get_le32(p + 4) << 32U);
 }
 
-static inline void btrfs_put_le32(uint8_t *p, uint32_t v)
+static inline void
+btrfs_put_le32(uint8_t *p, uint32_t v)
 {
 	p[0] = (uint8_t)v;
 	p[1] = (uint8_t)(v >> 8U);
@@ -86,7 +90,8 @@ static inline void btrfs_put_le32(uint8_t *p, uint32_t v)
 	p[3] = (uint8_t)(v >> 24U);
 }
 
-static inline void btrfs_put_le64(uint8_t *p, uint64_t v)
+static inline void
+btrfs_put_le64(uint8_t *p, uint64_t v)
 {
 	btrfs_put_le32(p, (uint32_t)v);
 	btrfs_put_le32(p + 4, (uint32_t)(v >> 32U));
@@ -222,20 +227,19 @@ static inline void btrfs_put_le64(uint8_t *p, uint64_t v)
  *                   knows the actual profile in use.
  * Refused: ZONED, EXTENT_TREE_V2, RAID_STRIPE_TREE and any unknown bit.
  */
-#define BTRFS_INCOMPAT_SUPPORTED ( \
-	BTRFS_FEATURE_INCOMPAT_MIXED_BACKREF | BTRFS_FEATURE_INCOMPAT_DEFAULT_SUBVOL | \
-	BTRFS_FEATURE_INCOMPAT_MIXED_GROUPS | BTRFS_FEATURE_INCOMPAT_COMPRESS_LZO | \
-	BTRFS_FEATURE_INCOMPAT_COMPRESS_ZSTD | BTRFS_FEATURE_INCOMPAT_BIG_METADATA | \
-	BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF | BTRFS_FEATURE_INCOMPAT_RAID56 | \
-	BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA | BTRFS_FEATURE_INCOMPAT_NO_HOLES | \
-	BTRFS_FEATURE_INCOMPAT_METADATA_UUID | BTRFS_FEATURE_INCOMPAT_RAID1C34 | \
-	BTRFS_FEATURE_INCOMPAT_SIMPLE_QUOTA)
+#define BTRFS_INCOMPAT_SUPPORTED                                                                                       \
+	(BTRFS_FEATURE_INCOMPAT_MIXED_BACKREF | BTRFS_FEATURE_INCOMPAT_DEFAULT_SUBVOL |                                    \
+	 BTRFS_FEATURE_INCOMPAT_MIXED_GROUPS | BTRFS_FEATURE_INCOMPAT_COMPRESS_LZO |                                       \
+	 BTRFS_FEATURE_INCOMPAT_COMPRESS_ZSTD | BTRFS_FEATURE_INCOMPAT_BIG_METADATA |                                      \
+	 BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF | BTRFS_FEATURE_INCOMPAT_RAID56 | BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA |   \
+	 BTRFS_FEATURE_INCOMPAT_NO_HOLES | BTRFS_FEATURE_INCOMPAT_METADATA_UUID | BTRFS_FEATURE_INCOMPAT_RAID1C34 |        \
+	 BTRFS_FEATURE_INCOMPAT_SIMPLE_QUOTA)
 
 /* compat_ro bits a read-only mount may ignore. Unknown ones are ignored too:
  * that is precisely what compat_ro means for a read-only mount. */
-#define BTRFS_COMPAT_RO_KNOWN ( \
-	BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE | BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE_VALID | \
-	BTRFS_FEATURE_COMPAT_RO_VERITY | BTRFS_FEATURE_COMPAT_RO_BLOCK_GROUP_TREE)
+#define BTRFS_COMPAT_RO_KNOWN                                                                                          \
+	(BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE | BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE_VALID |                         \
+	 BTRFS_FEATURE_COMPAT_RO_VERITY | BTRFS_FEATURE_COMPAT_RO_BLOCK_GROUP_TREE)
 
 #define BTRFS_CSUM_TYPE_CRC32 0U
 #define BTRFS_CSUM_TYPE_XXHASH 1U
@@ -256,10 +260,9 @@ static inline void btrfs_put_le64(uint8_t *p, uint64_t v)
 #define BTRFS_BLOCK_GROUP_RAID1C3 (1ULL << 9U)
 #define BTRFS_BLOCK_GROUP_RAID1C4 (1ULL << 10U)
 #define BTRFS_BLOCK_GROUP_TYPE_MASK (BTRFS_BLOCK_GROUP_DATA | BTRFS_BLOCK_GROUP_SYSTEM | BTRFS_BLOCK_GROUP_METADATA)
-#define BTRFS_BLOCK_GROUP_PROFILE_MASK ( \
-	BTRFS_BLOCK_GROUP_RAID0 | BTRFS_BLOCK_GROUP_RAID1 | BTRFS_BLOCK_GROUP_DUP | \
-	BTRFS_BLOCK_GROUP_RAID10 | BTRFS_BLOCK_GROUP_RAID5 | BTRFS_BLOCK_GROUP_RAID6 | \
-	BTRFS_BLOCK_GROUP_RAID1C3 | BTRFS_BLOCK_GROUP_RAID1C4)
+#define BTRFS_BLOCK_GROUP_PROFILE_MASK                                                                                 \
+	(BTRFS_BLOCK_GROUP_RAID0 | BTRFS_BLOCK_GROUP_RAID1 | BTRFS_BLOCK_GROUP_DUP | BTRFS_BLOCK_GROUP_RAID10 |            \
+	 BTRFS_BLOCK_GROUP_RAID5 | BTRFS_BLOCK_GROUP_RAID6 | BTRFS_BLOCK_GROUP_RAID1C3 | BTRFS_BLOCK_GROUP_RAID1C4)
 
 /* ---- file extents ---------------------------------------------------------- */
 
@@ -290,7 +293,8 @@ typedef struct {
 
 #define BTRFS_DISK_KEY_SIZE 17U
 
-static inline void btrfs_key_read(const uint8_t *p, btrfs_key_t *key)
+static inline void
+btrfs_key_read(const uint8_t *p, btrfs_key_t *key)
 {
 	key->objectid = btrfs_get_le64(p);
 	key->type = p[8];
@@ -298,7 +302,8 @@ static inline void btrfs_key_read(const uint8_t *p, btrfs_key_t *key)
 }
 
 /* Order by objectid, then type, then offset: the order every tree is sorted in. */
-static inline int btrfs_key_cmp(const btrfs_key_t *a, const btrfs_key_t *b)
+static inline int
+btrfs_key_cmp(const btrfs_key_t *a, const btrfs_key_t *b)
 {
 	if (a->objectid != b->objectid) return a->objectid < b->objectid ? -1 : 1;
 	if (a->type != b->type) return a->type < b->type ? -1 : 1;
@@ -306,9 +311,10 @@ static inline int btrfs_key_cmp(const btrfs_key_t *a, const btrfs_key_t *b)
 	return 0;
 }
 
-static inline btrfs_key_t btrfs_key_make(uint64_t objectid, uint8_t type, uint64_t offset)
+static inline btrfs_key_t
+btrfs_key_make(uint64_t objectid, uint8_t type, uint64_t offset)
 {
-	btrfs_key_t key = { objectid, type, offset };
+	btrfs_key_t key = {objectid, type, offset};
 	return key;
 }
 
@@ -357,10 +363,10 @@ typedef struct {
 	uint8_t csum[BTRFS_CSUM_SIZE];
 	uint8_t fsid[BTRFS_FSID_SIZE];
 	uint8_t metadata_uuid[BTRFS_FSID_SIZE];
-	uint64_t bytenr;          /* where this copy claims to live */
+	uint64_t bytenr; /* where this copy claims to live */
 	uint64_t flags;
 	uint64_t generation;
-	uint64_t root;            /* root tree */
+	uint64_t root; /* root tree */
 	uint64_t chunk_root;
 	uint64_t log_root;
 	uint64_t total_bytes;
@@ -402,25 +408,25 @@ typedef struct {
 #define BTRFS_HDR_NRITEMS 96U
 #define BTRFS_HDR_LEVEL 100U
 
-#define BTRFS_ITEM_SIZE 25U      /* struct btrfs_item: key, offset, size */
-#define BTRFS_KEY_PTR_SIZE 33U   /* struct btrfs_key_ptr: key, blockptr, generation */
+#define BTRFS_ITEM_SIZE 25U	   /* struct btrfs_item: key, offset, size */
+#define BTRFS_KEY_PTR_SIZE 33U /* struct btrfs_key_ptr: key, blockptr, generation */
 
 /* ---- chunk items --------------------------------------------------------------- */
 
-#define BTRFS_CHUNK_SIZE 48U         /* without the stripes */
+#define BTRFS_CHUNK_SIZE 48U /* without the stripes */
 #define BTRFS_STRIPE_SIZE 32U
 
 typedef struct {
 	uint64_t devid;
-	uint64_t offset;           /* physical byte offset on that device */
+	uint64_t offset; /* physical byte offset on that device */
 } btrfs_stripe_t;
 
 typedef struct {
-	uint64_t logical;          /* key offset */
+	uint64_t logical; /* key offset */
 	uint64_t length;
 	uint64_t owner;
 	uint64_t stripe_len;
-	uint64_t type;             /* BTRFS_BLOCK_GROUP_* */
+	uint64_t type; /* BTRFS_BLOCK_GROUP_* */
 	uint32_t io_align;
 	uint32_t io_width;
 	uint32_t sector_size;
@@ -433,7 +439,8 @@ typedef struct {
  * Parse a chunk item. On success *used is the number of bytes the item took
  * (BTRFS_CHUNK_SIZE + num_stripes * BTRFS_STRIPE_SIZE).
  */
-static inline bool btrfs_chunk_parse(const uint8_t *p, size_t avail, uint64_t logical, btrfs_chunk_t *chunk, size_t *used)
+static inline bool
+btrfs_chunk_parse(const uint8_t *p, size_t avail, uint64_t logical, btrfs_chunk_t *chunk, size_t *used)
 {
 	if (avail < BTRFS_CHUNK_SIZE) return false;
 
@@ -494,13 +501,15 @@ typedef struct {
 	btrfs_timespec_t otime;
 } btrfs_inode_item_t;
 
-static inline void btrfs_timespec_read(const uint8_t *p, btrfs_timespec_t *t)
+static inline void
+btrfs_timespec_read(const uint8_t *p, btrfs_timespec_t *t)
 {
 	t->sec = btrfs_get_le64(p);
 	t->nsec = btrfs_get_le32(p + 8);
 }
 
-static inline bool btrfs_inode_item_parse(const uint8_t *p, size_t avail, btrfs_inode_item_t *inode)
+static inline bool
+btrfs_inode_item_parse(const uint8_t *p, size_t avail, btrfs_inode_item_t *inode)
 {
 	if (avail < BTRFS_INODE_ITEM_SIZE) return false;
 
@@ -528,13 +537,13 @@ static inline bool btrfs_inode_item_parse(const uint8_t *p, size_t avail, btrfs_
 #define BTRFS_DIR_ITEM_HEADER_SIZE 30U
 
 typedef struct {
-	btrfs_key_t location;      /* INODE_ITEM key, or ROOT_ITEM key for a subvolume point */
+	btrfs_key_t location; /* INODE_ITEM key, or ROOT_ITEM key for a subvolume point */
 	uint64_t transid;
 	uint16_t data_len;
 	uint16_t name_len;
-	uint8_t type;              /* BTRFS_FT_* */
-	const uint8_t *name;       /* points into the item */
-	const uint8_t *data;       /* xattr value, points into the item */
+	uint8_t type;		 /* BTRFS_FT_* */
+	const uint8_t *name; /* points into the item */
+	const uint8_t *data; /* xattr value, points into the item */
 } btrfs_dir_item_t;
 
 /*
@@ -542,7 +551,8 @@ typedef struct {
  * total size of the entry; the next packed entry (hash collisions pack several
  * per item) starts there.
  */
-static inline bool btrfs_dir_item_parse(const uint8_t *p, size_t avail, btrfs_dir_item_t *entry, size_t *used)
+static inline bool
+btrfs_dir_item_parse(const uint8_t *p, size_t avail, btrfs_dir_item_t *entry, size_t *used)
 {
 	if (avail < BTRFS_DIR_ITEM_HEADER_SIZE) return false;
 
@@ -564,25 +574,26 @@ static inline bool btrfs_dir_item_parse(const uint8_t *p, size_t avail, btrfs_di
 
 /* ---- file extent items ---------------------------------------------------------------- */
 
-#define BTRFS_FILE_EXTENT_INLINE_HEADER 21U   /* bytes before the inline data */
-#define BTRFS_FILE_EXTENT_SIZE 53U            /* a regular / prealloc item */
+#define BTRFS_FILE_EXTENT_INLINE_HEADER 21U /* bytes before the inline data */
+#define BTRFS_FILE_EXTENT_SIZE 53U			/* a regular / prealloc item */
 
 typedef struct {
 	uint64_t generation;
-	uint64_t ram_bytes;        /* decoded size of the whole extent */
+	uint64_t ram_bytes; /* decoded size of the whole extent */
 	uint8_t compression;
 	uint8_t encryption;
 	uint16_t other_encoding;
 	uint8_t type;
-	uint64_t disk_bytenr;      /* 0: a hole */
+	uint64_t disk_bytenr; /* 0: a hole */
 	uint64_t disk_num_bytes;
-	uint64_t offset;           /* start inside the decoded extent */
-	uint64_t num_bytes;        /* bytes of the file this item covers */
-	uint32_t inline_size;      /* inline: bytes of data following the header */
+	uint64_t offset;	  /* start inside the decoded extent */
+	uint64_t num_bytes;	  /* bytes of the file this item covers */
+	uint32_t inline_size; /* inline: bytes of data following the header */
 } btrfs_file_extent_t;
 
 /* item_size is the size of the whole item; inline data length derives from it. */
-static inline bool btrfs_file_extent_parse(const uint8_t *p, size_t item_size, btrfs_file_extent_t *e)
+static inline bool
+btrfs_file_extent_parse(const uint8_t *p, size_t item_size, btrfs_file_extent_t *e)
 {
 	if (item_size < BTRFS_FILE_EXTENT_INLINE_HEADER) return false;
 
@@ -621,13 +632,13 @@ static inline bool btrfs_file_extent_parse(const uint8_t *p, size_t item_size, b
 typedef struct {
 	uint64_t generation;
 	uint64_t root_dirid;
-	uint64_t bytenr;           /* root node of the tree */
+	uint64_t bytenr; /* root node of the tree */
 	uint64_t bytes_used;
 	uint64_t last_snapshot;
 	uint64_t flags;
 	uint32_t refs;
 	uint8_t level;
-	uint64_t generation_v2;    /* 0 for a legacy item */
+	uint64_t generation_v2; /* 0 for a legacy item */
 	uint8_t uuid[BTRFS_UUID_SIZE];
 	uint8_t parent_uuid[BTRFS_UUID_SIZE];
 	uint8_t received_uuid[BTRFS_UUID_SIZE];
@@ -636,7 +647,8 @@ typedef struct {
 	btrfs_timespec_t otime;
 } btrfs_root_item_t;
 
-static inline bool btrfs_root_item_parse(const uint8_t *p, size_t avail, btrfs_root_item_t *root)
+static inline bool
+btrfs_root_item_parse(const uint8_t *p, size_t avail, btrfs_root_item_t *root)
 {
 	if (avail < BTRFS_ROOT_ITEM_LEGACY_SIZE) return false;
 
@@ -679,13 +691,14 @@ static inline bool btrfs_root_item_parse(const uint8_t *p, size_t avail, btrfs_r
 #define BTRFS_ROOT_REF_HEADER_SIZE 18U
 
 typedef struct {
-	uint64_t dirid;            /* directory in the parent subvolume holding the point */
-	uint64_t sequence;         /* the DIR_INDEX of the subvolume point */
+	uint64_t dirid;	   /* directory in the parent subvolume holding the point */
+	uint64_t sequence; /* the DIR_INDEX of the subvolume point */
 	uint16_t name_len;
 	const uint8_t *name;
 } btrfs_root_ref_t;
 
-static inline bool btrfs_root_ref_parse(const uint8_t *p, size_t avail, btrfs_root_ref_t *ref)
+static inline bool
+btrfs_root_ref_parse(const uint8_t *p, size_t avail, btrfs_root_ref_t *ref)
 {
 	if (avail < BTRFS_ROOT_REF_HEADER_SIZE) return false;
 
@@ -724,7 +737,8 @@ bool btrfs_csum_matches(uint32_t type, const uint8_t *stored, const void *data, 
 void btrfs_sha256(const void *data, size_t length, uint8_t out[32]);
 void btrfs_blake2b_256(const void *data, size_t length, uint8_t out[32]);
 
-/* XXH64 (Yann Collet's xxHash, 64-bit) of data with the given seed: Btrfs' xxhash checksum and the ZSTD content checksum. */
+/* XXH64 (Yann Collet's xxHash, 64-bit) of data with the given seed: Btrfs' xxhash checksum and the ZSTD content
+ * checksum. */
 uint64_t btrfs_xxh64(const void *data, size_t length, uint64_t seed);
 
 /* The DIR_ITEM key offset for a name: crc32c(~1, name). */

@@ -52,7 +52,8 @@
 /* ---- bit readers ---------------------------------------------------------------------------- */
 
 /* n <= 32 bits starting at bit offset `lo` (LSB first) of data[0..nbytes); bytes past the end read as 0. */
-static uint64_t btrfs_zstd_gather(const uint8_t *data, size_t nbytes, uint64_t lo, unsigned n)
+static uint64_t
+btrfs_zstd_gather(const uint8_t *data, size_t nbytes, uint64_t lo, unsigned n)
 {
 	uint64_t index = lo >> 3U;
 	uint64_t value = 0U;
@@ -71,7 +72,8 @@ typedef struct {
 	uint64_t bitpos;
 } btrfs_zfwd_t;
 
-static uint32_t btrfs_zfwd_peek(const btrfs_zfwd_t *f, unsigned n)
+static uint32_t
+btrfs_zfwd_peek(const btrfs_zfwd_t *f, unsigned n)
 {
 	return (uint32_t)btrfs_zstd_gather(f->data, f->nbytes, f->bitpos, n);
 }
@@ -88,12 +90,14 @@ typedef struct {
 	int64_t bits;
 } btrfs_zrev_t;
 
-static bool btrfs_zrev_init(btrfs_zrev_t *r, const uint8_t *data, size_t nbytes)
+static bool
+btrfs_zrev_init(btrfs_zrev_t *r, const uint8_t *data, size_t nbytes)
 {
 	if (nbytes == 0U || data[nbytes - 1U] == 0U) return false;
 
 	unsigned top = 7U;
-	while ((data[nbytes - 1U] & (1U << top)) == 0U) top--;
+	while ((data[nbytes - 1U] & (1U << top)) == 0U)
+		top--;
 
 	r->data = data;
 	r->nbytes = nbytes;
@@ -102,7 +106,8 @@ static bool btrfs_zrev_init(btrfs_zrev_t *r, const uint8_t *data, size_t nbytes)
 }
 
 /* The next n <= 32 bits; the earliest is the most significant. Not consumed. */
-static uint32_t btrfs_zrev_peek(const btrfs_zrev_t *r, unsigned n)
+static uint32_t
+btrfs_zrev_peek(const btrfs_zrev_t *r, unsigned n)
 {
 	if (n == 0U) return 0U;
 
@@ -115,7 +120,8 @@ static uint32_t btrfs_zrev_peek(const btrfs_zrev_t *r, unsigned n)
 	return (uint32_t)(btrfs_zstd_gather(r->data, r->nbytes, 0U, have) << (n - have));
 }
 
-static uint32_t btrfs_zrev_read(btrfs_zrev_t *r, unsigned n)
+static uint32_t
+btrfs_zrev_read(btrfs_zrev_t *r, unsigned n)
 {
 	uint32_t value = btrfs_zrev_peek(r, n);
 
@@ -126,18 +132,19 @@ static uint32_t btrfs_zrev_read(btrfs_zrev_t *r, unsigned n)
 /* ---- FSE ---------------------------------------------------------------------------------- */
 
 typedef struct {
-	uint16_t base;     /* the next state is base + the next nbits bits */
+	uint16_t base; /* the next state is base + the next nbits bits */
 	uint8_t symbol;
 	uint8_t nbits;
 } btrfs_zfse_entry_t;
 
 typedef struct {
 	btrfs_zfse_entry_t entry[ZSTD_FSE_TABLE_ENTRIES];
-	unsigned log;      /* accuracy log; the table has 1 << log entries */
-	bool valid;        /* a table exists for "repeat" to reuse */
+	unsigned log; /* accuracy log; the table has 1 << log entries */
+	bool valid;	  /* a table exists for "repeat" to reuse */
 } btrfs_zfse_t;
 
-static unsigned btrfs_zstd_highbit(uint32_t value)
+static unsigned
+btrfs_zstd_highbit(uint32_t value)
 {
 	unsigned bit = 0U;
 
@@ -154,9 +161,11 @@ static unsigned btrfs_zstd_highbit(uint32_t value)
  * numbered 0..*count-1 and must not exceed max_symbol. On success *used is the
  * number of bytes the description took.
  */
-static bool btrfs_zstd_read_counts(const uint8_t *data, size_t nbytes, int16_t *norm, unsigned max_symbol, unsigned max_log, unsigned *log_out, unsigned *count_out, size_t *used)
+static bool
+btrfs_zstd_read_counts(const uint8_t *data, size_t nbytes, int16_t *norm, unsigned max_symbol, unsigned max_log,
+					   unsigned *log_out, unsigned *count_out, size_t *used)
 {
-	btrfs_zfwd_t f = { data, nbytes, 0U };
+	btrfs_zfwd_t f = {data, nbytes, 0U};
 	unsigned log = 5U + btrfs_zfwd_peek(&f, 4U);
 
 	f.bitpos = 4U;
@@ -177,7 +186,8 @@ static bool btrfs_zstd_read_counts(const uint8_t *data, size_t nbytes, int16_t *
 				f.bitpos += 2U;
 				symbol += repeat;
 				if (symbol > max_symbol) return false;
-				for (unsigned z = symbol - repeat; z < symbol; z++) norm[z] = 0;
+				for (unsigned z = symbol - repeat; z < symbol; z++)
+					norm[z] = 0;
 				if (repeat != 3U) break;
 				if (f.bitpos > (uint64_t)nbytes * 8U) return false;
 			}
@@ -220,7 +230,8 @@ static bool btrfs_zstd_read_counts(const uint8_t *data, size_t nbytes, int16_t *
 }
 
 /* The decoding table for a set of normalized counts summing to 1 << log (-1: probability "less than 1"). */
-static bool btrfs_zstd_build_fse(btrfs_zfse_t *t, const int16_t *norm, unsigned count, unsigned log)
+static bool
+btrfs_zstd_build_fse(btrfs_zfse_t *t, const int16_t *norm, unsigned count, unsigned log)
 {
 	uint16_t next[ZSTD_MAX_SYMBOLS];
 	unsigned size = 1U << log;
@@ -243,7 +254,8 @@ static bool btrfs_zstd_build_fse(btrfs_zfse_t *t, const int16_t *norm, unsigned 
 		for (int i = 0; i < norm[s]; i++) {
 			t->entry[position].symbol = (uint8_t)s;
 			position = (position + step) & (size - 1U);
-			while (position > high) position = (position + step) & (size - 1U);
+			while (position > high)
+				position = (position + step) & (size - 1U);
 		}
 	}
 
@@ -263,7 +275,8 @@ static bool btrfs_zstd_build_fse(btrfs_zfse_t *t, const int16_t *norm, unsigned 
 }
 
 /* A table with one symbol that costs no bits (RLE mode). */
-static void btrfs_zstd_build_rle(btrfs_zfse_t *t, uint8_t symbol)
+static void
+btrfs_zstd_build_rle(btrfs_zfse_t *t, uint8_t symbol)
 {
 	t->entry[0].base = 0U;
 	t->entry[0].symbol = symbol;
@@ -272,32 +285,27 @@ static void btrfs_zstd_build_rle(btrfs_zfse_t *t, uint8_t symbol)
 	t->valid = true;
 }
 
-static const int16_t btrfs_zstd_ll_default[36] = {
-	4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1, 1, 1, 1, -1, -1, -1, -1
-};
-static const int16_t btrfs_zstd_of_default[29] = {
-	1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1
-};
-static const int16_t btrfs_zstd_ml_default[53] = {
-	1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1
-};
+static const int16_t btrfs_zstd_ll_default[36] = {4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1,	1,	2,	2,
+												  2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1, 1, 1, 1, -1, -1, -1, -1};
+static const int16_t btrfs_zstd_of_default[29] = {1, 1, 1, 1, 1, 1, 2, 2, 2, 1,	 1,	 1,	 1,	 1, 1,
+												  1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1};
+static const int16_t btrfs_zstd_ml_default[53] = {1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1,	1,	1,	1,	1,	1,	1, 1,
+												  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,	1,	1,	1,	1,	1,	1, 1,
+												  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1};
 
 /* Literal length and match length codes: baseline and extra bits. */
-static const uint32_t btrfs_zstd_ll_base[36] = {
-	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28, 32, 40, 48, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536
-};
-static const uint8_t btrfs_zstd_ll_bits[36] = {
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 3, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
-};
+static const uint32_t btrfs_zstd_ll_base[36] = {0,	1,	2,	 3,	  4,   5,	 6,	   7,	 8,	   9,	  10,	 11,
+												12, 13, 14,	 15,  16,  18,	 20,   22,	 24,   28,	  32,	 40,
+												48, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536};
+static const uint8_t btrfs_zstd_ll_bits[36] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	0,	0,	0,	0,	1,	1,
+											   1, 1, 2, 2, 3, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
 static const uint32_t btrfs_zstd_ml_base[53] = {
-	3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
-	35, 37, 39, 41, 43, 47, 51, 59, 67, 83, 99, 131, 259, 515, 1027, 2051, 4099, 8195, 16387, 32771, 65539
-};
-static const uint8_t btrfs_zstd_ml_bits[53] = {
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	1, 1, 1, 1, 2, 2, 3, 3, 4, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
-};
+	3,	4,	5,	6,	7,	8,	9,	10,	 11,  12,  13,	 14,   15,	 16,   17,	  18,	 19,   20,
+	21, 22, 23, 24, 25, 26, 27, 28,	 29,  30,  31,	 32,   33,	 34,   35,	  37,	 39,   41,
+	43, 47, 51, 59, 67, 83, 99, 131, 259, 515, 1027, 2051, 4099, 8195, 16387, 32771, 65539};
+static const uint8_t btrfs_zstd_ml_bits[53] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	 0,	 0,	 0,	 0,	 0,	 0, 0,
+											   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	 0,	 0,	 0,	 1,	 1,	 1, 1,
+											   2, 2, 3, 3, 4, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
 
 /* ---- decoder state ------------------------------------------------------------------------- */
 
@@ -318,14 +326,15 @@ typedef struct {
 	btrfs_zfse_t ml;
 	btrfs_zhuf_t huf;
 	uint32_t rep[3];
-	uint8_t *literals;       /* room for one block's literals */
+	uint8_t *literals; /* room for one block's literals */
 	size_t literals_cap;
 } btrfs_zstd_state_t;
 
 /* ---- literals -------------------------------------------------------------------------------- */
 
 /* Build the Huffman decoding table from the weights of symbols 0..n-1 (the last symbol's weight is implied). */
-static bool btrfs_zstd_build_huffman(btrfs_zhuf_t *h, uint8_t *weights, unsigned n)
+static bool
+btrfs_zstd_build_huffman(btrfs_zhuf_t *h, uint8_t *weights, unsigned n)
 {
 	uint32_t sum = 0U;
 	unsigned counts[ZSTD_HUF_MAX_BITS + 2U];
@@ -351,8 +360,10 @@ static bool btrfs_zstd_build_huffman(btrfs_zhuf_t *h, uint8_t *weights, unsigned
 	weights[n] = (uint8_t)(btrfs_zstd_highbit(rest) + 1U);
 	n++;
 
-	for (unsigned w = 0U; w <= ZSTD_HUF_MAX_BITS + 1U; w++) counts[w] = 0U;
-	for (unsigned i = 0U; i < n; i++) counts[weights[i]]++;
+	for (unsigned w = 0U; w <= ZSTD_HUF_MAX_BITS + 1U; w++)
+		counts[w] = 0U;
+	for (unsigned i = 0U; i < n; i++)
+		counts[weights[i]]++;
 
 	/* Codes of the smallest weight (longest) come first in the table, in symbol order. */
 	uint32_t slot = 0U;
@@ -380,7 +391,8 @@ static bool btrfs_zstd_build_huffman(btrfs_zhuf_t *h, uint8_t *weights, unsigned
 }
 
 /* Decode weights coded as an FSE stream with two interleaved states (RFC 8878 4.2.1.2). */
-static bool btrfs_zstd_fse_weights(const uint8_t *data, size_t nbytes, uint8_t *weights, unsigned *count)
+static bool
+btrfs_zstd_fse_weights(const uint8_t *data, size_t nbytes, uint8_t *weights, unsigned *count)
 {
 	btrfs_zfse_t table;
 	int16_t norm[16];
@@ -424,7 +436,8 @@ static bool btrfs_zstd_fse_weights(const uint8_t *data, size_t nbytes, uint8_t *
 }
 
 /* Read the Huffman tree description of a compressed-literals section; *used is its size. */
-static bool btrfs_zstd_read_huffman(btrfs_zhuf_t *h, const uint8_t *data, size_t nbytes, size_t *used)
+static bool
+btrfs_zstd_read_huffman(btrfs_zhuf_t *h, const uint8_t *data, size_t nbytes, size_t *used)
 {
 	uint8_t weights[256];
 	unsigned n;
@@ -455,7 +468,8 @@ static bool btrfs_zstd_read_huffman(btrfs_zhuf_t *h, const uint8_t *data, size_t
 	return btrfs_zstd_build_huffman(h, weights, n);
 }
 
-static bool btrfs_zstd_huffman_stream(const btrfs_zhuf_t *h, const uint8_t *data, size_t nbytes, uint8_t *out, size_t count)
+static bool
+btrfs_zstd_huffman_stream(const btrfs_zhuf_t *h, const uint8_t *data, size_t nbytes, uint8_t *out, size_t count)
 {
 	btrfs_zrev_t r;
 
@@ -477,7 +491,9 @@ static bool btrfs_zstd_huffman_stream(const btrfs_zhuf_t *h, const uint8_t *data
  * decoded literals (into `in` for raw ones, else into the state's buffer),
  * *lit_size is how many, and *used how many input bytes the section took.
  */
-static bool btrfs_zstd_literals(btrfs_zstd_state_t *z, const uint8_t *in, size_t nbytes, size_t room, const uint8_t **lits, size_t *lit_size, size_t *used)
+static bool
+btrfs_zstd_literals(btrfs_zstd_state_t *z, const uint8_t *in, size_t nbytes, size_t room, const uint8_t **lits,
+					size_t *lit_size, size_t *used)
 {
 	if (nbytes < 1U) return false;
 
@@ -508,7 +524,8 @@ static bool btrfs_zstd_literals(btrfs_zstd_state_t *z, const uint8_t *in, size_t
 		if (nbytes < header) return false;
 
 		value = 0U;
-		for (size_t i = 0U; i < header; i++) value |= (uint64_t)in[i] << (8U * i);
+		for (size_t i = 0U; i < header; i++)
+			value |= (uint64_t)in[i] << (8U * i);
 		regen = (size_t)((value >> 4U) & ((1ULL << bits) - 1ULL));
 		compressed = (size_t)((value >> (4U + bits)) & ((1ULL << bits) - 1ULL));
 
@@ -587,7 +604,10 @@ static bool btrfs_zstd_literals(btrfs_zstd_state_t *z, const uint8_t *in, size_t
 /* ---- sequences ------------------------------------------------------------------------------- */
 
 /* Set up one of the three tables for this block from its mode; *used advances over the description. */
-static bool btrfs_zstd_seq_table(btrfs_zfse_t *table, unsigned mode, const uint8_t *data, size_t nbytes, size_t *used, unsigned max_symbol, unsigned max_log, const int16_t *defaults, unsigned default_count, unsigned default_log)
+static bool
+btrfs_zstd_seq_table(btrfs_zfse_t *table, unsigned mode, const uint8_t *data, size_t nbytes, size_t *used,
+					 unsigned max_symbol, unsigned max_log, const int16_t *defaults, unsigned default_count,
+					 unsigned default_log)
 {
 	int16_t norm[ZSTD_MAX_SYMBOLS];
 	unsigned log;
@@ -615,7 +635,9 @@ static bool btrfs_zstd_seq_table(btrfs_zfse_t *table, unsigned mode, const uint8
 }
 
 /* Run one block's sequences and the trailing literals; *op advances, never past out_end. */
-static bool btrfs_zstd_sequences(btrfs_zstd_state_t *z, const uint8_t *in, size_t nbytes, const uint8_t *lits, size_t lit_size, uint8_t *frame_start, uint8_t **op, uint8_t *out_end)
+static bool
+btrfs_zstd_sequences(btrfs_zstd_state_t *z, const uint8_t *in, size_t nbytes, const uint8_t *lits, size_t lit_size,
+					 uint8_t *frame_start, uint8_t **op, uint8_t *out_end)
 {
 	if (nbytes < 1U) return false;
 
@@ -643,11 +665,17 @@ static bool btrfs_zstd_sequences(btrfs_zstd_state_t *z, const uint8_t *in, size_
 
 		if ((modes & 3U) != 0U) return false;
 
-		if (!btrfs_zstd_seq_table(&z->ll, modes >> 6U, in + pos, nbytes - pos, &used, ZSTD_LL_MAX_SYMBOL, ZSTD_LL_MAX_LOG, btrfs_zstd_ll_default, 36U, 6U)) return false;
+		if (!btrfs_zstd_seq_table(&z->ll, modes >> 6U, in + pos, nbytes - pos, &used, ZSTD_LL_MAX_SYMBOL,
+								  ZSTD_LL_MAX_LOG, btrfs_zstd_ll_default, 36U, 6U))
+			return false;
 		pos += used;
-		if (!btrfs_zstd_seq_table(&z->of, (modes >> 4U) & 3U, in + pos, nbytes - pos, &used, ZSTD_OF_MAX_SYMBOL, ZSTD_OF_MAX_LOG, btrfs_zstd_of_default, 29U, 5U)) return false;
+		if (!btrfs_zstd_seq_table(&z->of, (modes >> 4U) & 3U, in + pos, nbytes - pos, &used, ZSTD_OF_MAX_SYMBOL,
+								  ZSTD_OF_MAX_LOG, btrfs_zstd_of_default, 29U, 5U))
+			return false;
 		pos += used;
-		if (!btrfs_zstd_seq_table(&z->ml, (modes >> 2U) & 3U, in + pos, nbytes - pos, &used, ZSTD_ML_MAX_SYMBOL, ZSTD_ML_MAX_LOG, btrfs_zstd_ml_default, 53U, 6U)) return false;
+		if (!btrfs_zstd_seq_table(&z->ml, (modes >> 2U) & 3U, in + pos, nbytes - pos, &used, ZSTD_ML_MAX_SYMBOL,
+								  ZSTD_ML_MAX_LOG, btrfs_zstd_ml_default, 53U, 6U))
+			return false;
 		pos += used;
 
 		btrfs_zrev_t r;
@@ -660,13 +688,15 @@ static bool btrfs_zstd_sequences(btrfs_zstd_state_t *z, const uint8_t *in, size_
 		if (r.bits < 0) return false;
 
 		for (size_t i = 0U; i < count; i++) {
-			if (ll_state >= (1U << z->ll.log) || of_state >= (1U << z->of.log) || ml_state >= (1U << z->ml.log)) return false;
+			if (ll_state >= (1U << z->ll.log) || of_state >= (1U << z->of.log) || ml_state >= (1U << z->ml.log))
+				return false;
 
 			btrfs_zfse_entry_t lle = z->ll.entry[ll_state];
 			btrfs_zfse_entry_t ofe = z->of.entry[of_state];
 			btrfs_zfse_entry_t mle = z->ml.entry[ml_state];
 
-			if (lle.symbol > ZSTD_LL_MAX_SYMBOL || ofe.symbol > ZSTD_OF_MAX_SYMBOL || mle.symbol > ZSTD_ML_MAX_SYMBOL) return false;
+			if (lle.symbol > ZSTD_LL_MAX_SYMBOL || ofe.symbol > ZSTD_OF_MAX_SYMBOL || mle.symbol > ZSTD_ML_MAX_SYMBOL)
+				return false;
 
 			uint32_t offset_value = (1U << ofe.symbol) + btrfs_zrev_read(&r, ofe.symbol);
 			uint32_t match = btrfs_zstd_ml_base[mle.symbol] + btrfs_zrev_read(&r, btrfs_zstd_ml_bits[mle.symbol]);
@@ -739,7 +769,9 @@ static bool btrfs_zstd_sequences(btrfs_zstd_state_t *z, const uint8_t *in, size_
 
 /* ---- blocks and frames ---------------------------------------------------------------------------- */
 
-static bool btrfs_zstd_compressed_block(btrfs_zstd_state_t *z, const uint8_t *in, size_t nbytes, uint8_t *frame_start, uint8_t **op, uint8_t *out_end)
+static bool
+btrfs_zstd_compressed_block(btrfs_zstd_state_t *z, const uint8_t *in, size_t nbytes, uint8_t *frame_start, uint8_t **op,
+							uint8_t *out_end)
 {
 	const uint8_t *lits;
 	size_t lit_size;
@@ -754,7 +786,8 @@ static bool btrfs_zstd_compressed_block(btrfs_zstd_state_t *z, const uint8_t *in
  * One frame after its magic. *used is how many input bytes it took, *op the
  * output cursor (in and out). The frame's output may not exceed out_end.
  */
-static bool btrfs_zstd_frame(btrfs_zstd_state_t *z, const uint8_t *in, size_t nbytes, size_t *used, uint8_t **op, uint8_t *out_end)
+static bool
+btrfs_zstd_frame(btrfs_zstd_state_t *z, const uint8_t *in, size_t nbytes, size_t *used, uint8_t **op, uint8_t *out_end)
 {
 	size_t pos = 0U;
 	uint8_t *frame_start = *op;
@@ -792,12 +825,14 @@ static bool btrfs_zstd_frame(btrfs_zstd_state_t *z, const uint8_t *in, size_t nb
 	}
 	pos += dict_bytes;
 
-	unsigned fcs_bytes = fcs_flag == 0U ? (single_segment ? 1U : 0U) : (fcs_flag == 1U ? 2U : (fcs_flag == 2U ? 4U : 8U));
+	unsigned fcs_bytes =
+		fcs_flag == 0U ? (single_segment ? 1U : 0U) : (fcs_flag == 1U ? 2U : (fcs_flag == 2U ? 4U : 8U));
 	bool have_size = fcs_bytes != 0U;
 	uint64_t content_size = 0U;
 
 	if (nbytes - pos < fcs_bytes) return false;
-	for (unsigned i = 0U; i < fcs_bytes; i++) content_size |= (uint64_t)in[pos + i] << (8U * i);
+	for (unsigned i = 0U; i < fcs_bytes; i++)
+		content_size |= (uint64_t)in[pos + i] << (8U * i);
 	pos += fcs_bytes;
 	if (fcs_flag == 1U) content_size += 256U;
 
@@ -853,7 +888,8 @@ static bool btrfs_zstd_frame(btrfs_zstd_state_t *z, const uint8_t *in, size_t nb
 	if (checksum) {
 		if (nbytes - pos < 4U) return false;
 
-		uint32_t stored = (uint32_t)in[pos] | ((uint32_t)in[pos + 1U] << 8U) | ((uint32_t)in[pos + 2U] << 16U) | ((uint32_t)in[pos + 3U] << 24U);
+		uint32_t stored = (uint32_t)in[pos] | ((uint32_t)in[pos + 1U] << 8U) | ((uint32_t)in[pos + 2U] << 16U) |
+						  ((uint32_t)in[pos + 3U] << 24U);
 
 		if (stored != (uint32_t)btrfs_xxh64(frame_start, produced, 0ULL)) return false;
 		pos += 4U;
@@ -863,7 +899,8 @@ static bool btrfs_zstd_frame(btrfs_zstd_state_t *z, const uint8_t *in, size_t nb
 	return true;
 }
 
-btrfs_status_t btrfs_zstd_decompress(void *ctx, const uint8_t *in, size_t in_len, uint8_t *out, size_t out_len)
+btrfs_status_t
+btrfs_zstd_decompress(void *ctx, const uint8_t *in, size_t in_len, uint8_t *out, size_t out_len)
 {
 	const btrfs_codec_ctx_t *codec = ctx;
 	size_t literals_cap = out_len < ZSTD_BLOCK_MAX ? out_len : ZSTD_BLOCK_MAX;
@@ -892,7 +929,8 @@ btrfs_status_t btrfs_zstd_decompress(void *ctx, const uint8_t *in, size_t in_len
 			break;
 		}
 
-		uint32_t magic = (uint32_t)in[pos] | ((uint32_t)in[pos + 1U] << 8U) | ((uint32_t)in[pos + 2U] << 16U) | ((uint32_t)in[pos + 3U] << 24U);
+		uint32_t magic = (uint32_t)in[pos] | ((uint32_t)in[pos + 1U] << 8U) | ((uint32_t)in[pos + 2U] << 16U) |
+						 ((uint32_t)in[pos + 3U] << 24U);
 
 		pos += 4U;
 
@@ -902,11 +940,14 @@ btrfs_status_t btrfs_zstd_decompress(void *ctx, const uint8_t *in, size_t in_len
 				break;
 			}
 
-			uint32_t skip = (uint32_t)in[pos] | ((uint32_t)in[pos + 1U] << 8U) | ((uint32_t)in[pos + 2U] << 16U) | ((uint32_t)in[pos + 3U] << 24U);
+			uint32_t skip = (uint32_t)in[pos] | ((uint32_t)in[pos + 1U] << 8U) | ((uint32_t)in[pos + 2U] << 16U) |
+							((uint32_t)in[pos + 3U] << 24U);
 
 			pos += 4U;
-			if (skip > in_len - pos) ok = false;
-			else pos += skip;
+			if (skip > in_len - pos)
+				ok = false;
+			else
+				pos += skip;
 			continue;
 		}
 
