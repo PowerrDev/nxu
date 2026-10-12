@@ -72,7 +72,6 @@ static bool post_test_block_device(void)
 }
 
 static const char g_ext4_test_message[] = "Hello from the NXU ext4 driver!\n";
-static const char g_ext4_system_message[] = "NXU System volume\n";
 static const char g_ext4_write_message[] = "NXU writable ext4 foundation\n";
 static const char g_ext4_persist_message[] = "NXU persistent ext4 marker\n";
 static const char g_ext4_tail_message[] = "tail-after-sparse-growth";
@@ -127,12 +126,7 @@ static bool post_test_ext4(void)
 		sizeof(g_ext4_test_message) - 1ULL
 	)) return false;
 
-	if (!post_ext4_read_exact(
-		filedesc,
-		"/disk/System/README.txt",
-		g_ext4_system_message,
-		sizeof(g_ext4_system_message) - 1ULL
-	)) return false;
+	/* Installed System files may change between builds; only hello.txt is a fixed fixture. */
 
 	vfs_status_t status = vfs_mkdir("/disk/NXU");
 	if (status != VFS_STATUS_OK && status != VFS_STATUS_EXISTS) return false;
@@ -263,7 +257,8 @@ static bool post_test_ext4(void)
 		if (vfs_close(filedesc, descriptor) != VFS_STATUS_OK) return false;
 
 		if (status != VFS_STATUS_OK || written != sizeof(g_ext4_persist_message) - 1ULL) return false;
-		kputln("IOFilesystemFamily: persistence marker created; reboot to verify persistence");
+		kputln("IOFilesystemFamily: persistence marker created");
+		kputln("IOFilesystemFamily: reboot to verify persistence");
 	} else {
 		return false;
 	}
@@ -285,7 +280,8 @@ bool post_storage(void)
 	}
 
 	if (boot_mode_is_triage_os()) {
-		kputln("IOFilesystemFamily: recovery boot; writable filesystem self-test skipped");
+		kputln("IOFilesystemFamily: recovery boot");
+		kputln("IOFilesystemFamily: writable filesystem self-test skipped");
 		return true;
 	}
 

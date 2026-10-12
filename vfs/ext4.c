@@ -159,6 +159,8 @@ static vfs_status_t ext4_lookup(vnode_t directory, const char *name, vnode_t *re
 static vfs_status_t ext4_create(vnode_t directory, const char *name, vnode_type_t type, vnode_t *result);
 static vfs_status_t ext4_unlink(vnode_t directory, const char *name);
 static vfs_status_t ext4_unlink_held(vnode_t directory, const char *name, vnode_t *expected);
+static vfs_status_t ext4_rmdir(vnode_t directory, const char *name);
+static vfs_status_t ext4_rmdir_held(vnode_t directory, const char *name, vnode_t *expected);
 static vfs_status_t ext4_readdir(vnode_t directory, uint64_t *offset, vfs_dirent_t *entry);
 static vfs_status_t ext4_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint64_t *read_size);
 static vfs_status_t ext4_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size,
@@ -172,7 +174,9 @@ static const vnode_operations_t g_ext4_vnode_operations = {.lookup = ext4_lookup
 														   .create = ext4_create,
 														   .unlink = ext4_unlink,
 														   .unlink_held = ext4_unlink_held,
-														   .readdir = ext4_readdir,
+														   .rmdir = ext4_rmdir,
+	.rmdir_held = ext4_rmdir_held,
+	.readdir = ext4_readdir,
 														   .read = ext4_read,
 														   .write = ext4_write,
 														   .truncate = ext4_truncate};
@@ -2304,7 +2308,36 @@ commit_fail:
  * of the VFS lifetime model, so a cached vnode with active references is
  * reported busy instead of being orphaned.
  */
-static vfs_status_t ext4_unlink_held(vnode_t directory, const char *name, vnode_t *expected)
+static vfs_status_t ext4_directory_empty_locked(ext4_mount_data_t *data, ext4_inode_t *inode)
+{
+	for (uint64_t logical = 0; logical * data->block_size < inode->size; logical++) {
+		if (logical > UINT32_MAX) return VFS_STATUS_NOT_SUPPORTED;
+		bool mapped, initialized;
+		uint64_t physical;
+		vfs_status_t status = ext4_map_block_locked(data, inode, (uint32_t)logical, &mapped, &initialized, &physical);
+		if (status != VFS_STATUS_OK) return status;
+		if (!mapped || !initialized) continue;
+		if (!ext4_read_block_locked(data, physical, data->block_buffer) ||
+			!ext4_verify_directory_checksum(data, inode, data->block_buffer)) return VFS_STATUS_IO_ERROR;
+		uint32_t limit = data->block_size - EXT4_DIRECTORY_TAIL_SIZE;
+		for (uint32_t offset = 0; offset < limit;) {
+			if (offset + 8U > limit) return VFS_STATUS_IO_ERROR;
+			uint8_t *entry = data->block_buffer + offset;
+			uint32_t number = ext4_le32(entry);
+			uint16_t length = ext4_le16(entry + 4U);
+			uint32_t namesize = entry[6U];
+			if (length < 8U || (length & 3U) || length > limit - offset || namesize > length - 8U)
+				return VFS_STATUS_IO_ERROR;
+			bool dot = namesize == 1U && entry[8U] == '.';
+			bool dotdot = namesize == 2U && entry[8U] == '.' && entry[9U] == '.';
+			if (number && !dot && !dotdot) return VFS_STATUS_NOT_EMPTY;
+			offset += length;
+		}
+	}
+	return VFS_STATUS_OK;
+}
+
+static vfs_status_t ext4_remove(vnode_t directory, const char *name, vnode_t *expected, bool remove_directory)
 {
 	if (directory == 0 || name == 0)
 		return VFS_STATUS_INVALID;
@@ -2313,9 +2346,9 @@ static vfs_status_t ext4_unlink_held(vnode_t directory, const char *name, vnode_
 	if (status != VFS_STATUS_OK)
 		return status;
 
-	if (target->v_type == VNODE_TYPE_DIRECTORY) {
+	if ((target->v_type == VNODE_TYPE_DIRECTORY) != remove_directory) {
 		vnode_rele(target);
-		return VFS_STATUS_IS_DIRECTORY;
+		return remove_directory ? VFS_STATUS_NOT_DIRECTORY : VFS_STATUS_IS_DIRECTORY;
 	}
 	if (expected != 0 && (*expected == 0 || target != *expected)) {
 		vnode_rele(target);
@@ -2338,6 +2371,13 @@ static vfs_status_t ext4_unlink_held(vnode_t directory, const char *name, vnode_
 		return VFS_STATUS_BUSY;
 	}
 
+	ext4_inode_t original_parent = parent->inode;
+	ext4_inode_t inode;
+	if (remove_directory) {
+		status = ext4_load_inode_locked(data, expected_inode, &inode);
+		if (status == VFS_STATUS_OK) status = ext4_directory_empty_locked(data, &inode);
+		if (status != VFS_STATUS_OK) { ext4_unlock(data); return status; }
+	}
 	uint64_t original_free_blocks = data->free_blocks_count;
 	uint32_t original_free_inodes = data->free_inodes_count;
 	status = ext4_transaction_begin_locked(data);
@@ -2350,7 +2390,7 @@ static vfs_status_t ext4_unlink_held(vnode_t directory, const char *name, vnode_
 	status = ext4_directory_remove_locked(data, parent, name, &inode_number, &type);
 	if (status != VFS_STATUS_OK)
 		goto fail;
-	if (type == VNODE_TYPE_DIRECTORY || inode_number != expected_inode) {
+	if ((type == VNODE_TYPE_DIRECTORY) != remove_directory || inode_number != expected_inode) {
 		status = VFS_STATUS_IO_ERROR;
 		goto fail;
 	}
@@ -2361,33 +2401,52 @@ static vfs_status_t ext4_unlink_held(vnode_t directory, const char *name, vnode_
 		*expected = 0;
 	}
 
-	ext4_inode_t inode;
 	status = ext4_load_inode_locked(data, inode_number, &inode);
 	if (status != VFS_STATUS_OK)
 		goto fail;
-	if (inode.links_count > 1U) {
+	if (!remove_directory && inode.links_count > 1U) {
 		inode.links_count--;
 		status = ext4_store_inode_locked(data, &inode);
 	} else {
 		uint32_t released;
 		status = ext4_extent_release_from_locked(data, &inode, 0U, &released);
 		if (status == VFS_STATUS_OK)
-			status = ext4_free_inode_locked(data, inode_number, false);
+			status = ext4_free_inode_locked(data, inode_number, remove_directory);
 	}
 
 	if (status != VFS_STATUS_OK)
 		goto fail;
+	if (remove_directory) {
+		if (parent->inode.links_count > 0U) parent->inode.links_count--;
+		status = ext4_store_inode_locked(data, &parent->inode);
+		if (status != VFS_STATUS_OK) goto fail;
+	}
 	status = ext4_transaction_commit_locked(data);
 	if (status == VFS_STATUS_OK)
 		ext4_remove_cached_node_locked(data, inode_number);
 	ext4_unlock(data);
 	return status;
 fail:
+	parent->inode = original_parent;
 	data->free_blocks_count = original_free_blocks;
 	data->free_inodes_count = original_free_inodes;
 	ext4_transaction_abort_locked(data);
 	ext4_unlock(data);
 	return status;
+}
+
+static vfs_status_t ext4_unlink_held(vnode_t directory, const char *name, vnode_t *expected)
+{
+	return ext4_remove(directory, name, expected, false);
+}
+static vfs_status_t ext4_rmdir_held(vnode_t directory, const char *name, vnode_t *expected)
+{
+	return ext4_remove(directory, name, expected, true);
+}
+
+static vfs_status_t ext4_rmdir(vnode_t directory, const char *name)
+{
+	return ext4_remove(directory, name, 0, true);
 }
 
 static vfs_status_t ext4_unlink(vnode_t directory, const char *name)
@@ -2656,6 +2715,14 @@ static vfs_status_t ext4_journal_map_locked(ext4_mount_data_t *data, uint64_t **
 
 static vfs_status_t ext4_recover_journal_locked(ext4_mount_data_t *data)
 {
+	/* Immutable image mounts accept only a clean filesystem and empty journal. */
+	if (data->device->read_only) {
+		const uint8_t *start = data->journal.superblock + 0x1CU;
+		if (data->recovery_required || start[0] != 0 || start[1] != 0 || start[2] != 0 || start[3] != 0) {
+			return VFS_STATUS_IO_ERROR;
+		}
+		return VFS_STATUS_OK;
+	}
 	jbd2_status_t js = jbd2_recover(&data->journal);
 	if (js != JBD2_STATUS_OK)
 		return ext4_jbd2_status(js);

@@ -204,6 +204,11 @@ static bool jbd2_enable_checksum_v3(
 		jbd2_superblock_checksum(journal->superblock)
 	);
 
+	/* Validate an empty legacy journal in memory without modifying an image. */
+	if (journal->device->read_only) {
+		return true;
+	}
+
 	memset(
 		journal->io_block,
 		0,
