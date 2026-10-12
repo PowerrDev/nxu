@@ -12,3 +12,5 @@ SortIncludes: Never
 AllowShortLoopsOnASingleLine: false
 AllowShortBlocksOnASingleLine: Never
 SeparateDefinitionBlocks: Always
+InsertBraces: true
+AlwaysBreakAfterReturnType: AllDefinitions
