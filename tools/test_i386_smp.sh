@@ -63,7 +63,7 @@ verify() {
 boot() {
 	local smp=$1 append=$2
 
-	OUTPUT=$(watchdog "$TIMEOUT" qemu-system-i386 -M pc -smp "$smp" \
+	OUTPUT=$(watchdog "$TIMEOUT" qemu-system-i386 -cpu qemu32,+nx -M pc -smp "$smp" \
 		-kernel "$KERNEL" -m 512M \
 		-display none -serial stdio -monitor none -no-reboot \
 		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
@@ -75,11 +75,14 @@ boot() {
 
 boot 4 "test=smp qemu-exit=1 expect-cpus=4"
 verify smp-4 "$STATUS" $STATUS_CLEAN "$OUTPUT" \
-	"mp_table_scan: ACPI MADT lists 4 CPU(s)" \
+	"NxuACPIPlatform: MADT lists 4 CPU(s)" \
 	"SMP: 4 CPUs online" \
 	"cpu1: online" \
 	"cpu2: online" \
 	"cpu3: online" \
+	"cpu1: PAE and NX protections validated" \
+	"cpu2: PAE and NX protections validated" \
+	"cpu3: PAE and NX protections validated" \
 	"IPI round trip to cpu1 ok" \
 	"IPI round trip to cpu2 ok" \
 	"IPI round trip to cpu3 ok" \

@@ -29,7 +29,7 @@
  * direct map before triggering INIT-SIPI-SIPI, and every field this code
  * reads is read by its absolute physical address, which stays valid
  * throughout -- real mode addresses physically anyway, and PDE[0] (see
- * kern/i386/smp.c) keeps physical [0, 4 MiB) identity-mapped for exactly as
+ * kern/i386/smp.c) keeps physical [0, 2 MiB) identity-mapped for exactly as
  * long as any CPU might still be running this file, protected mode included.
  *
  * Sequence: 16-bit real mode (GDT from the params block, CR0.PE) -> far jump
@@ -94,9 +94,23 @@ i386_smp_trampoline_32:
 	movl %eax, %cr3
 
 	movl %cr4, %eax
-	orl $CR4_PSE, %eax
+	orl $(CR4_PSE | 0x20), %eax
 	movl %eax, %cr4
 
+	/* NXE must be enabled before walking the master's NX entries. */
+	movl $0x80000000, %eax
+	cpuid
+	cmpl $0x80000001, %eax
+	jb 1f
+	movl $0x80000001, %eax
+	cpuid
+	testl $(1 << 20), %edx
+	jz 1f
+	movl $0xc0000080, %ecx
+	rdmsr
+	orl $(1 << 11), %eax
+	wrmsr
+1:
 	movl %cr0, %eax
 	orl $(CR0_PG | CR0_WP), %eax
 	movl %eax, %cr0

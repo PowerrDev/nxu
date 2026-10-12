@@ -83,7 +83,7 @@ holds a virtual, higher-half address, meaningless in real mode with paging
 off), CR3, this CPU's stack top, its logical id and its `processor_t`.
 
 `i386_boot_pd[0]` (the master kernel page directory's temporary identity map
-of physical `[0, 4 MiB)`, normally cleared right after boot -- see `start.S`
+of physical `[0, 2 MiB)`, normally cleared right after boot -- see `start.S`
 and `pmap.c`) is restored for the whole span of bringing up every requested
 CPU and cleared again once bring-up finishes: the trampoline addresses its
 physical page directly the whole way through, including immediately after
@@ -159,3 +159,7 @@ TLB maintenance is still local: an unmap or permission change invalidates only
 on the CPU that makes it. That is enough while every process that can run on
 several CPUs has one thread (all of them today); a multi-threaded process would
 need a shootdown IPI.
+
+Each AP enables PAE and IA32_EFER.NXE when supported before enabling paging,
+so the shared kernel NX entries have the same meaning on every CPU. The
+trampoline identity PDE is executable only during AP bring-up.

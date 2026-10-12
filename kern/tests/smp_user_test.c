@@ -97,7 +97,8 @@ bool smp_user_test_run(void)
 		if (!reaped && !dumped && timer_get_microseconds() > watchdog) {
 			/* The run normally takes a few seconds: this one is stuck. Record where everything is while it still is. */
 			dumped = true;
-			kputln("smp_user_test: smptest is taking too long; scheduler state:");
+			kputln("smp_user_test: smptest is taking too long");
+			kputln("smp_user_test: scheduler state:");
 			smp_user_test_dump(cpus);
 		}
 
@@ -127,7 +128,8 @@ bool smp_user_test_run(void)
 		kprintf("smp_user_test: cpu%u ran user threads %llu times\n", cpu, (unsigned long long)dispatched);
 	}
 
-	kprintf("smp_user_test: user threads ran on %u of %u CPUs; at most %u CPUs ran them at the same time\n", cpus_used, cpus, peak);
+	kprintf("smp_user_test: user threads ran on %u of %u CPUs\n", cpus_used, cpus);
+	kprintf("smp_user_test: at most %u CPUs ran them at the same time\n", peak);
 
 	uint32_t wanted = cpus < 3U ? cpus : 3U;
 

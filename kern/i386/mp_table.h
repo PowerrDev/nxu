@@ -9,14 +9,9 @@
  * MultiProcessor Specification 1.4 table as a fallback for firmware that
  * offers no ACPI at all.
  *
- * MADT is the one that actually matters on QEMU: SeaBIOS (the firmware
- * QEMU's -M pc boots by default) was found, while bringing this up, to
- * publish only a token one-CPU legacy MP table regardless of -smp N or
- * acpi=on/off -- real topology only ever showed up in the MADT. Reaching it
- * needs three tables in sequence (RSDP -> RSDT -> MADT), each just a flat
- * struct with a checksum, no AML bytecode involved; mp_table_scan() tries
- * this path first and only falls back to the legacy MP table (a single
- * flatter table, no RSDP indirection) if no RSDP is found at all.
+ * NxuACPIPlatform supplies the validated MADT from its firmware inventory,
+ * using XSDT/RSDT and either a UEFI-provided RSDP or the legacy BIOS scan.
+ * The Intel MP table remains a fallback when no usable MADT is available.
  */
 
 #ifndef NXU_KERN_I386_MP_TABLE_H

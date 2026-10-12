@@ -35,7 +35,7 @@
  * join the scheduler's idle loop.
  *
  * PDE[0] (the master kernel page directory's temporary identity map of
- * physical [0, 4 MiB), see start.S and pmap.c's pmap_init) is restored for
+ * physical [0, 2 MiB), see start.S and pmap.c's pmap_init) is restored for
  * exactly the span of this whole function and cleared again once every
  * secondary this call is starting has either come online or timed out: the
  * trampoline's real-mode and early-protected-mode code addresses SMP_
@@ -97,6 +97,8 @@ extern uint8_t i386_smp_trampoline_end[];
 
 static uint32_t g_cpu_total = 1U;
 static uint32_t g_cpu_online = 1U;
+/* Monotonic delivery acknowledgements; scheduling flags can be consumed. */
+static uint32_t g_reschedule_deliveries[NXU_MAX_CPUS];
 
 /* Logical id -> Local APIC id. Entry 0 is the boot CPU. */
 static uint8_t g_cpu_apic_id[NXU_MAX_CPUS];
@@ -139,6 +141,13 @@ void i386_smp_secondary_main(uint32_t cpu_id, processor_t cpu)
 	i386_gdt_init_secondary(cpu_id, (uint32_t)(uintptr_t)cpu->boot_stack + SMP_STACK_SIZE);
 	machine_cpu_local_set(cpu);
 	i386_idt_load_secondary();
+
+	if (!pmap_cpu_protection_valid()) {
+		kprintf("SMP: CPU%u paging protection validation failed\n", cpu_id);
+		for (;;) cpu_wait_for_interrupt();
+	}
+	kprintf("cpu%u: PAE and %s protections validated\n", cpu_id,
+		pmap_nx_enabled() ? "NX" : "write");
 
 	apic_enable_local();
 
@@ -196,6 +205,7 @@ void smp_handle_ipi(uint32_t vector)
 	switch (vector) {
 	case IPI_RESCHEDULE:
 		self->ipi_reschedule_count++;
+		__atomic_add_fetch(&g_reschedule_deliveries[self->cpu_id], 1U, __ATOMIC_RELEASE);
 		__atomic_store_n(&self->preemption_pending, true, __ATOMIC_RELEASE);
 		break;
 
@@ -254,7 +264,7 @@ void smp_stop_other_cpus(void)
 
 /* ---- the boot CPU -------------------------------------------------------- */
 
-extern uint32_t i386_boot_pd[];
+
 
 /*
  * The boot CPU's own GDTR (its complete GDT, slots 1/2 of which are the same
@@ -379,7 +389,7 @@ uint32_t smp_boot_secondaries(void)
 
 	/*
 	 * Copy the trampoline to its fixed physical home and restore PDE[0]'s
-	 * temporary identity map of physical [0, 4 MiB) for the whole bring-up
+	 * temporary identity map of physical [0, 2 MiB) for the whole bring-up
 	 * (see this file's own comment): every secondary's trampoline addresses
 	 * SMP_TRAMPOLINE_PHYS/PARAMS physically, both before and immediately
 	 * after enabling paging, before it reaches the higher half.
@@ -394,18 +404,14 @@ uint32_t smp_boot_secondaries(void)
 
 	memcpy(pmap_table_pointer(SMP_TRAMPOLINE_PHYS), i386_smp_trampoline_start, trampoline_size);
 
-	uint32_t direct_map_pde = (uint32_t)(VMM_HIGHER_HALF_BASE >> 22U);
-
-	i386_boot_pd[0] = i386_boot_pd[direct_map_pde];
-	pmap_flush_tlb();
+	pmap_boot_identity(true);
 
 	/* The boot CPU takes IPIs too (a secondary queueing work on it, a panic elsewhere). */
 	for (uint32_t cpu = 1U; cpu < g_cpu_total; cpu++) {
 		(void)smp_start_cpu(cpu, g_cpu_apic_id[cpu]);
 	}
 
-	i386_boot_pd[0] = 0U;
-	pmap_flush_tlb();
+	pmap_boot_identity(false);
 
 	uint32_t online = smp_online_count();
 
@@ -467,7 +473,7 @@ static bool smp_selftest_expected_cpus(const i386_boot_info_t *boot)
 /*
  * A reschedule IPI round trip: every secondary CPU is idling in
  * sched_cpu_idle() by this point, so an IPI_RESCHEDULE to each in turn must
- * set its preemption_pending flag. Proves the whole path (machine_ipi_raise
+ * increment its delivered-IPI counter. Proves the whole path (machine_ipi_raise
  * -> apic_send_ipi -> the target's IDT gate -> i386_trap_ipi ->
  * smp_handle_ipi), not just that bring-up reported the CPU online.
  */
@@ -484,7 +490,8 @@ static bool smp_selftest_ipi_round_trip(void)
 
 		if (target == 0) continue;
 
-		__atomic_store_n(&target->preemption_pending, false, __ATOMIC_RELEASE);
+		/* The scheduling flag can be consumed before the sender observes it. */
+		uint32_t delivered = __atomic_load_n(&g_reschedule_deliveries[cpu], __ATOMIC_ACQUIRE);
 		ipi_send(cpu, IPI_RESCHEDULE);
 
 		/*
@@ -499,7 +506,7 @@ static bool smp_selftest_ipi_round_trip(void)
 		bool seen = false;
 
 		while (timer_get_microseconds() < deadline) {
-			if (__atomic_load_n(&target->preemption_pending, __ATOMIC_ACQUIRE)) {
+			if (__atomic_load_n(&g_reschedule_deliveries[cpu], __ATOMIC_ACQUIRE) != delivered) {
 				seen = true;
 				break;
 			}

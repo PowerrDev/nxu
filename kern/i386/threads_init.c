@@ -74,5 +74,7 @@ bool i386_init_threads(const i386_boot_info_t *boot)
 		kputln("i386_init_threads: no interrupt controller driver linked, interrupts left disabled");
 	}
 
+	sched_dump();
+	thread_dump();
 	return true;
 }

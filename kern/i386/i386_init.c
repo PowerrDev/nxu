@@ -6,13 +6,13 @@
 /*
  * File:        kern/i386/i386_init.c
  *
- * First C code on an x86 boot. Brings up the serial console and the
- * counter, reports what the bootloader and CPU told us, and stops. The rest
- * of kern_init (memory management, scheduler, userland) is not ported to
- * this architecture yet; this is the seam it will be entered from.
+ * First C code on an x86 boot. Initializes the console and runs the complete
+ * platform, VM, kernel, scheduler, SMP, driver and userspace startup sequence.
  */
 
 #include <kern/i386/boot_info.h>
+#include <kern/i386/startup.h>
+#include <string.h>
 #include <kern/i386/gdt.h>
 #include <kern/i386/idt.h>
 #include <kern/i386/io.h>
@@ -59,9 +59,16 @@ static void i386_print_cpu(void)
 
 	kprintf("i386_init: cpu vendor %s\n", vendor);
 	kprintf("i386_init: cpu max leaf %u\n", max_leaf);
-	kprintf("i386_init: cpu family %u\n", (eax >> 8U) & 0xFU);
-	kprintf("i386_init: cpu model %u\n", (eax >> 4U) & 0xFU);
+	uint32_t family = (eax >> 8U) & 0xFU;
+	uint32_t model = (eax >> 4U) & 0xFU;
+	if (family == 6U || family == 15U) model |= ((eax >> 16U) & 0xFU) << 4U;
+	if (family == 15U) family += (eax >> 20U) & 0xFFU;
+	kprintf("i386_init: cpu family %u\n", family);
+	kprintf("i386_init: cpu model %u\n", model);
 	kprintf("i386_init: cpu stepping %u\n", eax & 0xFU);
+	kprintf("i386_init: CPU features PAE=%s PSE=%s APIC=%s\n",
+		(edx & (1U << 6U)) ? "yes" : "no", (edx & (1U << 3U)) ? "yes" : "no",
+		(edx & (1U << 9U)) ? "yes" : "no");
 }
 
 static i386_boot_info_t g_boot_info;
@@ -271,6 +278,17 @@ void i386_init(uint32_t magic, const multiboot_info_t *info)
 
 		if (!phase->run(&g_boot_info))
 			i386_fail(phase->name, "phase");
+
+		if (i386_startup_tests_enabled() &&
+			(strcmp(phase->name, "platform") == 0 || strcmp(phase->name, "vm") == 0 ||
+			 strcmp(phase->name, "kernel") == 0 || strcmp(phase->name, "threads") == 0 ||
+			 strcmp(phase->name, "smp") == 0)) {
+			kprintf("i386_startup: running %s power-on self-tests\n", phase->name);
+			if (!phase->selftest(&g_boot_info)) i386_fail(phase->name, "power-on self-test");
+			if (strcmp(phase->name, "threads") == 0 && !i386_startup_core_test())
+				i386_fail("core", "power-on self-test");
+			kprintf("i386_startup: %s power-on self-tests passed\n", phase->name);
+		}
 
 		if (i386_boot_test_requested(phase->name)) {
 			kprintf("i386_init: running %s self-test\n", phase->name);

@@ -8,6 +8,7 @@
  */
 
 #include <kern/i386/mp_table.h>
+#include <kern/acpi/platform.h>
 
 #include <kern/i386/vm_param.h>
 
@@ -142,17 +143,6 @@ static const mp_floating_pointer_t *mp_find_floating_pointer(void)
 /* ---- ACPI: RSDP -> RSDT -> MADT ------------------------------------------ */
 
 typedef struct __attribute__((packed)) {
-	char signature[8]; /* "RSD PTR " (note the trailing space) */
-	uint8_t checksum;
-	char oem_id[6];
-	uint8_t revision;
-	uint32_t rsdt_physical;
-	/* ACPI 2.0+ fields follow (length, xsdt_physical, extended_checksum, reserved[3]); unused, this port stays on the RSDT. */
-} acpi_rsdp_t;
-
-_Static_assert(sizeof(acpi_rsdp_t) == 20U, "ACPI 1.0 RSDP must be 20 bytes");
-
-typedef struct __attribute__((packed)) {
 	char signature[4];
 	uint32_t length;
 	uint8_t revision;
@@ -180,103 +170,13 @@ _Static_assert(sizeof(acpi_madt_local_apic_t) == 8U, "ACPI MADT Processor Local 
 
 #define ACPI_MADT_LOCAL_APIC_ENABLED 0x00000001U
 
-static const acpi_rsdp_t *acpi_find_rsdp(void)
-{
-	uint16_t ebda_segment = *(const uint16_t *)mp_direct(0x40EU);
-
-	if (ebda_segment != 0U) {
-		uint32_t ebda_base = (uint32_t)ebda_segment << 4U;
-
-		for (uint32_t offset = 0U; offset + sizeof(acpi_rsdp_t) <= 1024U; offset += 16U) {
-			const acpi_rsdp_t *candidate = (const acpi_rsdp_t *)mp_direct(ebda_base + offset);
-
-			if (memcmp(candidate->signature, "RSD PTR ", 8U) == 0 && mp_checksum(candidate, sizeof(*candidate)) == 0U) return candidate;
-		}
-	}
-
-	/* The BIOS ROM area, ACPI spec's other mandated search range. */
-	for (uint32_t offset = 0U; offset + sizeof(acpi_rsdp_t) <= 0x20000U; offset += 16U) {
-		const acpi_rsdp_t *candidate = (const acpi_rsdp_t *)mp_direct(0xE0000U + offset);
-
-		if (memcmp(candidate->signature, "RSD PTR ", 8U) == 0 && mp_checksum(candidate, sizeof(*candidate)) == 0U) return candidate;
-	}
-
-	return 0;
-}
-
-/*
- * A real RSDT/MADT/etc. is at most a few KiB; this is a sanity bound, not a
- * spec limit, against a garbage `length` field (a bad RSDP checksum
- * false-positive, or simply a physical address that does not actually hold
- * the table it claims to) turning a length-driven loop into a walk off the
- * end of mapped memory. `length` must also be at least the common header's
- * own size, or `length - sizeof(header)` below underflows (both are
- * unsigned) into a huge entry count.
- */
-#define ACPI_TABLE_LENGTH_MAX 8192U
-
-static bool acpi_table_length_sane(uint32_t length)
-{
-	return length >= (uint32_t)sizeof(acpi_table_header_t) && length <= ACPI_TABLE_LENGTH_MAX;
-}
-
-/* The physical address of the table named `signature` (4 bytes, not nul-terminated) that the RSDT lists, or 0. */
-static uint32_t acpi_find_table(const acpi_table_header_t *rsdt, const char *signature)
-{
-	uint32_t entry_count = (rsdt->length - (uint32_t)sizeof(*rsdt)) / 4U;
-	const uint32_t *entries = (const uint32_t *)((const uint8_t *)rsdt + sizeof(*rsdt));
-
-	for (uint32_t index = 0U; index < entry_count; index++) {
-		const acpi_table_header_t *candidate = (const acpi_table_header_t *)mp_direct_checked(entries[index]);
-
-		if (candidate != 0 && memcmp(candidate->signature, signature, 4U) == 0) return entries[index];
-	}
-
-	return 0U;
-}
+#define MP_CONFIG_LENGTH_MAX 8192U
 
 /* True if a usable MADT was found and table->cpu_count/lapic_physical are filled in. */
 static bool acpi_scan(mp_table_t *table)
 {
-	const acpi_rsdp_t *rsdp = acpi_find_rsdp();
-
-	if (rsdp == 0) {
-		kputln("mp_table_scan: no ACPI RSDP found");
-		return false;
-	}
-
-	kprintf("mp_table_scan: ACPI RSDP at phys 0x%x, revision %u\n", (uint32_t)((uintptr_t)rsdp - VMM_HIGHER_HALF_BASE), rsdp->revision);
-
-	const acpi_table_header_t *rsdt = (const acpi_table_header_t *)mp_direct_checked(rsdp->rsdt_physical);
-
-	if (rsdt == 0 || memcmp(rsdt->signature, "RSDT", 4U) != 0 || !acpi_table_length_sane(rsdt->length)) {
-		kputln("mp_table_scan: ACPI RSDT signature mismatch or implausible length");
-		return false;
-	}
-
-	if (mp_checksum(rsdt, rsdt->length) != 0U) {
-		kputln("mp_table_scan: ACPI RSDT checksum mismatch");
-		return false;
-	}
-
-	uint32_t madt_physical = acpi_find_table(rsdt, "APIC");
-
-	if (madt_physical == 0U) {
-		kputln("mp_table_scan: ACPI RSDT lists no MADT");
-		return false;
-	}
-
-	const acpi_table_header_t *madt_header = (const acpi_table_header_t *)mp_direct_checked(madt_physical);
-
-	if (madt_header == 0 || !acpi_table_length_sane(madt_header->length)) {
-		kputln("mp_table_scan: ACPI MADT outside the direct map or implausible length");
-		return false;
-	}
-
-	if (mp_checksum(madt_header, madt_header->length) != 0U) {
-		kputln("mp_table_scan: ACPI MADT checksum mismatch");
-		return false;
-	}
+	const acpi_table_header_t *madt_header = nxu_acpi_find_table("APIC");
+	if (!madt_header || madt_header->length < sizeof(*madt_header) + 8U) return false;
 
 	/* Fixed MADT fields right after the common header: local_apic_address(u32), flags(u32). */
 	uint32_t lapic_physical = *(const uint32_t *)((const uint8_t *)madt_header + sizeof(*madt_header));
@@ -299,15 +199,31 @@ static bool acpi_scan(mp_table_t *table)
 			}
 		}
 
+		if (entry_type == 9U && entry_length >= 16U) {
+			uint32_t apic_id, flags;
+			memcpy(&apic_id, cursor + 4U, 4U);
+			memcpy(&flags, cursor + 8U, 4U);
+			if ((flags & ACPI_MADT_LOCAL_APIC_ENABLED) != 0U && apic_id <= 255U && table->cpu_count < MP_TABLE_MAX_CPUS) {
+				table->cpus[table->cpu_count++].apic_id = (uint8_t)apic_id;
+			} else if ((flags & ACPI_MADT_LOCAL_APIC_ENABLED) != 0U && apic_id > 255U) {
+				kprintf("NxuACPIPlatform: x2APIC id=%u exceeds this kernel's xAPIC support\n", apic_id);
+			}
+		}
+		if (entry_type == 5U && entry_length >= 12U) {
+			uint64_t override;
+			memcpy(&override, cursor + 4U, 8U);
+			if (override <= UINT32_MAX) lapic_physical = (uint32_t)override;
+			else return false;
+		}
 		cursor += entry_length;
 	}
 
 	table->lapic_physical = lapic_physical;
 
-	kprintf("mp_table_scan: ACPI MADT lists %u CPU(s), Local APIC at phys 0x%x\n", table->cpu_count, table->lapic_physical);
+	kprintf("NxuACPIPlatform: MADT lists %u CPU(s), Local APIC at phys 0x%x\n", table->cpu_count, table->lapic_physical);
 
 	for (uint32_t index = 0U; index < table->cpu_count; index++) {
-		kprintf("mp_table_scan: cpu apic_id=%u\n", table->cpus[index].apic_id);
+		kprintf("NxuACPIPlatform: processor apic_id=%u\n", table->cpus[index].apic_id);
 	}
 
 	/*
@@ -356,7 +272,7 @@ bool mp_table_scan(mp_table_t *table)
 		return false;
 	}
 
-	if (header->length < (uint16_t)sizeof(*header) || header->length > (uint16_t)ACPI_TABLE_LENGTH_MAX) {
+	if (header->length < (uint16_t)sizeof(*header) || header->length > (uint16_t)MP_CONFIG_LENGTH_MAX) {
 		kputln("mp_table_scan: MP configuration table implausible length");
 		return false;
 	}
@@ -406,7 +322,7 @@ bool mp_table_scan(mp_table_t *table)
 
 	for (uint32_t index = 0U; index < table->cpu_count; index++) {
 		kprintf(
-			"mp_table_scan: cpu apic_id=%u%s\n",
+			"NxuACPIPlatform: processor apic_id=%u%s\n",
 			table->cpus[index].apic_id,
 			table->cpus[index].is_bsp ? " (BSP)" : ""
 		);

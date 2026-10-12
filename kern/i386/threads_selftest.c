@@ -324,6 +324,7 @@ static bool test_tick_and_preempt(void)
 {
 	thread_t self = current_thread();
 
+	SELFTEST_CHECK(selftest_boost_self(), "normalize the test thread to the top MLFQ level");
 	SELFTEST_CHECK(self->mlfq_level == SCHED_MLFQ_TOP_LEVEL, "test starts at the top MLFQ level");
 
 	/*
@@ -336,6 +337,8 @@ static bool test_tick_and_preempt(void)
 
 	/* A full quantum of ticks demotes one level and requests preemption. */
 	uint32_t quantum = sched_mlfq_level_quantum(SCHED_MLFQ_TOP_LEVEL);
+	self->quantum_remaining = quantum;
+	sched_clear_preemption();
 
 	for (uint32_t tick = 0U; tick + 1U < quantum; tick++)
 		sched_tick();

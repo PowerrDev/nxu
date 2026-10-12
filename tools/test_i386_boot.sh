@@ -37,7 +37,7 @@ run_case() {
 		disk_args=(-drive "if=none,format=raw,file=$WORK/disk.img,id=d0" -device virtio-blk-pci,drive=d0,disable-modern=on)
 	fi
 
-	output=$(perl "$HERE/qemu_watchdog.pl" "$TIMEOUT" qemu-system-i386 -M pc \
+	output=$(perl "$HERE/qemu_watchdog.pl" "$TIMEOUT" qemu-system-i386 -cpu qemu32,+nx -M pc \
 		-kernel "$KERNEL" -m 512M \
 		-display none -serial stdio -monitor none -no-reboot \
 		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
