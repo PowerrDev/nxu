@@ -16,9 +16,19 @@ in `port.md`; this file is the userland area's contract and how-to.
 | process entry | ELF entry point, `esp = VM_USER_STACK_TOP` (`0xBFFFF000`), no arguments, GPRs zero |
 | new thread | `eip = entry`, `esp = stack` exactly as passed to `nxu_thread_create`, `eax = arg`, other GPRs zero, nothing pushed |
 
-`_start` (`frameworks/crt0_i386.S`) aligns the stack, calls `main()` (no
-arguments, as on arm64) and exits with its return value (`NXU_SYS_EXIT`,
-status in `ebx`).
+`_start` (`frameworks/crt0_i386.S`) aligns the stack and exits with main's
+return value (`NXU_SYS_EXIT`, status in `ebx`). Normal userland builds enable
+`NXU_SPAWN_IO_ENTRY`: the runtime checks for a parent-owned local socket named
+`com.nxu.spawn.<hex PID>`. If present, it receives a bounded argument packet,
+redirects descriptors 0–2 to that stream, and calls `main(argc, argv)`. Ordinary
+boot services without a socket retain argc zero. Raw fixture and PIC entry
+builds keep the original entry without the socket bootstrap.
+
+The desktop stages a native ELF32 Terminal.app and NZH, ping and ifconfig.
+Terminal and NZH use `nxu_spawn_io` for children on this port, with socket I/O
+relayed while NZH polls `waitpid`. This avoids requiring kernel fork/exec,
+which remain unsupported on i386. The ARM64 shell retains its fork/exec path.
+The fork/exec portions of `terminaltest` require ARM64.
 
 `nxu_thread_spawn` (`frameworks/lib/thread_i386.c`) mmaps the stack, writes
 `{real_entry, arg}` at its top (`top-8`, `top-4`), and starts the thread at the
