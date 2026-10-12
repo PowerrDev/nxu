@@ -10,8 +10,12 @@ static void log_message(const char *text)
 	(void)nxu_write(1, text, nxu_strlen(text));
 }
 
+
+#include "event_wait_probe.h"
+
 int main(void)
 {
+	if (!event_wait_probe()) return 90;
 	nxu_ui_session_t session;
 	uint64_t deadline = nxu_uptime_us() + 120000000;
 	while (nxu_ui_control(NXU_UI_CONTROL_SESSION, (uint64_t)(uintptr_t)&session) < 0) {
@@ -52,6 +56,8 @@ int main(void)
 			return 4;
 		if (message.type != NXU_UI_MSG_EVENT)
 			continue;
+		if (message.event == NXU_UI_EVENT_SCROLL)
+			log_message(message.delta > 0 ? "frame-copy-probe: SCROLL UP\n" : "frame-copy-probe: SCROLL DOWN\n");
 		if (message.event == NXU_UI_EVENT_POINTER_DOWN)
 			log_message("frame-copy-probe: CLICK\n");
 		if (message.event == NXU_UI_EVENT_KEY_DOWN && message.character == 'a') {

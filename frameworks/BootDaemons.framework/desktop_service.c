@@ -10,7 +10,7 @@ static struct {
 	CoreGraphicsSurfaceDescriptor surface;
 	int32_t x, y, raw_x, raw_y;
 	uint32_t buttons, down, up;
-	bool baseline, moved;
+	bool baseline, moved, idle_once;
 	uint32_t scale;
 	ui_pointer_motion_t motion;
 } desktop;
@@ -59,6 +59,12 @@ static uint32_t key_character(uint32_t code, uint32_t modifiers)
 	else if ((modifiers & 8) && character >= 'A' && character <= 'Z')
 		character += 'a' - 'A';
 
+	/* Terminal control chords use the conventional ASCII control characters. */
+	if ((modifiers & 2) && ((character >= 'a' && character <= 'z') ||
+		(character >= 'A' && character <= 'Z'))) {
+		character &= 0x1f;
+	}
+
 	return (uint8_t)character;
 }
 
@@ -79,6 +85,7 @@ static uint32_t poll_event(void *context, CoreGraphicsHostEvent *event)
 
 	*event = (CoreGraphicsHostEvent){.struct_size = sizeof(*event)};
 
+	uint32_t sequence = (uint32_t)nxu_event_wait(0, 0);
 	for (;;) {
 		event->x = desktop.x;
 		event->y = desktop.y;
@@ -116,8 +123,19 @@ static uint32_t poll_event(void *context, CoreGraphicsHostEvent *event)
 			return CORE_GRAPHICS_STATUS_OK;
 		}
 
-		if (!received)
+		if (!received) {
+			if (desktop.idle_once)
+				(void)nxu_event_wait(16667, sequence);
+			desktop.idle_once = true;
 			return CORE_GRAPHICS_STATUS_OK;
+		}
+		desktop.idle_once = false;
+
+		if (input.kind == NXU_RECOVERY_INPUT_SCROLL) {
+			event->event_type = CORE_GRAPHICS_EVENT_SCROLL;
+			event->reserved = (uint32_t)input.value;
+			return CORE_GRAPHICS_STATUS_OK;
+		}
 
 		if (input.kind == NXU_RECOVERY_INPUT_KEY) {
 			if (input.value != 1 && input.value != 2)

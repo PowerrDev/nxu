@@ -14,6 +14,9 @@ typedef struct {
 	uint16_t type;
 	uint16_t code;
 	int32_t value;
+	/* State at publication, so queued packets retain motion/button ordering. */
+	int32_t pointer_x, pointer_y;
+	uint32_t buttons, modifiers;
 } input_event_t;
 
 /*

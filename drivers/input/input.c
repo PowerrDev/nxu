@@ -61,7 +61,12 @@ bool input_publish(const input_event_t *event)
 		return false;
 	}
 
-	g_input.events[g_input.tail] = *event;
+	input_event_t snapshot = *event;
+	snapshot.pointer_x = (int32_t)mouse_x();
+	snapshot.pointer_y = (int32_t)mouse_y();
+	snapshot.buttons = mouse_buttons();
+	snapshot.modifiers = keyboard_modifiers();
+	g_input.events[g_input.tail] = snapshot;
 	g_input.tail = (g_input.tail + 1U) % INPUT_EVENT_QUEUE_CAPACITY;
 	g_input.count++;
 	g_input.published++;

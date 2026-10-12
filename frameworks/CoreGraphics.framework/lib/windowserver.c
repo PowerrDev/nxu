@@ -37,20 +37,9 @@ static bool call(const wsmsg_request_t *request, uint64_t size, wsmsg_reply_t *r
 
 	bool sent = nxu_ipc_send(g_service, request, size, (uint32_t)port) >= 0;
 	bool received = false;
-	uint64_t deadline = (uint64_t)nxu_uptime_us() + 5000000;
-
-	while (sent && (uint64_t)nxu_uptime_us() < deadline) {
-		int64_t length = nxu_ipc_receive((uint32_t)port, reply, sizeof(*reply), 0, 0);
-
-		if (length >= 0) {
-			received = length == sizeof(*reply);
-			break;
-		}
-
-		if (length != -NXU_SYS_E_AGAIN)
-			break;
-
-		(void)nxu_sleep_us(1000);
+	if (sent) {
+		int64_t length = nxu_ipc_receive_timed((uint32_t)port, reply, sizeof(*reply), 0, 0, 5000000);
+		received = length == sizeof(*reply);
 	}
 
 	(void)nxu_ipc_port_deallocate((uint32_t)port);

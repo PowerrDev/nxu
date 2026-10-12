@@ -1,4 +1,5 @@
 #include <drivers/video/ui_service_host.h>
+#include <kern/boot/boot_mode.h>
 #include <drivers/video/ui_service_pointer.h>
 #include <drivers/video/ui_service_bridge.h>
 
@@ -762,7 +763,7 @@ bool ui_service_secure_lock(void)
 
 bool ui_service_secure_begin(void)
 {
-	return ui_bridge_session_ready() && ui_service_secure_lock();
+	return (boot_mode_is_triage_os() || ui_bridge_session_ready()) && ui_service_secure_lock();
 }
 
 void ui_service_secure_end(void)

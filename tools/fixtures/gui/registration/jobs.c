@@ -33,6 +33,10 @@ static service_config_t load(const char *root, const char *name)
 int main(int argc, char **argv)
 {
 	assert(argc == 2);
+	service_config_t patchd = load(argv[1], "patchd");
+	assert(patchd.allow_filesystem_write && patchd.allow_reset);
+	service_config_t logd = load(argv[1], "logd");
+	assert(logd.allow_filesystem_write && !logd.allow_reset);
 	service_config_t desktop = load(argv[1], "desktop");
 	bootd_job_t job;
 	assert(desktop.keep_alive && desktop.run_at_load && desktop.allow_display);

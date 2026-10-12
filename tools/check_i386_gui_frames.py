@@ -21,6 +21,11 @@ def main():
     parser.add_argument('--enclave', action='store_true', help='test ASLR and trusted login with an isolated mailbox fixture')
     options = parser.parse_args()
     build = ROOT / options.build_root / 'i386'
+    subprocess.run([
+        'make', '-j8', 'i386', 'i386-frameworks', str(build.relative_to(ROOT) / 'diskroot.stamp'),
+        'BUILD_ROOT=' + options.build_root, 'UISERVICE=0', 'WINDOWSERVER=0',
+        'I386_GUI_FRAMEWORKS=1', 'I386_DESKTOP_APPS=1',
+    ], cwd=ROOT, check=True)
     scratch = Path(tempfile.mkdtemp(prefix='nxu-i386-gui-frames-', dir='/private/tmp'))
     print('i386 GUI frame artifacts: ' + str(scratch), flush=True)
     root = scratch / 'DiskRoot'
@@ -34,7 +39,7 @@ def main():
     jobs.mkdir()
     for name in ('dyrld', 'windowserver', 'desktop', 'dock'):
         shutil.copyfile(ROOT / 'frameworks/BootDaemons.framework/Services' / ('com.nxu.' + name + '.plist'), jobs / ('com.nxu.' + name + '.plist'))
-    for name in ('logd', 'packed-frame-probe', 'framework-probe'):
+    for name in ('logd', 'packed-frame-probe', 'framework-probe', 'nx-probe'):
         (jobs / ('com.nxu.' + name + '.plist')).write_text(
             '<plist><dict><key>Label</key><string>com.nxu.' + name + '</string>'
             '<key>Program</key><string>/disk/System/Library/CoreServices/' + name + '</string>'
@@ -49,8 +54,22 @@ def main():
     subprocess.run([
         'ld.lld', '-m', 'elf_i386', '-T', 'makedefs/user-i386.ld', '-nostdlib', '-static',
         *[str(build / 'user' / (name + '.o')) for name in
-          ('frameworks/crt0_i386', 'frameworks/lib/syscall_i386', 'frameworks/lib/string')],
+          ('frameworks/crt0_i386', 'frameworks/lib/syscall_i386', 'frameworks/lib/string', 'frameworks/lib/thread_i386')],
         str(obj), str(build / 'user/libnxurt.a'), '-o', str(services / 'packed-frame-probe'),
+    ], cwd=ROOT, check=True)
+    nx_object = scratch / 'nx-probe.o'
+    subprocess.run([
+        'clang', '--target=i386-none-elf', '-ffreestanding', '-fno-stack-protector',
+        '-fno-pic', '-mgeneral-regs-only', '-O2', '-Wall', '-Wextra', '-Werror',
+        '-Iframeworks/include', '-I.', '-c', 'tools/fixtures/gui/i386_nx_probe.c', '-o', str(nx_object),
+    ], cwd=ROOT, check=True)
+    subprocess.run([
+        'ld.lld', '-m', 'elf_i386', '-T', 'makedefs/user-i386.ld', '-nostdlib', '-static',
+        str(build / 'user/frameworks/crt0_i386.o'),
+        str(build / 'user/frameworks/lib/syscall_i386.o'),
+        str(build / 'user/frameworks/lib/spawn_io_i386.o'),
+        str(build / 'user/frameworks/lib/string.o'), str(nx_object),
+        '-o', str(services / 'nx-probe'),
     ], cwd=ROOT, check=True)
     if options.enclave:
         trusted_object = scratch / 'trusted-probe.o'
@@ -95,7 +114,7 @@ def main():
     ], check=True)
     serial = scratch / 'serial.log'
     command = [
-        'qemu-system-i386', '-M', 'pc', '-smp', '4', '-m', '512M',
+        'qemu-system-i386', '-cpu', 'qemu32,+nx', '-M', 'pc', '-smp', '4', '-m', '512M',
         '-kernel', str(build / 'kernel.elf'), '-display', 'none', '-vga', 'none',
         '-drive', f'if=none,format=raw,file={disk},id=d0',
         '-device', 'virtio-blk-pci,drive=d0,disable-modern=on',
@@ -173,12 +192,20 @@ def main():
                     time.sleep(0.15)
                 monitor('sendkey ret')
                 wait('trusted-login: unlocked by tepOS')
+            wait('hardware execute protection enabled (PAE + NX)')
+            wait('i386_startup: core self-tests passed')
             wait('framework-probe: allocator/binding/constructor PASS; writing RELRO')
             wait('bootd: com.nxu.framework-probe: exited')
             assert 'framework-probe) terminated by #PF Page Fault' in text()
             assert 'framework-probe: RELRO WRITE SUCCEEDED' not in text()
+            wait('nx-probe: attempting instruction fetch from writable user data')
+            wait('bootd: com.nxu.nx-probe: exited')
+            assert 'nx-probe) terminated by #PF Page Fault' in text()
+            assert 'cause: instruction fetch of 0x40000000 by user code: protection violation' in text()
+            assert 'nx-probe: DATA EXECUTION SUCCEEDED' not in text()
             wait('windowserver: registered as ')
             wait('desktop: dynamic host ready')
+            wait('event-wait-probe: lost-wakeup, timeout and IPC wake PASS')
             wait('frame-copy-probe: PACKED')
             points = colored('packed', (0, 255, 0))
             x = (min(x for x, _ in points) + max(x for x, _ in points)) // 2
@@ -191,6 +218,30 @@ def main():
             time.sleep(1)
             monitor('mouse_button 0')
             wait('frame-copy-probe: CLICK')
+            title_y = min(py for _, py in points) - 12
+            original_x = min(px for px, _ in points)
+            monitor(f'mouse_move 0 {title_y - y}')
+            time.sleep(0.1)
+            monitor('mouse_button 1')
+            time.sleep(0.1)
+            monitor('mouse_move 60 40')
+            time.sleep(0.1)
+            monitor('mouse_button 0')
+            drag_start = time.monotonic()
+            while time.monotonic() - drag_start < 5:
+                moved = colored('dragged', (0, 255, 0))
+                if abs(min(px for px, _ in moved) - original_x - 60) <= 1:
+                    break
+                time.sleep(0.05)
+            else:
+                raise AssertionError('Window drag did not reach its destination')
+            print(f'PASS drag scanout after move: {time.monotonic() - drag_start:.3f}s', flush=True)
+            monitor(f'mouse_move 0 {y - title_y}')
+            time.sleep(0.1)
+            monitor('mouse_move 0 0 1')
+            wait('frame-copy-probe: SCROLL UP')
+            monitor('mouse_move 0 0 -1')
+            wait('frame-copy-probe: SCROLL DOWN')
             monitor('sendkey a')
             wait('frame-copy-probe: PADDED and FAULT')
             colored('padded', (0, 0, 255))
@@ -225,6 +276,7 @@ def main():
                 process.wait()
     if options.enclave:
         print('PASS i386 ELF32: enclave ASLR, trusted input/display exclusion and password handling', flush=True)
+    print('PASS i386 NX: ring-3 writable data instruction fetch rejected', flush=True)
     print('PASS i386 ELF32: constructors, Runtime binding/allocation and RELRO write protection', flush=True)
     print('PASS i386 TCG: packed/padded frames, copy fault, mouse/keyboard, exit cleanup and quiet logs', flush=True)
 

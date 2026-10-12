@@ -533,6 +533,7 @@ int main(void)
 	windowserver_log("windowserver: registered as " WS_BOOTSTRAP_LABEL ", serving requests\n");
 
 	for (;;) {
+		uint32_t sequence = (uint32_t)nxu_event_wait(0, 0);
 		wsmsg_request_t request = {0};
 
 		uint32_t xfer_name = 0U;
@@ -565,6 +566,10 @@ int main(void)
 		if (WS_Present())
 			did_work = true;
 
-		(void)nxu_sleep_us(did_work ? 1000 : 5000);
+		/* Replies wake clients directly; do not add a timer tick per RPC. */
+		if (did_work)
+			(void)nxu_yield();
+		else
+			(void)nxu_event_wait(16667, sequence);
 	}
 }

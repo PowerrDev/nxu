@@ -584,7 +584,8 @@ bool virtio_gpu_attach(const virtio_device_t *transport)
 		device->irq_attached = true;
 		*device->controlq.available_flags = 0U;
 	} else {
-		kputln("VirtIOGPUFamily: no interrupt; command completions are polled");
+		kputln("VirtIOGPUFamily: no interrupt");
+		kputln("VirtIOGPUFamily: command completions are polled");
 	}
 
 	failure_stage = "GET_DISPLAY_INFO";
@@ -634,7 +635,8 @@ bool virtio_gpu_attach(const virtio_device_t *transport)
 	if (!sl_device_register("VirtIOGPUFamily", &g_virtio_gpu_sl_ops, device, &sl_device) ||
 		!sl_display_register(sl_device, device->scanout_id, device->framebuffer, device->width, device->height,
 							 device->width, &sl_display)) {
-		kputln("VirtIOGPUFamily: Skylight registration failed; only the early display path has this scanout");
+		kputln("VirtIOGPUFamily: Skylight registration failed");
+		kputln("VirtIOGPUFamily: only the early display path has this scanout");
 	}
 
 	device->attached = true;

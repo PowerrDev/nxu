@@ -11,8 +11,12 @@ static void log_message(const char *text)
 	(void)nxu_write(1, text, nxu_strlen(text));
 }
 
+
+#include "event_wait_probe.h"
+
 int main(void)
 {
+	if (!event_wait_probe()) return 90;
 	nxu_gui_host_hello_t hello = {0};
 	hello.header = (nxu_gui_host_header_t){sizeof(hello), 1, 1, NXU_GUI_HOST_HELLO, 0, 0, 1};
 	hello.required_features = hello.supported_features = NXU_GUI_HOST_FEATURE_SESSION;
@@ -74,6 +78,8 @@ int main(void)
 				(void)nxu_ipc_send(progress, &stage, sizeof(stage), 0);
 			}
 
+			if (message.event == NXU_UI_EVENT_SCROLL)
+				log_message(message.delta > 0 ? "coregraphics-client: SCROLL UP\n" : "coregraphics-client: SCROLL DOWN\n");
 			if (message.event == NXU_UI_EVENT_POINTER_DOWN)
 				log_message("coregraphics-client: CLICK\n");
 		}

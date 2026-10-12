@@ -243,14 +243,14 @@ static void virtio_input_route_event(
 		.value = (int32_t)raw->value
 	};
 
-	(void)input_publish(&event);
-
 	if (device->device_class == INPUT_DEVICE_KEYBOARD) {
 		keyboard_handle_event(&event);
 	} else if (device->device_class == INPUT_DEVICE_MOUSE) {
 		mouse_handle_event(&event);
 	}
 
+	/* Publish the completed class state with this packet, not a later poll. */
+	(void)input_publish(&event);
 	device->event_count++;
 }
 

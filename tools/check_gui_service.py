@@ -264,6 +264,31 @@ def main():
                 time.sleep(2)
                 monitor('mouse_button 0')
                 wait_marker('coregraphics-client: CLICK')
+                wait_marker('event-wait-probe: lost-wakeup, timeout and IPC wake PASS')
+                title_y = min(py for _, py in green) - 12
+                original_x = min(px for px, _ in green)
+                monitor(f'mouse_move 0 {round((title_y - y) * 1000 / options.scale)}')
+                time.sleep(0.1)
+                monitor('mouse_button 1')
+                time.sleep(0.1)
+                monitor(f'mouse_move {round(60 * 1000 / options.scale)} {round(40 * 1000 / options.scale)}')
+                time.sleep(0.1)
+                monitor('mouse_button 0')
+                drag_start = time.monotonic()
+                while time.monotonic() - drag_start < 5:
+                    _, moved = green_surface('dragged')
+                    if abs(min(px for px, _ in moved) - original_x - 60) <= 1:
+                        break
+                    time.sleep(0.05)
+                else:
+                    raise AssertionError('Window drag did not reach its destination')
+                print(f'PASS drag scanout after move: {time.monotonic() - drag_start:.3f}s', flush=True)
+                monitor(f'mouse_move 0 {round((y - title_y) * 1000 / options.scale)}')
+                time.sleep(0.1)
+                monitor('mouse_move 0 0 1')
+                wait_marker('coregraphics-client: SCROLL UP')
+                monitor('mouse_move 0 0 -1')
+                wait_marker('coregraphics-client: SCROLL DOWN')
                 monitor('sendkey a')
                 wait_marker('coregraphics-client: KEY')
                 for iteration, marker in enumerate(['COMPOSITOR-RECOVERED', 'DESKTOP-RECOVERED'], 2):

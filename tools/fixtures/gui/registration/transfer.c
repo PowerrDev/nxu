@@ -59,14 +59,17 @@ int64_t nxu_ipc_send(uint32_t port, const void *bytes, uint64_t size, uint32_t r
 	return fail_send ? -1 : 0;
 }
 
-int64_t nxu_ipc_receive(uint32_t port, void *buffer, uint64_t size, uint32_t *transfer, uint32_t *type)
+int64_t nxu_ipc_receive_timed(uint32_t port, void *buffer, uint64_t size, uint32_t *transfer, uint32_t *type, uint32_t timeout_us)
 {
 	(void)port;
 	(void)size;
 	(void)transfer;
 	(void)type;
-	if (timeout)
+	assert(timeout_us == 5000000);
+	if (timeout) {
+		clock_us += timeout_us;
 		return -NXU_SYS_E_AGAIN;
+	}
 	memcpy(buffer, &response, sizeof(response));
 	return sizeof(response);
 }
