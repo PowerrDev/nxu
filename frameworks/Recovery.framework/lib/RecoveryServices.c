@@ -45,6 +45,12 @@ const char *recovery_error_name(int64_t error)
 	case NXU_SYS_E_INVALID_ARGUMENT: return "invalid argument";
 	case NXU_SYS_E_BAD_ADDRESS: return "bad address";
 	case NXU_SYS_E_NOT_FOUND: return "not found";
+	case NXU_SYS_E_DENIED: return "permission denied";
+	case NXU_SYS_E_INTERRUPTED: return "interrupted";
+	case NXU_SYS_E_IS_DIRECTORY: return "is a directory (use rm -r)";
+	case NXU_SYS_E_NOT_DIRECTORY: return "not a directory";
+	case NXU_SYS_E_READ_ONLY: return "read-only filesystem or device";
+	case NXU_SYS_E_NOT_EMPTY: return "directory not empty";
 	case NXU_SYS_E_IO: return "I/O error";
 	case NXU_SYS_E_NO_MEMORY: return "out of memory";
 	case NXU_SYS_E_NO_SPACE: return "no space";
@@ -84,9 +90,14 @@ int64_t recovery_fs_readdir(const char *path, uint32_t index, recovery_fs_dirent
 
 	nxu_dirent_t current;
 	int64_t result = 0;
-	for (uint32_t current_index = 0U; current_index <= index; current_index++) {
+	uint32_t current_index = 0U;
+	for (;;) {
 		result = nxu_readdir((uint64_t)descriptor, &current);
 		if (result <= 0) break;
+		if ((current.name_length == 1U && current.name[0] == '.') ||
+			(current.name_length == 2U && current.name[0] == '.' && current.name[1] == '.')) continue;
+		if (current_index == index) break;
+		current_index++;
 	}
 
 	(void)nxu_close((uint64_t)descriptor);
@@ -140,7 +151,7 @@ int64_t recovery_fs_write(const char *path, const void *data, uint32_t size)
 }
 
 int64_t recovery_fs_unlink(const char *path) { return nxu_unlink(path); }
-int64_t recovery_fs_rmdir(const char *path) { (void)path; return recovery_not_supported(); }
+int64_t recovery_fs_rmdir(const char *path) { return nxu_rmdir(path); }
 int64_t recovery_fs_sync(void) { return nxu_sync(); }
 int64_t recovery_fs_mount_info(uint32_t index, recovery_fs_mount_info_t *info)
 {
@@ -244,5 +255,5 @@ int64_t recovery_block_health_info(uint32_t device_index, recovery_block_health_
 }
 int64_t recovery_block_gpt_initialize(uint32_t device_index) { (void)device_index; return recovery_not_supported(); }
 int64_t recovery_block_partition_create(uint32_t device_index, uint64_t sector_count, const char *name, recovery_block_partition_role_t role, recovery_block_partition_info_t *info) { (void)device_index; (void)sector_count; (void)role; (void)name; (void)info; return recovery_not_supported(); }
-int64_t recovery_block_partition_delete(uint32_t device_index, uint32_t partition_index) { (void)device_index; (void)partition_index; return recovery_not_supported(); }
+int64_t recovery_block_partition_delete(uint32_t device_index, uint32_t partition_index) { return nxu_recovery_block_partition_delete(device_index, partition_index); }
 int64_t recovery_block_verify(uint32_t device_index) { return nxu_recovery_block_verify(device_index); }

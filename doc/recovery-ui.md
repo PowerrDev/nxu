@@ -23,7 +23,14 @@ startup recovery mode has been selected.
 
 When a graphical display and input devices are available, the kernel shows the
 startup splash for a short selection window. Hold **Shift+R** during that window
-to request triageOS.
+to request triageOS. On i386, the same chord is sampled during a three-second
+selection window before userspace starts. You can also select recovery directly:
+
+```sh
+make run-i386-recovery
+# ARM64: pass recovery=1 alongside your normal boot arguments
+make run BOOT_ARGS="recovery=1"
+```
 
 The splash is kernel owned and deliberately minimal: the imported ArmOS startup
 artwork and a clean progress bar. It does not display filesystem stage strings
@@ -72,10 +79,22 @@ unlinking and sync use real NXU VFS operations.
 
 ## Current storage limitations
 
-The triageOS interface is preserved, including Terminal and Disk Utility, but
-NXU does not yet contain the partition-management and recovery-volume stack
-that old ArmOS had. GPT creation, partition creation/deletion, block health,
-mount enumeration and filesystem space queries therefore report `not supported`.
+triageOS is built and staged for both ARM64 and i386. Terminal `rm` deletes
+regular files; `rm -r` also removes nested files and empty ext4 directories.
+Recovery directory enumeration hides `.` and `..`. Directory, read-only,
+permission and nonempty-directory failures retain their specific diagnostics.
+For protected directories, `rm -r --force-system PATH` opens the SAP modal and
+requires the existing tepOS passcode before any deletion starts.
+
+`partition-delete DEVICE INDEX --force` deletes an existing MBR/GPT partition.
+The index is the zero-based index shown by `partitions`. A device with a mounted
+filesystem returns `busy`; unmount it before changing its partition table.
+The command does not erase the partition contents. The standard QEMU root
+image contains raw ext4 and has no partition table to delete.
+
+GPT initialization and partition creation still report `not supported`. Block
+health, mount enumeration, filesystem space queries and verification are wired
+to the kernel storage stack.
 The Reinstall sevOS action explicitly reports that system-image installation is
 not implemented.
 
@@ -102,3 +121,10 @@ make UISERVICE_DIR=../UIService.framework apply-assets
 
 The target only copies resources; it does not make either UI foundation depend
 on the other.
+
+## Regression checks
+
+`python3 tools/check_recovery_storage.py --arch i386` (or `--arch arm64`)
+boots triageOS on private images, executes the real recovery shell and checks
+file/recursive removal, mounted-device refusal, MBR/GPT partition deletion, read-only refusal and ext4
+consistency. The i386 check also exercises Shift+R recovery selection.

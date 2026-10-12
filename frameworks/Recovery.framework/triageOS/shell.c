@@ -1,5 +1,7 @@
 #include "shell.h"
 
+#include <frameworks/SoftwareUpdate.framework/include/nsw.h>
+
 #include <Recovery/RecoveryServices.h>
 
 #include <stdbool.h>
@@ -1013,6 +1015,7 @@ shell_protected_path(const char *path)
 		shell_equal(path, "/init") || shell_prefix(path, "/init/") || shell_equal(path, "/recovery") ||
 		shell_prefix(path, "/recovery/") || shell_equal(path, "/disk") ||
 		shell_equal(path, "/disk/System") || shell_prefix(path, "/disk/System/") ||
+		shell_equal(path, "/disk/Library") || shell_prefix(path, "/disk/Library/") ||
 		shell_equal(path, "/disk/init") || shell_prefix(path, "/disk/init/");
 }
 
@@ -1059,47 +1062,44 @@ shell_join_child(char output[RECOVERY_FS_PATH_MAX], const char *parent, const ch
 	return shell_append(output, RECOVERY_FS_PATH_MAX, child);
 }
 
-/* Recursively empty directories before removing the directory inode itself. */
+/* Walk depth first using the pathname rather than consuming the user stack
+ * for every nested directory. Recovery's static ARM64 stack is only 16 KiB. */
 static int64_t
 shell_remove_recursive(const char *path)
 {
 	recovery_fs_stat_t stat;
 	int64_t result = recovery_fs_stat(path, &stat);
-	if (result < 0) {
-		return result;
-	}
+	if (result < 0) return result;
+	if (stat.type != RECOVERY_FS_TYPE_DIRECTORY) return recovery_fs_unlink(path);
+	if (shell_protected_path(path)) return nxu_sap_remove_tree(path);
 
-	if (stat.type != RECOVERY_FS_TYPE_DIRECTORY) {
-		return recovery_fs_unlink(path);
-	}
-
+	char current[RECOVERY_FS_PATH_MAX];
+	if (!shell_copy(current, sizeof(current), path)) return -(int64_t)RECOVERY_ERROR_INVALID_ARGUMENT;
 	for (;;) {
 		recovery_fs_dirent_t entry;
-		result = recovery_fs_readdir(path, 0U, &entry);
+		result = recovery_fs_readdir(current, 0U, &entry);
 		if (result == -(int64_t)RECOVERY_ERROR_NOT_FOUND) {
-			break;
+			result = recovery_fs_rmdir(current);
+			if (result < 0 || shell_equal(current, path)) return result;
+			uint32_t length = 0U;
+			while (current[length] != '\0') length++;
+			while (length > 1U && current[length - 1U] != '/') length--;
+			current[length > 1U ? length - 1U : 1U] = '\0';
+			continue;
 		}
-
-		if (result < 0) {
-			return result;
-		}
-
-		if (shell_equal(entry.name, ".") || shell_equal(entry.name, "..")) {
-			return -(int64_t)RECOVERY_ERROR_IO;
-		}
+		if (result < 0) return result;
 
 		char child[RECOVERY_FS_PATH_MAX];
-		if (!shell_join_child(child, path, entry.name)) {
-			return -(int64_t)RECOVERY_ERROR_INVALID_ARGUMENT;
-		}
-
-		result = shell_remove_recursive(child);
-		if (result < 0) {
-			return result;
+		if (!shell_join_child(child, current, entry.name)) return -(int64_t)RECOVERY_ERROR_INVALID_ARGUMENT;
+		result = recovery_fs_stat(child, &stat);
+		if (result < 0) return result;
+		if (stat.type == RECOVERY_FS_TYPE_DIRECTORY) {
+			(void)shell_copy(current, sizeof(current), child);
+		} else {
+			result = recovery_fs_unlink(child);
+			if (result < 0) return result;
 		}
 	}
-
-	return recovery_fs_rmdir(path);
 }
 
 void
@@ -1136,9 +1136,9 @@ triage_shell_execute(triage_shell_t *shell, const char *command)
 
 	if (shell_equal(argv[0], "help")) {
 		shell_write(shell, "help clear echo pwd cd ls tree stat cat hexdump");
-		shell_write(shell, "mkdir touch write rm sync mount umount");
+		shell_write(shell, "mkdir rmdir touch write rm sync mount umount");
 		shell_write(shell, "mounts disks partitions disk-health df fsinfo");
-		shell_write(shell, "gpt-init partition-create partition-delete reinstall version uname reboot exit");
+		shell_write(shell, "gpt-init partition-create partition-delete nsw reinstall version uname reboot exit");
 		return TRIAGE_SHELL_OK;
 	}
 
@@ -1446,25 +1446,59 @@ triage_shell_execute(triage_shell_t *shell, const char *command)
 			shell_fsinfo(shell);
 			return TRIAGE_SHELL_OK;
 		}
-	if (shell_equal(argv[0], "reinstall")) {
-		shell_write(shell, "restoring system files...");
-		int64_t result = shell_mount_system_volume();
-		if (result >= 0) {
-			result = recovery_fs_copy("/recovery/System/Recovery/BaseSystem/launchd", "/disk/init/launchd");
+		if (shell_equal(argv[0], "rmdir")) {
+			if (argc != 2) {
+				shell_write(shell, "usage: rmdir PATH");
+				return TRIAGE_SHELL_OK;
+			}
+			int64_t result = recovery_fs_rmdir(argv[1]);
+			if (result < 0) {
+				shell_error(shell, "rmdir", result);
+			}
+			return TRIAGE_SHELL_OK;
 		}
-
-		if (result >= 0) {
-			result = recovery_fs_sync();
+		if (shell_equal(argv[0], "nsw")) {
+			if (argc == 3 && shell_equal(argv[1], "install")) {
+				if (nsw_schedule(argv[2])) {
+					shell_write(shell, "installation queued; restarting...");
+					int64_t result = recovery_system_reset();
+					if (result < 0) {
+						shell_error(shell, "reboot", result);
+					}
+				} else {
+					shell_write(shell, "installation request rejected");
+				}
+				return TRIAGE_SHELL_OK;
+			}
+			if (argc != 3 || !shell_equal(argv[1], "prepare")) {
+				shell_write(shell, "usage: nsw prepare PACKAGE.nsw | nsw install BUILD");
+				return TRIAGE_SHELL_OK;
+			}
+			shell_write(shell, "verifying and extracting NSW images...");
+			bool success = nsw_prepare(argv[2], NSW_PREPARED_ROOT);
+			shell_write(shell, success ? "NSW prepared; system volume unchanged"
+									   : "NSW preparation failed; no ready build published");
+			return TRIAGE_SHELL_OK;
 		}
+		if (shell_equal(argv[0], "reinstall")) {
+			shell_write(shell, "restoring system files...");
+			int64_t result = shell_mount_system_volume();
+			if (result >= 0) {
+				result = recovery_fs_copy("/recovery/System/Recovery/BaseSystem/launchd", "/disk/init/launchd");
+			}
 
-		if (result < 0) {
-			shell_error(shell, "reinstall", result);
-		} else {
-			shell_write(shell, "sevOS restored; reboot to continue");
+			if (result >= 0) {
+				result = recovery_fs_sync();
+			}
+
+			if (result < 0) {
+				shell_error(shell, "reinstall", result);
+			} else {
+				shell_write(shell, "sevOS restored; reboot to continue");
+			}
+
+			return TRIAGE_SHELL_OK;
 		}
-
-		return TRIAGE_SHELL_OK;
-	}
 
 	if (shell_equal(argv[0], "version") || shell_equal(argv[0], "uname")) {
 		char version[64];

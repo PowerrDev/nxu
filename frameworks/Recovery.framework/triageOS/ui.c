@@ -670,6 +670,7 @@ triage_terminal_push(triage_ui_t *ui, const char *text)
 	}
 
 	triage_copy(ui->terminal_lines[ui->terminal_line_count++], TRIAGE_TERMINAL_LINE_MAX, text);
+	ui->terminal_scroll_offset = 0U;
 	ui->dirty_terminal_body = true;
 }
 
@@ -687,6 +688,10 @@ triage_terminal_enter(triage_ui_t *ui)
 	ui->terminal_input_length = 0U;
 	ui->terminal_input[0] = '\0';
 	ui->terminal_history_index = -1;
+	if (ui->terminal_line_count == 0U) {
+		triage_terminal_push(ui, "Recovery Terminal: type help for filesystem and disk commands.");
+		triage_terminal_push(ui, "Use the wheel or Page Up / Page Down to read earlier output.");
+	}
 	triage_mark_full(ui);
 }
 
@@ -810,6 +815,7 @@ triage_terminal_execute(triage_ui_t *ui)
 	ui->dirty_terminal_input = true;
 	if (result == TRIAGE_SHELL_CLEAR) {
 		ui->terminal_line_count = 0U;
+		ui->terminal_scroll_offset = 0U;
 		ui->dirty_terminal_body = true;
 	}
 
@@ -817,6 +823,34 @@ triage_terminal_execute(triage_ui_t *ui)
 		ui->terminal_active = false;
 		triage_mark_full(ui);
 	}
+}
+
+static uint32_t
+triage_terminal_visible_lines(triage_ui_t *ui)
+{
+	int32_t x, y;
+	uint32_t width, height;
+	triage_workspace(ui, &x, &y, &width, &height);
+	uint32_t line_height = startup_options_ui_mono_line_height(ui->terminal_zoom);
+	if (!line_height) line_height = 22U;
+	uint32_t reserved = 82U + line_height + 18U;
+	uint32_t visible = height > reserved ? (height - reserved) / line_height : 0U;
+	return visible ? visible : 1U;
+}
+
+bool
+triage_ui_scroll(triage_ui_t *ui, int32_t notches)
+{
+	if (!ui || !ui->terminal_active || !notches) return false;
+	uint32_t visible = triage_terminal_visible_lines(ui);
+	uint32_t maximum = ui->terminal_line_count > visible ? ui->terminal_line_count - visible : 0U;
+	int64_t offset = (int64_t)ui->terminal_scroll_offset + (int64_t)notches * 3;
+	if (offset < 0) offset = 0;
+	if ((uint64_t)offset > maximum) offset = maximum;
+	if ((uint32_t)offset == ui->terminal_scroll_offset) return false;
+	ui->terminal_scroll_offset = (uint32_t)offset;
+	ui->dirty_terminal_body = true;
+	return true;
 }
 
 static void
@@ -859,7 +893,7 @@ triage_draw_terminal_body(triage_ui_t *ui)
 		&ui->canvas,
 		x + 20,
 		title_y + (int32_t)(title_line + TRIAGE_TERMINAL_HEADER_GAP),
-		"Ctrl+-  Ctrl++  Ctrl+0",
+		"Wheel / PgUp / PgDn: scroll    Ctrl+- / Ctrl++: zoom",
 		TRIAGE_TERMINAL_MUTED,
 		1U
 	);
@@ -879,9 +913,12 @@ triage_draw_terminal_body(triage_ui_t *ui)
 		visible = TRIAGE_TERMINAL_LINES;
 	}
 
-	uint32_t start = ui->terminal_line_count > visible ? ui->terminal_line_count - visible : 0U;
+	uint32_t maximum = ui->terminal_line_count > visible ? ui->terminal_line_count - visible : 0U;
+	if (ui->terminal_scroll_offset > maximum) ui->terminal_scroll_offset = maximum;
+	uint32_t end = ui->terminal_line_count - ui->terminal_scroll_offset;
+	uint32_t start = end > visible ? end - visible : 0U;
 	uint32_t row = 0U;
-	for (uint32_t line = start; line < ui->terminal_line_count; line++, row++) {
+	for (uint32_t line = start; line < end; line++, row++) {
 		startup_options_ui_draw_mono_text(
 			&ui->canvas,
 			x + 20,
@@ -2625,6 +2662,7 @@ triage_ui_init(triage_ui_t *ui, uint32_t *pixels, uint32_t width, uint32_t heigh
 	ui->terminal_input_length = 0U;
 	ui->terminal_input[0] = '\0';
 	ui->terminal_line_count = 0U;
+	ui->terminal_scroll_offset = 0U;
 	ui->terminal_history_count = 0U;
 	ui->terminal_history_index = -1;
 	ui->damage = (triage_damage_t) { 0 };
@@ -2971,6 +3009,11 @@ triage_ui_key(triage_ui_t *ui, uint32_t code, int32_t value, uint32_t modifiers)
 	}
 
 	if (ui->terminal_active) {
+		if (code == 104U || code == 109U) {
+			uint32_t lines = triage_terminal_visible_lines(ui);
+			int32_t notches = (int32_t)((lines + 2U) / 3U);
+			return triage_ui_scroll(ui, code == 104U ? notches : -notches);
+		}
 		if ((modifiers & STARTUP_OPTIONS_UI_MOD_CTRL) != 0U && code == TRIAGE_KEY_MINUS) {
 			if (ui->terminal_zoom > 1U) {
 				ui->terminal_zoom--;
@@ -3003,6 +3046,7 @@ triage_ui_key(triage_ui_t *ui, uint32_t code, int32_t value, uint32_t modifiers)
 
 		if ((modifiers & STARTUP_OPTIONS_UI_MOD_CTRL) != 0U && code == 38U) {
 			ui->terminal_line_count = 0U;
+			ui->terminal_scroll_offset = 0U;
 			ui->dirty_terminal_body = true;
 			return true;
 		}

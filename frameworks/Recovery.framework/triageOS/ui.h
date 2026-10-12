@@ -9,7 +9,7 @@
 #include <stdint.h>
 
 #define TRIAGE_TERMINAL_INPUT_MAX 160U
-#define TRIAGE_TERMINAL_LINES 22U
+#define TRIAGE_TERMINAL_LINES 256U
 #define TRIAGE_TERMINAL_LINE_MAX 112U
 #define TRIAGE_TERMINAL_HISTORY 8U
 #define TRIAGE_DISK_PARTITIONS_MAX 8U
@@ -181,6 +181,7 @@ typedef struct {
 	uint32_t terminal_input_length;
 	char terminal_lines[TRIAGE_TERMINAL_LINES][TRIAGE_TERMINAL_LINE_MAX];
 	uint32_t terminal_line_count;
+	uint32_t terminal_scroll_offset;
 	char terminal_history[TRIAGE_TERMINAL_HISTORY][TRIAGE_TERMINAL_INPUT_MAX];
 	uint32_t terminal_history_count;
 	int32_t terminal_history_index;
@@ -203,6 +204,7 @@ void triage_ui_force_redraw(triage_ui_t *ui);
 bool triage_ui_pointer_move(triage_ui_t *ui, int32_t x, int32_t y);
 bool triage_ui_pointer_down(triage_ui_t *ui, int32_t x, int32_t y);
 bool triage_ui_pointer_up(triage_ui_t *ui, int32_t x, int32_t y);
+bool triage_ui_scroll(triage_ui_t *ui, int32_t notches);
 bool triage_ui_key(triage_ui_t *ui, uint32_t code, int32_t value, uint32_t modifiers);
 bool triage_ui_take_damage(triage_ui_t *ui, triage_damage_t *damage);
 triage_action_t triage_ui_take_action(triage_ui_t *ui);
