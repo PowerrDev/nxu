@@ -417,6 +417,36 @@ bool socket_accept(socket_t listener, bool block, socket_t *result)
 	return true;
 }
 
+int64_t
+socket_read_poll(socket_t socket, void *buffer, uint64_t length)
+{
+	if (socket == SOCKET_NULL || buffer == 0) {
+		return -1;
+	}
+
+	nxu_spin_lock(&socket->lock);
+
+	if (socket->state != SOCKET_STATE_CONNECTED) {
+		nxu_spin_unlock(&socket->lock);
+		return -1;
+	}
+
+	if (length != 0 && socket->ring_count == 0 && !socket->peer_closed) {
+		nxu_spin_unlock(&socket->lock);
+		return -2;
+	}
+
+	uint32_t capacity = length > UINT32_MAX ? UINT32_MAX : length;
+	uint32_t count = socket_ring_read(socket, buffer, capacity);
+
+	if (count != 0) {
+		socket_wake_one(socket);
+	}
+
+	nxu_spin_unlock(&socket->lock);
+	return count;
+}
+
 int64_t socket_read(socket_t s, void *buffer, uint64_t length)
 {
 	if (s == SOCKET_NULL || buffer == 0) return -1;

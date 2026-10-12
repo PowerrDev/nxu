@@ -69,6 +69,9 @@ bool socket_accept(socket_t listener, bool block, socket_t *result);
  * peer has closed and every byte it sent has been drained (EOF), or -1 if
  * socket itself is not a connected end.
  */
+/* Nonblocking read: -2 means empty with a live peer; zero means EOF. */
+int64_t socket_read_poll(socket_t socket, void *buffer, uint64_t length);
+
 int64_t socket_read(socket_t socket, void *buffer, uint64_t length);
 
 /*
