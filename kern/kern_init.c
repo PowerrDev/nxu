@@ -1,6 +1,10 @@
+#include <kern/tests/net_test.h>
+#include <kern/net/netif.h>
 #include <kern/logging/diagnostics.h>
 #include <kern/console/console.h>
 #include <kern/boot/boot_args.h>
+#include <kern/boot/recovery_volume.h>
+#include <kern/update/update.h>
 #include <kern/boot/boot_chime.h>
 #include <kern/boot/boot_mode.h>
 #include <kern/boot/splash.h>
@@ -34,6 +38,7 @@
 #include <platform/driverkit.h>
 #include <kern/process/proc.h>
 #include <kern/sched_prism/sched.h>
+#include <kern/sched_prism/waitq.h>
 #include <kern/process/task.h>
 #include <kern/process/thread.h>
 #include <platform/dtb.h>
@@ -738,15 +743,25 @@ static void kern_mount_system_volume(void)
 {
 	kputln("IOFilesystemFamily: mounting disk0 at /disk");
 
-	vfs_status_t ext4_mount_status = vfs_mount("ext4", block_device_first(), "/disk");
+	vfs_status_t ext4_mount_status = vfs_mount("ext4", boot_system_volume_device(), "/disk");
 
 	if (ext4_mount_status != VFS_STATUS_OK) {
 		kputs("IOFilesystemFamily: mount failed: ");
 		kputln(vfs_status_name(ext4_mount_status));
+		boot_mount_recovery_volume();
+		if (boot_recovery_volume_available()) {
+			boot_mode_force_recovery();
+			kputln("boot: system mount failed; starting the recovery partition");
+			return;
+		}
 		kern_fail("IOFilesystemFamily: mount failed");
 	}
 
 	ext4_dump();
+	boot_mount_recovery_volume();
+	if (!boot_update_install()) {
+		kern_fail("patchd: cannot recover the interrupted system update");
+	}
 }
 
 /*
@@ -760,7 +775,7 @@ static void kern_launch_init_process(display_device_t *boot_display)
 	bool recovery_boot = boot_mode_is_triage_os();
 	const char *bootd_recovery_path = "/disk/System/Library/CoreServices/bootd.recovery";
 	const char *init_path =
-		recovery_boot ? "/disk/System/Recovery/triageOS" : "/disk/System/Library/CoreServices/bootd";
+		recovery_boot ? boot_update_recovery_program() : "/disk/System/Library/CoreServices/bootd";
 	const char *init_name = recovery_boot ? "triageOS" : "bootd";
 	bool init_uses_fallback = false;
 
@@ -775,8 +790,6 @@ static void kern_launch_init_process(display_device_t *boot_display)
 	}
 
 	kprintf("boot: selected environment: %s\n", boot_mode_name());
-	if (boot_display != 0)
-		ioreg_dump();
 	if (boot_display != 0 && !boot_splash_finish())
 		kern_fail("boot_splash_finish: completion failed");
 	kputs("loader_spawn: loading ");
@@ -832,7 +845,8 @@ static __attribute__((noreturn)) void kern_start_scheduler(const driverkit_confi
 	/* Real user processes and threads on every CPU: the boot thread supervises. */
 	if (!smp_user_test_run())
 		kern_fail("smp_user_test: failed");
-	kputln("smp_user_test: passed; halting (test build)");
+	kputln("smp_user_test: passed");
+	kputln("smp_user_test: halting (test build)");
 	for (;;)
 		__asm__ volatile("wfe");
 #endif
@@ -841,7 +855,8 @@ static __attribute__((noreturn)) void kern_start_scheduler(const driverkit_confi
 	/* The secondary CPUs are up and the boot CPU takes interrupts: the SMP suite runs on the boot thread. */
 	if (!smp_test_run())
 		kern_fail("smp_test: failed");
-	kputln("smp_test: passed; halting (test build)");
+	kputln("smp_test: passed");
+	kputln("smp_test: halting (test build)");
 	for (;;)
 		__asm__ volatile("wfe");
 #endif
@@ -855,10 +870,10 @@ static __attribute__((noreturn)) void kern_start_scheduler(const driverkit_confi
 		/* The unified boot runs its UI session here, on this thread, yielding to everything else. */
 		boot_test_unified();
 
-		for (;;) {
-			if (!sched_yield())
-				kern_fail("sched: userspace dispatch failed");
-		}
+		/* The idle thread handles idle CPUs; this supervisor has finished. */
+		static waitq_t userspace_supervisor_done;
+		for (;;)
+			(void)waitq_block(&userspace_supervisor_done, false);
 	}
 
 	kputln("kern_init: remaining in kernel-only mode");
@@ -903,6 +918,20 @@ static __attribute__((noreturn, noinline)) void kern_init_higher_half(void)
 	kern_init_filesystem();
 	kern_init_scheduler();
 
+	if (!net_start()) {
+		kern_fail("network: worker initialization failed");
+	}
+
+	if (boot_arg_bool("net.test", false)) {
+		if (!net_test()) {
+			kern_fail("net_test: failed");
+		}
+
+		for (;;) {
+			__asm__ volatile("wfe");
+		}
+	}
+
 	if (!kernel_do_post(KERNEL_POST_CORE)) {
 		kern_fail("kernel_do_post: core self-tests failed");
 	}
@@ -926,7 +955,8 @@ static __attribute__((noreturn, noinline)) void kern_init_higher_half(void)
 	if (drivers.block_enabled) {
 		kern_mount_system_volume();
 
-		if (!kernel_do_post(KERNEL_POST_STORAGE)) {
+		/* Fixture-content POSTs must not reject a new build or recovery boot. */
+		if (!boot_update_is_active() && !kernel_do_post(KERNEL_POST_STORAGE)) {
 			kern_fail("kernel_do_post: storage self-tests failed");
 		}
 
@@ -947,6 +977,7 @@ static __attribute__((noreturn, noinline)) void kern_init_higher_half(void)
 		/* The file the chime plays is readable now; the thread starts playing once the scheduler runs. */
 		boot_chime_start();
 		kern_launch_init_process(boot_display);
+		boot_update_watch_start();
 #endif
 	}
 

@@ -1,4 +1,5 @@
 #include <kern/boot/boot_mode.h>
+#include <kern/boot/boot_args.h>
 
 #include <drivers/input/input.h>
 #include <drivers/input/keyboard.h>
@@ -22,10 +23,16 @@ static bool g_right_shift_down;
 
 void boot_mode_init(void)
 {
-	g_boot_mode = BOOT_MODE_NORMAL;
+	g_boot_mode = boot_arg_bool("recovery", false) ? BOOT_MODE_TRIAGE_OS : BOOT_MODE_NORMAL;
 	g_r_down = false;
 	g_left_shift_down = false;
 	g_right_shift_down = false;
+}
+
+void
+boot_mode_force_recovery(void)
+{
+	g_boot_mode = BOOT_MODE_TRIAGE_OS;
 }
 
 static bool boot_mode_key_down(int32_t value)

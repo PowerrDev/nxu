@@ -9,6 +9,7 @@ typedef enum {
 } boot_mode_t;
 
 void boot_mode_init(void);
+void boot_mode_force_recovery(void);
 bool boot_mode_poll(void);
 boot_mode_t boot_mode_current(void);
 bool boot_mode_is_triage_os(void);

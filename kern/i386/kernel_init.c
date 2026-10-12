@@ -12,6 +12,7 @@
  */
 
 #include <kern/i386/boot_info.h>
+#include <kern/acpi/platform.h>
 
 #include <kern/boot/boot_args.h>
 #include <kern/boot/nvram.h>
@@ -41,6 +42,7 @@ bool i386_init_kernel(const i386_boot_info_t *boot)
 	}
 
 	kputln("i386_init_kernel: kernel heap ready");
+	heap_dump();
 
 	/*
 	 * x86 has no device tree: the Multiboot command line is the boot-args
@@ -55,6 +57,8 @@ bool i386_init_kernel(const i386_boot_info_t *boot)
 		kputln("i386_init_kernel: boot_args_init failed");
 		return false;
 	}
+
+	nxu_acpi_discover(boot);
 
 	ipc_init();
 	kputln("i386_init_kernel: NXPC kernel transport ready");
@@ -92,6 +96,7 @@ bool i386_init_kernel(const i386_boot_info_t *boot)
 
 	kputln("i386_init_kernel: ramfs mounted at /, /disk mountpoint created");
 	kputln("i386_init_kernel: devfs mounted at /dev");
+	vfs_dump();
 	return true;
 }
 
@@ -144,7 +149,8 @@ bool i386_init_kernel_selftest(const i386_boot_info_t *boot)
 	}
 
 	/* The boot-args view must be the Multiboot command line we were given. */
-	if (boot->cmdline != 0 && !boot_arg_present("test=kernel")) {
+	if (boot->cmdline != 0 && (strlen(boot_args_raw()) < strlen(boot->cmdline) ||
+		memcmp(boot_args_raw(), boot->cmdline, strlen(boot->cmdline)) != 0)) {
 		kputln("i386_init_kernel_selftest: FAIL boot-args do not carry the command line");
 		ok = false;
 	}

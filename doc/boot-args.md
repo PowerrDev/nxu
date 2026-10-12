@@ -40,6 +40,9 @@ changing boot-argument consumers.
   [VirtIO Sound](drivers/virtio-sound.md)).
 - `-no-logd` prevents `bootd` from starting `logd`.
 - `-no-patchd` prevents `bootd` from starting `patchd`.
+- `recovery.volume=DEVICE_INDEX` mounts the selected ext4 device or partition
+  at `/Volumes/Recovery` for NSW preparation. It cannot remount a device
+  already in use.
 - `dyrld.aslr=0` disables runtime framework sliding for developer tests.
   The default is 1 and requires randomness from tepOS for dynamic launches.
 
@@ -77,3 +80,11 @@ The dynamic desktop reads `ui.scale=1000` as 1× and `ui.scale=2000` as 2×.
 Values from 500 through 4000 are accepted; invalid values use 1000. Scaling
 applies to desktop layout and pointer movement. The integration mode supports
 display dimensions up to 3840 by 2160 pixels.
+
+`update.test.fail_after=N` injects a boot-installer failure after N changed
+files for rollback tests. It affects only an explicitly queued installation.
+
+Named GPT `NXU System` and `NXU Recovery` partitions are discovered automatically.
+`recovery.volume` remains a legacy override for a registered block-device index.
+The i386 desktop uses one persistent GPT SSD by default; `I386_PARTITIONED_DISK=0`
+selects the old raw-disk layout.

@@ -1,4 +1,3 @@
-#include <kern/logging/diagnostics.h>
 /*
  * Copyright (c) 2026 NXU Project. All rights reserved.
  */
@@ -17,17 +16,28 @@
  * runs for as long as the machine does.
  */
 
+#include <kern/tests/net_test.h>
+#include <kern/net/netif.h>
+#include <kern/logging/diagnostics.h>
 #include <kern/i386/boot_info.h>
+#include <kern/i386/startup.h>
+#include <vfs/ext4.h>
 #include <kern/i386/fs_test.h>
 #include <kern/i386/timer.h>
 
 #include <drivers/block/block_device.h>
+#include <drivers/input/keyboard.h>
+#include <drivers/virtio/virtio_input.h>
 #include <drivers/tep/tep_mailbox.h>
 #include <drivers/video/ui_service_host.h>
 #include <kern/aqua/window_server.h>
 #include <kern/boot/boot_chime.h>
 #include <kern/boot/boot_args.h>
+#include <kern/boot/recovery_volume.h>
+#include <kern/update/update.h>
 #include <kern/boot/boot_mode.h>
+#include <kern/boot/splash.h>
+#include <drivers/video/display.h>
 #include <kern/console/console.h>
 #include <kern/loader/elf.h>
 #include <kern/process/proc.h>
@@ -85,11 +95,14 @@ static bool userland_run_process_test(const char *name)
 /* Same policy as arm64: prefer bootd, fall back to its recovery image. */
 static bool userland_spawn_bootd(void)
 {
-	kprintf("i386_init_userland: loading %s as PID 1\n", USERLAND_BOOTD_PATH);
+	bool recovery = boot_mode_is_triage_os();
+	const char *path = recovery ? boot_update_recovery_program() : USERLAND_BOOTD_PATH;
+	const char *name = recovery ? "triageOS" : "bootd";
+	kprintf("i386_init_userland: loading %s as PID 1\n", path);
 
-	loader_status_t status = loader_spawn(proc_kernel(), USERLAND_BOOTD_PATH, "bootd", &g_boot_process);
+	loader_status_t status = loader_spawn(proc_kernel(), path, name, &g_boot_process);
 
-	if (status != LOADER_STATUS_OK) {
+	if (status != LOADER_STATUS_OK && !recovery) {
 		kprintf("i386_init_userland: primary bootd unavailable: %s\n", loader_status_name(status));
 		status = loader_spawn(proc_kernel(), USERLAND_BOOTD_RECOVERY_PATH, "bootd", &g_boot_process);
 	}
@@ -106,12 +119,21 @@ static bool userland_spawn_bootd(void)
 	}
 
 	kprintf("i386_init_userland: bootd PID %u ready for scheduler dispatch\n", (unsigned)g_boot_process->p_ident.pid);
+	boot_update_watch_start();
 	return true;
 }
 
 bool i386_init_userland(const i386_boot_info_t *boot)
 {
 	(void)boot;
+
+	if (boot_arg_bool("net.test", false)) {
+		if (!net_start()) {
+			return false;
+		}
+
+		return net_test();
+	}
 
 	/*
 	 * A boot that asks for another phase's self-test (test=drivers, ...) is
@@ -167,16 +189,39 @@ bool i386_init_userland(const i386_boot_info_t *boot)
 		return list_ok;
 	}
 
+	if (!net_start()) {
+		kputln("network: worker initialization failed");
+		return false;
+	}
+
 	boot_mode_init();
 
 	kputln("i386_init_userland: mounting disk0 at /disk");
 
-	vfs_status_t mount_status = vfs_mount("ext4", block_device_first(), "/disk");
+	vfs_status_t mount_status = vfs_mount("ext4", boot_system_volume_device(), "/disk");
 
 	if (mount_status != VFS_STATUS_OK) {
 		kprintf("i386_init_userland: ext4 mount failed: %s\n", vfs_status_name(mount_status));
+		boot_mount_recovery_volume();
+		if (boot_recovery_volume_available()) {
+			boot_mode_force_recovery();
+			kputln("boot: system mount failed; starting the recovery partition");
+			return userland_spawn_bootd();
+		}
 		return false;
 	}
+
+	boot_mount_recovery_volume();
+	if (!boot_update_install()) {
+		return false;
+	}
+
+	if (!boot_update_is_active() && i386_startup_tests_enabled() && !i386_startup_storage_test()) {
+		kputln("i386_startup: storage self-tests failed");
+		return false;
+	}
+	ext4_dump();
+	vfs_dump();
 
 	/*
 	 * "process-test=<ipc|thread|socket>" runs one of the shared kernel-side
@@ -226,6 +271,21 @@ bool i386_init_userland(const i386_boot_info_t *boot)
 		kprintf("i386_init_userland: btrfs-test %s\n", btrfs_ok ? "passed" : "FAILED");
 		return btrfs_ok;
 	}
+
+	/* Recovery selection uses raw input before any desktop service owns it. */
+	if (!boot_mode_is_triage_os() && keyboard_is_present()) {
+		kputln("i386_init_userland: hold Shift+R for recovery (3 seconds)");
+		uint64_t deadline = timer_get_microseconds() + 3000000ULL;
+		while (timer_get_microseconds() < deadline && !boot_mode_is_triage_os()) {
+			virtio_input_service();
+			(void)boot_mode_poll();
+			(void)sched_sleep_us(10000);
+		}
+	}
+	/* Stop the boot log sink before recovery or the desktop owns scanout. */
+	if (display_primary()) (void)boot_splash_finish();
+	if (boot_mode_is_triage_os())
+		return userland_spawn_bootd();
 
 	/*
 	 * "test=desktop": the compositor's kernel-embedded bring-up (see
@@ -300,7 +360,7 @@ bool i386_init_run(const i386_boot_info_t *boot)
 	uint64_t start_us = timer_get_microseconds();
 
 	kputln(g_boot_process != 0 ? "i386_init_run: root userspace services active, dispatching"
-							   : "i386_init_run: no userspace; running kernel threads (tepOS mailbox monitor)");
+							   : "i386_init_run: running kernel threads (tepOS mailbox monitor)");
 
 	/* PID 1 and its services run on their own threads. Keep the bootstrap
 	 * context parked instead of yielding forever and burning CPU0. */
