@@ -297,7 +297,8 @@ bool task_terminate(task_t task)
 		 */
 		if (thread != self && sched_is_initialized() && !sched_wait_thread_off_cpu(thread)) {
 			all_off_cpu = false;
-			kprintf("task_terminate: a thread of the task would not stop; its memory is leaked\n");
+			kputln("task_terminate: a thread of the task would not stop");
+			kputln("task_terminate: its memory is leaked");
 		}
 	}
 

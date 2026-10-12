@@ -54,7 +54,8 @@ void nxu_boot_log_higher_half(void)
  */
 void nxu_boot_log_driver_handoff(void)
 {
-	kputln("IODriverFamily: GICv3 and IRQ routing online; probing devices");
+	kputln("IODriverFamily: GICv3 and IRQ routing online");
+	kputln("IODriverFamily: probing devices");
 }
 
 void nxu_boot_log_ui_handoff(void)

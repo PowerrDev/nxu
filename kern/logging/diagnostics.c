@@ -9,8 +9,11 @@
 #include <kern/sched_prism/processor.h>
 #include <kern/ipc/ipc_port.h>
 
-#define CALL_COUNT (NXU_SYS_GUI_WINDOW_HANDLE + 1U)
+#define CALL_COUNT (NXU_SYS_READ_POLL + 1U)
 static const char *const g_names[CALL_COUNT] = {
+	[NXU_SYS_NETWORK] = "network",
+	[NXU_SYS_DUP2] = "dup2",
+	[NXU_SYS_READ_POLL] = "read_poll",
 	[NXU_SYS_EXIT] = "exit",
 	[NXU_SYS_WRITE] = "write",
 	[NXU_SYS_GET_VERSION] = "get_version",
@@ -30,6 +33,11 @@ static const char *const g_names[CALL_COUNT] = {
 	[NXU_SYS_RECOVERY_DISPLAY_INFO] = "recovery_display_info",
 	[NXU_SYS_RECOVERY_PRESENT] = "recovery_present",
 	[NXU_SYS_RECOVERY_INPUT] = "recovery_input",
+	[NXU_SYS_EVENT_WAIT] = "event_wait",
+	[NXU_SYS_IPC_RECEIVE_TIMED] = "ipc_receive_timed",
+	[NXU_SYS_RECOVERY_BLOCK_PARTITION_DELETE] = "partition_delete",
+	[NXU_SYS_RMDIR] = "rmdir",
+	[NXU_SYS_SAP_REMOVE_TREE] = "sap_remove_tree",
 	[NXU_SYS_SYSTEM_RESET] = "system_reset",
 	[NXU_SYS_SEEK] = "seek",
 	[NXU_SYS_STAT] = "stat",
@@ -280,6 +288,6 @@ void diagnostics_start(void)
 	}
 	thread_deallocate(thread);
 	g_started = true;
-	kverbosef("diagnostics: live kernel snapshots every %u ms; syscall traces=%u\n", interval,
-			  boot_arg_bool("log.trace", true));
+	kverbosef("diagnostics: live kernel snapshots every %u ms\n", interval);
+	kverbosef("diagnostics: syscall traces=%u\n", boot_arg_bool("log.trace", true));
 }

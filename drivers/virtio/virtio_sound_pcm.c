@@ -599,7 +599,8 @@ virtio_snd_error_t virtio_snd_playback_set_params(virtio_snd_device_t *device, c
 	ml_irq_restore(irq_state);
 
 	if (picked.channels != request.channels || picked.format != request.format || picked.rate != request.rate) {
-		VIRTIO_SND_LOG("stream %u: asked for %u Hz, %u channel(s), %s; the stream will run %u Hz, %u channel(s), %s\n", device->playback_stream, wanted->rate_hz, wanted->channels, virtio_snd_format_name(wanted->format), actual->rate_hz, actual->channels, virtio_snd_format_name(actual->format));
+		VIRTIO_SND_LOG("stream %u: asked for %u Hz, %u channel(s), %s\n", device->playback_stream, wanted->rate_hz, wanted->channels, virtio_snd_format_name(wanted->format));
+		VIRTIO_SND_LOG("stream %u: running %u Hz, %u channel(s), %s\n", device->playback_stream, actual->rate_hz, actual->channels, virtio_snd_format_name(actual->format));
 	}
 
 	return VIRTIO_SND_E_NONE;
