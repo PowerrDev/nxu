@@ -1,6 +1,9 @@
 #ifndef NXU_STDINT_H
 #define NXU_STDINT_H
 
+#define INT64_MAX ((int64_t)(UINT64_MAX >> 1))
+#define INT64_MIN (-INT64_MAX - 1)
+
 #define UINT8_MAX  255U
 #define UINT16_MAX 65535U
 #define UINT32_MAX 4294967295U

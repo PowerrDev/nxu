@@ -19,7 +19,10 @@
 #include <stdint.h>
 #include <string.h>
 
-extern uint32_t i386_boot_pd[PMAP_TABLE_ENTRIES];
+extern pmap_entry_t i386_boot_pd[PMAP_DIRECTORY_ENTRIES];
+extern pmap_entry_t i386_boot_pdpt[];
+extern uint32_t i386_boot_nx;
+extern uint8_t __text_end[];
 
 extern uint8_t __kernel_start[];
 extern uint8_t __text_start[];
@@ -30,10 +33,10 @@ extern uint8_t i386_boot_stack_guard[];
 #define PMAP_MMIO_PAGES (VM_MMIO_SIZE / PMAP_PAGE_SIZE)
 
 /* Directory ranges that get pre-allocated page tables (see pmap.h). */
-#define PMAP_ARENA_FIRST_PDE (VM_KERN_BASE >> 22U)
-#define PMAP_ARENA_PDES ((uint32_t)(VM_KERN_SIZE >> 22U))
-#define PMAP_MMIO_FIRST_PDE (VM_MMIO_BASE >> 22U)
-#define PMAP_MMIO_PDES (VM_MMIO_SIZE >> 22U)
+#define PMAP_ARENA_FIRST_PDE (VM_KERN_BASE >> 21U)
+#define PMAP_ARENA_PDES ((uint32_t)(VM_KERN_SIZE >> 21U))
+#define PMAP_MMIO_FIRST_PDE (VM_MMIO_BASE >> 21U)
+#define PMAP_MMIO_PDES (VM_MMIO_SIZE >> 21U)
 
 typedef struct {
 	bool initialized;
@@ -95,6 +98,57 @@ void pmap_invalidate_page(uint32_t virtual_address)
 	__asm__ volatile("invlpg (%0)" : : "r"(virtual_address) : "memory");
 }
 
+bool pmap_nx_enabled(void) { return i386_boot_nx != 0U; }
+bool pmap_cpu_protection_valid(void)
+{
+	if ((pmap_read_cr0() & (PMAP_CR0_PG | PMAP_CR0_WP)) != (PMAP_CR0_PG | PMAP_CR0_WP) ||
+		(pmap_read_cr4() & PMAP_CR4_PAE) == 0U) return false;
+	if (pmap_nx_enabled()) {
+		uint32_t low, high;
+		__asm__ volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(0xC0000080U));
+		if ((low & (1U << 11U)) == 0U) return false;
+	}
+	return true;
+}
+
+pmap_entry_t pmap_data_flags(void) { return pmap_nx_enabled() ? PTE_NX : 0ULL; }
+
+pmap_entry_t *pmap_directory_from_root(uint32_t physical)
+{
+	pmap_entry_t *pdpt = pmap_table_pointer(physical);
+	return pmap_table_pointer((uint32_t)(pdpt[0] & PTE_FRAME));
+}
+
+/* Five contiguous pages: four directories followed by the page-aligned PDPT. */
+bool pmap_root_alloc(pmap_entry_t **directory, uint32_t *root_physical)
+{
+	uint64_t physical;
+	if (!pmm_allocate_contiguous_pages(PMAP_ROOT_PAGES, &physical)) return false;
+	if (physical + PMAP_ROOT_PAGES * PMAP_PAGE_SIZE > VM_DIRECT_MAP_SIZE) {
+		(void)pmm_free_contiguous_pages(physical, PMAP_ROOT_PAGES);
+		return false;
+	}
+	*directory = pmap_table_pointer((uint32_t)physical);
+	*root_physical = (uint32_t)physical + 4U * PMAP_PAGE_SIZE;
+	memset(*directory, 0, PMAP_ROOT_PAGES * PMAP_PAGE_SIZE);
+	pmap_entry_t *pdpt = pmap_table_pointer(*root_physical);
+	for (uint32_t index = 0; index < 4; index++)
+		pdpt[index] = (physical + index * PMAP_PAGE_SIZE) | PTE_PRESENT;
+	return true;
+}
+
+void pmap_root_free(uint32_t root_physical)
+{
+	(void)pmm_free_contiguous_pages(root_physical - 4U * PMAP_PAGE_SIZE, PMAP_ROOT_PAGES);
+}
+
+void pmap_boot_identity(bool enabled)
+{
+	/* Only the AP trampoline needs executable low memory, during bring-up. */
+	pmap_entry_store(&i386_boot_pd[0], enabled ? PTE_PRESENT | PTE_WRITE | PTE_LARGE : 0ULL);
+	pmap_flush_tlb();
+}
+
 static void pmap_rebase(uint32_t *field)
 {
 	if (*field != 0U && *field < VMM_HIGHER_HALF_BASE) *field += VMM_HIGHER_HALF_BASE;
@@ -116,20 +170,20 @@ const multiboot_info_t *i386_boot_relocate(uint32_t magic, uint32_t info_physica
 	 * Everything the boot path needs is reachable through the direct map
 	 * now; drop the temporary identity mapping so user space starts clean.
 	 */
-	i386_boot_pd[0] = 0U;
+	pmap_boot_identity(false);
 	pmap_flush_tlb();
 
 	return info;
 }
 
-uint32_t *pmap_kernel_directory(void)
+pmap_entry_t *pmap_kernel_directory(void)
 {
 	return i386_boot_pd;
 }
 
 uint32_t pmap_kernel_directory_physical(void)
 {
-	return g_pmap.directory_physical != 0U ? g_pmap.directory_physical : (uint32_t)((uintptr_t)i386_boot_pd - VMM_HIGHER_HALF_BASE);
+	return g_pmap.directory_physical != 0U ? g_pmap.directory_physical : (uint32_t)((uintptr_t)i386_boot_pdpt - VMM_HIGHER_HALF_BASE);
 }
 
 uint32_t pmap_kernel_table_count(void)
@@ -153,6 +207,7 @@ bool pmap_table_alloc(uint32_t *physical_address)
 		return false;
 	}
 
+	memset(pmap_table_pointer((uint32_t)physical), 0, PMAP_PAGE_SIZE);
 	*physical_address = (uint32_t)physical;
 	return true;
 }
@@ -163,17 +218,17 @@ void pmap_table_free(uint32_t physical_address)
 }
 
 bool pmap_get_entry(
-	uint32_t *directory,
+	pmap_entry_t *directory,
 	uint32_t virtual_address,
 	bool create,
 	bool user_tables,
 	uint64_t *table_count,
-	uint32_t **entry
+	pmap_entry_t **entry
 )
 {
 	if (directory == 0 || entry == 0) return false;
 
-	uint32_t *directory_entry = &directory[pmap_directory_index(virtual_address)];
+	pmap_entry_t *directory_entry = &directory[pmap_directory_index(virtual_address)];
 
 	if ((*directory_entry & PTE_PRESENT) == 0U) {
 		if (!create) return false;
@@ -182,30 +237,32 @@ bool pmap_get_entry(
 
 		if (!pmap_table_alloc(&table_physical)) return false;
 
-		*directory_entry = table_physical | PTE_PRESENT | PTE_WRITE | (user_tables ? PTE_USER : 0U);
+		pmap_entry_store(directory_entry, table_physical | PTE_PRESENT | PTE_WRITE | (user_tables ? PTE_USER : 0U));
 
 		if (table_count != 0) (*table_count)++;
 	} else if ((*directory_entry & PTE_LARGE) != 0U) {
 		return false;
 	}
 
-	uint32_t *table = pmap_table_pointer(*directory_entry & PTE_FRAME);
+	pmap_entry_t *table = pmap_table_pointer(*directory_entry & PTE_FRAME);
 
 	*entry = &table[pmap_table_index(virtual_address)];
 	return true;
 }
 
-/* Fill the 4 KiB table for kernel PDE `slot` (a 4 MiB slice of the direct map). */
-static void pmap_fill_image_table(uint32_t *table, uint32_t slice)
+/* Fill the 4 KiB table for kernel PDE `slot` (a 2 MiB slice of the direct map). */
+static void pmap_fill_image_table(pmap_entry_t *table, uint32_t slice)
 {
 	for (uint32_t page = 0U; page < PMAP_TABLE_ENTRIES; page++) {
 		uint32_t physical = slice * PMAP_LARGE_PAGE_SIZE + page * PMAP_PAGE_SIZE;
 		uintptr_t virtual_address = (uintptr_t)physical + VMM_HIGHER_HALF_BASE;
-		uint32_t flags = PTE_PRESENT | PTE_WRITE;
+		pmap_entry_t flags = PTE_PRESENT | PTE_WRITE | pmap_data_flags();
 
 		/* Boot stub, text and rodata: read-only (CR0.WP enforces it in ring 0). */
-		if (virtual_address >= (uintptr_t)__kernel_start && virtual_address < (uintptr_t)__data_start) flags &= ~PTE_WRITE;
+		if (virtual_address >= (uintptr_t)__kernel_start && virtual_address < (uintptr_t)__data_start) flags &= ~((pmap_entry_t)PTE_WRITE);
 
+		if (virtual_address >= (uintptr_t)__text_start && virtual_address < (uintptr_t)__text_end)
+			flags = (flags & ~PTE_NX) | PTE_SOFTWARE_EXEC;
 		table[page] = physical | flags;
 
 		/* The page below the boot stack stays unmapped (see start.S). */
@@ -217,14 +274,14 @@ bool pmap_init(void)
 {
 	if (g_pmap.initialized) return false;
 
-	if ((pmap_read_cr0() & PMAP_CR0_PG) == 0U || (pmap_read_cr0() & PMAP_CR0_WP) == 0U || (pmap_read_cr4() & PMAP_CR4_PSE) == 0U) {
-		kputln("pmap_init: paging, write protect or PSE is not enabled");
+	if (!pmap_cpu_protection_valid()) {
+		kputln("pmap_init: paging, write protect or PAE is not enabled");
 		return false;
 	}
 
-	uint32_t *directory = i386_boot_pd;
+	pmap_entry_t *directory = i386_boot_pd;
 
-	g_pmap.directory_physical = (uint32_t)((uintptr_t)directory - VMM_HIGHER_HALF_BASE);
+	g_pmap.directory_physical = (uint32_t)((uintptr_t)i386_boot_pdpt - VMM_HIGHER_HALF_BASE);
 
 	if (pmap_current_directory_physical() != g_pmap.directory_physical) {
 		kputln("pmap_init: CR3 is not the boot page directory");
@@ -252,10 +309,15 @@ bool pmap_init(void)
 
 		pmap_fill_image_table(pmap_table_pointer(table_physical), slice);
 
-		/* The table maps exactly what the 4 MiB page did, so swapping it in is safe. */
+		/* The table maps exactly what the 2 MiB page did, so swapping it in is safe. */
 		directory[PMAP_KERNEL_FIRST_PDE + slice] = table_physical | PTE_PRESENT | PTE_WRITE;
 		g_pmap.table_count++;
 	}
+
+	/* RAM outside the image is data, never an instruction source. */
+	for (uint32_t slice = image_slices; slice < PMAP_DIRECT_MAP_PDES; slice++)
+		pmap_entry_store(&directory[PMAP_KERNEL_FIRST_PDE + slice],
+			directory[PMAP_KERNEL_FIRST_PDE + slice] | pmap_data_flags());
 
 	/* Every other kernel PDE is final too: pre-allocate the arena and MMIO tables. */
 	for (uint32_t index = 0U; index < PMAP_ARENA_PDES; index++) {
@@ -343,17 +405,17 @@ bool pmap_map_mmio(uint64_t physical_address, uint64_t size, void **virtual_addr
 
 	if (!found) return false;
 
-	uint32_t *directory = pmap_kernel_directory();
+	pmap_entry_t *directory = pmap_kernel_directory();
 
 	for (uint32_t index = 0U; index < reserved; index++) pmap_mmio_set_bit(run_start + index, true);
 
 	for (uint32_t index = 0U; index < pages; index++) {
 		uint32_t page_address = VM_MMIO_BASE + (run_start + index) * PMAP_PAGE_SIZE;
-		uint32_t *entry;
+		pmap_entry_t *entry;
 
 		if (!pmap_get_entry(directory, page_address, false, false, 0, &entry)) return false;
 
-		*entry = ((uint32_t)(physical_address & PTE_FRAME) + index * PMAP_PAGE_SIZE) | PTE_PRESENT | PTE_WRITE | PTE_CACHE_DISABLE | PTE_WRITE_THROUGH;
+		pmap_entry_store(entry, ((uint32_t)(physical_address & PTE_FRAME) + index * PMAP_PAGE_SIZE) | PTE_PRESENT | PTE_WRITE | PTE_CACHE_DISABLE | PTE_WRITE_THROUGH | pmap_data_flags());
 		pmap_invalidate_page(page_address);
 	}
 
@@ -379,14 +441,14 @@ bool pmap_unmap_mmio(void *virtual_address, uint64_t size)
 		if (!pmap_mmio_bit(first + index)) return false;
 	}
 
-	uint32_t *directory = pmap_kernel_directory();
+	pmap_entry_t *directory = pmap_kernel_directory();
 
 	for (uint32_t index = 0U; index < pages; index++) {
 		uint32_t page_address = VM_MMIO_BASE + (first + index) * PMAP_PAGE_SIZE;
-		uint32_t *entry;
+		pmap_entry_t *entry;
 
 		if (pmap_get_entry(directory, page_address, false, false, 0, &entry)) {
-			*entry = 0U;
+			pmap_entry_store(entry, 0U);
 			pmap_invalidate_page(page_address);
 		}
 	}
@@ -411,6 +473,8 @@ uint32_t pmap_mmio_pages_in_use(void)
 
 void pmap_dump(void)
 {
+	kprintf("pmap: PAE enabled, NX %s, root pages %u\n",
+		pmap_nx_enabled() ? "enabled" : "unavailable", PMAP_ROOT_PAGES);
 	kprintf(
 		"pmap: kernel directory phys 0x%x, %u kernel table page(s), mmio window 0x%x-0x%x, %u page(s) in use\n",
 		pmap_kernel_directory_physical(),

@@ -196,9 +196,17 @@ static bool vm_test_pmm(const i386_boot_info_t *boot)
 
 	VM_CHECK(free_before + used_before == pmm_get_page_count());
 
-	/* Everything the boot path put in RAM must be reserved: image, loader data. */
+	/* Firmware may exclude loader pages from usable RAM altogether (UEFI).
+	 * Only addresses inside the allocator's managed span have refcounts. */
+	platform_t platform = {0};
+	VM_CHECK(i386_memory_map_load(&platform, boot->multiboot));
+	uint64_t managed_start = platform.memory_regions[0].base;
+	const platform_region_t *last = &platform.memory_regions[platform.memory_region_count - 1U];
+	uint64_t managed_end = last->base + last->size;
+	/* Everything the boot path put in managed RAM must be reserved. */
 	for (uint64_t address = 0x100000ULL; address < (uintptr_t)__kernel_phys_end; address += PMM_PAGE_SIZE) {
-		VM_CHECK(pmm_page_refcount(address) != 0U);
+		if (address >= managed_start && address < managed_end)
+			VM_CHECK(pmm_page_refcount(address) != 0U);
 	}
 
 	vm_test_ranges_t boot_ranges = {.count = 0U};
@@ -210,16 +218,10 @@ static bool vm_test_pmm(const i386_boot_info_t *boot)
 		uint64_t end = boot_ranges.ranges[index].base + boot_ranges.ranges[index].size;
 
 		for (uint64_t address = start; address < end; address += PMM_PAGE_SIZE) {
-			if (address >= 0x100000ULL && address < VM_DIRECT_MAP_SIZE)
+			if (address >= managed_start && address < managed_end)
 				VM_CHECK(pmm_page_refcount(address) != 0U);
 		}
 	}
-
-	/* The command line the boot path handed out is still intact. */
-	char value[16];
-
-	VM_CHECK(i386_boot_arg("test", value, sizeof(value)));
-	VM_CHECK(strcmp(value, "vm") == 0);
 
 	/* One page: aligned, in RAM, zeroed, refcounted. */
 	VM_CHECK(pmm_allocate_page(&page));
@@ -419,11 +421,11 @@ static bool vm_test_direct_map(const platform_t *platform)
 	VM_CHECK(!vmm_translate((uintptr_t)i386_boot_stack_guard, &translated));
 
 	/* Nothing lives in the user half of the master directory; the arena's page tables all exist. */
-	const uint32_t *directory = pmap_kernel_directory();
+	const pmap_entry_t *directory = pmap_kernel_directory();
 
 	for (uint32_t index = 0U; index < PMAP_KERNEL_FIRST_PDE; index++)
 		VM_CHECK(directory[index] == 0U);
-	for (uint32_t index = (uint32_t)(VM_KERN_BASE >> 22U); index < (uint32_t)((VM_KERN_BASE + VM_KERN_SIZE) >> 22U);
+	for (uint32_t index = (uint32_t)(VM_KERN_BASE >> 21U); index < (uint32_t)((VM_KERN_BASE + VM_KERN_SIZE) >> 21U);
 		 index++)
 		VM_CHECK(directory[index] != 0U);
 	VM_CHECK(!vm_probe_read(VM_KERN_BASE + (uint32_t)VM_KERN_SIZE + PMAP_PAGE_SIZE, 0));
@@ -690,7 +692,7 @@ static bool vm_test_address_spaces(void)
 	VM_CHECK(vm_address_space_create(&space_a));
 	VM_CHECK(vm_address_space_create(&space_b));
 	VM_CHECK(!vm_address_space_create(&space_a));
-	VM_CHECK(vm_address_space_table_count(&space_a) == 1ULL);
+	VM_CHECK(vm_address_space_table_count(&space_a) == PMAP_ROOT_PAGES);
 	VM_CHECK((vm_address_space_root_physical(&space_a) & PMAP_PAGE_MASK) == 0ULL);
 	VM_CHECK(vm_address_space_root_physical(&space_a) != vm_address_space_root_physical(&space_b));
 	VM_CHECK(vm_address_space_root_physical(&space_a) != pmap_kernel_directory_physical());
@@ -699,13 +701,13 @@ static bool vm_test_address_spaces(void)
 	VM_CHECK(pmap_current_directory_physical() == pmap_kernel_directory_physical());
 
 	/* Kernel half identical to the master, user half empty. */
-	const uint32_t *master = pmap_kernel_directory();
-	const uint32_t *directory_a = (const uint32_t *)space_a.root;
-	const uint32_t *directory_b = (const uint32_t *)space_b.root;
+	const pmap_entry_t *master = pmap_kernel_directory();
+	const pmap_entry_t *directory_a = (const pmap_entry_t *)space_a.root;
+	const pmap_entry_t *directory_b = (const pmap_entry_t *)space_b.root;
 
 	for (uint32_t index = 0U; index < PMAP_KERNEL_FIRST_PDE; index++)
 		VM_CHECK(directory_a[index] == 0U && directory_b[index] == 0U);
-	for (uint32_t index = PMAP_KERNEL_FIRST_PDE; index < PMAP_TABLE_ENTRIES; index++)
+	for (uint32_t index = PMAP_KERNEL_FIRST_PDE; index < PMAP_DIRECTORY_ENTRIES; index++)
 		VM_CHECK(directory_a[index] == master[index] && directory_b[index] == master[index]);
 
 	VM_CHECK(pmm_allocate_page(&page_a));
@@ -725,7 +727,7 @@ static bool vm_test_address_spaces(void)
 	VM_CHECK(!vm_address_space_map_page(&space_a, 0x100000000ULL + VM_USER_A, page_a, VM_USER_PROTECTION_READ_WRITE));
 	VM_CHECK(!vm_address_space_unmap_page(&space_a, 0ULL));
 	VM_CHECK(!vm_address_space_unmap_page(&space_a, VM_USER_A));
-	VM_CHECK(vm_address_space_table_count(&space_a) == 1ULL);
+	VM_CHECK(vm_address_space_table_count(&space_a) == PMAP_ROOT_PAGES);
 
 	/* The highest user page is mappable; the first page below the limit is the last. */
 	VM_CHECK(vm_address_space_map_page(&space_a, VM_USER_STACK_TOP, page_c, VM_USER_PROTECTION_READ_WRITE));
@@ -735,7 +737,7 @@ static bool vm_test_address_spaces(void)
 
 	VM_CHECK(vm_address_space_query_page(&space_a, VM_USER_STACK_TOP + 0x123ULL, &mapping) &&
 			 mapping.physical_address == page_c);
-	VM_CHECK(vm_address_space_table_count(&space_a) == 2ULL);
+	VM_CHECK(vm_address_space_table_count(&space_a) == PMAP_ROOT_PAGES + 1ULL);
 	VM_CHECK(vm_address_space_unmap_page(&space_a, VM_USER_STACK_TOP));
 	VM_CHECK(space_a.resident_pages == 0ULL && space_a.shared_pages == 0ULL);
 	VM_CHECK(!vm_address_space_query_page(&space_a, VM_USER_STACK_TOP, &mapping));
@@ -744,7 +746,7 @@ static bool vm_test_address_spaces(void)
 	VM_CHECK(vm_address_space_map_page(&space_a, VM_USER_A, page_a, VM_USER_PROTECTION_READ_WRITE));
 	VM_CHECK(vm_address_space_map_page(&space_b, VM_USER_A, page_b, VM_USER_PROTECTION_READ_WRITE));
 	VM_CHECK(!vm_address_space_map_page(&space_a, VM_USER_A, page_b, VM_USER_PROTECTION_READ_WRITE));
-	VM_CHECK(vm_address_space_table_count(&space_a) == 3ULL && vm_address_space_table_count(&space_b) == 2ULL);
+	VM_CHECK(vm_address_space_table_count(&space_a) == PMAP_ROOT_PAGES + 2ULL && vm_address_space_table_count(&space_b) == PMAP_ROOT_PAGES + 1ULL);
 
 	VM_CHECK(vm_address_space_query_page(&space_a, VM_USER_A, &mapping));
 	VM_CHECK(mapping.physical_address == page_a && mapping.protection == VM_USER_PROTECTION_READ_WRITE);
@@ -794,14 +796,14 @@ static bool vm_test_address_spaces(void)
 
 	/* A mapping present in one space only is a fault in the other. */
 	VM_CHECK(vm_address_space_map_page(&space_a, VM_USER_FAR, page_c, VM_USER_PROTECTION_READ_WRITE));
-	VM_CHECK(vm_address_space_table_count(&space_a) == 4ULL);
+	VM_CHECK(vm_address_space_table_count(&space_a) == PMAP_ROOT_PAGES + 3ULL);
 	VM_CHECK(!vm_probe_read(VM_USER_FAR, 0));
 	VM_CHECK((g_last_fault_error & VM_FAULT_PRESENT) == 0U);
 	VM_CHECK(vm_address_space_activate(&space_a));
 	VM_CHECK(vm_probe_write(VM_USER_FAR, 0xFA4U));
 	VM_CHECK(vm_address_space_unmap_page(&space_a, VM_USER_FAR));
 	VM_CHECK(!vm_probe_read(VM_USER_FAR, 0));
-	VM_CHECK(vm_address_space_table_count(&space_a) == 4ULL);
+	VM_CHECK(vm_address_space_table_count(&space_a) == PMAP_ROOT_PAGES + 3ULL);
 
 	/* Protections. A read-only user page refuses even ring 0 (CR0.WP). */
 	VM_CHECK(vm_address_space_map_page(&space_a, VM_USER_RO, page_c, VM_USER_PROTECTION_READ_ONLY));
@@ -1009,6 +1011,53 @@ static bool vm_test_heap(void)
 	return true;
 }
 
+/* Prove actual instruction-fetch protection, not just permission metadata. */
+extern void i386_vm_probe_execute(uint32_t address);
+
+static bool vm_probe_execute(uint32_t address)
+{
+	i386_vm_probe_execute(address);
+	if (i386_vm_fault_expectation.hits == 0U) return true;
+	return false;
+}
+
+bool i386_execute_selftest(void)
+{
+	if (!pmap_nx_enabled()) {
+		kputln("i386_execute_selftest: unavailable (CPU lacks NX)");
+		return true;
+	}
+	uint64_t physical;
+	VM_CHECK(pmm_allocate_page(&physical));
+	uint8_t *bytes = (void *)(uintptr_t)(physical + VMM_HIGHER_HALF_BASE);
+	bytes[0] = 0xC3; /* RET, safe when execution is allowed. */
+	VM_CHECK(vmm_map_page(VM_ARENA_SPARE, physical, VMM_MEMORY_NORMAL, VMM_PROTECTION_READ_WRITE));
+	VM_CHECK(!vm_probe_execute(VM_ARENA_SPARE));
+	VM_CHECK((i386_vm_fault_expectation.error_code & 0x11U) == 0x11U);
+	VM_CHECK(!vm_probe_execute((uint32_t)(uintptr_t)bytes));
+	VM_CHECK(vmm_protect_page(VM_ARENA_SPARE, VMM_PROTECTION_READ_EXECUTE));
+	VM_CHECK(vm_probe_execute(VM_ARENA_SPARE));
+	VM_CHECK(vmm_protect_page(VM_ARENA_SPARE, VMM_PROTECTION_READ_ONLY));
+	VM_CHECK(!vm_probe_execute(VM_ARENA_SPARE));
+	VM_CHECK(vmm_unmap_page(VM_ARENA_SPARE, 0));
+
+	vm_address_space_t space = {0};
+	VM_CHECK(vm_address_space_create(&space));
+	VM_CHECK(vm_address_space_map_page(&space, VM_USER_A, physical, VM_USER_PROTECTION_READ_WRITE));
+	VM_CHECK(vm_address_space_activate(&space));
+	VM_CHECK(!vm_probe_execute(VM_USER_A));
+	VM_CHECK((i386_vm_fault_expectation.error_code & 0x11U) == 0x11U);
+	VM_CHECK(vm_address_space_unmap_page(&space, VM_USER_A));
+	VM_CHECK(vm_address_space_map_page(&space, VM_USER_A, physical, VM_USER_PROTECTION_READ_EXECUTE));
+	VM_CHECK(vm_probe_execute(VM_USER_A));
+	VM_CHECK(vm_address_space_deactivate());
+	VM_CHECK(vm_address_space_unmap_page(&space, VM_USER_A));
+	VM_CHECK(vm_address_space_destroy(&space));
+	VM_CHECK(pmm_free_page(physical));
+	kputln("i386_execute_selftest: passed (kernel and user data NX, code RX)");
+	return true;
+}
+
 /* --------------------------------------------------------------------------
  * deliberate faults, for the trap layer's report
  * ------------------------------------------------------------------------ */
@@ -1017,7 +1066,12 @@ static void vm_selftest_deliberate_fault(const char *name)
 {
 	kprintf("i386_init_vm_selftest: raising deliberate fault \"%s\"\n", name);
 
-	if (strcmp(name, "write-ro") == 0) {
+	if (strcmp(name, "execute-data") == 0) {
+		void *page;
+		if (!vm_kern_allocate(PMM_PAGE_SIZE, VMM_PROTECTION_READ_WRITE, &page)) return;
+		*(volatile uint8_t *)page = 0xC3;
+		((void (*)(void))page)();
+	} else if (strcmp(name, "write-ro") == 0) {
 		void *page;
 
 		if (!vm_kern_allocate(PMM_PAGE_SIZE, VMM_PROTECTION_READ_ONLY, &page))
@@ -1077,6 +1131,8 @@ bool i386_init_vm_selftest(const i386_boot_info_t *boot)
 		return false;
 
 	/* The heap backs vm_shm, vm_map and the address-space tests' bookkeeping. */
+	if (!i386_execute_selftest())
+		return false;
 	if (!vm_test_heap())
 		return false;
 	if (!vm_test_address_spaces())

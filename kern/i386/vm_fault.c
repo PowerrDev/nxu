@@ -44,9 +44,9 @@ const char *i386_vm_region_name(uint32_t address)
 static void vm_fault_describe_tables(uint32_t address)
 {
 	uint32_t cr3 = pmap_current_directory_physical();
-	uint32_t directory_entry = pmap_table_pointer(cr3)[pmap_directory_index(address)];
+	pmap_entry_t directory_entry = pmap_directory_from_root(cr3)[pmap_directory_index(address)];
 
-	kprintf("i386_trap_page_fault: cr3 0x%x, pde 0x%x", cr3, directory_entry);
+	kprintf("i386_trap_page_fault: cr3 0x%x, pde 0x%llx", cr3, (unsigned long long)directory_entry);
 
 	if ((directory_entry & PTE_PRESENT) == 0U) {
 		kputln(" (page table absent)");
@@ -54,13 +54,13 @@ static void vm_fault_describe_tables(uint32_t address)
 	}
 
 	if ((directory_entry & PTE_LARGE) != 0U) {
-		kputln(" (4 MiB page)");
+		kputln(" (2 MiB page)");
 		return;
 	}
 
-	uint32_t entry = pmap_table_pointer(directory_entry & PTE_FRAME)[pmap_table_index(address)];
+	pmap_entry_t entry = pmap_table_pointer(directory_entry & PTE_FRAME)[pmap_table_index(address)];
 
-	kprintf(", pte 0x%x", entry);
+	kprintf(", pte 0x%llx", (unsigned long long)entry);
 
 	if ((entry & PTE_PRESENT) == 0U) {
 		kputln(" (page not present)");

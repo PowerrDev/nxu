@@ -7,21 +7,16 @@
  * i386 implementation of vm/address_space.h: per-task user address spaces.
  * The arm64 implementation (vm/address_space.c) is not built for i386.
  *
- * An address space is one page directory (a single pmm page). Its user half,
- * PDEs 0..767, is private and filled with page tables allocated from pmm on
- * demand; its kernel half, PDEs 768..1023, is a copy of the master kernel
- * directory made at creation. That copy stays correct forever because the
- * kernel PDEs are final once pmap_init() has run (see pmap.h): later kernel
- * mappings only change leaf entries of page tables both directories share.
+ * Each space owns four contiguous 512-entry directories plus a PDPT page.
+ * The flattened directory's entries 1536..2047 copy the final master kernel
+ * PDEs, pointing to shared leaf tables. CR3 names the PDPT, not a directory.
  *
  * Activation loads CR3. Mapping changes to the active space are followed by
  * invlpg; changes to an inactive space need no invalidation, because loading
  * CR3 flushes everything non-global (no page is global here).
  *
- * User pages carry PTE_USER. There is no NX bit: VM_USER_PROTECTION_READ_ONLY
- * and VM_USER_PROTECTION_READ_EXECUTE both become a read-only user page, and
- * the requested distinction is remembered in PTE_SOFTWARE_EXEC so queries
- * (the ELF loader checks the entry page is READ_EXECUTE) report it back.
+ * User data pages carry PTE_USER and hardware NX when supported; code pages
+ * are read-only/executable. PTE_SOFTWARE_EXEC preserves queries without NX.
  * Ring 0 honours read-only pages too: CR0.WP is set.
  *
  * The first page is never mappable (null guard) and nothing at or above
@@ -77,9 +72,9 @@ static void vm_space_leave(vm_address_space_t *space, uint32_t cpu)
 	__atomic_store_n(&space->active, !cpuset_empty(&space->active_cpus), __ATOMIC_RELEASE);
 }
 
-static bool vm_user_entry_flags(vm_user_protection_t protection, uint32_t *flags)
+static bool vm_user_entry_flags(vm_user_protection_t protection, pmap_entry_t *flags)
 {
-	uint32_t value = PTE_PRESENT | PTE_USER;
+	pmap_entry_t value = PTE_PRESENT | PTE_USER | pmap_data_flags();
 
 	switch (protection) {
 	case VM_USER_PROTECTION_READ_WRITE:
@@ -90,7 +85,7 @@ static bool vm_user_entry_flags(vm_user_protection_t protection, uint32_t *flags
 		break;
 
 	case VM_USER_PROTECTION_READ_EXECUTE:
-		value |= PTE_SOFTWARE_EXEC;
+		value = (value & ~PTE_NX) | PTE_SOFTWARE_EXEC;
 		break;
 
 	default:
@@ -101,7 +96,7 @@ static bool vm_user_entry_flags(vm_user_protection_t protection, uint32_t *flags
 	return true;
 }
 
-static bool vm_user_entry_protection(uint32_t entry, vm_user_protection_t *protection)
+static bool vm_user_entry_protection(pmap_entry_t entry, vm_user_protection_t *protection)
 {
 	if ((entry & (PTE_PRESENT | PTE_USER)) != (PTE_PRESENT | PTE_USER))
 		return false;
@@ -137,12 +132,12 @@ static bool vm_address_space_translate(const vm_address_space_t *space, uint64_t
 	}
 
 	uint32_t address = (uint32_t)virtual_address;
-	uint32_t directory_entry = ((const uint32_t *)space->root)[pmap_directory_index(address)];
+	pmap_entry_t directory_entry = pmap_entry_load(&((const pmap_entry_t *)space->root)[pmap_directory_index(address)]);
 
 	if ((directory_entry & (PTE_PRESENT | PTE_USER)) != (PTE_PRESENT | PTE_USER) || (directory_entry & PTE_LARGE) != 0U)
 		return false;
 
-	uint32_t entry = pmap_table_pointer(directory_entry & PTE_FRAME)[pmap_table_index(address)];
+	pmap_entry_t entry = pmap_entry_load(&pmap_table_pointer(directory_entry & PTE_FRAME)[pmap_table_index(address)]);
 
 	if ((entry & (PTE_PRESENT | PTE_USER)) != (PTE_PRESENT | PTE_USER))
 		return false;
@@ -169,18 +164,18 @@ bool vm_address_space_create(vm_address_space_t *space)
 
 	uint32_t directory_physical;
 
-	if (!pmap_table_alloc(&directory_physical))
+	pmap_entry_t *directory;
+	if (!pmap_root_alloc(&directory, &directory_physical))
 		return false;
 
-	uint32_t *directory = pmap_table_pointer(directory_physical);
-	const uint32_t *master = pmap_kernel_directory();
+	const pmap_entry_t *master = pmap_kernel_directory();
 
-	for (uint32_t index = PMAP_KERNEL_FIRST_PDE; index < PMAP_TABLE_ENTRIES; index++)
+	for (uint32_t index = PMAP_KERNEL_FIRST_PDE; index < PMAP_DIRECTORY_ENTRIES; index++)
 		directory[index] = master[index];
 
 	space->root = (uint64_t *)directory;
 	space->root_physical = directory_physical;
-	space->table_count = 1ULL;
+	space->table_count = PMAP_ROOT_PAGES;
 
 	return true;
 }
@@ -303,7 +298,7 @@ static bool vm_stats_shm_address(uint64_t address)
 bool vm_address_space_map_page(vm_address_space_t *space, uint64_t virtual_address, uint64_t physical_address,
 							   vm_user_protection_t protection)
 {
-	uint32_t flags;
+	pmap_entry_t flags;
 
 	if (space == 0 || space->root == 0 || !vm_user_page_valid(virtual_address) ||
 		!vm_user_physical_valid(physical_address) || !vm_user_entry_flags(protection, &flags)) {
@@ -312,9 +307,9 @@ bool vm_address_space_map_page(vm_address_space_t *space, uint64_t virtual_addre
 
 	nxu_spin_lock(&space->lock);
 
-	uint32_t *entry;
+	pmap_entry_t *entry;
 
-	if (!pmap_get_entry((uint32_t *)space->root, (uint32_t)virtual_address, true, true, &space->table_count, &entry)) {
+	if (!pmap_get_entry((pmap_entry_t *)space->root, (uint32_t)virtual_address, true, true, &space->table_count, &entry)) {
 		nxu_spin_unlock(&space->lock);
 		return false;
 	}
@@ -324,7 +319,7 @@ bool vm_address_space_map_page(vm_address_space_t *space, uint64_t virtual_addre
 		return false;
 	}
 
-	*entry = (uint32_t)physical_address | flags;
+	pmap_entry_store(entry, (uint32_t)physical_address | flags);
 	space->resident_pages++;
 	if (vm_stats_shm_address(virtual_address))
 		space->shared_pages++;
@@ -345,15 +340,15 @@ bool vm_address_space_unmap_page(vm_address_space_t *space, uint64_t virtual_add
 
 	nxu_spin_lock(&space->lock);
 
-	uint32_t *entry;
+	pmap_entry_t *entry;
 
-	if (!pmap_get_entry((uint32_t *)space->root, (uint32_t)virtual_address, false, true, 0, &entry) ||
+	if (!pmap_get_entry((pmap_entry_t *)space->root, (uint32_t)virtual_address, false, true, 0, &entry) ||
 		(*entry & PTE_PRESENT) == 0U) {
 		nxu_spin_unlock(&space->lock);
 		return false;
 	}
 
-	*entry = 0U;
+	pmap_entry_store(entry, 0U);
 	space->resident_pages--;
 	if (vm_stats_shm_address(virtual_address))
 		space->shared_pages--;
@@ -373,13 +368,13 @@ bool vm_address_space_restrict_page(vm_address_space_t *space, uint64_t address)
 		return false;
 
 	nxu_spin_lock(&space->lock);
-	uint32_t *entry;
+	pmap_entry_t *entry;
 	vm_user_protection_t protection;
-	bool ok = pmap_get_entry((uint32_t *)space->root, (uint32_t)address, false, true, 0, &entry) &&
+	bool ok = pmap_get_entry((pmap_entry_t *)space->root, (uint32_t)address, false, true, 0, &entry) &&
 			  vm_user_entry_protection(*entry, &protection) && protection != VM_USER_PROTECTION_READ_EXECUTE;
 
 	if (ok) {
-		*entry &= ~PTE_WRITE;
+		pmap_entry_store(entry, pmap_entry_load(entry) & ~((pmap_entry_t)PTE_WRITE));
 		if (space == vm_space_local())
 			pmap_invalidate_page((uint32_t)address);
 	}
@@ -401,14 +396,14 @@ bool vm_address_space_query_page(const vm_address_space_t *space, uint64_t virtu
 
 	nxu_spin_lock(lock);
 
-	uint32_t *entry;
+	pmap_entry_t *entry;
 
-	if (!pmap_get_entry((uint32_t *)space->root, (uint32_t)virtual_address, false, true, 0, &entry)) {
+	if (!pmap_get_entry((pmap_entry_t *)space->root, (uint32_t)virtual_address, false, true, 0, &entry)) {
 		nxu_spin_unlock(lock);
 		return false;
 	}
 
-	uint32_t value = *entry;
+	pmap_entry_t value = pmap_entry_load(entry);
 
 	nxu_spin_unlock(lock);
 
@@ -453,7 +448,7 @@ uint64_t vm_address_space_release_pages(vm_address_space_t *space)
 	if (space == 0 || space->root == 0)
 		return 0ULL;
 
-	uint32_t *directory = (uint32_t *)space->root;
+	pmap_entry_t *directory = (pmap_entry_t *)space->root;
 	uint64_t released = 0ULL;
 
 	nxu_spin_lock(&space->lock);
@@ -462,14 +457,14 @@ uint64_t vm_address_space_release_pages(vm_address_space_t *space)
 		if ((directory[index] & PTE_PRESENT) == 0U)
 			continue;
 
-		uint32_t *table = pmap_table_pointer(directory[index] & PTE_FRAME);
+		pmap_entry_t *table = pmap_table_pointer(directory[index] & PTE_FRAME);
 
 		for (uint32_t slot = 0U; slot < PMAP_TABLE_ENTRIES; slot++) {
 			if ((table[slot] & PTE_PRESENT) == 0U)
 				continue;
 
 			(void)pmm_free_page(table[slot] & PTE_FRAME);
-			table[slot] = 0U;
+			pmap_entry_store(&table[slot], 0ULL);
 			released++;
 		}
 	}
@@ -497,14 +492,14 @@ bool vm_address_space_destroy(vm_address_space_t *space)
 	if (!cpuset_empty(&space->active_cpus) && !vm_address_space_quiesce(space))
 		return false;
 
-	uint32_t *directory = (uint32_t *)space->root;
+	pmap_entry_t *directory = (pmap_entry_t *)space->root;
 
 	for (uint32_t index = 0U; index < PMAP_KERNEL_FIRST_PDE; index++) {
 		if ((directory[index] & PTE_PRESENT) != 0U)
 			pmap_table_free(directory[index] & PTE_FRAME);
 	}
 
-	pmap_table_free((uint32_t)space->root_physical);
+	pmap_root_free((uint32_t)space->root_physical);
 
 	memset(space, 0, sizeof(*space));
 	return true;

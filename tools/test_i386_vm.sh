@@ -29,7 +29,7 @@ run_case() {
 	local attempt
 	for attempt in 1 2; do
 		output=$(perl "$(dirname "$0")/qemu_watchdog.pl" "$TIMEOUT" qemu-system-i386 \
-			-kernel "$KERNEL" -m "$ram" \
+			-cpu qemu32,+nx -kernel "$KERNEL" -m "$ram" \
 			-display none -serial stdio -monitor none -no-reboot \
 			-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
 			-append "$append" 2>&1)
@@ -99,6 +99,12 @@ run_case ram-1G 1024M "test=vm qemu-exit=1" $STATUS_CLEAN \
 	"i386_init: vm self-test passed"
 
 # Deliberate faults: the report names the access, the region and the cause.
+run_case fault-execute-data 512M "test=vm vm-fault=execute-data qemu-exit=1" $STATUS_PANIC \
+	"hardware execute protection enabled (PAE + NX)" \
+	"i386_execute_selftest: passed" \
+	"cause: instruction fetch of 0xe8000000 by kernel code: protection violation" \
+	"panic: halting"
+
 run_case fault-write-ro 512M "test=vm vm-fault=write-ro qemu-exit=1" $STATUS_PANIC \
 	"i386_init_vm_selftest: all checks passed" \
 	"i386_trap_page_fault: unresolved fault at 0xe" \

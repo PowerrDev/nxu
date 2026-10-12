@@ -32,3 +32,5 @@ I386_C_SOURCES += \
 test-i386-vm: $(I386_KERNEL)
 
 	tools/test_i386_vm.sh $(I386_KERNEL)
+
+I386_ASM_SOURCES += kern/i386/vm_probe.S

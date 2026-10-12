@@ -2,35 +2,10 @@
  * Copyright (c) 2026 NXU Project. All rights reserved.
  */
 /*
- * File:        kern/i386/pmap.h
- *
- * i386 page-table primitives, in the role XNU's pmap plays: the one place
- * that knows the hardware paging format (classic two-level, 4 KiB pages, no
- * PAE, no NX). vmm_i386.c (kernel mappings) and address_space_i386.c (user
- * address spaces) are written on top of it.
- *
- * Structure of the kernel half
- * ----------------------------
- * start.S builds one page directory, i386_boot_pd, out of 4 MiB pages: the
- * direct map of physical [0, VM_DIRECT_MAP_SIZE) at VMM_HIGHER_HALF_BASE.
- * That directory stays the master kernel page directory. pmap_init() refines
- * it in place, once, before any user address space exists:
- *
- *   PDE 768..927   direct map, 4 MiB pages, except the ones covering the
- *                  kernel image, which get 4 KiB page tables so text and
- *                  rodata can be read-only;
- *   PDE 928..991   page tables for the vm_kern arena, pre-allocated;
- *   PDE 992..1023  page tables for the MMIO window, pre-allocated.
- *
- * Every kernel PDE is final after pmap_init(): later kernel mappings only
- * ever fill leaf entries of tables that already exist. That is what lets a
- * new address space copy PDEs 768..1023 once at creation and stay in sync
- * with the kernel forever, with no fault-time fixups.
- *
- * Read-only versus executable: without NX, a "read-execute" page and a
- * "read-only" page are the same hardware mapping. The distinction is kept in
- * a software bit (PTE_SOFTWARE_EXEC, one of the three OS-available bits) so
- * queries report what was mapped.
+ * PAE paging: four 512-entry directories and a four-entry PDPT. Directory
+ * pointers expose a contiguous 2048-entry view, with the last 512 entries
+ * shared by every task through final kernel PDEs. CR3 names the PDPT.
+ * PAE is required; hardware NX is enabled when CPUID advertises it.
  */
 
 #ifndef NXU_KERN_I386_PMAP_H
@@ -45,12 +20,14 @@
 
 #define PMAP_PAGE_SIZE 0x1000U
 #define PMAP_PAGE_MASK 0x0FFFU
-#define PMAP_LARGE_PAGE_SIZE 0x00400000U
-#define PMAP_TABLE_ENTRIES 1024U
+#define PMAP_LARGE_PAGE_SIZE 0x00200000U
+#define PMAP_TABLE_ENTRIES 512U
+#define PMAP_DIRECTORY_ENTRIES 2048U
+#define PMAP_ROOT_PAGES 5U
 
 /* Directory entry that maps VMM_HIGHER_HALF_BASE: PDEs below are user space. */
-#define PMAP_KERNEL_FIRST_PDE (VMM_HIGHER_HALF_BASE >> 22U)
-#define PMAP_DIRECT_MAP_PDES (VM_DIRECT_MAP_SIZE >> 22U)
+#define PMAP_KERNEL_FIRST_PDE (VMM_HIGHER_HALF_BASE >> 21U)
+#define PMAP_DIRECT_MAP_PDES (VM_DIRECT_MAP_SIZE >> 21U)
 
 /* Hardware bits, identical in page-directory and page-table entries. */
 #define PTE_PRESENT 0x001U
@@ -66,7 +43,28 @@
 /* Bits 9..11 are ignored by the MMU. */
 #define PTE_SOFTWARE_EXEC 0x200U
 
-#define PTE_FRAME 0xFFFFF000U
+#define PTE_FRAME 0xFFFFF000ULL
+#define PTE_NX (1ULL << 63U)
+#define PMAP_CR4_PAE 0x00000020U
+typedef uint64_t pmap_entry_t __attribute__((aligned(8)));
+
+/* Atomic stores prevent torn PAE entries while other CPUs walk shared tables. */
+static inline void pmap_entry_store(pmap_entry_t *entry, pmap_entry_t value)
+{
+	__atomic_store_n(entry, value, __ATOMIC_SEQ_CST);
+}
+static inline pmap_entry_t pmap_entry_load(const pmap_entry_t *entry)
+{
+	return __atomic_load_n(entry, __ATOMIC_SEQ_CST);
+}
+
+bool pmap_nx_enabled(void);
+bool pmap_cpu_protection_valid(void);
+pmap_entry_t pmap_data_flags(void);
+pmap_entry_t *pmap_directory_from_root(uint32_t physical);
+bool pmap_root_alloc(pmap_entry_t **directory, uint32_t *root_physical);
+void pmap_root_free(uint32_t root_physical);
+void pmap_boot_identity(bool enabled);
 
 /* CR0 / CR4 bits the VM layer relies on (start.S sets them). */
 #define PMAP_CR0_WP 0x00010000U
@@ -75,18 +73,18 @@
 
 static inline uint32_t pmap_directory_index(uint32_t virtual_address)
 {
-	return virtual_address >> 22U;
+	return virtual_address >> 21U;
 }
 
 static inline uint32_t pmap_table_index(uint32_t virtual_address)
 {
-	return (virtual_address >> 12U) & 0x3FFU;
+	return (virtual_address >> 12U) & 0x1FFU;
 }
 
 /* Direct-map pointer to a page-table page (or any page) at a physical address. */
-static inline uint32_t *pmap_table_pointer(uint32_t physical_address)
+static inline pmap_entry_t *pmap_table_pointer(uint32_t physical_address)
 {
-	return (uint32_t *)(uintptr_t)(physical_address + VMM_HIGHER_HALF_BASE);
+	return (pmap_entry_t *)(uintptr_t)(physical_address + VMM_HIGHER_HALF_BASE);
 }
 
 /*
@@ -106,7 +104,7 @@ bool pmap_init(void);
 bool pmap_initialized(void);
 
 /* The master kernel page directory: pointer, physical address, table pages. */
-uint32_t *pmap_kernel_directory(void);
+pmap_entry_t *pmap_kernel_directory(void);
 uint32_t pmap_kernel_directory_physical(void);
 uint32_t pmap_kernel_table_count(void);
 
@@ -126,15 +124,15 @@ void pmap_table_free(uint32_t physical_address);
  * With create, a missing page table is allocated (user_tables selects
  * whether its directory entry grants user access) and *table_count is
  * incremented if it is not null. Fails, leaving *entry unset, if the
- * directory entry is absent (and not created) or is a 4 MiB page.
+ * directory entry is absent (and not created) or is a 2 MiB page.
  */
 bool pmap_get_entry(
-	uint32_t *directory,
+	pmap_entry_t *directory,
 	uint32_t virtual_address,
 	bool create,
 	bool user_tables,
 	uint64_t *table_count,
-	uint32_t **entry
+	pmap_entry_t **entry
 );
 
 /*
