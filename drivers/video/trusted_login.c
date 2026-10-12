@@ -186,7 +186,8 @@ static void login_thread(void *unused)
 bool ui_service_trusted_prepare(void)
 {
 	if (tep_mailbox_link_state() == TEP_LINK_ABSENT) {
-		kputln("trusted-login: no enclave link; no login screen");
+		kputln("trusted-login: no enclave link");
+		kputln("trusted-login: no login screen");
 		return true;
 	}
 

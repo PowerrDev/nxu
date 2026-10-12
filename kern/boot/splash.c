@@ -1,6 +1,7 @@
 #include <kern/boot/splash.h>
 
-#include <kern/arm64/timer.h>
+#include <kern/machine/timer.h>
+#include <kern/machine/barrier.h>
 #include <kern/boot/splash_asset.h>
 #include <kern/console/console.h>
 #include <kern/console/font8x16.h>
@@ -633,7 +634,7 @@ static void boot_splash_replay_history(display_device_t *display)
 				animate = false;
 			} else if (step_ticks != 0ULL) {
 				uint64_t next = started + steps * step_ticks;
-				while (timer_get_ticks() < next) __asm__ volatile("yield");
+				while (timer_get_ticks() < next) ml_cpu_relax();
 			}
 		}
 	}
@@ -697,6 +698,7 @@ bool boot_splash_show(display_device_t *display)
 {
 	if (display == 0 || !display->registered || display->framebuffer == 0 || display->bytes_per_pixel != sizeof(uint32_t)) return false;
 	if (g_boot_splash_width == 0U || g_boot_splash_height == 0U || timer_get_frequency() == 0ULL) return false;
+	if (display->width < g_boot_splash_width || display->height < g_boot_splash_height) return false;
 
 	for (uint32_t y = 0U; y < display->height; y++) {
 		uint32_t *row = display->framebuffer + (uint64_t)y * display->stride;
@@ -766,7 +768,7 @@ bool boot_splash_wait(uint64_t milliseconds, boot_splash_service_t service)
 			if (!boot_splash_text_flush()) return false;
 			next_frame = now + frame_interval;
 		}
-		__asm__ volatile("yield");
+		ml_cpu_relax();
 	}
 
 	return true;
@@ -811,7 +813,7 @@ bool boot_splash_finish(void)
 		g_progress += step < remaining ? step : remaining;
 		if (!boot_splash_draw_bar()) return false;
 		uint64_t deadline = timer_get_ticks() + frame_interval;
-		while (timer_get_ticks() < deadline) __asm__ volatile("yield");
+		while (timer_get_ticks() < deadline) ml_cpu_relax();
 	}
 
 	kputln("boot_splash_finish: progress complete");
