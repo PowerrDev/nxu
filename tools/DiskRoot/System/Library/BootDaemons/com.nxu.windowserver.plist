@@ -6,7 +6,7 @@
 	<string>com.nxu.windowserver</string>
 
 	<key>Program</key>
-	<string>/disk/System/Library/CoreServices/windowserver_service</string>
+	<string>/Volumes/mainOS/System/Library/CoreServices/windowserver_service</string>
 
 	<key>RunAtLoad</key>
 	<true/>

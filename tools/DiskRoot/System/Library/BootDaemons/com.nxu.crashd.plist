@@ -4,9 +4,9 @@
 		<key>Label</key>
 		<string>com.nxu.crashd</string>
 		<key>Program</key>
-		<string>/disk/System/Library/CoreServices/crashd</string>
+		<string>/Volumes/mainOS/System/Library/CoreServices/crashd</string>
 		<key>RecoveryProgram</key>
-		<string>/disk/System/Library/CoreServices/crashd.recovery</string>
+		<string>/Volumes/mainOS/System/Library/CoreServices/crashd.recovery</string>
 		<key>RunAtLoad</key>
 		<true />
 		<key>KeepAlive</key>

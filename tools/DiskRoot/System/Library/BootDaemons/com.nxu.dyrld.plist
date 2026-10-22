@@ -4,7 +4,7 @@
 		<key>Label</key>
 		<string>com.nxu.dyrld</string>
 		<key>Program</key>
-		<string>/disk/System/Library/CoreServices/dyrld</string>
+		<string>/Volumes/mainOS/System/Library/CoreServices/dyrld</string>
 		<key>RunAtLoad</key>
 		<true />
 		<key>KeepAlive</key>

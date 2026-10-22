@@ -6,10 +6,10 @@
 	<string>com.nxu.logd</string>
 
 	<key>Program</key>
-	<string>/disk/System/Library/CoreServices/logd</string>
+	<string>/Volumes/mainOS/System/Library/CoreServices/logd</string>
 
 	<key>RecoveryProgram</key>
-	<string>/disk/System/Library/CoreServices/logd.recovery</string>
+	<string>/Volumes/mainOS/System/Library/CoreServices/logd.recovery</string>
 
 	<key>RunAtLoad</key>
 	<true/>

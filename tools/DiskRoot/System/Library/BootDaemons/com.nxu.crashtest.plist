@@ -4,7 +4,7 @@
 		<key>Label</key>
 		<string>com.nxu.crashtest</string>
 		<key>Program</key>
-		<string>/disk/System/Library/CoreServices/crashtest</string>
+		<string>/Volumes/mainOS/System/Library/CoreServices/crashtest</string>
 		<key>RequiredBootArgument</key>
 		<string>crash.test=1</string>
 		<key>RunAtLoad</key>

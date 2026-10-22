@@ -6,7 +6,7 @@
 	<string>com.nxu.about-sevos</string>
 
 	<key>Program</key>
-	<string>/disk/System/Library/CoreServices/about_sevos_service</string>
+	<string>/Volumes/mainOS/System/Library/CoreServices/about_sevos_service</string>
 
 	<key>RequiredBootArgument</key>
 	<string>-about-sevos-demo</string>
