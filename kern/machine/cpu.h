@@ -19,7 +19,9 @@
 
 #if defined(__aarch64__)
 #include <kern/arm64/cpu.h>
-#elif defined(__i386__) || defined(__x86_64__)
+#elif defined(__x86_64__)
+#include <kern/x86_64/cpu.h>
+#elif defined(__i386__)
 #include <kern/i386/cpu.h>
 #else
 #error "machine/cpu.h: unsupported target architecture"
