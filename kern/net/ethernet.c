@@ -1,4 +1,11 @@
-/* Copyright (c) 2026 NXU Project. All rights reserved. */
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/net/ethernet.c
+ *
+ * Parses and constructs Ethernet frames.
+ */
 #include <kern/net/protocol.h>
 
 void
@@ -43,6 +50,7 @@ ethernet_input(netbuf_t *packet)
 		netbuf_free(packet);
 		break;
 	}
+
 }
 
 bool

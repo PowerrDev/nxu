@@ -1,4 +1,11 @@
-/* Copyright (c) 2026 NXU Project. All rights reserved. */
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/tests/net_test.c
+ *
+ * Runs kernel networking tests with controlled interfaces and peers.
+ */
 #include <kern/tests/net_test.h>
 
 #include <kern/console/console.h>

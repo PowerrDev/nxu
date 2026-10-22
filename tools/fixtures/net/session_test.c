@@ -54,15 +54,15 @@ terminal_ui_test(void)
 	pump(3000000);
 	service_config_t config = {0};
 	memcpy(config.label, "com.nxu.desktop", sizeof("com.nxu.desktop"));
-	memcpy(config.program, "/disk/System/Library/CoreServices/desktop_service",
-		   sizeof("/disk/System/Library/CoreServices/desktop_service"));
+	memcpy(config.program, "/Volumes/mainOS/System/Library/CoreServices/desktop_service",
+		   sizeof("/Volumes/mainOS/System/Library/CoreServices/desktop_service"));
 	config.keep_alive = true;
 	config.allow_display = true;
 	bootd_job_t *desktop = &g_manager.jobs[g_manager.job_count++];
 	(void)bootd_job_init(desktop, &config, "", false);
 	bootd_job_activate(desktop);
 	pump(5000000);
-	int64_t child = nxu_spawn("/disk/System/Library/CoreServices/terminal", "Terminal");
+	int64_t child = nxu_spawn("/Volumes/mainOS/System/Library/CoreServices/terminal", "Terminal");
 	const char started[] = "terminal-ui: launched\n";
 	(void)nxu_write(1, started, sizeof(started) - 1);
 
@@ -101,7 +101,7 @@ main(void)
 
 		(void)nxu_close(stream);
 		const char *arguments[] = {"nzh", 0};
-		(void)nxu_exec("/disk/System/Library/CoreServices/nzh", arguments);
+		(void)nxu_exec("/Volumes/mainOS/System/Library/CoreServices/nzh", arguments);
 		return 3;
 	}
 

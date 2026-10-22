@@ -1,4 +1,11 @@
-/* Copyright (c) 2026 NXU Project. All rights reserved. */
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/netinet6/nd6.c
+ *
+ * Implements IPv6 neighbor discovery and address configuration.
+ */
 #include <kern/net/protocol.h>
 
 #define ND6_CACHE_SIZE 16U
@@ -25,14 +32,9 @@ nd6_entry(netif_t *interface, const uint8_t address[16], bool create)
 	for (uint32_t index = 0; index < ND6_CACHE_SIZE; index++) {
 		nd6_entry_t *entry = &g_neighbors[index];
 
-		if (entry->interface == interface && memcmp(entry->address, address, 16) == 0) {
-			return entry;
-		}
+		if (entry->interface == interface && memcmp(entry->address, address, 16) == 0) return entry;
 	}
-
-	if (!create) {
-		return 0;
-	}
+	if (!create) return 0;
 
 	nd6_entry_t *entry = &g_neighbors[g_replace++ % ND6_CACHE_SIZE];
 	memset(entry, 0, sizeof(*entry));
@@ -47,9 +49,7 @@ nd6_send(netif_t *interface, uint8_t type, const uint8_t source[16], const uint8
 {
 	netbuf_t *packet = netbuf_alloc();
 
-	if (packet == 0) {
-		return false;
-	}
+	if (packet == 0) return false;
 
 	bool dad = memcmp(source, g_unspecified, 16) == 0;
 	uint32_t length = dad ? 24 : 32;
@@ -163,7 +163,6 @@ nd6_input(netbuf_t *packet, const uint8_t source[16], const uint8_t destination[
 
 		offset += length;
 	}
-
 	if (message[0] == 135) {
 		uint8_t solicited[16] = {0xff, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0xff};
 		memcpy(solicited + 13, message + 21, 3);

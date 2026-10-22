@@ -1,10 +1,17 @@
 /*
  * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/net/net.c
  *
+ * Runs bounded network protocol work and manages echo transactions.
+ */
+/*
  * One bounded protocol worker and a limited echo transaction table. All
  * routes, neighbors, IPv6 address state, and echo transactions use g_lock.
  * Driver DMA locks and the receive-queue lock are released before entry.
  */
+
 #include <kern/net/protocol.h>
 
 #include <kern/console/console.h>
@@ -61,13 +68,10 @@ net_poll(void)
 	for (uint32_t budget = 0; budget < NET_RX_BUDGET; budget++) {
 		netbuf_t *packet = netif_dequeue();
 
-		if (packet == 0) {
-			break;
-		}
+		if (packet == 0) break;
 
 		ethernet_input(packet);
 	}
-
 	for (uint32_t index = 1; index < netif_count(); index++) {
 		nd6_tick(netif_at(index), net_now());
 	}
@@ -92,9 +96,7 @@ net_worker(void *context)
 bool
 net_start(void)
 {
-	if (g_started) {
-		return true;
-	}
+	if (g_started) return true;
 
 	netif_initialize();
 	thread_t thread = 0;
@@ -102,9 +104,7 @@ net_start(void)
 	cpuset_clear(&affinity);
 	cpuset_add(&affinity, 0);
 
-	if (!kernel_thread_create(proc_task(proc_kernel()), net_worker, 0, &thread)) {
-		return false;
-	}
+	if (!kernel_thread_create(proc_task(proc_kernel()), net_worker, 0, &thread)) return false;
 
 	if (!thread_set_affinity(thread, &affinity) || !sched_thread_start(thread)) {
 		(void)thread_terminate(thread);
@@ -142,9 +142,7 @@ net_send_echo(netif_t *interface, net_ping_slot_t *slot)
 
 	netbuf_t *packet = netbuf_alloc();
 
-	if (packet == 0) {
-		return false;
-	}
+	if (packet == 0) return false;
 
 	uint8_t *message = netbuf_append(packet, NET_ECHO_LENGTH);
 	memset(message, 0, NET_ECHO_LENGTH);
@@ -168,9 +166,7 @@ net_send_echo(netif_t *interface, net_ping_slot_t *slot)
 void
 net_echo_reply(uint32_t family, const uint8_t *source, const uint8_t *message, uint32_t length, uint8_t hops)
 {
-	if (length != NET_ECHO_LENGTH) {
-		return;
-	}
+	if (length != NET_ECHO_LENGTH) return;
 
 	for (uint32_t index = 0; index < NET_PING_MAX; index++) {
 		net_ping_slot_t *slot = &g_pings[index];
@@ -185,6 +181,7 @@ net_echo_reply(uint32_t family, const uint8_t *source, const uint8_t *message, u
 			slot->result = 0;
 			return;
 		}
+
 	}
 }
 
@@ -196,30 +193,22 @@ net_echo_error(uint32_t family, const uint8_t *message, uint32_t length, uint32_
 	const uint8_t *destination;
 
 	if (family == NXU_NET_AF_INET) {
-		if (length < 28 || (message[0] >> 4) != 4 || message[9] != IPPROTO_ICMP) {
-			return;
-		}
+		if (length < 28 || (message[0] >> 4) != 4 || message[9] != IPPROTO_ICMP) return;
 
 		header_length = (message[0] & 15) * 4;
 		destination = message + 16;
 	} else {
-		if (length < 48 || (message[0] >> 4) != 6 || message[6] != IPPROTO_ICMPV6) {
-			return;
-		}
+		if (length < 48 || (message[0] >> 4) != 6 || message[6] != IPPROTO_ICMPV6) return;
 
 		header_length = 40;
 		destination = message + 24;
 	}
 
-	if (header_length < 20 || header_length > length - 8) {
-		return;
-	}
+	if (header_length < 20 || header_length > length - 8) return;
 
 	const uint8_t *echo = message + header_length;
 
-	if (echo[0] != (family == NXU_NET_AF_INET ? 8 : 128) || echo[1] != 0) {
-		return;
-	}
+	if (echo[0] != (family == NXU_NET_AF_INET ? 8 : 128) || echo[1] != 0) return;
 
 	for (uint32_t index = 0; index < NET_PING_MAX; index++) {
 		net_ping_slot_t *slot = &g_pings[index];
@@ -231,6 +220,7 @@ net_echo_error(uint32_t family, const uint8_t *message, uint32_t length, uint32_
 			slot->result = -NXU_SYS_E_IO;
 			return;
 		}
+
 	}
 }
 
@@ -260,8 +250,8 @@ net_ping(nxu_net_ping_t *request)
 			slot = &g_pings[index];
 			break;
 		}
-	}
 
+	}
 	if (slot == 0) {
 		nxu_spin_unlock_irqrestore(&g_lock, irq);
 		return -NXU_SYS_E_BUSY;
@@ -303,9 +293,7 @@ net_ping(nxu_net_ping_t *request)
 
 		nxu_spin_unlock_irqrestore(&g_lock, irq);
 
-		if (done) {
-			return result;
-		}
+		if (done) return result;
 
 		if (!sched_sleep_us(2000)) {
 			irq = nxu_spin_lock_irqsave(&g_lock);
@@ -313,5 +301,6 @@ net_ping(nxu_net_ping_t *request)
 			nxu_spin_unlock_irqrestore(&g_lock, irq);
 			return -NXU_SYS_E_INTERRUPTED;
 		}
+
 	}
 }

@@ -1,4 +1,11 @@
-/* Copyright (c) 2026 NXU Project. All rights reserved. */
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/net/netif.h
+ *
+ * Declares the kernel net netif interfaces and data structures.
+ */
 #ifndef NXU_KERN_NET_NETIF_H
 #define NXU_KERN_NET_NETIF_H
 

@@ -1,4 +1,11 @@
-/* Copyright (c) 2026 NXU Project. All rights reserved. */
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/net/netbuf.h
+ *
+ * Declares the kernel net netbuf interfaces and data structures.
+ */
 #ifndef NXU_KERN_NET_NETBUF_H
 #define NXU_KERN_NET_NETBUF_H
 

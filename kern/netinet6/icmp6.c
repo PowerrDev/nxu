@@ -1,4 +1,11 @@
-/* Copyright (c) 2026 NXU Project. All rights reserved. */
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/netinet6/icmp6.c
+ *
+ * Implements IPv6 ICMP message handling.
+ */
 #include <kern/net/protocol.h>
 
 void
@@ -9,11 +16,13 @@ icmp6_input(netbuf_t *packet, const uint8_t source[16], const uint8_t destinatio
 
 	if (packet->length < 8 || net_checksum(message, packet->length, seed) != 0) {
 		netbuf_free(packet);
+		
 		return;
 	}
 
 	if (message[0] == 135 || message[0] == 136) {
 		nd6_input(packet, source, destination, hops);
+
 		return;
 	}
 
@@ -22,15 +31,20 @@ icmp6_input(netbuf_t *packet, const uint8_t source[16], const uint8_t destinatio
 	if (memcmp(source, unspecified, 16) == 0 || destination[0] == 0xff ||
 		(packet->interface->info.flags & (NXU_NET_IF_TENTATIVE | NXU_NET_IF_DUPLICATE))) {
 		netbuf_free(packet);
+		
 		return;
 	}
 
 	if (message[0] == 128 && message[1] == 0) {
 		message[0] = 129;
+
 		net_write16(message + 2, 0);
 		seed = ip6_checksum_seed(destination, source, packet->length, IPPROTO_ICMPV6);
+		
 		net_write16(message + 2, net_checksum(message, packet->length, seed));
+		
 		(void)ip6_output(packet->interface, packet, destination, source, IPPROTO_ICMPV6, 64);
+		
 		return;
 	}
 

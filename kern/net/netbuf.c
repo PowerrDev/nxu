@@ -1,4 +1,11 @@
-/* Copyright (c) 2026 NXU Project. All rights reserved. */
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/net/netbuf.c
+ *
+ * Implements packet buffer allocation and manipulation.
+ */
 #include <kern/net/netbuf.h>
 
 #include <kern/lock.h>
@@ -23,6 +30,7 @@ netbuf_alloc(void)
 			nxu_spin_unlock_irqrestore(&g_pool_lock, irq);
 			return packet;
 		}
+
 	}
 
 	nxu_spin_unlock_irqrestore(&g_pool_lock, irq);
@@ -32,9 +40,7 @@ netbuf_alloc(void)
 void
 netbuf_free(netbuf_t *packet)
 {
-	if (packet == 0) {
-		return;
-	}
+	if (packet == 0) return;
 
 	uint64_t irq = nxu_spin_lock_irqsave(&g_pool_lock);
 	packet->allocated = false;
@@ -50,9 +56,7 @@ netbuf_data(netbuf_t *packet)
 void *
 netbuf_append(netbuf_t *packet, uint32_t length)
 {
-	if (length > NETBUF_CAPACITY - packet->offset - packet->length) {
-		return 0;
-	}
+	if (length > NETBUF_CAPACITY - packet->offset - packet->length) return 0;
 
 	void *tail = netbuf_data(packet) + packet->length;
 	packet->length += length;
@@ -62,9 +66,7 @@ netbuf_append(netbuf_t *packet, uint32_t length)
 void *
 netbuf_prepend(netbuf_t *packet, uint32_t length)
 {
-	if (length > packet->offset) {
-		return 0;
-	}
+	if (length > packet->offset) return 0;
 
 	packet->offset -= length;
 	packet->length += length;
@@ -74,9 +76,7 @@ netbuf_prepend(netbuf_t *packet, uint32_t length)
 bool
 netbuf_pull(netbuf_t *packet, uint32_t length)
 {
-	if (length > packet->length) {
-		return false;
-	}
+	if (length > packet->length) return false;
 
 	packet->offset += length;
 	packet->length -= length;

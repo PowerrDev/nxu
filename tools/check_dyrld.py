@@ -150,7 +150,7 @@ def main():
         )
         jobs = diskroot / 'System/Library/BootDaemons'
         jobs.mkdir(parents=True, exist_ok=True)
-        (jobs / 'com.nxu.dyrtest.plist').write_text(job('/disk/System/Library/CoreServices/dyrtest'))
+        (jobs / 'com.nxu.dyrtest.plist').write_text(job('/Volumes/mainOS/System/Library/CoreServices/dyrtest'))
         disk = scratch / 'disk.img'
         run(
             [
@@ -314,12 +314,12 @@ def main():
                 if enclave:
                     enclave.close()
         if crash:
-            report_path = re.search('crashd: saved (/disk/[^\\r\\n]+?\\.crash)', serial.read_text(errors='replace')).group(
+            report_path = re.search('crashd: saved (/Volumes/mainOS/[^\\r\\n]+?\\.crash)', serial.read_text(errors='replace')).group(
                 1,
             )
             report = scratch / 'framework.crash'
             subprocess.run(
-                ['debugfs', '-R', f"dump {report_path.removeprefix('/disk')} {report}", str(disk)],
+                ['debugfs', '-R', f"dump {report_path.removeprefix('/Volumes/mainOS')} {report}", str(disk)],
                 capture_output=True,
                 check=True,
             )

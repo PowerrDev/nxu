@@ -1,4 +1,11 @@
-/* Copyright (c) 2026 NXU Project. All rights reserved. */
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/netinet/ip.c
+ *
+ * Implements IPv4 packet input, output, and forwarding decisions.
+ */
 #include <kern/net/protocol.h>
 
 void
@@ -64,6 +71,7 @@ ip4_output(netif_t *interface, netbuf_t *packet, const uint8_t destination[4], u
 			netbuf_free(packet);
 			return false;
 		}
+
 	}
 
 	uint8_t *header = netbuf_prepend(packet, 20);
@@ -83,9 +91,7 @@ ip4_output(netif_t *interface, netbuf_t *packet, const uint8_t destination[4], u
 	memcpy(header + 16, destination, 4);
 	net_write16(header + 10, net_checksum(header, 20, 0));
 
-	if (interface->info.flags & NXU_NET_IF_LOOPBACK) {
-		return netif_output(interface, packet);
-	}
+	if (interface->info.flags & NXU_NET_IF_LOOPBACK) return netif_output(interface, packet);
 
 	return ethernet_output(interface, packet, mac, ETHERTYPE_IPV4);
 }

@@ -1,4 +1,11 @@
-/* Copyright (c) 2026 NXU Project. All rights reserved. */
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/net/protocol.h
+ *
+ * Declares the kernel net protocol interfaces and data structures.
+ */
 #ifndef NXU_KERN_NET_PROTOCOL_H
 #define NXU_KERN_NET_PROTOCOL_H
 

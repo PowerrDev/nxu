@@ -1,4 +1,11 @@
-/* Copyright (c) 2026 NXU Project. All rights reserved. */
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/net/netif.c
+ *
+ * Registers network interfaces and manages their state.
+ */
 #include <kern/net/netif.h>
 
 #include <kern/lock.h>
@@ -13,13 +20,13 @@ static nxu_spinlock_t g_receive_lock;
 void
 netif_initialize(void)
 {
-	if (g_interface_count != 0) {
-		return;
-	}
+	if (g_interface_count != 0) return;
 
 	netif_t *loopback = &g_interfaces[g_interface_count++];
+    
 	memcpy(loopback->info.name, "lo0", 4);
-	loopback->info.index = 1;
+	
+    loopback->info.index = 1;
 	loopback->info.flags = NXU_NET_IF_UP | NXU_NET_IF_LOOPBACK;
 	loopback->info.mtu = 1500;
 	loopback->info.prefix4 = 8;
@@ -35,9 +42,7 @@ netif_register(const uint8_t mac[6], void *context, bool (*transmit)(void *, con
 {
 	netif_initialize();
 
-	if (g_interface_count == NETIF_MAX || transmit == 0 || poll == 0) {
-		return 0;
-	}
+	if (g_interface_count == NETIF_MAX || transmit == 0 || poll == 0) return 0;
 
 	netif_t *interface = &g_interfaces[g_interface_count++];
 	interface->context = context;
@@ -46,6 +51,7 @@ netif_register(const uint8_t mac[6], void *context, bool (*transmit)(void *, con
 	interface->info.index = g_interface_count;
 	interface->info.flags = NXU_NET_IF_UP | NXU_NET_IF_TENTATIVE;
 	interface->info.mtu = 1500;
+    
 	memcpy(interface->info.name, "en0", 4);
 	interface->info.name[2] += g_interface_count - 2;
 	memcpy(interface->info.mac, mac, 6);
@@ -54,15 +60,18 @@ netif_register(const uint8_t mac[6], void *context, bool (*transmit)(void *, con
 	if (g_interface_count == 2) {
 		const uint8_t address[4] = {10, 0, 2, 15};
 		const uint8_t gateway[4] = {10, 0, 2, 2};
-		memcpy(interface->info.address4, address, 4);
+	
+        memcpy(interface->info.address4, address, 4);
 		memcpy(interface->info.gateway4, gateway, 4);
-		interface->info.prefix4 = 24;
+		
+        interface->info.prefix4 = 24;
 		interface->info.address6[0] = 0xfe;
 		interface->info.address6[1] = 0xc0;
 		interface->info.address6[15] = 0x15;
 	}
 
 	uint8_t *link = interface->info.link_local6;
+    
 	link[0] = 0xfe;
 	link[1] = 0x80;
 	link[8] = mac[0] ^ 2;
@@ -105,6 +114,7 @@ netif_input(netif_t *interface, netbuf_t *packet)
 
 	g_receive_tail = packet;
 	__atomic_fetch_add(&interface->info.received, 1, __ATOMIC_RELAXED);
+    
 	nxu_spin_unlock_irqrestore(&g_receive_lock, irq);
 }
 
@@ -122,6 +132,7 @@ netif_dequeue(void)
 	}
 
 	nxu_spin_unlock_irqrestore(&g_receive_lock, irq);
+    
 	return packet;
 }
 
@@ -137,15 +148,19 @@ netif_output(netif_t *interface, netbuf_t *packet)
 	if (packet->length >= 14 && memcmp(netbuf_data(packet), interface->info.mac, 6) == 0) {
 		__atomic_fetch_add(&interface->info.transmitted, 1, __ATOMIC_RELAXED);
 		netif_input(interface, packet);
+        
 		return true;
 	}
 
 	bool sent = interface->transmit(interface->context, netbuf_data(packet), packet->length);
-	if (sent) {
+	
+    if (sent) {
 		__atomic_fetch_add(&interface->info.transmitted, 1, __ATOMIC_RELAXED);
 	} else {
 		__atomic_fetch_add(&interface->info.dropped, 1, __ATOMIC_RELAXED);
 	}
-	netbuf_free(packet);
+	
+    netbuf_free(packet);
+    
 	return sent;
 }

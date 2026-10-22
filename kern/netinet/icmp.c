@@ -1,4 +1,11 @@
-/* Copyright (c) 2026 NXU Project. All rights reserved. */
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/netinet/icmp.c
+ *
+ * Implements IPv4 ICMP message handling.
+ */
 #include <kern/net/protocol.h>
 
 void

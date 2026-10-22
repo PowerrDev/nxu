@@ -1,4 +1,11 @@
-/* Copyright (c) 2026 NXU Project. All rights reserved. */
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/net/arp.c
+ *
+ * Implements ARP neighbor discovery and address caching.
+ */
 #include <kern/net/protocol.h>
 
 #define ARP_CACHE_SIZE 16U
@@ -24,9 +31,7 @@ arp_entry(netif_t *interface, const uint8_t address[4])
 	for (uint32_t index = 0; index < ARP_CACHE_SIZE; index++) {
 		arp_entry_t *entry = &g_neighbors[index];
 
-		if (entry->interface == interface && memcmp(entry->address, address, 4) == 0) {
-			return entry;
-		}
+		if (entry->interface == interface && memcmp(entry->address, address, 4) == 0) return entry;
 	}
 
 	arp_entry_t *entry = &g_neighbors[g_replace++ % ARP_CACHE_SIZE];
@@ -41,9 +46,7 @@ arp_send(netif_t *interface, uint16_t operation, const uint8_t address[4], const
 {
 	netbuf_t *packet = netbuf_alloc();
 
-	if (packet == 0) {
-		return false;
-	}
+	if (packet == 0) return false;
 
 	uint8_t *message = netbuf_append(packet, 28);
 	memset(message, 0, 28);

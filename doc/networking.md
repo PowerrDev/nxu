@@ -20,7 +20,7 @@ There is no TCP, UDP, DNS, DHCP, SLAAC, Router Advertisement configuration, forw
 
 ## Terminal and shell
 
-The ARM64 desktop includes `/Applications/Terminal.app`, with `nzh` as its shell. Terminal supplies line editing, command history, executable completion, scrollback, and Ctrl-C. The shell supports quoted arguments, escapes, built-ins (`help`, `commands`, `echo`, `pwd`, `cd`, `ls`, `cat`, `rm`, `clear`, `exit`), and foreground executables. Its command search includes `/disk/System/Library/CoreServices` and `/disk/bin`. It does not implement zsh scripting, pipelines, redirection syntax, or job control.
+The ARM64 desktop includes `/Applications/Terminal.app`, with `nzh` as its shell. Terminal supplies line editing, command history, executable completion, scrollback, and Ctrl-C. The shell supports quoted arguments, escapes, built-ins (`help`, `commands`, `echo`, `pwd`, `cd`, `ls`, `cat`, `rm`, `clear`, `exit`), and foreground executables. Its command search includes `/Volumes/mainOS/System/Library/CoreServices` and `/Volumes/mainOS/bin`. It does not implement zsh scripting, pipelines, redirection syntax, or job control.
 
 Examples:
 

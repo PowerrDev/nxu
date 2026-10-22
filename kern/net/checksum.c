@@ -1,4 +1,11 @@
-/* Copyright (c) 2026 NXU Project. All rights reserved. */
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/net/checksum.c
+ *
+ * Calculates checksums used by network protocols.
+ */
 #include <kern/net/protocol.h>
 
 uint32_t
@@ -11,7 +18,6 @@ net_checksum_sum(const void *data, uint32_t length, uint32_t seed)
 		bytes += 2;
 		length -= 2;
 	}
-
 	if (length) {
 		seed += (uint32_t)bytes[0] << 8;
 	}
