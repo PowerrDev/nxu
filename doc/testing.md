@@ -199,16 +199,3 @@ make check CHECK_ONLY=ipc-process "TEST_ipc-process_PASS=never appears" CHECK_TI
 This reports `FAIL ipc-process`, keeps the logs and exits non-zero.
 
 Networking checks are described in [Networking and Terminal](networking.md). `make test-network-host` runs the sanitizer harness, `make test-network-vm` checks ARM64 VirtIO gateway echo, and `make test-network-session` runs the installed shell and executable tests on a private disk. The VM runner also accepts `--arch i386` for both PCI transports.
-
-NSW package validation: `python3 tools/check_nsw.py` runs host sanitizers with real ISO containers and fault injection. `python3 tools/check_nsw_vm.py` and `python3 tools/check_nsw_vm.py --arch i386` exercise extraction and synced publication through each kernel's VFS on private disks.
-
-Automatic installation: `python3 tools/check_update_vm.py --arch arm64 --case success`
-checks scheduling, automatic reset, offline copying and confirmation. Repeat for
-i386 and cases `failure`, `unconfirmed`, `tamper` and `recovery` to exercise
-rollback and recovery fallback. Tests verify per-path patchd logs and that
-`Users` and `var` survive payloads containing replacement data for those trees.
-
-Add `--partitioned` to `tools/check_update_vm.py` to test automatic system/recovery
-discovery and installation on one GPT disk. Case `partition-recovery` checks
-recovery boot with an unmountable system partition; `--damage-primary-gpt` tests
-backup GPT discovery.

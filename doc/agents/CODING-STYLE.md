@@ -1,6 +1,6 @@
 # NXU source style
 
-NXU keeps short declarations, assignments, calls, and conditions on one line when they remain readable.
+This project keeps short declarations, assignments, calls, and conditions on one line when they remain readable. We'll explain more below.
 
 Preferred:
 
@@ -16,7 +16,7 @@ static const uint32_t value =
     HELLO_WORLD;
 ```
 
-Independent control-flow blocks get visual separation:
+Independent blocks get visual separation. This is really important:
 
 ```c
 if (first_condition) {

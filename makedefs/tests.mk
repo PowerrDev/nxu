@@ -16,7 +16,7 @@
 # Every test is a kernel CONFIG of its own (BUILD/<id>/kernel.bin) that is
 # compiled with the test's -D switch and booted under QEMU against the
 # persistent disk image. To add a test, append its id to TEST_IDS and define
-# the TEST_<id>_* variables below; nothing else needs to change.
+# the TEST_<id>_* variables in makedefs/tests/<id>.mk; nothing else needs to change.
 #
 #   TEST_<id>_GROUP       menu section
 #   TEST_<id>_DESC        one line for the menu (plain text: no quotes, $ or #)
@@ -69,6 +69,7 @@ TEST_IDS := \
     tep-mailbox
 
 
+
 # -- Everything at once --------------------------------------------------------
 
 # The `make check` regression row for the normal boot (see `desktop` below,
@@ -95,17 +96,7 @@ TEST_IDS := \
 # must show. It does not check the audio recording: the boot chime plays with
 # underruns here while the UI loop and the tests share the CPU (known, see
 # doc/testing.md), so the recording is checked by the sound row instead.
-TEST_everything_GROUP := Everything at once
-TEST_everything_DESC := Everything that can run together, in action (the make check regression row; make run boots the desktop test instead)
-TEST_everything_CFLAGS := -DNXU_UNIFIED_BOOT_TEST
-TEST_everything_FRAMEWORKS := $(TEST_GUI_STACK)
-TEST_everything_DISPLAY := $(TEST_GUI_DISPLAY)
-TEST_everything_GPU := ,xres=$(QEMU_GPU_XRES),yres=$(QEMU_GPU_YRES)
-TEST_everything_RAMFB := $(QEMU_RAMFB_DEVICE)
-TEST_everything_PASS := ipc_process_test: passed|thread_process_test: passed|process_control_test: passed|socket_process_test: passed|sound_test: passed|boot_chime_play: playback started|unified_boot_summary: UIService desktop running|dock: showing 2 app|unified_boot_summary: all 5 test(s) passed
-TEST_everything_TIMEOUT := 240
 # Four CPUs: the secondaries are up and idle while the whole system runs on the boot CPU.
-TEST_everything_SMP := 4
 
 
 # -- Normal desktop boot: `make run` --------------------------------------------
@@ -121,102 +112,31 @@ TEST_everything_SMP := 4
 # in a good state to boot" actually needs is already unconditional on every
 # boot, `desktop` included: kernel_do_post()'s self-test suite (kern/kern_init.c),
 # which halts the boot (kern_fail) on the first failure, before bootd even starts.
-TEST_desktop_GROUP := Everything at once
-TEST_desktop_DESC := The normal desktop boot (what make run boots)
-TEST_desktop_CFLAGS := -DNXU_DESKTOP_BOOT
-TEST_desktop_FRAMEWORKS := UISERVICE=0 WINDOWSERVER=0
 # Keep normal desktop operation free of per-syscall traces and diagnostic dumps.
 # BOOT_ARGS appears first, so explicit debug settings still override these defaults.
-TEST_desktop_BOOT_ARGS := ui.userland=1 log.trace=0 log.stats_ms=0
-TEST_desktop_DISPLAY := $(TEST_GUI_DISPLAY)
-TEST_desktop_GPU := ,xres=$(QEMU_GPU_XRES),yres=$(QEMU_GPU_YRES)
-TEST_desktop_RAMFB := $(QEMU_RAMFB_DEVICE)
-TEST_desktop_SMP := 4
-TEST_desktop_TEP := 1
 
 
 # -- Graphical boot ------------------------------------------------------------
 
-TEST_ui-about_GROUP := Graphical boot
-TEST_ui-about_DESC := UIService desktop alone (About sevOS from the system menu)
-TEST_ui-about_CFLAGS := -DNXU_UI_SERVICE_BOOT_TEST
-TEST_ui-about_FRAMEWORKS := $(TEST_GUI_STACK)
-TEST_ui-about_DISPLAY := $(TEST_GUI_DISPLAY)
-TEST_ui-about_GPU := ,xres=$(QEMU_GPU_XRES),yres=$(QEMU_GPU_YRES)
-TEST_ui-about_RAMFB := $(QEMU_RAMFB_DEVICE)
 
-TEST_ui-voyager_GROUP := Graphical boot
-TEST_ui-voyager_DESC := UIService desktop alone (apps from the Dock)
-TEST_ui-voyager_CFLAGS := -DNXU_UI_SERVICE_BOOT_TEST
-TEST_ui-voyager_FRAMEWORKS := $(TEST_GUI_STACK)
-TEST_ui-voyager_DISPLAY := $(TEST_GUI_DISPLAY)
-TEST_ui-voyager_GPU := ,xres=$(QEMU_GPU_XRES),yres=$(QEMU_GPU_YRES)
-TEST_ui-voyager_RAMFB := $(QEMU_RAMFB_DEVICE)
 
-TEST_windowserver-about_GROUP := Graphical boot
-TEST_windowserver-about_DESC := WindowServer About screen
-TEST_windowserver-about_CFLAGS := -DNXU_AQUA_BOOT_TEST
-TEST_windowserver-about_FRAMEWORKS := $(TEST_GUI_STACK)
-TEST_windowserver-about_DISPLAY := $(TEST_GUI_DISPLAY)
-TEST_windowserver-about_GPU := ,xres=$(QEMU_GPU_XRES),yres=$(QEMU_GPU_YRES)
-TEST_windowserver-about_RAMFB := $(QEMU_RAMFB_DEVICE)
 
 
 # -- Filesystem ----------------------------------------------------------------
 
 # Crashes mid-transaction on purpose; boot again with `make run` to watch the
 # ext4 journal replay.
-TEST_journal-crash_GROUP := Filesystem
-TEST_journal-crash_DESC := Crash mid-transaction; make run replays it
-TEST_journal-crash_CFLAGS := -DNXU_JOURNAL_CRASH_TEST
-TEST_journal-crash_DISPLAY := cocoa
 
 
 # -- Userland processes --------------------------------------------------------
 
-TEST_ipc-process_GROUP := Userland processes
-TEST_ipc-process_DESC := bootd registry, two processes exchange IPC
-TEST_ipc-process_PASS := ipc_process_test: passed
-TEST_ipc-process_CFLAGS := -DNXU_IPC_PROCESS_TEST
 
-TEST_thread-process_GROUP := Userland processes
-TEST_thread-process_DESC := User process spawns and joins its threads
-TEST_thread-process_PASS := thread_process_test: passed
-TEST_thread-process_CFLAGS := -DNXU_THREAD_PROCESS_TEST
 
-TEST_fault-process_GROUP := Userland processes
-TEST_fault-process_DESC := Faulting user processes are killed, not the kernel
-TEST_fault-process_PASS := fault_process_test: passed
-TEST_fault-process_CFLAGS := -DNXU_FAULT_PROCESS_TEST
 
-TEST_process-control_GROUP := Userland processes
-TEST_process-control_DESC := fork, exec, signals, copy-on-write, demand paging
-TEST_process-control_PASS := process_control_test: passed
-TEST_process-control_CFLAGS := -DNXU_PROCESS_CONTROL_TEST
 
-TEST_network_GROUP := Networking
-TEST_network_DESC := IPv4 and IPv6 loopback and VirtIO gateway ping
-TEST_network_BOOT_ARGS := net.test=1
-TEST_network_PASS := net_test: IPv4/IPv6 loopback and VirtIO gateway echo passed
 
-TEST_socket-process_GROUP := Userland processes
-TEST_socket-process_DESC := Socket server and client stream a payload
-TEST_socket-process_PASS := socket_process_test: passed
-TEST_socket-process_CFLAGS := -DNXU_SOCKET_PROCESS_TEST
 
-TEST_windowserver-process_GROUP := Userland processes
-TEST_windowserver-process_DESC := WindowServer as a process (monitor :45455)
-TEST_windowserver-process_CFLAGS := -DNXU_WINDOWSERVER_PROCESS_TEST
-TEST_windowserver-process_FRAMEWORKS := $(TEST_GUI_STACK)
-TEST_windowserver-process_GPU := ,xres=$(QEMU_GPU_XRES),yres=$(QEMU_GPU_YRES)
-TEST_windowserver-process_MONITOR := telnet:127.0.0.1:45455,server,nowait
 
-TEST_about-sevos-process_GROUP := Userland processes
-TEST_about-sevos-process_DESC := About sevOS app (monitor :45456)
-TEST_about-sevos-process_CFLAGS := -DNXU_ABOUT_SEVOS_PROCESS_TEST
-TEST_about-sevos-process_FRAMEWORKS := $(TEST_GUI_STACK)
-TEST_about-sevos-process_GPU := ,xres=1280,yres=960
-TEST_about-sevos-process_MONITOR := telnet:127.0.0.1:45456,server,nowait
 
 
 # -- Sound ---------------------------------------------------------------------
@@ -226,27 +146,8 @@ TEST_about-sevos-process_MONITOR := telnet:127.0.0.1:45456,server,nowait
 # plays it through the host's speakers; `make check` records it with the wav
 # backend and verify_capture.py compares the recording with the tone formula and
 # with Boot_Audio.wav sample by sample.
-TEST_smp_GROUP := Kernel
-TEST_smp_DESC := SMP: four CPUs, per-CPU run queues, IPIs, affinity, migration, shared memory
-TEST_smp_PASS := smp_test: passed
-TEST_smp_CFLAGS := -DNXU_SMP_TEST
-TEST_smp_SMP := 4
-TEST_smp_TIMEOUT := 120
 
-TEST_smp-user_GROUP := Kernel
-TEST_smp-user_DESC := SMP userland: EL0 processes and threads on four CPUs, concurrently
-TEST_smp-user_PASS := smp_user_test: passed
-TEST_smp-user_CFLAGS := -DNXU_SMP_USER_TEST
-TEST_smp-user_SMP := 4
-TEST_smp-user_TIMEOUT := 300
 
-TEST_sound_GROUP := Sound
-TEST_sound_DESC := Tone, boot chime and playsound through VirtIO Sound (audible)
-TEST_sound_PASS := sound_test: passed
-TEST_sound_CFLAGS := -DNXU_SOUND_TEST
-TEST_sound_TIMEOUT := 120
-TEST_sound_CAPTURE := 1
-TEST_sound_VERIFY := python3 tools/audio/verify_capture.py @CAPTURE@ tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.wav --tone --chimes 2
 
 
 # -- Trusted Enclave -----------------------------------------------------------
@@ -275,16 +176,15 @@ TEP_WRAPPER = $(if $(filter 1,$(or $(TEP),$(TEST_$(TEST)_TEP))),tools/with_tepos
 TEP_NXU_SOCK ?= /tmp/nxu-mailbox.sock
 TEP_SERIAL1 := -chardev socket,id=tep,path=$(TEP_NXU_SOCK),server=on,wait=off -serial chardev:tep
 
-TEST_tep-mailbox_GROUP := Trusted Enclave
-TEST_tep-mailbox_DESC := Mailbox to tepOS over serial1: protocol, crypto, passcode, bootd manifest, fail closed, reconnect (tepOS must be running)
-TEST_tep-mailbox_CFLAGS := -DNXU_TEP_MAILBOX_TEST
-TEST_tep-mailbox_SERIAL1 := $(TEP_SERIAL1)
 
 .PHONY: test-tep-mailbox
 
 test-tep-mailbox:
 
 	+@MAKE="$(MAKE)" tools/test_tep_mailbox.sh
+
+
+include $(sort $(wildcard makedefs/tests/*.mk))
 
 
 # -- make check ----------------------------------------------------------------

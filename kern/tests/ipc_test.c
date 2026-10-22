@@ -48,6 +48,7 @@ ipc_self_test(void)
 	ipc_kmsg_t received = IPC_KMSG_NULL;
 	result = ipc_port_dequeue(port, &received);
 	if (result != IPC_SUCCESS || received == IPC_KMSG_NULL) goto fail_port;
+
 	if (received->ikm_size != sizeof(g_ipc_test_payload)) goto fail_received;
 
 	for (size_t index = 0U; index < sizeof(g_ipc_test_payload); index++) {
@@ -72,7 +73,9 @@ ipc_self_test(void)
 	port = IPC_PORT_NULL;
 
 	if (ipc_port_outstanding_count() != 0ULL) return false;
+
 	if (ipc_kmsg_outstanding_count() != 0ULL) return false;
+
 	if (ipc_kmsg_outstanding_bytes() != 0ULL) return false;
 
 	kprintf(NXPC_LOG_PREFIX "self-test passed on port object %llu (%llu-byte payload)\n", object_id,
@@ -116,6 +119,7 @@ ipc_space_self_test(void)
 	bool passed = false;
 
 	if (ipc_port_alloc(&service_port) != IPC_SUCCESS) goto cleanup;
+
 	if (ipc_port_alloc(&reply_port) != IPC_SUCCESS) goto cleanup;
 
 	uint32_t service_name;
@@ -132,6 +136,7 @@ ipc_space_self_test(void)
 	ipc_port_t reply_ref = IPC_PORT_NULL;
 	ipc_port_t service_ref = IPC_PORT_NULL;
 	if (ipc_space_lookup_port(&space_b, reply_name, &reply_ref) != IPC_SUCCESS) goto cleanup;
+
 	if (ipc_space_lookup_port(&space_a, service_name, &service_ref) != IPC_SUCCESS) {
 		ipc_port_release(reply_ref);
 		goto cleanup;
@@ -199,6 +204,7 @@ ipc_space_self_test(void)
 	/* Boundary conditions: an out-of-range or never-issued name is rejected. */
 	ipc_port_t bogus = IPC_PORT_NULL;
 	if (ipc_space_lookup_port(&space_a, IPC_SPACE_MAX + 1U, &bogus) != IPC_NAME_INVALID) goto cleanup;
+
 	if (ipc_space_lookup_port(&space_a, IPC_SPACE_NAME_INVALID, &bogus) != IPC_NAME_INVALID) goto cleanup;
 
 	passed = true;
@@ -213,10 +219,13 @@ cleanup:
 	ipc_space_close_all(&space_a);
 	ipc_space_close_all(&space_b);
 	if (service_port != IPC_PORT_NULL) ipc_port_release(service_port);
+
 	if (reply_port != IPC_PORT_NULL) ipc_port_release(reply_port);
 
 	if (!passed) return false;
+
 	if (ipc_port_outstanding_count() != 0ULL) return false;
+
 	if (ipc_kmsg_outstanding_count() != 0ULL) return false;
 
 	kprintf(NXPC_LOG_PREFIX "ipc_space self-test passed (port transferred across spaces)\n");

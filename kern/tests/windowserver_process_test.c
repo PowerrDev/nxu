@@ -35,6 +35,7 @@ windowserver_process_test_wait(proc_t parent, proc_id_t pid, uint64_t *status)
 {
 	for (uint32_t spin = 0U; spin < WINDOWSERVER_PROCESS_TEST_WAIT_ITERATIONS; spin++) {
 		if (proc_reap(parent, pid, status)) return true;
+
 		if (!sched_yield()) return false;
 	}
 	return false;
@@ -45,6 +46,7 @@ windowserver_process_test_wait_registry(void)
 {
 	for (uint32_t spin = 0U; spin < WINDOWSERVER_PROCESS_TEST_REGISTRY_WAIT_ITERATIONS; spin++) {
 		if (ipc_bootstrap_registry_port() != IPC_PORT_NULL) return true;
+
 		if (!sched_yield()) return false;
 	}
 	return false;
@@ -58,7 +60,7 @@ windowserver_process_test(void)
 	proc_t proc_client = 0;
 
 	loader_status_t status_bootd =
-		loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/bootd", "bootd", &proc_bootd);
+		loader_spawn(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/bootd", "bootd", &proc_bootd);
 	if (status_bootd != LOADER_STATUS_OK) {
 		kputs("windowserver_process_test: spawning bootd failed: ");
 		kputln(loader_status_name(status_bootd));
@@ -71,7 +73,7 @@ windowserver_process_test(void)
 	}
 
 	loader_status_t status_windowserver =
-		loader_spawn_caps(proc_kernel(), "/disk/System/Library/CoreServices/windowserver_service",
+		loader_spawn_caps(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/windowserver_service",
 						  "windowserver_service", NXU_CAP_DISPLAY, &proc_windowserver);
 	if (status_windowserver != LOADER_STATUS_OK) {
 		kputs("windowserver_process_test: spawning windowserver_service failed: ");
@@ -92,10 +94,11 @@ windowserver_process_test(void)
 			kputln("windowserver_process_test: scheduler dispatch failed while waiting for windowserver_service");
 			return false;
 		}
+
 	}
 
 	loader_status_t status_client =
-		loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/wstest_client", "wstest_client", &proc_client);
+		loader_spawn(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/wstest_client", "wstest_client", &proc_client);
 	if (status_client != LOADER_STATUS_OK) {
 		kputs("windowserver_process_test: spawning wstest_client failed: ");
 		kputln(loader_status_name(status_client));

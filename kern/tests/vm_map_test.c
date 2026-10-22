@@ -55,6 +55,7 @@ vm_map_self_test(void)
 	uint64_t prefix_va, middle_va, suffix_va;
 
 	if (!vm_address_space_create(&space)) goto cleanup;
+
 	if (!vm_address_space_activate(&space)) goto cleanup;
 	activated = true;
 
@@ -65,8 +66,11 @@ vm_map_self_test(void)
 		uint64_t big_va = 0ULL;
 
 		if (!vm_map_anon(&space, 32ULL * 1024ULL * 1024ULL, VM_USER_PROTECTION_READ_WRITE, &big_va)) goto cleanup;
+
 		if (pmm_get_used_page_count() != used_before_reserve) goto cleanup;
+
 		if (!vm_map_free(&space, big_va, 32ULL * 1024ULL * 1024ULL)) goto cleanup;
+
 		if (pmm_get_used_page_count() != used_before_reserve) goto cleanup;
 	}
 
@@ -93,6 +97,7 @@ vm_map_self_test(void)
 	{
 		uint64_t start_va, end_va;
 		if (!vm_map_lookup(&space, prefix_va, &start_va, &end_va)) goto cleanup;
+
 		if (start_va != region_va || end_va != region_va + 3ULL * PMM_PAGE_SIZE) goto cleanup;
 	}
 
@@ -100,21 +105,24 @@ vm_map_self_test(void)
 	 * into a prefix and a suffix rather than removing or shrinking it. */
 	uint64_t used_before_middle_free = pmm_get_used_page_count();
 	if (!vm_map_free(&space, middle_va, PMM_PAGE_SIZE)) goto cleanup;
+
 	if (pmm_get_used_page_count() != used_before_middle_free - 1ULL) goto cleanup;
 
 	{
 		uint64_t start_va, end_va;
 
 		if (!vm_map_lookup(&space, prefix_va, &start_va, &end_va)) goto cleanup;
+
 		if (start_va != region_va || end_va != middle_va) goto cleanup;
 
 		if (vm_map_lookup(&space, middle_va, &start_va, &end_va)) goto cleanup;
 
 		if (!vm_map_lookup(&space, suffix_va, &start_va, &end_va)) goto cleanup;
+
 		if (start_va != suffix_va || end_va != region_va + 3ULL * PMM_PAGE_SIZE) goto cleanup;
 	}
-
 	if (*(volatile uint32_t *)prefix_va != VM_MAP_TEST_PATTERN_PREFIX) goto cleanup;
+
 	if (*(volatile uint32_t *)suffix_va != VM_MAP_TEST_PATTERN_SUFFIX) goto cleanup;
 
 	{
@@ -130,14 +138,18 @@ vm_map_self_test(void)
 
 	uint64_t used_before_second_free = pmm_get_used_page_count();
 	if (!vm_map_free(&space, second_va, PMM_PAGE_SIZE)) goto cleanup;
+
 	if (pmm_get_used_page_count() != used_before_second_free - 1ULL) goto cleanup;
+
 	if (vm_map_lookup(&space, second_va, 0, 0)) goto cleanup;
+
 	if (*(volatile uint32_t *)prefix_va != VM_MAP_TEST_PATTERN_PREFIX) goto cleanup;
 
 	/* Only the prefix and suffix regions (one data page each) remain. */
 	uint64_t used_before_destroy_all = pmm_get_used_page_count();
 	vm_map_destroy_all(&space);
 	if (pmm_get_used_page_count() != used_before_destroy_all - 2ULL) goto cleanup;
+
 	if (vm_map_lookup(&space, prefix_va, 0, 0)) goto cleanup;
 
 	passed = true;

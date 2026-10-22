@@ -1,6 +1,7 @@
 /BUILD/
 /build/
 /build-*/
+/.venv-fonts/
 /tools/Recovery/Generated/
 **/target/
 .idea/

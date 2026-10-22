@@ -112,7 +112,6 @@ sound_test_play_tone(void)
 
 		frame += count;
 	}
-
 	if (ok && (status = vfs_ioctl(filedesc, descriptor, NXU_AUDIO_DRAIN, 0)) != VFS_STATUS_OK) {
 		SOUND_TEST_LOG("FAILED: drain: %s\n", vfs_status_name(status));
 		ok = false;
@@ -138,6 +137,7 @@ sound_test_play_tone(void)
 				   (unsigned long long)expected_ms);
 
 	if (info.xruns != 0ULL || info.io_errors != 0ULL) ok = false;
+
 	if (info.bytes_written != (uint64_t)total * 4ULL) ok = false;
 
 	/* The device plays in real time: much less than the length of the audio means it was not really played. */
@@ -175,7 +175,7 @@ sound_test_thread(void *parameter)
 	g_sound_test_done = true;
 }
 
-#define SOUND_TEST_PLAYSOUND_PATH "/disk/System/Library/CoreServices/playsound"
+#define SOUND_TEST_PLAYSOUND_PATH "/Volumes/mainOS/System/Library/CoreServices/playsound"
 
 /* Exit status of playsound when the audio device refuses it for lack of the capability. */
 #define SOUND_TEST_PLAYSOUND_DENIED 10ULL
@@ -204,8 +204,8 @@ sound_test_run_playsound(uint32_t caps, uint64_t expected, const char *what)
 			SOUND_TEST_LOG("FAILED: %s: playsound did not exit in time\n", what);
 			return false;
 		}
-	}
 
+	}
 	if (status != expected) {
 		SOUND_TEST_LOG("FAILED: %s: playsound exited with status 0x%llx, expected %llu\n", what,
 					   (unsigned long long)status, (unsigned long long)expected);
@@ -238,8 +238,8 @@ sound_test_run_all(bool shared)
 			SOUND_TEST_LOG("FAILED: the scheduler stopped\n");
 			return false;
 		}
-	}
 
+	}
 	if (!g_sound_test_ok) return false;
 
 	/* The same sound once more, from user space: refused without the audio capability. */

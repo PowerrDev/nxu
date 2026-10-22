@@ -47,6 +47,7 @@ vm_shm_self_test(void)
 	if (physical_page == 0ULL || pmm_page_refcount(physical_page) != 1U) goto cleanup;
 
 	if (!vm_address_space_create(&space_a)) goto cleanup;
+
 	if (!vm_address_space_create(&space_b)) goto cleanup;
 
 	/*
@@ -68,10 +69,12 @@ vm_shm_self_test(void)
 	if (pmm_page_refcount(physical_page) != 3U) goto cleanup;
 
 	if (!vm_address_space_activate(&space_b)) goto cleanup;
+
 	if (*(volatile uint32_t *)va_b != VM_SHM_TEST_PATTERN_A) goto cleanup;
 	*(volatile uint32_t *)va_b = VM_SHM_TEST_PATTERN_B;
 
 	if (!vm_address_space_activate(&space_a)) goto cleanup;
+
 	if (*(volatile uint32_t *)va_a != VM_SHM_TEST_PATTERN_B) goto cleanup;
 
 	if (!vm_shm_unmap_from(&space_b, va_b, region)) goto cleanup;
@@ -94,7 +97,9 @@ cleanup:
 	(void)vm_address_space_deactivate();
 
 	if (mapped_b) (void)vm_shm_unmap_from(&space_b, va_b, region);
+
 	if (mapped_a) (void)vm_shm_unmap_from(&space_a, va_a, region);
+
 	if (region != VM_SHM_REGION_NULL) vm_shm_release(region);
 
 	/*
@@ -136,13 +141,16 @@ shm_registry_self_test(void)
 		 * maps it anywhere) does not move. */
 		vm_shm_region_t attached;
 		if (!shm_registry_attach(id, &attached) || attached != region) return false;
+
 		if (pmm_page_refcount(physical_page) != 1U) return false;
 
 		/* Withdrawing drops the registry's own reference (there is still the
 		 * attach's above outstanding, so nothing is freed yet), frees the id
 		 * for reuse, and cannot be done twice. */
 		if (!shm_registry_withdraw(id)) return false;
+
 		if (shm_registry_withdraw(id)) return false;
+
 		if (pmm_page_refcount(physical_page) != 1U) return false;
 
 		/* The last reference: the region, and the page's owning PMM
@@ -158,20 +166,32 @@ shm_registry_self_test(void)
 		vm_shm_region_t region, other, attached;
 		uint32_t id, other_id;
 		if (!vm_shm_create(PMM_PAGE_SIZE, &region)) return false;
+
 		if (!shm_registry_publish_owned(region, 1ULL, &id)) return false;
+
 		if (!vm_shm_create(PMM_PAGE_SIZE, &other)) return false;
+
 		if (!shm_registry_publish_owned(other, 2ULL, &other_id)) return false;
+
 		if (!shm_registry_attach(id, &attached) || attached != region) return false;
+
 		uint64_t physical_page = vm_shm_physical_page(region, 0ULL);
 		if (shm_registry_withdraw_owner(0ULL) != 0U) return false;
+
 		if (shm_registry_withdraw_owner(1ULL) != 1U) return false;
+
 		if (shm_registry_withdraw_owner(1ULL) != 0U) return false;
+
 		vm_shm_region_t missing;
 		if (shm_registry_attach(id, &missing)) return false;
+
 		if (pmm_page_refcount(physical_page) != 1U) return false;
+
 		vm_shm_release(attached);
 		if (pmm_page_refcount(physical_page) != 0U) return false;
+
 		if (!shm_registry_attach(other_id, &attached) || attached != other) return false;
+
 		vm_shm_release(attached);
 		if (shm_registry_withdraw_owner(2ULL) != 1U) return false;
 	}

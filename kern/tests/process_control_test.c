@@ -37,6 +37,7 @@ process_control_test_wait(proc_t parent, proc_id_t pid, uint64_t *status)
 {
 	for (uint32_t spin = 0U; spin < PROCESS_CONTROL_TEST_WAIT_ITERATIONS; spin++) {
 		if (proc_reap(parent, pid, status)) return true;
+
 		if (!sched_yield()) return false;
 	}
 	return false;
@@ -51,7 +52,7 @@ static bool
 process_control_test_privileges(void)
 {
 	proc_t proc = 0;
-	loader_status_t loaded = loader_spawn_caps(proc_kernel(), "/disk/System/Library/CoreServices/privtest", "privtest",
+	loader_status_t loaded = loader_spawn_caps(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/privtest", "privtest",
 											   NXU_CAP_FS_WRITE | NXU_CAP_DISPLAY, &proc);
 	if (loaded != LOADER_STATUS_OK) {
 		kputs("process_control_test: spawning privtest failed: ");
@@ -81,7 +82,7 @@ process_control_test_run(bool exclusive)
 
 	proc_t proc = 0;
 	loader_status_t loaded =
-		loader_spawn_caps(proc_kernel(), "/disk/System/Library/CoreServices/proctest", "proctest", 0U, &proc);
+		loader_spawn_caps(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/proctest", "proctest", 0U, &proc);
 	if (loaded != LOADER_STATUS_OK) {
 		kputs("process_control_test: spawning proctest failed: ");
 		kputln(loader_status_name(loaded));

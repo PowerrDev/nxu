@@ -32,8 +32,8 @@
  * Staged on the scratch disk by tools/test_tep_mailbox.sh: bootd with one
  * byte changed, and a manifest for the real bootd signed as version 1.
  */
-#define TEP_TEST_TAMPERED_PATH "/disk/System/Library/CoreServices/bootd.tampered"
-#define TEP_TEST_OLD_MANIFEST_PATH "/disk/System/Library/CoreServices/bootd.v1.manifest"
+#define TEP_TEST_TAMPERED_PATH "/Volumes/mainOS/System/Library/CoreServices/bootd.tampered"
+#define TEP_TEST_OLD_MANIFEST_PATH "/Volumes/mainOS/System/Library/CoreServices/bootd.v1.manifest"
 
 #define TEP_TEST_PASSCODE "nxu-test-passcode"
 #define TEP_TEST_PASSCODE_2 "nxu-second-passcode"
@@ -63,6 +63,7 @@ tep_mailbox_test_wait_for(tep_link_state_t wanted, bool equal, uint64_t seconds)
 
 	while (timer_get_microseconds() < deadline) {
 		if ((tep_mailbox_link_state() == wanted) == equal) return true;
+
 		if (!sched_yield()) cpu_relax();
 	}
 	return false;
@@ -89,11 +90,13 @@ tep_mailbox_test_expect(uint16_t command, uint16_t payload_len, tep_mb_status_t 
 		TEP_TEST_LOG("command 0x%x: request %s\n", (unsigned)command, tep_request_result_name(result));
 		return false;
 	}
+
 	if (response->status != (uint16_t)expected) {
 		TEP_TEST_LOG("command 0x%x: status %u, expected %u\n", (unsigned)command, (unsigned)response->status,
 					 (unsigned)expected);
 		return false;
 	}
+
 	return true;
 }
 
@@ -109,29 +112,36 @@ tep_mailbox_test_protocol(void)
 	}
 
 	if (!tep_mailbox_test_expect(TEP_MB_CMD_HELLO, 0U, TEP_MB_OK, &response)) return false;
+
 	if (response.payload_len != TEP_MB_HELLO_LEN || response.payload[0] != TEP_MB_VERSION) {
 		TEP_TEST_LOG("HELLO response malformed\n");
 		return false;
 	}
+
 	TEP_TEST_LOG("HELLO ok\n");
 
 	/* tepOS may still be starting its services: give it a few health periods. */
 	for (uint32_t attempt = 0U; attempt < 20U; attempt++) {
 		if (!tep_mailbox_test_expect(TEP_MB_CMD_GET_HEALTH, 0U, TEP_MB_OK, &response)) return false;
+
 		health = (tep_mb_health_t)response.payload[0];
 		if (health == TEP_MB_HEALTH_OK) break;
+
 		tep_mailbox_test_pause_ms(500ULL);
 	}
 	if (health != TEP_MB_HEALTH_OK) {
 		TEP_TEST_LOG("tepOS health stayed %s\n", tep_mb_health_name((uint8_t)health));
 		return false;
 	}
+
 	TEP_TEST_LOG("tepOS health ok with %u service(s)\n", (unsigned)response.payload[1]);
 
 	if (!tep_mailbox_test_expect(0x7777U, 0U, TEP_MB_BAD_COMMAND, &response)) return false;
+
 	TEP_TEST_LOG("unknown command refused\n");
 
 	if (!tep_mailbox_test_expect(TEP_MB_CMD_GET_HEALTH, 2U, TEP_MB_BAD_LENGTH, &response)) return false;
+
 	TEP_TEST_LOG("wrong payload length refused\n");
 	return true;
 }
@@ -154,6 +164,7 @@ tep_mailbox_test_crypto(void)
 		TEP_TEST_LOG("SHA-256 of abc wrong (%s)\n", tep_result_name(result));
 		return false;
 	}
+
 	TEP_TEST_LOG("SHA-256 matches the FIPS 180-4 vector\n");
 
 	if (tep_random(random_a, sizeof(random_a)) != TEP_OK || tep_random(random_b, sizeof(random_b)) != TEP_OK ||
@@ -161,6 +172,7 @@ tep_mailbox_test_crypto(void)
 		TEP_TEST_LOG("random bytes missing or repeated\n");
 		return false;
 	}
+
 	TEP_TEST_LOG("random bytes ok\n");
 
 	if ((result = tep_key_generate(&g_key_handle)) != TEP_OK ||
@@ -169,12 +181,14 @@ tep_mailbox_test_crypto(void)
 		TEP_TEST_LOG("key generate/public/sign failed (%s)\n", tep_result_name(result));
 		return false;
 	}
+
 	TEP_TEST_LOG("key 0x%x generated, public key and signature returned\n", (unsigned)g_key_handle);
 
 	if ((result = tep_key_public(g_key_handle ^ 0xffffffffU, g_key_public)) != TEP_ERR_NOT_FOUND) {
 		TEP_TEST_LOG("unknown handle gave %s\n", tep_result_name(result));
 		return false;
 	}
+
 	/* The call above must not have written: fetch the key again. */
 	return tep_key_public(g_key_handle, g_key_public) == TEP_OK;
 }
@@ -188,6 +202,7 @@ tep_mailbox_test_auth_status(tep_auth_status_t *status)
 		TEP_TEST_LOG("passcode status: %s\n", tep_result_name(result));
 		return false;
 	}
+
 	TEP_TEST_LOG("passcode set %u, failures %u, locked %u, wait %u s\n", (unsigned)status->passcode_set,
 				 (unsigned)status->failures, (unsigned)status->locked, (unsigned)status->wait_seconds);
 	return true;
@@ -205,6 +220,7 @@ tep_mailbox_test_auth(void)
 	uint32_t wait = 0U;
 
 	if (!tep_mailbox_test_auth_status(&status)) return false;
+
 	if (status.passcode_set || status.failures != 0U) {
 		TEP_TEST_LOG("the key store is not fresh: a passcode or failures are already there\n");
 		return false;
@@ -228,6 +244,7 @@ tep_mailbox_test_auth(void)
 					"new passcode");
 
 	if (!tep_mailbox_test_auth_status(&status)) return false;
+
 	if (status.failures != 0U) {
 		TEP_TEST_LOG("a right passcode did not clear the failures\n");
 		return false;
@@ -245,10 +262,12 @@ tep_mailbox_test_auth(void)
 	}
 
 	if (!tep_mailbox_test_auth_status(&status)) return false;
+
 	if (status.failures != 5U || status.locked || status.wait_seconds == 0U) {
 		TEP_TEST_LOG("status after 5 failures is wrong\n");
 		return false;
 	}
+
 	return true;
 }
 
@@ -275,6 +294,7 @@ tep_mailbox_test_boot(void)
 					 (unsigned)version);
 		return false;
 	}
+
 	TEP_TEST_LOG("kernel's bootd check: verified, version %u\n", (unsigned)version);
 
 	if (!tep_boot_read_manifest(TEP_BOOT_MANIFEST_PATH, manifest) ||
@@ -282,6 +302,7 @@ tep_mailbox_test_boot(void)
 		TEP_TEST_LOG("bootd or its manifest could not be read again\n");
 		return false;
 	}
+
 	TEP_TEST_EXPECT(tep_boot_verify(manifest, digest, &detail), TEP_OK, "same bootd and manifest again");
 	if (detail != version) {
 		TEP_TEST_LOG("version %u, expected %u\n", (unsigned)detail, (unsigned)version);
@@ -292,6 +313,7 @@ tep_mailbox_test_boot(void)
 		TEP_TEST_LOG("%s missing: run this test through tools/test_tep_mailbox.sh\n", TEP_TEST_TAMPERED_PATH);
 		return false;
 	}
+
 	TEP_TEST_EXPECT(tep_boot_verify(manifest, digest, &detail), TEP_ERR_DENIED, "tampered bootd");
 	if (detail != TEP_BOOT_WRONG_IMAGE) {
 		TEP_TEST_LOG("tampered bootd refused for %s, expected another image\n", tep_boot_reason_name(detail));
@@ -320,11 +342,13 @@ tep_mailbox_test_boot(void)
 		TEP_TEST_LOG("%s missing: run this test through tools/test_tep_mailbox.sh\n", TEP_TEST_OLD_MANIFEST_PATH);
 		return false;
 	}
+
 	TEP_TEST_EXPECT(tep_boot_verify(changed, digest, &detail), TEP_ERR_ROLLBACK, "bootd signed as version 1");
 	if (detail != version) {
 		TEP_TEST_LOG("rollback minimum %u, expected %u\n", (unsigned)detail, (unsigned)version);
 		return false;
 	}
+
 	return true;
 }
 
@@ -346,12 +370,14 @@ tep_mailbox_test_fail_closed(void)
 		TEP_TEST_LOG("request while unavailable returned %s\n", tep_request_result_name(result));
 		return false;
 	}
+
 	uint8_t digest[TEP_SHA256_SIZE];
 	tep_result_t crypto = tep_sha256("x", 1U, digest);
 	if (crypto != TEP_ERR_UNAVAILABLE) {
 		TEP_TEST_LOG("SHA-256 while unavailable returned %s\n", tep_result_name(crypto));
 		return false;
 	}
+
 	if (tep_mailbox_health(&health)) {
 		TEP_TEST_LOG("stale health reported while unavailable\n");
 		return false;
@@ -376,6 +402,7 @@ tep_mailbox_test_recovery(void)
 		TEP_TEST_LOG("tepOS did not come back\n");
 		return false;
 	}
+
 	if (!tep_mailbox_test_expect(TEP_MB_CMD_GET_HEALTH, 0U, TEP_MB_OK, &response)) return false;
 
 	/* The harness restarts tepOS on the same (scratch) key store: the key must be there. */
@@ -385,6 +412,7 @@ tep_mailbox_test_recovery(void)
 		TEP_TEST_LOG("key 0x%x after tepOS restart: %s\n", (unsigned)g_key_handle, tep_result_name(result));
 		return false;
 	}
+
 	TEP_TEST_LOG("key survived the tepOS restart\n");
 	if (tep_key_delete(g_key_handle) != TEP_OK) return false;
 
@@ -393,10 +421,12 @@ tep_mailbox_test_recovery(void)
 	uint32_t wait = 0U;
 
 	if (!tep_mailbox_test_auth_status(&status)) return false;
+
 	if (status.failures != 5U || status.wait_seconds > 60U) {
 		TEP_TEST_LOG("passcode failures did not survive the tepOS restart\n");
 		return false;
 	}
+
 	TEP_TEST_LOG("passcode failures survived the tepOS restart\n");
 
 	if (status.wait_seconds != 0U) {
@@ -409,10 +439,12 @@ tep_mailbox_test_recovery(void)
 					"right passcode after the delay");
 
 	if (!tep_mailbox_test_auth_status(&status)) return false;
+
 	if (status.failures != 0U || status.wait_seconds != 0U) {
 		TEP_TEST_LOG("a right passcode did not clear the failures\n");
 		return false;
 	}
+
 	return true;
 }
 
@@ -425,15 +457,21 @@ tep_mailbox_test_run(void)
 	}
 
 	if (!tep_mailbox_test_protocol()) return false;
+
 	if (!tep_mailbox_test_crypto()) return false;
+
 	if (!tep_mailbox_test_auth()) return false;
+
 	if (!tep_mailbox_test_boot()) return false;
+
 	kputln("tep_mailbox_test: protocol checks passed");
 
 	if (!tep_mailbox_test_fail_closed()) return false;
+
 	kputln("tep_mailbox_test: fail-closed check passed");
 
 	if (!tep_mailbox_test_recovery()) return false;
+
 	kputln("tep_mailbox_test: reconnect passed");
 	return true;
 }

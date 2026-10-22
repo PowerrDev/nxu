@@ -37,7 +37,7 @@ def main():
     shutil.copytree(ROOT / 'tools/DiskRoot', diskroot)
     jobs = diskroot / 'System/Library/BootDaemons'
     jobs.mkdir(parents=True, exist_ok=True)
-    test_executable = '/disk/Applications/Crash Test.app/Contents/SevOS/Crash Test' if args.ui else '/disk/System/Library/CoreServices/crashtest'
+    test_executable = '/Volumes/mainOS/Applications/Crash Test.app/Contents/SevOS/Crash Test' if args.ui else '/Volumes/mainOS/System/Library/CoreServices/crashtest'
     test_job = f'<plist version="1.0"><dict>\n<key>Label</key><string>com.nxu.crashtest</string>\n<key>Program</key><string>{test_executable}</string>\n<key>RunAtLoad</key><true/>\n</dict></plist>'
     disk = scratch / 'disk.img'
     config = 'crashd-ui-check' if args.ui else 'crashd-check'
@@ -84,7 +84,7 @@ def main():
         check=True,
     )
     if args.stale_symbols:
-        sidecar_guest = test_executable.removeprefix('/disk') + '.crashsym'
+        sidecar_guest = test_executable.removeprefix('/Volumes/mainOS') + '.crashsym'
         sidecar = diskroot / sidecar_guest.lstrip('/')
         data = bytearray(sidecar.read_bytes())
         data[8] ^= 0xff
@@ -180,7 +180,7 @@ def main():
                 process.wait()
     serial_text = serial.read_text(errors='replace')
     assert 'crashtest: normal exit, caught signal, access control, SIGABRT and SIGILL passed' in serial_text, 'negative cases or signal tests failed'
-    report_directory = '/disk/Users/Shared/Library/Logs/DiagnosticReports/' if args.ui else '/disk/Library/Logs/DiagnosticReports/'
+    report_directory = '/Volumes/mainOS/Users/Shared/Library/Logs/DiagnosticReports/' if args.ui else '/Volumes/mainOS/Library/Logs/DiagnosticReports/'
     paths = re.findall(
         'crashd: saved (' + re.escape(report_directory) + 'crash-[0-9]+-[0-9]+-[0-9]+\\.crash)',
         serial_text,
@@ -190,7 +190,7 @@ def main():
     for i, path in enumerate(paths):
         output = scratch / f'report-{i}.crash'
         subprocess.run(
-            ['debugfs', '-R', f"dump {path.removeprefix('/disk')} {output}", str(disk)],
+            ['debugfs', '-R', f"dump {path.removeprefix('/Volumes/mainOS')} {output}", str(disk)],
             capture_output=True,
             check=True,
         )

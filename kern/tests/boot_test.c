@@ -70,19 +70,22 @@ boot_test_run_jbd2_crash(void)
 	filedesc_t filedesc = &kernel_proc->p_fd;
 	uint32_t descriptor;
 
-	vfs_status_t status = vfs_open(filedesc, "/disk/NXU/journal-recovery.txt",
+	vfs_status_t status = vfs_open(filedesc, "/Volumes/mainOS/NXU/journal-recovery.txt",
 								   VFS_OPEN_WRITE | VFS_OPEN_CREATE | VFS_OPEN_TRUNCATE, &descriptor);
 	if (status != VFS_STATUS_OK) boot_test_fail("jbd2: crash-test file preparation failed");
+
 	if (vfs_close(filedesc, descriptor) != VFS_STATUS_OK) boot_test_fail("jbd2: crash-test close failed");
+
 	if (!ext4_debug_arm_journal_crash()) boot_test_fail("jbd2: failed to arm crash point");
 
-	status = vfs_open(filedesc, "/disk/NXU/journal-recovery.txt", VFS_OPEN_WRITE, &descriptor);
+	status = vfs_open(filedesc, "/Volumes/mainOS/NXU/journal-recovery.txt", VFS_OPEN_WRITE, &descriptor);
 	if (status != VFS_STATUS_OK) boot_test_fail("jbd2: crash-test reopen failed");
 
 	uint64_t written = 0ULL;
 	status = vfs_write(filedesc, descriptor, g_jbd2_recovery_message, sizeof(g_jbd2_recovery_message) - 1ULL, &written);
 	(void)vfs_close(filedesc, descriptor);
 	if (status != VFS_STATUS_IO_ERROR) boot_test_fail("jbd2: crash point did not stop checkpoint");
+
 	if (!ext4_debug_journal_crash_reached()) boot_test_fail("jbd2: durable crash point was not reached");
 
 	kputln("jbd2: crash-test transaction committed");
@@ -124,6 +127,7 @@ boot_test_graphical(display_device_t *boot_display)
 	if (!windowserver_bootstrap()) {
 		boot_test_fail("panic: WindowServer bootstrap failed");
 	}
+
 	if (!ui_service_bootstrap()) {
 		boot_test_fail("panic: interactive session failed");
 	}

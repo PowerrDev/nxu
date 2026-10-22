@@ -27,7 +27,7 @@ void boot_test_graphical(display_device_t *boot_display);
 /*
  * boot_test_storage
  *
- * The tests that need /disk mounted: the Btrfs boot-arg test, the JBD2
+ * The tests that need /Volumes/mainOS mounted: the Btrfs boot-arg test, the JBD2
  * crash test and every userland process test. Never returns if one is
  * selected; returns immediately otherwise.
  */

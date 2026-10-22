@@ -12,6 +12,7 @@
 set -u
 
 KERNEL=${1:?usage: test_i386_smp.sh <kernel.elf>}
+MULTI_CPUS=${I386_SMP_TEST_CPUS:-4}
 TIMEOUT=${I386_TEST_TIMEOUT:-30}
 
 STATUS_CLEAN=1
@@ -71,23 +72,21 @@ boot() {
 	STATUS=$?
 }
 
-# ---- -smp 4: four CPUs, all online, IPI round trip to each -------------------
+# ---- multi-CPU: all CPUs online, IPI round trip to each ----------------------
 
-boot 4 "test=smp qemu-exit=1 expect-cpus=4"
-verify smp-4 "$STATUS" $STATUS_CLEAN "$OUTPUT" \
-	"NxuACPIPlatform: MADT lists 4 CPU(s)" \
-	"SMP: 4 CPUs online" \
-	"cpu1: online" \
-	"cpu2: online" \
-	"cpu3: online" \
-	"cpu1: PAE and NX protections validated" \
-	"cpu2: PAE and NX protections validated" \
-	"cpu3: PAE and NX protections validated" \
-	"IPI round trip to cpu1 ok" \
-	"IPI round trip to cpu2 ok" \
-	"IPI round trip to cpu3 ok" \
-	"cpu count and IPI round trip ok" \
+boot "$MULTI_CPUS" "test=smp qemu-exit=1 expect-cpus=$MULTI_CPUS"
+patterns=(
+	"NxuACPIPlatform: MADT lists $MULTI_CPUS CPU(s)"
+	"SMP: $MULTI_CPUS CPUs online"
+	"cpu count and IPI round trip ok"
 	"smp self-test passed"
+)
+for ((cpu = 1; cpu < MULTI_CPUS; cpu++)); do
+	patterns+=("cpu$cpu: online")
+	patterns+=("cpu$cpu: PAE and NX protections validated")
+	patterns+=("IPI round trip to cpu$cpu ok")
+done
+verify "smp-$MULTI_CPUS" "$STATUS" $STATUS_CLEAN "$OUTPUT" "${patterns[@]}"
 
 # ---- -smp 1: the MP table lists one CPU, smp stays a clean no-op -------------
 
@@ -98,9 +97,9 @@ verify smp-1 "$STATUS" $STATUS_CLEAN "$OUTPUT" \
 
 # ---- a plain boot (no test=, no disk) still completes with SMP linked in ----
 
-boot 4 "qemu-exit=1"
+boot "$MULTI_CPUS" "qemu-exit=1"
 verify smp-boot "$STATUS" $STATUS_CLEAN "$OUTPUT" \
-	"SMP: 4 CPUs online" \
+	"SMP: $MULTI_CPUS CPUs online" \
 	"i386_init_userland: no block device, staying in kernel-only mode" \
 	"i386_init: boot phases complete"
 

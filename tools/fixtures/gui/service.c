@@ -231,8 +231,8 @@ desktop_test(void)
 
 	service_config_t config = {0};
 	memcpy(config.label, "com.nxu.desktop", sizeof("com.nxu.desktop"));
-	memcpy(config.program, "/disk/System/Library/CoreServices/desktop_service",
-		   sizeof("/disk/System/Library/CoreServices/desktop_service"));
+	memcpy(config.program, "/Volumes/mainOS/System/Library/CoreServices/desktop_service",
+		   sizeof("/Volumes/mainOS/System/Library/CoreServices/desktop_service"));
 	config.keep_alive = true;
 	config.allow_display = true;
 
@@ -252,7 +252,7 @@ desktop_test(void)
 	bootd_registry_entry_t *entry = &manager.registry.entries[manager.registry.entry_count++];
 	memcpy(entry->label, "com.nxu.gui-progress", sizeof("com.nxu.gui-progress"));
 	entry->port_name = progress_port;
-	int64_t client = nxu_spawn("/disk/System/Library/CoreServices/coregraphics-client", "coregraphics-client");
+	int64_t client = nxu_spawn("/Volumes/mainOS/System/Library/CoreServices/coregraphics-client", "coregraphics-client");
 
 	if (client <= 0) return false;
 
@@ -302,7 +302,7 @@ security_test(uint32_t port, uint32_t victim)
 	bootd_registry_entry_t *entry = &manager.registry.entries[manager.registry.entry_count++];
 	memcpy(entry->label, "com.nxu.gui-security", sizeof("com.nxu.gui-security"));
 	entry->port_name = control;
-	int64_t child = nxu_spawn_caps("/disk/System/Library/CoreServices/gui-security-client", "gui-security-client", 0);
+	int64_t child = nxu_spawn_caps("/Volumes/mainOS/System/Library/CoreServices/gui-security-client", "gui-security-client", 0);
 	if (child <= 0) return false;
 
 	uint32_t own = 0, transferred = 0, type = 0;

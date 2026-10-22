@@ -64,7 +64,7 @@ main(void)
 			static const char passed[] =
 				"production-session: PASS Dock launches, app processes and activity snapshots\n";
 			(void)nxu_write(1, passed, sizeof(passed) - 1);
-			if (nxu_spawn("/disk/System/Library/CoreServices/crashtest", "production-crash-probe") <= 0) return 6;
+			if (nxu_spawn("/Volumes/mainOS/System/Library/CoreServices/crashtest", "production-crash-probe") <= 0) return 6;
 			return 0;
 		}
 		(void)nxu_sleep_us(100000);

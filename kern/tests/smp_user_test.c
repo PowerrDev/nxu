@@ -73,7 +73,7 @@ smp_user_test_run(void)
 	sched_user_running_reset_peak();
 
 	proc_t proc = 0;
-	loader_status_t status = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/smptest", "smptest", &proc);
+	loader_status_t status = loader_spawn(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/smptest", "smptest", &proc);
 
 	if (status != LOADER_STATUS_OK) {
 		kprintf("smp_user_test: FAILED: spawning smptest: %s\n", loader_status_name(status));
@@ -103,7 +103,6 @@ smp_user_test_run(void)
 		 */
 		if (!reaped) (void)sched_sleep_us(5000ULL);
 	}
-
 	if (!reaped) {
 		kputln("smp_user_test: FAILED: smptest did not finish");
 		smp_user_test_dump(cpus);

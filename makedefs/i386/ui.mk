@@ -4,10 +4,10 @@
 I386_C_SOURCES += \
     kern/aqua/window_server.c \
     drivers/video/ui_service_login.c \
-    drivers/video/trusted_login.c \
+    drivers/video/keystore_manager.c \
     drivers/video/login_wallpaper.c \
     drivers/video/ui_service_activity.c \
-    drivers/video/ui_service_bridge.c \
+    drivers/video/ui_session_manager.c \
     platform/i386/services/ui_service.c
 
 I386_ASM_SOURCES += drivers/video/login_wallpaper_asset.S
@@ -143,11 +143,11 @@ endif
 		-serial stdio \
 		$(I386_DESKTOP_APPEND)
 
-$(I386_BUILD)/user/reporter_fonts.h: tools/generate_reporter_fonts.py tools/generate_recovery_fonts.py $(USER_SYSTEM_FONTS)
-	$(Q)python3 tools/generate_reporter_fonts.py --output $@
+$(I386_BUILD)/user/reporter_fonts.h: tools/generate_reporter_fonts.py tools/generate_recovery_fonts.py $(USER_SYSTEM_FONTS) $(FONT_PYTHON)
+	$(Q)$(FONT_PYTHON) tools/generate_reporter_fonts.py --output $@
 
-$(I386_BUILD)/drivers/video/trusted_login.o $(I386_BUILD)/kern/security/sap.o: $(I386_BUILD)/user/reporter_fonts.h
-$(I386_BUILD)/drivers/video/trusted_login.o $(I386_BUILD)/kern/security/sap.o: I386_CFLAGS += -I$(I386_USER_BUILD)
+$(I386_BUILD)/drivers/video/keystore_manager.o $(I386_BUILD)/kern/security/sap.o: $(I386_BUILD)/user/reporter_fonts.h
+$(I386_BUILD)/drivers/video/keystore_manager.o $(I386_BUILD)/kern/security/sap.o: I386_CFLAGS += -I$(I386_USER_BUILD)
 
 .PHONY: run-i386-recovery
 run-i386-recovery:

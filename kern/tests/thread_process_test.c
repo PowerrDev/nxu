@@ -30,6 +30,7 @@ thread_process_test_wait(proc_t parent, proc_id_t pid, uint64_t *status)
 {
 	for (uint32_t spin = 0U; spin < THREAD_PROCESS_TEST_WAIT_ITERATIONS; spin++) {
 		if (proc_reap(parent, pid, status)) return true;
+
 		if (!sched_yield()) return false;
 	}
 	return false;
@@ -41,7 +42,7 @@ thread_process_test(void)
 	proc_t proc = 0;
 
 	loader_status_t status =
-		loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/threadtest", "threadtest", &proc);
+		loader_spawn(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/threadtest", "threadtest", &proc);
 	if (status != LOADER_STATUS_OK) {
 		kputs("thread_process_test: spawning threadtest failed: ");
 		kputln(loader_status_name(status));

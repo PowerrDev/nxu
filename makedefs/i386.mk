@@ -108,8 +108,8 @@ $(I386_BUILD)/%.o: %.S
 
 	$(Q)$(I386_CC) $(I386_ASFLAGS) -c $< -o $@
 
-$(I386_BUILD)/login_wallpaper.qoi: tools/UI/Backgrounds/Sonoma.jpg tools/make_login_wallpaper.py
-	$(Q)python3 tools/make_login_wallpaper.py --source $< --output $@
+$(I386_BUILD)/login_wallpaper.qoi: tools/UI/Backgrounds/Sonoma.jpg tools/make_login_wallpaper.py $(FONT_PYTHON)
+	$(Q)$(FONT_PYTHON) tools/make_login_wallpaper.py --source $< --output $@
 
 $(I386_BUILD)/drivers/video/login_wallpaper_asset.o: drivers/video/login_wallpaper_asset.S $(I386_BUILD)/login_wallpaper.qoi
 	@mkdir -p $(dir $@)

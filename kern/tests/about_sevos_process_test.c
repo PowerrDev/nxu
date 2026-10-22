@@ -36,6 +36,7 @@ about_sevos_process_test_wait(proc_t parent, proc_id_t pid, uint64_t *status)
 {
 	for (uint32_t spin = 0U; spin < ABOUT_SEVOS_PROCESS_TEST_WAIT_ITERATIONS; spin++) {
 		if (proc_reap(parent, pid, status)) return true;
+
 		if (!sched_yield()) return false;
 	}
 	return false;
@@ -46,6 +47,7 @@ about_sevos_process_test_wait_registry(void)
 {
 	for (uint32_t spin = 0U; spin < ABOUT_SEVOS_PROCESS_TEST_REGISTRY_WAIT_ITERATIONS; spin++) {
 		if (ipc_bootstrap_registry_port() != IPC_PORT_NULL) return true;
+
 		if (!sched_yield()) return false;
 	}
 	return false;
@@ -59,7 +61,7 @@ about_sevos_process_test(void)
 	proc_t proc_about = 0;
 
 	loader_status_t status_bootd =
-		loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/bootd", "bootd", &proc_bootd);
+		loader_spawn(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/bootd", "bootd", &proc_bootd);
 	if (status_bootd != LOADER_STATUS_OK) {
 		kputs("about_sevos_process_test: spawning bootd failed: ");
 		kputln(loader_status_name(status_bootd));
@@ -72,7 +74,7 @@ about_sevos_process_test(void)
 	}
 
 	loader_status_t status_windowserver =
-		loader_spawn_caps(proc_kernel(), "/disk/System/Library/CoreServices/windowserver_service",
+		loader_spawn_caps(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/windowserver_service",
 						  "windowserver_service", NXU_CAP_DISPLAY, &proc_windowserver);
 	if (status_windowserver != LOADER_STATUS_OK) {
 		kputs("about_sevos_process_test: spawning windowserver_service failed: ");
@@ -85,9 +87,10 @@ about_sevos_process_test(void)
 			kputln("about_sevos_process_test: scheduler dispatch failed while waiting for windowserver_service");
 			return false;
 		}
+
 	}
 
-	loader_status_t status_about = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/about_sevos_service",
+	loader_status_t status_about = loader_spawn(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/about_sevos_service",
 												"about_sevos_service", &proc_about);
 	if (status_about != LOADER_STATUS_OK) {
 		kputs("about_sevos_process_test: spawning about_sevos_service failed: ");

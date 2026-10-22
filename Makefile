@@ -6,6 +6,14 @@ BUILD := $(BUILD_ROOT)/$(CONFIG)
 
 USER_BUILD := $(BUILD_ROOT)/userland
 
+# Font rasterization needs Pillow. Keep that host-only dependency isolated
+# from the system Python used by the rest of the build.
+FONT_PYTHON := .venv-fonts/bin/python3
+
+$(FONT_PYTHON): tools/requirements-fonts.txt
+	$(Q)python3 -m venv .venv-fonts
+	$(Q).venv-fonts/bin/python3 -m pip install -r tools/requirements-fonts.txt
+
 BOOT_ARGS ?=
 
 # Native virtio-gpu scanout resolution for the GUI boot targets: the host
@@ -323,10 +331,10 @@ C_SOURCES := \
     skylight/skylight.c \
     platform/arm64/services/ui_service.c \
     drivers/video/ui_service_login.c \
-    drivers/video/trusted_login.c \
+    drivers/video/keystore_manager.c \
     drivers/video/login_wallpaper.c \
     drivers/video/ui_service_activity.c \
-    drivers/video/ui_service_bridge.c \
+    drivers/video/ui_session_manager.c \
     kern/aqua/window_server.c \
     drivers/virtio/virtio.c \
     drivers/virtio/virtio_net.c \
@@ -737,8 +745,8 @@ $(BUILD)/%.o: %.S
 
 	$(Q)$(CC) $(ASFLAGS) -c $< -o $@
 
-$(BUILD)/login_wallpaper.qoi: tools/UI/Backgrounds/Sonoma.jpg tools/make_login_wallpaper.py
-	$(Q)python3 tools/make_login_wallpaper.py --source $< --output $@
+$(BUILD)/login_wallpaper.qoi: tools/UI/Backgrounds/Sonoma.jpg tools/make_login_wallpaper.py $(FONT_PYTHON)
+	$(Q)$(FONT_PYTHON) tools/make_login_wallpaper.py --source $< --output $@
 
 $(BUILD)/drivers/video/login_wallpaper_asset.o: drivers/video/login_wallpaper_asset.S $(BUILD)/login_wallpaper.qoi $(BUILD)/.kernel-flags
 	@mkdir -p $(dir $@)
@@ -864,20 +872,20 @@ $(USER_BUILD)/dyrld-runtime: $(USER_COMMON_OBJECTS) \
 	$(USER_BUILD)/frameworks/Dyrld.framework/runtime.o
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
-$(USER_BUILD)/reporter_fonts.h: tools/generate_reporter_fonts.py tools/generate_recovery_fonts.py \
+$(USER_BUILD)/reporter_fonts.h: tools/generate_reporter_fonts.py tools/generate_recovery_fonts.py $(FONT_PYTHON) \
 	tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Regular.otf tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Medium.otf
-	$(Q)python3 tools/generate_reporter_fonts.py --output $@
+	$(Q)$(FONT_PYTHON) tools/generate_reporter_fonts.py --output $@
 
-kern/boot/status_font.h: tools/generate_boot_status_font.py tools/generate_recovery_fonts.py \
+kern/boot/status_font.h: tools/generate_boot_status_font.py tools/generate_recovery_fonts.py $(FONT_PYTHON) \
 	tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Regular.otf
-	$(Q)python3 tools/generate_boot_status_font.py
+	$(Q)$(FONT_PYTHON) tools/generate_boot_status_font.py
 
-drivers/video/login_font.h: tools/generate_login_font.py tools/generate_recovery_fonts.py \
+drivers/video/login_font.h: tools/generate_login_font.py tools/generate_recovery_fonts.py $(FONT_PYTHON) \
 	tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Medium.otf
-	$(Q)python3 tools/generate_login_font.py
+	$(Q)$(FONT_PYTHON) tools/generate_login_font.py
 
-$(BUILD)/drivers/video/trusted_login.o: $(USER_BUILD)/reporter_fonts.h
-$(BUILD)/drivers/video/trusted_login.o: CFLAGS += -I$(USER_BUILD)
+$(BUILD)/drivers/video/keystore_manager.o: $(USER_BUILD)/reporter_fonts.h
+$(BUILD)/drivers/video/keystore_manager.o: CFLAGS += -I$(USER_BUILD)
 
 $(BUILD)/kern/security/sap.o: $(USER_BUILD)/reporter_fonts.h
 $(BUILD)/kern/security/sap.o: CFLAGS += -I$(USER_BUILD)
@@ -1147,11 +1155,11 @@ endef
 
 ifeq ($(UISERVICE),1)
 
-# Only the host bridge includes the generated UIService ABI header.
+# Only the UI session manager includes the generated UIService ABI header.
 $(BUILD)/platform/arm64/services/ui_service.o: | uiservice-build
 $(BUILD)/drivers/video/ui_service_login.o: | uiservice-build
 $(BUILD)/drivers/video/ui_service_activity.o: | uiservice-build
-$(BUILD)/drivers/video/ui_service_bridge.o: | uiservice-build
+$(BUILD)/drivers/video/ui_session_manager.o: | uiservice-build
 
 endif
 
@@ -1496,8 +1504,6 @@ clean:
 test-crashd:
 	python3 tools/check_crashd.py
 
-.PHONY: test-dyrld test-sap
+.PHONY: test-dyrld
 test-dyrld:
 	python3 tools/check_dyrld.py
-test-sap:
-	python3 tools/check_sap.py

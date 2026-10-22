@@ -83,10 +83,13 @@ spawn(thread_continue_t function, void *argument, const nxu_cpuset_t *affinity, 
 	thread_t thread;
 
 	if (g_thread_total >= SMP_TEST_MAX_THREADS) return false;
+
 	if (!kernel_thread_create(proc_task(proc_kernel()), function, argument, &thread)) return false;
 
 	if (affinity != 0 && !thread_set_affinity(thread, affinity)) return false;
+
 	if (preemptible && !thread_set_preemptible(thread, true)) return false;
+
 	if (!sched_thread_start(thread)) return false;
 
 	g_threads[g_thread_total++] = thread;
@@ -110,6 +113,7 @@ wait_for(volatile uint32_t *counter, uint32_t target, uint64_t timeout_us)
 
 	while (__atomic_load_n(counter, __ATOMIC_ACQUIRE) < target) {
 		if (now_us() > deadline) return false;
+
 		(void)sched_yield();
 	}
 
@@ -147,11 +151,14 @@ test_cpus_online(void)
 		processor_t processor = processor_by_id(cpu);
 
 		if (!check(processor != 0 && processor_is_online(processor), name, "a CPU is not online")) return false;
+
 		if (!check(processor->cpu_id == cpu, name, "processor id does not match its slot")) return false;
+
 		if (!check(processor->idle_thread != 0 && thread_is_idle(processor->idle_thread), name,
 				   "a CPU has no idle thread"))
 			return false;
 		if (!check(cpu == 0U || processor->boot_stack != 0, name, "a secondary CPU has no boot stack")) return false;
+
 		if (!check(processor_validate(processor), name, "processor_validate failed")) return false;
 
 		for (uint32_t other = 0U; other < cpu; other++) {
@@ -215,7 +222,6 @@ pin_worker(void *argument)
 
 		cpu_relax();
 	}
-
 	for (uint32_t round = 0U; round < 200U; round++) {
 		if (machine_cpu_id() != cpu || current_processor()->cpu_id != cpu) {
 			__atomic_add_fetch(&g_pin.wrong_cpu, 1U, __ATOMIC_ACQ_REL);
@@ -247,7 +253,9 @@ test_pinned_per_cpu(void)
 	release_threads();
 
 	if (!check(finished, name, "pinned workers did not finish")) return false;
+
 	if (!check(g_pin.barrier_timeouts == 0U, name, "the workers were not all running at the same time")) return false;
+
 	return check(g_pin.wrong_cpu == 0U, name, "a pinned worker ran on the wrong CPU");
 }
 
@@ -313,6 +321,7 @@ test_mlfq_concurrent(void)
 			__atomic_store_n(&g_mlfq.stop, 1U, __ATOMIC_RELEASE);
 			return false;
 		}
+
 	}
 
 	bool valid = true;
@@ -335,7 +344,9 @@ test_mlfq_concurrent(void)
 	release_threads();
 
 	if (!check(finished, name, "workers did not stop")) return false;
+
 	if (!check(valid, name, "sched_validate_all failed while the workers ran")) return false;
+
 	if (!check(g_mlfq.violations == 0U, name, "a thread was seen on two CPUs, or queued while running")) return false;
 
 	for (uint32_t index = 0U; index < count; index++) {
@@ -425,6 +436,7 @@ test_ping_pong(void)
 	release_threads();
 
 	if (!check(finished, name, "the threads did not finish (a wakeup was lost)")) return false;
+
 	return check(g_pp.rounds[0] == PING_PONG_ROUNDS && g_pp.rounds[1] == PING_PONG_ROUNDS, name,
 				 "wrong number of rounds");
 }
@@ -484,6 +496,7 @@ test_seq_wait(void)
 	cpus_only(&second, g_ncpu > 2U ? 2U : 1U);
 
 	if (!check(spawn(seq_worker, (void *)0, &first, false), name, "could not start the first thread")) return false;
+
 	if (!check(spawn(seq_worker, (void *)1, &second, false), name, "could not start the second thread")) return false;
 
 	bool finished = wait_for(&g_seq.done, 2U, 30000000ULL);
@@ -491,6 +504,7 @@ test_seq_wait(void)
 	release_threads();
 
 	if (!check(finished, name, "the threads did not finish (a wakeup was lost)")) return false;
+
 	return check(g_seq.rounds[0] == SEQ_ROUNDS && g_seq.rounds[1] == SEQ_ROUNDS, name, "wrong number of rounds");
 }
 
@@ -543,6 +557,7 @@ test_ipi(void)
 		uint64_t queued_at = now_us();
 
 		if (!check(sched_thread_start(thread), name, "sched_thread_start failed")) return false;
+
 		if (!check(wait_for(&g_ipi.done, 1U, 1000000ULL), name, "the worker never ran")) return false;
 
 		latency[trial] = g_ipi.started_at - queued_at;
@@ -569,6 +584,7 @@ test_ipi(void)
 
 	/* A tick is 10000 us: without the IPI a sleeping CPU would wait for it, so the median would be near 5000 us. */
 	if (!check(ipis >= 10ULL, name, "the idle CPU took too few reschedule IPIs")) return false;
+
 	return check(latency[10] < 3000ULL, name, "waking an idle CPU took as long as a timer tick");
 }
 
@@ -626,6 +642,7 @@ test_affinity(void)
 	release_threads();
 
 	if (!check(finished, name, "subset workers did not finish")) return false;
+
 	if (!check((g_aff.seen_mask & 1U) == 0U, name, "a thread excluded from CPU 0 ran on it")) return false;
 
 	uint32_t distinct = (uint32_t)__builtin_popcount(g_aff.seen_mask);
@@ -666,7 +683,9 @@ test_affinity(void)
 	release_threads();
 
 	if (!check(on_first, name, "the follower did not start on its first CPU")) return false;
+
 	if (!check(changed && followed, name, "a thread did not follow its new affinity")) return false;
+
 	return check(finished, name, "the follower did not stop");
 }
 
@@ -740,7 +759,9 @@ test_balance(void)
 			(unsigned long long)elapsed, distinct, (unsigned long long)moved);
 
 	if (!check(finished, name, "the workers did not finish")) return false;
+
 	if (!check(distinct >= (g_ncpu > 2U ? 3U : 1U), name, "the load was not spread over the CPUs")) return false;
+
 	if (!check(g_ncpu <= 2U || moved > 0ULL, name, "the balancer never migrated a thread")) return false;
 
 	/* Serial on one CPU it is count * BALANCE_SPIN_US; with three CPUs helping it must beat that clearly. */
@@ -839,6 +860,7 @@ test_stress(void)
 	release_threads();
 
 	if (!check(finished, name, "lock workers did not finish")) return false;
+
 	if (!check(g_lock.counter == (uint64_t)g_ncpu * LOCK_ITERATIONS, name,
 			   "the contended counter is wrong: the lock does not exclude"))
 		return false;
@@ -862,6 +884,7 @@ test_stress(void)
 	release_threads();
 
 	if (!check(finished, name, "the spawners or their children did not finish")) return false;
+
 	if (!check(g_churn.failures == 0U, name, "thread creation or start failed under load")) return false;
 
 	/* Every child exited and was reaped: the pool is back to where it started. */
@@ -903,7 +926,6 @@ memory_worker(void *argument)
 			*(volatile uint64_t *)alias = tag + index;
 			got++;
 		}
-
 		for (uint32_t index = 0U; index < got; index++) {
 			uint64_t alias;
 
@@ -944,16 +966,17 @@ memory_worker(void *argument)
 				__atomic_add_fetch(&g_mem.errors, 1U, __ATOMIC_ACQ_REL);
 				break;
 			}
-		}
 
+		}
 		for (size_t index = 0U; index < length; index++) {
 			if (block[index] != (uint8_t)((tag & 0xFFU) ^ iteration)) {
 				__atomic_add_fetch(&g_mem.errors, 1U, __ATOMIC_ACQ_REL);
 				break;
 			}
-		}
 
+		}
 		if (!vm_kern_free(region, 3U * 4096U)) __atomic_add_fetch(&g_mem.errors, 1U, __ATOMIC_ACQ_REL);
+
 		if (!kfree(block)) __atomic_add_fetch(&g_mem.errors, 1U, __ATOMIC_ACQ_REL);
 	}
 
@@ -1030,7 +1053,6 @@ tlb_writer(void *argument)
 			if (vmm_physical_to_higher_half(spare, &alias)) *(volatile uint64_t *)alias = TLB_POISON;
 		}
 	}
-
 	if (holding) (void)pmm_free_page(spare);
 
 	__atomic_add_fetch(&g_tlb.done, 1U, __ATOMIC_ACQ_REL);
@@ -1074,6 +1096,7 @@ test_memory(void)
 	release_threads();
 
 	if (!check(finished, name, "memory workers did not finish")) return false;
+
 	if (!check(g_mem.errors == 0U, name, "the heap, kernel VM or page allocator gave a wrong answer under concurrency"))
 		return false;
 
@@ -1086,6 +1109,7 @@ test_memory(void)
 	cpus_only(&reader_cpu, g_ncpu > 2U ? 2U : 1U);
 
 	if (!check(spawn(tlb_reader, 0, &reader_cpu, false), name, "could not start the TLB reader")) return false;
+
 	if (!check(spawn(tlb_writer, 0, &writer_cpu, false), name, "could not start the TLB writer")) return false;
 
 	finished = wait_for(&g_tlb.done, 2U, 60000000ULL);
@@ -1096,6 +1120,7 @@ test_memory(void)
 			TLB_ROUNDS);
 
 	if (!check(finished, name, "the TLB writer and reader did not finish")) return false;
+
 	if (!check(g_tlb.mismatches == 0U, name, "a CPU read through a stale translation after the page was unmapped"))
 		return false;
 
@@ -1195,7 +1220,6 @@ utlb_writer(void *argument)
 		held = physical;
 		holding = true;
 	}
-
 	if (holding) (void)pmm_free_page(held);
 
 	__atomic_add_fetch(&g_utlb.done, 1U, __ATOMIC_ACQ_REL);
@@ -1237,6 +1261,7 @@ test_user_tlb(void)
 	if (!check(user_space_new(&g_utlb.space), name, "could not create an address space")) return false;
 
 	if (!check(spawn(utlb_reader, 0, &reader_cpu, false), name, "could not start the reader")) return false;
+
 	if (!check(spawn(utlb_writer, 0, &writer_cpu, false), name, "could not start the writer")) return false;
 
 	bool finished = wait_for(&g_utlb.done, 2U, 60000000ULL);
@@ -1291,6 +1316,7 @@ test_fault_vs_unmap(void)
 	if (!check(user_space_new(&g_vrace.space), name, "could not create an address space")) return false;
 
 	if (!check(spawn(vrace_faulter, (void *)1, &first, false), name, "could not start a faulter")) return false;
+
 	if (!check(spawn(vrace_faulter, (void *)2, &second, false), name, "could not start a faulter")) return false;
 
 	uint32_t stragglers = 0U;
@@ -1337,6 +1363,7 @@ test_fault_vs_unmap(void)
 	user_space_free(&g_vrace.space);
 
 	if (!check(finished, name, "the faulters did not stop")) return false;
+
 	if (!check(stragglers == 0U, name, "a page was mapped into a region after it had been unmapped")) return false;
 
 	return check(pmm_get_free_page_count() + 8ULL >= free_before, name, "pages were leaked");
@@ -1365,6 +1392,7 @@ cow_worker(void *argument)
 	for (uint32_t round = 1U; round <= COW_ROUNDS; round++) {
 		while (__atomic_load_n(&g_cow.round, __ATOMIC_ACQUIRE) < round) {
 			if (__atomic_load_n(&g_cow.quit, __ATOMIC_ACQUIRE)) return;
+
 			cpu_relax();
 		}
 
@@ -1393,6 +1421,7 @@ test_cow_race(void)
 	user_cpus(&first, &second);
 
 	if (!check(spawn(cow_worker, 0, &first, false), name, "could not start a worker")) return false;
+
 	if (!check(spawn(cow_worker, 0, &second, false), name, "could not start a worker")) return false;
 
 	bool ok = true;
@@ -1451,6 +1480,7 @@ test_cow_race(void)
 	release_threads();
 
 	if (!ok) return false;
+
 	if (!check(g_cow.failures == 0U, name, "a COW fault that lost the race to another CPU was reported as a failure"))
 		return false;
 
@@ -1482,6 +1512,7 @@ smp_test_run(void)
 		kprintf("smp_test: %s: running\n", cases[index].name);
 
 		if (!cases[index].run()) return false;
+
 		if (!sched_validate_all()) {
 			kprintf("smp_test: %s: FAILED: the run queues are inconsistent afterwards\n", cases[index].name);
 			return false;
@@ -1489,7 +1520,6 @@ smp_test_run(void)
 
 		kprintf("smp_test: %s: ok\n", cases[index].name);
 	}
-
 	for (uint32_t cpu = 0U; cpu < g_ncpu; cpu++) {
 		processor_t processor = processor_by_id(cpu);
 

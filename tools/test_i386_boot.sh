@@ -68,7 +68,7 @@ run_case() {
 }
 
 run_case kernel no "test=kernel qemu-exit=1" $STATUS_CLEAN \
-	"i386_init_kernel: ramfs mounted at /, /disk mountpoint created" \
+	"i386_init_kernel: ramfs mounted at /, /Volumes/mainOS mountpoint created" \
 	"i386_init_kernel_selftest: NXPC, name tables, ramfs and boot-args ok"
 
 run_case kernel-only no "qemu-exit=1" $STATUS_CLEAN \

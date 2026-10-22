@@ -31,6 +31,7 @@ socket_process_test_wait(proc_t parent, proc_id_t pid, uint64_t *status)
 {
 	for (uint32_t spin = 0U; spin < SOCKET_PROCESS_TEST_WAIT_ITERATIONS; spin++) {
 		if (proc_reap(parent, pid, status)) return true;
+
 		if (!sched_yield()) return false;
 	}
 	return false;
@@ -42,7 +43,7 @@ socket_process_test(void)
 	proc_t proc_server = 0;
 	proc_t proc_client = 0;
 
-	loader_status_t status_server = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/sockettest_server",
+	loader_status_t status_server = loader_spawn(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/sockettest_server",
 												 "sockettest_server", &proc_server);
 	if (status_server != LOADER_STATUS_OK) {
 		kputs("socket_process_test: spawning sockettest_server failed: ");
@@ -50,7 +51,7 @@ socket_process_test(void)
 		return false;
 	}
 
-	loader_status_t status_client = loader_spawn(proc_kernel(), "/disk/System/Library/CoreServices/sockettest_client",
+	loader_status_t status_client = loader_spawn(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/sockettest_client",
 												 "sockettest_client", &proc_client);
 	if (status_client != LOADER_STATUS_OK) {
 		kputs("socket_process_test: spawning sockettest_client failed: ");

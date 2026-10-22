@@ -127,8 +127,8 @@ I386_USER_OBJECTS := $(I386_RECOVERY_OBJECTS) \
     $(I386_USER_BOOTD_OBJECTS) \
     $(addprefix $(I386_USER_BUILD)/$(I386_USER_DAEMON_DIR)/,$(addsuffix .o,$(filter-out bootd,$(I386_USER_PROGRAMS))))
 
-# bootd finds its services by plist (/disk/System/Library/BootDaemons/*.plist)
-# and each plist names an absolute Program path under /disk/System/Library/
+# bootd finds its services by plist (/Volumes/mainOS/System/Library/BootDaemons/*.plist)
+# and each plist names an absolute Program path under /Volumes/mainOS/System/Library/
 # CoreServices. Those paths are architecture-neutral, so the arm64 plists work
 # unchanged for the programs built here; only the plists of the programs that
 # exist on i386 are staged (the WindowServer and About sevOS ones would make

@@ -9,7 +9,7 @@ main(void)
 	CoreGraphicsDirEntry entries[128];
 	uint32_t count = 0;
 	bool truncated = false;
-	const char *path = "/disk/System/Library/CoreServices";
+	const char *path = "/Volumes/mainOS/System/Library/CoreServices";
 
 	if (DesktopServiceListDirectory(0, path, nxu_strlen(path), entries, 128, &count, &truncated) !=
 			CORE_GRAPHICS_FS_STATUS_OK ||
@@ -29,13 +29,13 @@ main(void)
 		count || !truncated)
 		return 2;
 
-	path = "/disk/System/Library/CoreServices/bootd";
+	path = "/Volumes/mainOS/System/Library/CoreServices/bootd";
 
 	if (DesktopServiceListDirectory(0, path, nxu_strlen(path), entries, 128, &count, &truncated) !=
 		CORE_GRAPHICS_FS_STATUS_NOT_A_DIRECTORY)
 		return 3;
 
-	path = "/disk/does-not-exist";
+	path = "/Volumes/mainOS/does-not-exist";
 
 	if (DesktopServiceListDirectory(0, path, nxu_strlen(path), entries, 128, &count, &truncated) !=
 		CORE_GRAPHICS_FS_STATUS_NOT_FOUND)
