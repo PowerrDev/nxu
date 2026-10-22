@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/memory/heap.c
+ *
+ * Implements the kernel heap allocator.
+ */
 #include <kern/console/console.h>
 #include <kern/lock.h>
 #include <kern/memory/heap.h>
@@ -85,15 +93,11 @@ static nxu_rlock_t g_heap_lock = NXU_RLOCK_INIT;
 static bool
 heap_align_up(size_t value, size_t alignment, size_t *result)
 {
-	if (result == 0 || alignment == 0U || (alignment & (alignment - 1U)) != 0U) {
-		return false;
-	}
+	if (result == 0 || alignment == 0U || (alignment & (alignment - 1U)) != 0U) return false;
 
 	size_t mask = alignment - 1U;
 
-	if (value > (size_t)-1 - mask) {
-		return false;
-	}
+	if (value > (size_t)-1 - mask) return false;
 
 	*result = (value + mask) & ~mask;
 
@@ -103,23 +107,17 @@ heap_align_up(size_t value, size_t alignment, size_t *result)
 static bool
 heap_size_to_pages(size_t size, uint64_t *page_count)
 {
-	if (size == 0U || page_count == 0) {
-		return false;
-	}
+	if (size == 0U || page_count == 0) return false;
 
 	uint64_t value = (uint64_t)size;
 
 	uint64_t mask = PMM_PAGE_SIZE - 1ULL;
 
-	if (value > UINT64_MAX - mask) {
-		return false;
-	}
+	if (value > UINT64_MAX - mask) return false;
 
 	uint64_t pages = (value + mask) / PMM_PAGE_SIZE;
 
-	if (pages == 0ULL) {
-		return false;
-	}
+	if (pages == 0ULL) return false;
 
 	*page_count = pages;
 
@@ -131,9 +129,7 @@ heap_page_header_size(void)
 {
 	size_t result;
 
-	if (!heap_align_up(sizeof(heap_page_t), HEAP_ALIGNMENT, &result)) {
-		return 0U;
-	}
+	if (!heap_align_up(sizeof(heap_page_t), HEAP_ALIGNMENT, &result)) return 0U;
 
 	return result;
 }
@@ -143,9 +139,7 @@ heap_block_header_size(void)
 {
 	size_t result;
 
-	if (!heap_align_up(sizeof(heap_block_t), HEAP_ALIGNMENT, &result)) {
-		return 0U;
-	}
+	if (!heap_align_up(sizeof(heap_block_t), HEAP_ALIGNMENT, &result)) return 0U;
 
 	return result;
 }
@@ -193,9 +187,7 @@ heap_create_page(void)
 {
 	uint64_t physical_address;
 
-	if (!pmm_allocate_page(&physical_address)) {
-		return 0;
-	}
+	if (!pmm_allocate_page(&physical_address)) return 0;
 
 	uint64_t virtual_address;
 
@@ -260,14 +252,10 @@ static heap_block_t *
 heap_find_free_block(size_t size, heap_page_t **owner)
 {
 	for (heap_page_t *page = g_heap.head; page != 0; page = page->next) {
-		if (page->magic != HEAP_PAGE_MAGIC) {
-			return 0;
-		}
+		if (page->magic != HEAP_PAGE_MAGIC) return 0;
 
 		for (heap_block_t *block = heap_page_first_block(page); block != 0; block = block->next) {
-			if (block->magic != HEAP_BLOCK_MAGIC) {
-				return 0;
-			}
+			if (block->magic != HEAP_BLOCK_MAGIC) return 0;
 
 			if (heap_block_is_free(block) && block->size >= size) {
 				if (owner != 0) {
@@ -276,6 +264,7 @@ heap_find_free_block(size_t size, heap_page_t **owner)
 
 				return block;
 			}
+
 		}
 	}
 
@@ -317,9 +306,7 @@ heap_merge_with_next(heap_block_t *block)
 {
 	heap_block_t *next = block->next;
 
-	if (next == 0 || next->magic != HEAP_BLOCK_MAGIC || !heap_block_is_free(next)) {
-		return;
-	}
+	if (next == 0 || next->magic != HEAP_BLOCK_MAGIC || !heap_block_is_free(next)) return;
 
 	block->size += heap_block_header_size() + next->size;
 
@@ -348,19 +335,14 @@ heap_coalesce(heap_block_t *block)
 static bool
 heap_unlink_page(heap_page_t *target)
 {
-	if (target == 0 || target == g_heap.head) {
-		return false;
-	}
+	if (target == 0 || target == g_heap.head) return false;
 
 	heap_page_t *previous = g_heap.head;
 
 	while (previous != 0 && previous->next != target) {
 		previous = previous->next;
 	}
-
-	if (previous == 0) {
-		return false;
-	}
+	if (previous == 0) return false;
 
 	heap_page_t *next = target->next;
 
@@ -387,9 +369,7 @@ heap_find_free_large_record(void)
 	for (uint32_t index = 0U; index < HEAP_MAX_LARGE_ALLOCATIONS; index++) {
 		heap_large_allocation_t *record = &g_heap.large_allocations[index];
 
-		if (!record->active) {
-			return record;
-		}
+		if (!record->active) return record;
 	}
 
 	return 0;
@@ -398,16 +378,12 @@ heap_find_free_large_record(void)
 static heap_large_allocation_t *
 heap_find_large_record(const void *address)
 {
-	if (address == 0) {
-		return 0;
-	}
+	if (address == 0) return 0;
 
 	for (uint32_t index = 0U; index < HEAP_MAX_LARGE_ALLOCATIONS; index++) {
 		heap_large_allocation_t *record = &g_heap.large_allocations[index];
 
-		if (record->active && record->address == address) {
-			return record;
-		}
+		if (record->active && record->address == address) return record;
 	}
 
 	return 0;
@@ -432,9 +408,7 @@ heap_init(void)
 
 	heap_page_t *page = heap_create_page();
 
-	if (page == 0) {
-		return false;
-	}
+	if (page == 0) return false;
 
 	g_heap.head = page;
 	g_heap.initialized = true;
@@ -447,21 +421,15 @@ heap_allocate_large(size_t size)
 {
 	heap_large_allocation_t *record = heap_find_free_large_record();
 
-	if (record == 0) {
-		return 0;
-	}
+	if (record == 0) return 0;
 
 	uint64_t page_count;
 
-	if (!heap_size_to_pages(size, &page_count)) {
-		return 0;
-	}
+	if (!heap_size_to_pages(size, &page_count)) return 0;
 
 	void *address;
 
-	if (!vm_kern_allocate(size, VMM_PROTECTION_READ_WRITE, &address)) {
-		return 0;
-	}
+	if (!vm_kern_allocate(size, VMM_PROTECTION_READ_WRITE, &address)) return 0;
 
 	record->address = address;
 	record->requested_size = size;
@@ -483,9 +451,7 @@ heap_allocate_large(size_t size)
 static bool
 heap_free_large(heap_large_allocation_t *record)
 {
-	if (record == 0 || !record->active || record->address == 0) {
-		return false;
-	}
+	if (record == 0 || !record->active || record->address == 0) return false;
 
 	void *address = record->address;
 
@@ -499,9 +465,7 @@ heap_free_large(heap_large_allocation_t *record)
 		return false;
 	}
 
-	if (!vm_kern_free(address, requested_size)) {
-		return false;
-	}
+	if (!vm_kern_free(address, requested_size)) return false;
 
 	g_heap.large_page_count -= page_count;
 
@@ -522,21 +486,15 @@ kmalloc(size_t size)
 {
 	NXU_RLOCK_GUARD(&g_heap_lock);
 
-	if (!g_heap.initialized || size == 0U) {
-		return 0;
-	}
+	if (!g_heap.initialized || size == 0U) return 0;
 
 	size_t aligned_size;
 
-	if (!heap_align_up(size, HEAP_ALIGNMENT, &aligned_size)) {
-		return 0;
-	}
+	if (!heap_align_up(size, HEAP_ALIGNMENT, &aligned_size)) return 0;
 
 	size_t maximum_size = PMM_PAGE_SIZE - heap_page_header_size() - heap_block_header_size();
 
-	if (aligned_size > maximum_size) {
-		return heap_allocate_large(size);
-	}
+	if (aligned_size > maximum_size) return heap_allocate_large(size);
 
 	heap_page_t *page = 0;
 
@@ -545,9 +503,7 @@ kmalloc(size_t size)
 	if (block == 0) {
 		page = heap_create_page();
 
-		if (page == 0) {
-			return 0;
-		}
+		if (page == 0) return 0;
 
 		heap_append_page(page);
 
@@ -569,21 +525,15 @@ kmalloc(size_t size)
 void *
 kcalloc(size_t count, size_t size)
 {
-	if (count == 0U || size == 0U) {
-		return 0;
-	}
+	if (count == 0U || size == 0U) return 0;
 
-	if (count > (size_t)-1 / size) {
-		return 0;
-	}
+	if (count > (size_t)-1 / size) return 0;
 
 	size_t total_size = count * size;
 
 	void *address = kmalloc(total_size);
 
-	if (address == 0) {
-		return 0;
-	}
+	if (address == 0) return 0;
 
 	memset(address, 0, total_size);
 
@@ -595,18 +545,14 @@ kfree(void *address)
 {
 	NXU_RLOCK_GUARD(&g_heap_lock);
 
-	if (!g_heap.initialized || address == 0) {
-		return false;
-	}
+	if (!g_heap.initialized || address == 0) return false;
 
 	/*
 	 * Large allocations are tracked through separate records.
 	 */
 	heap_large_allocation_t *large_record = heap_find_large_record(address);
 
-	if (large_record != 0) {
-		return heap_free_large(large_record);
-	}
+	if (large_record != 0) return heap_free_large(large_record);
 
 	/*
 	 * An address inside vm_kern that does not match an active
@@ -621,9 +567,7 @@ kfree(void *address)
 	 * The address may already be unmapped, so it must not be
 	 * dereferenced as a heap-page header.
 	 */
-	if (vm_kern_contains(address)) {
-		return false;
-	}
+	if (vm_kern_contains(address)) return false;
 
 	/*
 	 * Small allocations live in physical pages reached through the
@@ -631,17 +575,13 @@ kfree(void *address)
 	 */
 	heap_page_t *page = heap_page_from_address(address);
 
-	if (page->magic != HEAP_PAGE_MAGIC) {
-		return false;
-	}
+	if (page->magic != HEAP_PAGE_MAGIC) return false;
 
 	size_t page_header_size = heap_page_header_size();
 
 	size_t block_header_size = heap_block_header_size();
 
-	if (page_header_size == 0U || block_header_size == 0U) {
-		return false;
-	}
+	if (page_header_size == 0U || block_header_size == 0U) return false;
 
 	uint64_t page_start = (uint64_t)page;
 
@@ -682,9 +622,7 @@ kfree(void *address)
 	 * heap can allocate without immediately requesting another
 	 * physical page.
 	 */
-	if (page != g_heap.head && page->allocation_count == 0ULL) {
-		return heap_unlink_page(page);
-	}
+	if (page != g_heap.head && page->allocation_count == 0ULL) return heap_unlink_page(page);
 
 	return true;
 }

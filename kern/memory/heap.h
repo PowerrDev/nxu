@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/memory/heap.h
+ *
+ * Declares the kernel memory heap interfaces and data structures.
+ */
 #ifndef NXU_HEAP_H
 #define NXU_HEAP_H
 
