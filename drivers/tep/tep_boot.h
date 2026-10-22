@@ -24,8 +24,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define TEP_BOOT_IMAGE_PATH "/disk/System/Library/CoreServices/bootd"
-#define TEP_BOOT_MANIFEST_PATH "/disk/System/Library/CoreServices/bootd.manifest"
+#define TEP_BOOT_IMAGE_PATH "/Volumes/mainOS/System/Library/CoreServices/bootd"
+#define TEP_BOOT_MANIFEST_PATH "/Volumes/mainOS/System/Library/CoreServices/bootd.manifest"
 #define TEP_BOOT_IMAGE_NAME "bootd"
 
 typedef enum {

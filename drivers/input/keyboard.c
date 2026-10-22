@@ -97,7 +97,8 @@ keyboard_update_modifiers(void)
 static char
 keyboard_letter(uint16_t code, bool upper)
 {
-	static const char letters[] = "qwertyuiopasdfghjklzxcvbnm";
+	/* Letters array */
+  static const char letters[] = "qwertyuiopasdfghjklzxcvbnm";
 	static const uint16_t codes[] = {16U, 17U, 18U, 19U, 20U, 21U, 22U, 23U, 24U, 25U, 30U, 31U, 32U,
 									 33U, 34U, 35U, 36U, 37U, 38U, 44U, 45U, 46U, 47U, 48U, 49U, 50U};
 
@@ -178,9 +179,11 @@ bool
 keyboard_init(void)
 {
 	if (g_keyboard.initialized) return true;
-	memset(&g_keyboard, 0, sizeof(g_keyboard));
+	
+  memset(&g_keyboard, 0, sizeof(g_keyboard));
 	g_keyboard.initialized = true;
-	return true;
+	
+  return true;
 }
 
 /*
@@ -263,8 +266,10 @@ keyboard_take_key(keyboard_key_t *key)
 	if (key == 0 || head == tail) return false;
 
 	*key = g_key_queue[head % KEYBOARD_QUEUE_SIZE];
-	g_key_queue[head % KEYBOARD_QUEUE_SIZE] = (keyboard_key_t){0};
+	
+  g_key_queue[head % KEYBOARD_QUEUE_SIZE] = (keyboard_key_t){0};
 	__atomic_store_n(&g_key_head, head + 1U, __ATOMIC_RELEASE);
+
 	return true;
 }
 
@@ -274,7 +279,8 @@ keyboard_flush_keys(void)
 	keyboard_key_t key;
 
 	while (keyboard_take_key(&key)) {
-	}
+	  /* This is how real devs do it. */
+  }
 }
 
 bool
@@ -301,6 +307,11 @@ keyboard_event_count(void)
 	return g_keyboard.events;
 }
 
+/* 
+ * keyboard_last_character
+ *
+ * Returns the last character the keyboard registered.
+ * */
 char
 keyboard_last_character(void)
 {
