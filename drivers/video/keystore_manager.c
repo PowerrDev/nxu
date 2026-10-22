@@ -2,7 +2,7 @@
  * Copyright (c) 2026 NXU Project. All rights reserved.
  */
 /*
- * File:        drivers/video/trusted_login.c
+ * File:        drivers/video/keystore_manager.c
  *
  * Render the kernel-owned authentication screen and handle secure input.
  */
@@ -40,6 +40,7 @@ wipe(void *memory, size_t size)
 #define LOGIN_FIELD_MUTED 0xFF737B88U
 
 static uint32_t login_text_width(const reporter_font_t *font, const char *text, uint32_t scale);
+static uint32_t login_clock_width(const char *text);
 
 static uint32_t
 login_blend(uint32_t background, uint32_t foreground, uint32_t alpha)
@@ -68,7 +69,7 @@ static void
 login_blur_clock_mask(display_device_t *display, const uint32_t *wallpaper, uint32_t center, uint32_t y,
 					  const char *text, const reporter_font_t *font)
 {
-	uint32_t width = login_text_width(font, text, 1U);
+	uint32_t width = font == &login_clock ? login_clock_width(text) : login_text_width(font, text, 1U);
 	uint32_t x = center > width / 2U ? center - width / 2U : 0U;
 
 	while (*text) {
@@ -112,6 +113,75 @@ login_blur_clock_mask(display_device_t *display, const uint32_t *wallpaper, uint
 		}
 
 		x += glyph->advance;
+	}
+}
+
+static void
+login_frosted_field(display_device_t *display, const uint32_t *wallpaper, uint32_t x, uint32_t y,
+					uint32_t width, uint32_t height)
+{
+	for (uint32_t row = 0U; row < height; row++) {
+		for (uint32_t column = 0U; column < width; column++) {
+			uint32_t radius = height / 2U;
+			int32_t dx = column < radius ? (int32_t)(radius - column) :
+				column >= width - radius ? (int32_t)(column - (width - radius - 1U)) : 0;
+			int32_t dy = row < radius ? (int32_t)(radius - row) :
+				row >= height - radius ? (int32_t)(row - (height - radius - 1U)) : 0;
+			if ((uint32_t)(dx * dx + dy * dy) > radius * radius) continue;
+			uint32_t base = display->framebuffer[(uint64_t)(y + row) * display->stride + x + column];
+			if (wallpaper != 0) {
+				uint32_t sum[3] = {0U, 0U, 0U}, samples = 0U;
+				for (int32_t oy = -9; oy <= 9; oy += 3) {
+					for (int32_t ox = -9; ox <= 9; ox += 3) {
+						int32_t sx = (int32_t)(x + column) + ox;
+						int32_t sy = (int32_t)(y + row) + oy;
+						if (sx < 0 || sy < 0 || sx >= (int32_t)display->width || sy >= (int32_t)display->height) continue;
+						uint32_t pixel = wallpaper[(uint64_t)sy * display->width + (uint32_t)sx];
+						for (uint32_t channel = 0U; channel < 3U; channel++) sum[channel] += (pixel >> (channel * 8U)) & 255U;
+						samples++;
+					}
+				}
+				uint32_t blurred = 0U;
+				for (uint32_t channel = 0U; channel < 3U; channel++) blurred |= (sum[channel] / samples) << (channel * 8U);
+				base = login_blend(base, blurred, 210U);
+			}
+			display->framebuffer[(uint64_t)(y + row) * display->stride + x + column] = login_blend(base, 0x00FFFFFFU, 88U);
+		}
+	}
+}
+
+static uint32_t
+login_clock_width(const char *text)
+{
+	uint32_t width = login_text_width(&login_clock, text, 1U);
+	uint32_t gaps = 0U;
+	while (*text++) gaps++;
+	if (gaps != 0U) gaps--;
+	return width > gaps ? width - gaps : width;
+}
+
+static void
+login_clock_label(display_device_t *display, uint32_t center, uint32_t y, const char *text)
+{
+	uint32_t width = login_clock_width(text);
+	uint32_t x = center > width / 2U ? center - width / 2U : 0U;
+	while (*text) {
+		uint32_t code = (uint8_t)*text++;
+		const reporter_glyph_t *glyph = &login_clock.glyphs[(code >= 32U && code <= 126U ? code : '?') - 32U];
+		for (uint32_t row = 0U; row < glyph->height; row++) {
+			for (uint32_t column = 0U; column < glyph->width; column++) {
+				uint32_t alpha = login_clock.pixels[glyph->offset + row * glyph->width + column];
+				if (!alpha) continue;
+				for (uint32_t bold = 0U; bold < 2U; bold++) {
+					int32_t px = (int32_t)x + glyph->x + (int32_t)column + (int32_t)bold;
+					int32_t py = (int32_t)y + glyph->y + (int32_t)row;
+					if (px < 0 || py < 0 || px >= (int32_t)display->width || py >= (int32_t)display->height) continue;
+					uint32_t *pixel = &display->framebuffer[(uint64_t)py * display->stride + (uint32_t)px];
+					*pixel = login_blend(*pixel, LOGIN_CLOCK_TEXT, alpha * (LOGIN_CLOCK_TEXT >> 24U) / 255U);
+				}
+			}
+		}
+		x += glyph->advance > 1U ? glyph->advance - 1U : glyph->advance;
 	}
 }
 
@@ -307,25 +377,28 @@ login_paint(display_device_t *display, const uint32_t *wallpaper, uint32_t lengt
 	if (wallpaper != 0) {
 		login_blur_clock_mask(display, wallpaper, center, clock_y, clock, &login_clock);
 	}
-	login_center_label(display, center, clock_y, clock, &login_clock, 1U, LOGIN_CLOCK_TEXT);
+	login_clock_label(display, center, clock_y, clock);
 
 	uint32_t field_width = display->width < 320U ? display->width - 40U : 280U;
 	uint32_t field_left = center - field_width / 2U;
-	uint32_t field_top = bottom > 88U ? bottom - 88U : 0U;
-	uint32_t field_y = field_top + 14U;
+	uint32_t field_top = bottom > 84U ? bottom - 84U : 0U;
+	uint32_t field_height = 38U;
+	uint32_t field_y = field_top + (field_height - regular.height) / 2U;
 	uint32_t field_color = available ? LOGIN_FIELD_TEXT : LOGIN_FIELD_MUTED;
 	const char *placeholder = !available   ? "Connecting securely..."
 							  : confirming ? "Confirm Password"
 							  : setting	   ? "Create Password"
 										   : "Enter Password";
-	login_round_rect(display, field_left, field_top, field_width, 44U, 22U, 0x00FFFFFFU);
+	login_frosted_field(display, wallpaper, field_left, field_top, field_width, field_height);
 
 	if (length != 0U) {
 		uint32_t dots = length > 28U ? 28U : length;
 		uint32_t dot_x = field_left + 14U;
+		uint32_t dot_size = 7U;
+		uint32_t dot_y = field_top + (field_height - dot_size) / 2U;
 
 		for (uint32_t index = 0U; index < dots; index++) {
-			login_round_rect(display, dot_x + index * 9U, field_y + 2U, 5U, 5U, 2U, LOGIN_FIELD_TEXT);
+			login_round_rect(display, dot_x + index * 9U, dot_y, dot_size, dot_size, dot_size / 2U, LOGIN_FIELD_TEXT);
 		}
 	} else {
 		login_label(display, field_left + 14U, field_y, placeholder, &semibold, 1U, field_color);
@@ -356,7 +429,7 @@ login_thread(void *unused)
 	keyboard_set_secure(true);
 	keyboard_flush_keys();
 	input_flush();
-	kputln("trusted-login: waiting for tepOS authentication");
+	kputln("NXUKeystoreManager: waiting for tepOS authentication");
 
 	uint8_t password[65] = {0}, first[65] = {0};
 	uint32_t length = 0, first_length = 0;
@@ -459,11 +532,11 @@ login_thread(void *unused)
 						keyboard_set_secure(false);
 						ui_service_secure_end();
 						if (wallpaper != 0) (void)kfree(wallpaper);
-						kputln("trusted-login: unlocked by tepOS");
+						kputln("NXUKeystoreManager: unlocked by tepOS");
 						return;
 					}
 
-					kputln("trusted-login: password refused");
+					kputln("NXUKeystoreManager: password refused");
 					if (result == TEP_ERR_INVALID) {
 						message = "Passwords did not match. Try again.";
 					} else if (result == TEP_ERR_DENIED) {
@@ -489,8 +562,8 @@ bool
 ui_service_trusted_prepare(void)
 {
 	if (tep_mailbox_link_state() == TEP_LINK_ABSENT) {
-		kputln("trusted-login: no enclave link");
-		kputln("trusted-login: no login screen");
+		kputln("NXUKeystoreManager: no enclave link");
+		kputln("NXUKeystoreManager: no login screen");
 		return true;
 	}
 

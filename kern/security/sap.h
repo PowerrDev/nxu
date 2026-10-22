@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/security/sap.h
+ *
+ * Declares the kernel security sap interfaces and data structures.
+ */
 #ifndef NXU_SECURE_ANCHOR_H
 #define NXU_SECURE_ANCHOR_H
 

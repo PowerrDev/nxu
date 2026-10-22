@@ -1,9 +1,12 @@
-/**
+/*
  * Copyright (c) 2026 NXU Project. All rights reserved.
  */
-
-/**
+/*
  * File:        kern/aqua/window_server.c
+ *
+ * Bootstraps WindowServer.framework after the kernel display services are ready.
+ */
+/**
  *
  * NXU platform bootstrap for WindowServer.framework.
  *
@@ -55,10 +58,12 @@ windowserver_bootstrap(void)
 
 	return WS_Initialize(ws_display);
 }
+
 #else
 bool
 windowserver_bootstrap(void)
 {
 	return false;
 }
+
 #endif

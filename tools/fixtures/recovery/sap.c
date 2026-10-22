@@ -4,9 +4,9 @@
 #include <nxu/thread.h>
 #include <frameworks/Recovery.framework/triageOS/shell.h>
 
-#define TREE "/disk/System/Library/Frameworks/SAPTree.framework"
+#define TREE "/Volumes/mainOS/System/Library/Frameworks/SAPTree.framework"
 #define CHILD TREE "/nested/file.txt"
-#define KEEP "/disk/System/Library/Frameworks/Keep.framework/keep.txt"
+#define KEEP "/Volumes/mainOS/System/Library/Frameworks/Keep.framework/keep.txt"
 static uint32_t pixels[640U * 480U];
 static char output[512];
 static uint32_t excluded;
@@ -90,7 +90,7 @@ main(void)
 	require(nxu_get_boot_args(arguments, sizeof(arguments)) >= 0, "boot arguments");
 
 	bool unavailable = nxu_arg_present(arguments, "test.sap-unavailable=1");
-	int64_t child = nxu_spawn_caps("/disk/System/Recovery/triageOS", "sap-child", NXU_CAP_FS_WRITE);
+	int64_t child = nxu_spawn_caps("/Volumes/mainOS/System/Recovery/triageOS", "sap-child", NXU_CAP_FS_WRITE);
 
 	require(child > 0, "spawn child permission probe");
 
@@ -110,7 +110,7 @@ main(void)
 	}
 
 	require(nxu_recovery_present(pixels, 640, 0, 0, 640, 480) == 0, "recovery surface");
-	require(nxu_sap_remove_tree("/disk") == -NXU_SYS_E_BUSY, "mount root protection");
+	require(nxu_sap_remove_tree("/Volumes/mainOS") == -NXU_SYS_E_BUSY, "mount root protection");
 	require(nxu_sap_remove_tree(TREE "/../SAPTree.framework") == -NXU_SYS_E_INVALID_ARGUMENT,
 			"parent traversal protection");
 	require(nxu_sap_delete(TREE) == -NXU_SYS_E_IS_DIRECTORY, "ordinary SAP remains file-only");

@@ -1,4 +1,4 @@
-#include <drivers/video/ui_service_bridge.h>
+#include <drivers/video/ui_session_manager.h>
 #include <drivers/video/ui_frame_copy.h>
 
 #include <kern/console/console.h>
@@ -262,7 +262,7 @@ ui_bridge_syscall_connect(uint64_t user_info)
 	}
 
 	sched_kick_sleepers();
-	kprintf("ui_bridge_syscall_connect: %s (pid %u) connected as %s %u\n", info->name,
+	kprintf("com.nxu.UISessionManager: %s (pid %u) connected as %s %u\n", info->name,
 			(unsigned int)current_proc()->p_ident.pid, info->kind == NXU_UI_KIND_DOCK ? "dock" : "app",
 			(unsigned int)result);
 	return result;
@@ -499,7 +499,7 @@ ui_bridge_session_begin(uint32_t scale_permille, uint32_t screen_width, uint32_t
 								   .menubar_height = menubar_height};
 	__atomic_store_n(&g_session_running, true, __ATOMIC_RELEASE);
 	waitq_wake_all(&g_session_wait);
-	kprintf("ui_bridge_session_begin: apps may connect (%ux%u at %u permille)\n", screen_width, screen_height,
+	kprintf("com.nxu.UISessionManager: apps may connect (%ux%u at %u permille)\n", screen_width, screen_height,
 			scale_permille);
 }
 
@@ -554,7 +554,7 @@ ui_bridge_alive(uint32_t index)
 
 	if (!alive && index < UI_BRIDGE_CONNECTION_MAX && g_connections[index].info != 0 &&
 		g_connections[index].info->kind == NXU_UI_KIND_DOCK) {
-		kprintf("ui_bridge: Dock liveness check failed (connection %u, state %u, pid %u)\n", (unsigned int)(index + 1U),
+		kprintf("com.nxu.UISessionManager: Dock liveness check failed (connection %u, state %u, pid %u)\n", (unsigned int)(index + 1U),
 				(unsigned int)g_connections[index].state, (unsigned int)g_connections[index].owner.pid);
 	}
 
@@ -945,7 +945,7 @@ ui_bridge_host(proc_t proc, nxu_gui_host_desktop_t *record)
 					terminate = g_connections[index].owner;
 			} else {
 				if (g_connections[index].info != 0 && g_connections[index].info->kind == NXU_UI_KIND_DOCK) {
-					kprintf("ui_bridge: desktop released Dock connection %u (pid %u, alive=%u)\n",
+					kprintf("com.nxu.UISessionManager: desktop released Dock connection %u (pid %u, alive=%u)\n",
 							(unsigned int)(index + 1U), (unsigned int)g_connections[index].owner.pid,
 							(unsigned int)ui_bridge_owner_alive(&g_connections[index]));
 				}

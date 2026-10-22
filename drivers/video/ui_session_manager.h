@@ -1,8 +1,8 @@
-#ifndef NXU_DRIVERS_VIDEO_UI_SERVICE_BRIDGE_H
-#define NXU_DRIVERS_VIDEO_UI_SERVICE_BRIDGE_H
+#ifndef NXU_DRIVERS_VIDEO_UI_SESSION_MANAGER_H
+#define NXU_DRIVERS_VIDEO_UI_SESSION_MANAGER_H
 
 /*
- * The UI session bridge: app processes on one side (the NXU_SYS_UI_*
+ * The UI session manager: app processes on one side (the NXU_SYS_UI_*
  * system calls, see kern/syscall/ui_session_defs.h), the desktop on the
  * other (the legacy kernel desktop calls the helpers below; DesktopService
  * uses copied records through NXU_SYS_GUI_HOST).

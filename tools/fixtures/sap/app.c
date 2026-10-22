@@ -3,8 +3,8 @@
 #include <stdint.h>
 static uint32_t ready, active, leaked, disconnected, presented;
 static uint32_t pixels[200 * 150];
-static const char *keep = "/disk/System/Library/Frameworks/SAPTest.framework/keep.txt";
-static const char *remove_path = "/disk/System/Library/Frameworks/SAPTest.framework/remove.txt";
+static const char *keep = "/Volumes/mainOS/System/Library/Frameworks/SAPTest.framework/keep.txt";
+static const char *remove_path = "/Volumes/mainOS/System/Library/Frameworks/SAPTest.framework/remove.txt";
 
 static void
 output(const char *text)
@@ -97,8 +97,8 @@ main(void)
 
 	output("saptest: authorized-delete phase\n");
 	if (nxu_unlink(remove_path) != 0 || nxu_stat(remove_path, &stat) != -NXU_SYS_E_NOT_FOUND) return 7;
-	if (nxu_sap_delete("/disk/System/Library/Frameworks") >= 0 ||
-		nxu_sap_delete("/disk/System/../System/Library/Frameworks/SAPTest.framework/keep.txt") >= 0)
+	if (nxu_sap_delete("/Volumes/mainOS/System/Library/Frameworks") >= 0 ||
+		nxu_sap_delete("/Volumes/mainOS/System/../System/Library/Frameworks/SAPTest.framework/keep.txt") >= 0)
 		return 8;
 	__atomic_store_n(&active, 0, __ATOMIC_RELEASE);
 	nxu_sleep_us(50000);
