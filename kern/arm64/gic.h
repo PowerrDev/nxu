@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/arm64/gic.h
+ *
+ * Declares ARM Generic Interrupt Controller interfaces.
+ */
 #ifndef NXU_GIC_H
 #define NXU_GIC_H
 

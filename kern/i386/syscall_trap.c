@@ -118,6 +118,7 @@ i386_trap_syscall(x86_saved_state_t *state)
 		state->eax = I386_SYSCALL_UNIMPLEMENTED;
 		return;
 	}
+
 }
 
 static const char *
@@ -157,6 +158,7 @@ user_exception_name(uint32_t vector)
 	default:
 		return "exception";
 	}
+
 }
 
 static void

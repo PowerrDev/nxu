@@ -83,10 +83,11 @@ i386_init_kernel(const i386_boot_info_t *boot)
 		return false;
 	}
 
-	status = vfs_mkdir("/disk");
+	status = vfs_mkdir("/Volumes");
+	if (status == VFS_STATUS_OK) status = vfs_mkdir("/Volumes/mainOS");
 
 	if (status != VFS_STATUS_OK) {
-		kprintf("i386_init_kernel: /disk mountpoint creation failed: %s\n", vfs_status_name(status));
+		kprintf("i386_init_kernel: /Volumes/mainOS mountpoint creation failed: %s\n", vfs_status_name(status));
 		return false;
 	}
 
@@ -95,7 +96,7 @@ i386_init_kernel(const i386_boot_info_t *boot)
 		return false;
 	}
 
-	kputln("i386_init_kernel: ramfs mounted at /, /disk mountpoint created");
+	kputln("i386_init_kernel: ramfs mounted at /, /Volumes/mainOS mountpoint created");
 	kputln("i386_init_kernel: devfs mounted at /dev");
 	vfs_dump();
 	return true;
@@ -159,7 +160,6 @@ i386_init_kernel_selftest(const i386_boot_info_t *boot)
 		kputln("i386_init_kernel_selftest: FAIL boot-args do not carry the command line");
 		ok = false;
 	}
-
 	if (ok) kputln("i386_init_kernel_selftest: NXPC, name tables, ramfs and boot-args ok");
 
 	return ok;

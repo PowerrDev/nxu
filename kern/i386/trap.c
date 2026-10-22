@@ -115,8 +115,11 @@ static const char *
 trap_exception_name(uint32_t vector)
 {
 	if (vector < T_EXCEPTION_COUNT) return g_exception_names[vector];
+
 	if (vector >= T_IRQ_BASE && vector < T_IRQ_BASE + T_IRQ_COUNT) return "hardware interrupt";
+
 	if (vector == T_SYSCALL) return "system call";
+
 	return "unknown vector";
 }
 
@@ -193,9 +196,11 @@ trap_print_backtrace(uint32_t eip, uint32_t ebp)
 		const uint32_t *words = (const uint32_t *)frame;
 
 		if (words[1] == 0U) break;
+
 		kprintf(" #%u 0x%x", depth, words[1]);
 
 		if (words[0] <= frame) break;
+
 		frame = words[0];
 	}
 
@@ -363,6 +368,7 @@ i386_trap_handler(x86_saved_state_t *state)
 {
 	uint32_t vector = state->trapno;
 	if (vector == T_PAGE_FAULT) statistics_note_page_fault(x86_saved_state_is_user(state));
+
 	if ((vector >= T_IRQ_BASE && vector < T_IRQ_BASE + T_IRQ_COUNT) || vector == T_IPI_RESCHEDULE ||
 		vector == T_IPI_CPU_STOP || vector == T_IPI_TICK)
 		statistics_note_interrupt();
@@ -394,6 +400,7 @@ i386_trap_handler(x86_saved_state_t *state)
 			i386_trap_exit(state);
 			return;
 		}
+
 	} else if (vector < T_EXCEPTION_COUNT) {
 		if (vector == T_PAGE_FAULT && i386_trap_page_fault(state)) {
 			i386_trap_exit(state);
@@ -404,6 +411,7 @@ i386_trap_handler(x86_saved_state_t *state)
 			i386_trap_exit(state);
 			return;
 		}
+
 	}
 
 	/*
@@ -469,7 +477,9 @@ i386_trap_self_test(void)
 					 : "memory");
 
 	if (g_breakpoint_count != before_count + 1U) return false;
+
 	if (g_last_breakpoint_eip != after) return false;
+
 	if (g_last_breakpoint_cs != GDT_KERNEL_CODE_SEL) return false;
 
 	/*
@@ -486,7 +496,9 @@ i386_trap_self_test(void)
 	__asm__ volatile("int $0x80" : "+a"(eax), "+c"(ecx), "+d"(edx), "+S"(esi), "+D"(edi) : : "memory");
 
 	if (eax != I386_SYSCALL_UNIMPLEMENTED) return false;
+
 	if (ecx != 0xC0DEC0DEU || edx != 0xD00DD00DU) return false;
+
 	if (esi != 0x51515151U || edi != 0xD1D1D1D1U) return false;
 
 	return true;

@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/arm64/exception.c
+ *
+ * Handles ARM64 exceptions and reports faults from kernel and user execution.
+ */
 #include <kern/console/console.h>
 #include <kern/arm64/exception.h>
 #include <kern/arm64/gic.h>
@@ -211,6 +219,7 @@ panic_trap_type(uint8_t ec)
 	default:
 		return 0U;
 	}
+
 }
 
 static __attribute__((noreturn)) void
@@ -310,9 +319,7 @@ exception_init(void)
 arm64_exception_kind_t
 exception_vector_kind(uint64_t vector_id)
 {
-	if (vector_id >= 16ULL) {
-		return ARM64_EXCEPTION_KIND_INVALID;
-	}
+	if (vector_id >= 16ULL) return ARM64_EXCEPTION_KIND_INVALID;
 
 	return (arm64_exception_kind_t)(vector_id & 0x3ULL);
 }
@@ -320,9 +327,7 @@ exception_vector_kind(uint64_t vector_id)
 arm64_exception_origin_t
 exception_vector_origin(uint64_t vector_id)
 {
-	if (vector_id >= 16ULL) {
-		return ARM64_EXCEPTION_ORIGIN_INVALID;
-	}
+	if (vector_id >= 16ULL) return ARM64_EXCEPTION_ORIGIN_INVALID;
 
 	return (arm64_exception_origin_t)(vector_id >> 2U);
 }
@@ -352,9 +357,7 @@ irq_handle(void)
 	uint32_t intid = gic_acknowledge_interrupt();
 
 	/* Values 1020-1023 are special or spurious INTIDs. */
-	if (intid >= 1020U) {
-		return;
-	}
+	if (intid >= 1020U) return;
 
 	statistics_note_interrupt();
 
@@ -397,9 +400,7 @@ exception_handle_user_svc(arm64_exception_frame_t *frame)
 
 	uint16_t immediate = (uint16_t)(exception_iss(frame->esr) & 0xFFFFU);
 
-	if (immediate != ARM64_SVC_SYSCALL_IMMEDIATE) {
-		return false;
-	}
+	if (immediate != ARM64_SVC_SYSCALL_IMMEDIATE) return false;
 
 	syscall_request_t request = {
 		.number = frame->x[8],
@@ -428,6 +429,7 @@ exception_handle_user_svc(arm64_exception_frame_t *frame)
 	default:
 		return false;
 	}
+
 }
 
 /*
@@ -466,6 +468,7 @@ exception_user_fault_signal(const arm64_exception_frame_t *frame)
 	default:
 		return NXU_SIGILL;
 	}
+
 }
 
 static const char *
@@ -483,6 +486,7 @@ exception_signal_name(uint32_t signal)
 	default:
 		return "SIGILL";
 	}
+
 }
 
 /*
@@ -507,9 +511,7 @@ exception_resolve_page_fault(const arm64_exception_frame_t *frame, bool instruct
 	 * self-test against a scratch space with no process behind it. */
 	vm_address_space_t *space = (vm_address_space_t *)vm_address_space_current();
 
-	if (space == 0 || !vm_address_space_is_active(space)) {
-		return false;
-	}
+	if (space == 0 || !vm_address_space_is_active(space)) return false;
 
 	vm_fault_access_t access =
 		instruction ? VM_FAULT_EXECUTE
@@ -533,15 +535,11 @@ exception_resolve_page_fault(const arm64_exception_frame_t *frame, bool instruct
 static bool
 exception_handle_user_fault(arm64_exception_frame_t *frame)
 {
-	if (!exception_vector_from_aarch64_el0(frame->vector_id)) {
-		return false;
-	}
+	if (!exception_vector_from_aarch64_el0(frame->vector_id)) return false;
 
 	proc_t proc = current_proc();
 
-	if (proc == 0 || proc == proc_kernel()) {
-		return false;
-	}
+	if (proc == 0 || proc == proc_kernel()) return false;
 
 	uint32_t exception_class_value = exception_class(frame->esr);
 
@@ -572,6 +570,7 @@ exception_handle_user_fault(arm64_exception_frame_t *frame)
 				faulting_thread->sig_blocked = signal_blocked_mask_for_handler(previous_mask, signal, &action);
 				return true;
 			}
+
 		}
 	}
 
@@ -584,9 +583,7 @@ exception_handle_user_fault(arm64_exception_frame_t *frame)
 			(uint32_t)proc_selfpid(), name, exception_signal_name(signal), (unsigned long long)frame->elr,
 			(unsigned long long)frame->far, (unsigned long long)frame->esr);
 
-	if (!proc_exit_current(NXU_EXIT_KILLED_SIGNAL(signal))) {
-		return false;
-	}
+	if (!proc_exit_current(NXU_EXIT_KILLED_SIGNAL(signal))) return false;
 
 	exception_unwind_to_kernel(frame);
 
@@ -650,6 +647,7 @@ exception_deliver_pending_signals(arm64_exception_frame_t *frame)
 			continue;
 		} else if (action.handler == NXU_SIG_DFL) {
 			if (signal_default_action(signal) == SIGNAL_DEFAULT_IGNORE) continue;
+
 			terminate_with = signal;
 		} else {
 			uint32_t previous_mask = thread->sig_blocked;
@@ -669,6 +667,7 @@ exception_deliver_pending_signals(arm64_exception_frame_t *frame)
 
 		return;
 	}
+
 }
 
 static void
@@ -706,17 +705,13 @@ exception_dispatch(arm64_exception_frame_t *frame)
 		return;
 	}
 
-	if (kind == ARM64_EXCEPTION_KIND_SYNCHRONOUS && exception_handle_user_svc(frame)) {
-		return;
-	}
+	if (kind == ARM64_EXCEPTION_KIND_SYNCHRONOUS && exception_handle_user_svc(frame)) return;
 
 	if (kind == ARM64_EXCEPTION_KIND_SYNCHRONOUS && exception_handle_kernel_user_access(frame)) {
 		return;
 	}
 
-	if (kind == ARM64_EXCEPTION_KIND_SYNCHRONOUS && exception_handle_user_fault(frame)) {
-		return;
-	}
+	if (kind == ARM64_EXCEPTION_KIND_SYNCHRONOUS && exception_handle_user_fault(frame)) return;
 
 	/*
 	 * Never recursively panic. If the panic path itself faults, immediately

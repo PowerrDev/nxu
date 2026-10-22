@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/arm64/timer.h
+ *
+ * Declares ARM64 timer interfaces.
+ */
 #ifndef NXU_TIMER_H
 #define NXU_TIMER_H
 

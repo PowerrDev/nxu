@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/arm64/cache.c
+ *
+ * Implements ARM64 cache maintenance operations.
+ */
 #include <kern/console/console.h>
 #include <kern/arm64/cache.h>
 #include <platform/uart.h>
@@ -154,9 +162,7 @@ cache_invalidate_data_all(void)
 		return false;
 	}
 
-	if (!cache_uses_legacy_ccsidr()) {
-		return false;
-	}
+	if (!cache_uses_legacy_ccsidr()) return false;
 
 	uint64_t clidr = cache_read_clidr();
 
@@ -169,9 +175,7 @@ cache_invalidate_data_all(void)
 	for (uint32_t level = 0U; level < CACHE_MAX_LEVELS; level++) {
 		uint32_t type = (uint32_t)((clidr >> (level * 3U)) & CACHE_CLIDR_CTYPE_MASK);
 
-		if (!cache_type_has_data(type)) {
-			continue;
-		}
+		if (!cache_type_has_data(type)) continue;
 
 		/*
 		 * CSSELR_EL1.Level occupies bits [3:1].
@@ -219,16 +223,11 @@ cache_invalidate_data_all(void)
 
 				cache_invalidate_set_way(operand);
 
-				if (set == 0U) {
-					break;
-				}
+				if (set == 0U) break;
 
 				set--;
 			}
-
-			if (way == 0U) {
-				break;
-			}
+			if (way == 0U) break;
 
 			way--;
 		}
@@ -299,9 +298,7 @@ cache_init(void)
 		 * Accept an already-complete initialization, but reject
 		 * a partially enabled state.
 		 */
-		if (!data_enabled || !instruction_enabled) {
-			return false;
-		}
+		if (!data_enabled || !instruction_enabled) return false;
 
 		g_cache.clidr = cache_read_clidr();
 
@@ -327,9 +324,7 @@ cache_init(void)
 	g_cache.data_line_size =
 		cache_line_size_from_encoding((uint32_t)((g_cache.ctr >> CACHE_CTR_DMINLINE_SHIFT) & CACHE_CTR_DMINLINE_MASK));
 
-	if (!cache_invalidate_data_all()) {
-		return false;
-	}
+	if (!cache_invalidate_data_all()) return false;
 
 	cache_invalidate_instruction_all();
 
@@ -350,9 +345,7 @@ cache_init(void)
 
 	sctlr = cache_read_sctlr();
 
-	if ((sctlr & CACHE_SCTLR_C) == 0ULL || (sctlr & CACHE_SCTLR_I) == 0ULL) {
-		return false;
-	}
+	if ((sctlr & CACHE_SCTLR_C) == 0ULL || (sctlr & CACHE_SCTLR_I) == 0ULL) return false;
 
 	g_cache.initialized = true;
 
@@ -374,9 +367,7 @@ cache_data_enabled(void)
 uint32_t
 cache_instruction_line_size(void)
 {
-	if (!g_cache.initialized) {
-		return 0U;
-	}
+	if (!g_cache.initialized) return 0U;
 
 	return g_cache.instruction_line_size;
 }
@@ -384,9 +375,7 @@ cache_instruction_line_size(void)
 uint32_t
 cache_data_line_size(void)
 {
-	if (!g_cache.initialized) {
-		return 0U;
-	}
+	if (!g_cache.initialized) return 0U;
 
 	return g_cache.data_line_size;
 }

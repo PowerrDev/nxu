@@ -171,6 +171,7 @@ STANDIN bool
 vm_copy_from_user(void *destination, uint64_t user_address, uint64_t size)
 {
 	if (size == 0ULL) return true;
+
 	if (!standin_user_range(user_address, size)) return false;
 
 	memcpy(destination, (const void *)(uintptr_t)user_address, (size_t)size);
@@ -181,6 +182,7 @@ STANDIN bool
 vm_copy_to_user(uint64_t user_address, const void *source, uint64_t size)
 {
 	if (size == 0ULL) return true;
+
 	if (!standin_user_range(user_address, size)) return false;
 
 	memcpy((void *)(uintptr_t)user_address, source, (size_t)size);

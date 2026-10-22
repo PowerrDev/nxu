@@ -39,6 +39,7 @@ i386_memory_map_pointer(uint32_t address)
 	}
 
 	if (address >= VM_DIRECT_MAP_SIZE) return 0;
+
 	return (const void *)(uintptr_t)(address + VMM_HIGHER_HALF_BASE);
 }
 
@@ -70,6 +71,7 @@ memory_map_add_usable(memory_range_t *list, uint32_t *count, uint64_t base, uint
 	if (end <= base) return;
 
 	if (base < I386_MEMORY_MIN) base = I386_MEMORY_MIN;
+
 	if (end > VM_DIRECT_MAP_SIZE) end = VM_DIRECT_MAP_SIZE;
 
 	base = memory_map_align_up(base);
@@ -111,7 +113,6 @@ memory_map_carve(memory_range_t *list, uint32_t *count, uint64_t hole_base, uint
 			result_count++;
 		}
 	}
-
 	for (uint32_t index = 0U; index < result_count; index++)
 		list[index] = result[index];
 	*count = result_count;
@@ -184,7 +185,6 @@ i386_memory_map_load(platform_t *platform, const multiboot_info_t *mbi)
 
 			entry_pointer += entry->size + sizeof(uint32_t);
 		}
-
 		for (const uint8_t *entry_pointer = cursor; entry_pointer + sizeof(multiboot_mmap_entry_t) <= limit;) {
 			const multiboot_mmap_entry_t *entry = (const multiboot_mmap_entry_t *)entry_pointer;
 
@@ -211,12 +211,10 @@ i386_memory_map_load(platform_t *platform, const multiboot_info_t *mbi)
 		for (uint32_t index = 1U; index < count; index++) {
 			if (usable[index].end - usable[index].base < usable[smallest].end - usable[smallest].base) smallest = index;
 		}
-
 		for (uint32_t index = smallest + 1U; index < count; index++)
 			usable[index - 1U] = usable[index];
 		count--;
 	}
-
 	for (uint32_t index = 0U; index < count; index++) {
 		platform->memory_regions[index].base = usable[index].base;
 		platform->memory_regions[index].size = usable[index].end - usable[index].base;

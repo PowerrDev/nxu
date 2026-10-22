@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/i386/startup.h
+ *
+ * Declares the kernel i386 startup interfaces and data structures.
+ */
 #ifndef NXU_I386_STARTUP_H
 #define NXU_I386_STARTUP_H
 

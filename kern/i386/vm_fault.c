@@ -28,14 +28,19 @@ const char *
 i386_vm_region_name(uint32_t address)
 {
 	if (address < PMAP_PAGE_SIZE) return "null guard page";
+
 	if (address < VM_MAX_USER_ADDRESS) return "user space";
 
 	if (address >= (uintptr_t)__kernel_start && address < (uintptr_t)__text_end) return "kernel text";
+
 	if (address >= (uintptr_t)__text_end && address < (uintptr_t)__rodata_end) return "kernel rodata";
+
 	if (address >= (uintptr_t)__rodata_end && address < (uintptr_t)__kernel_end) return "kernel data/bss";
 
 	if (address < VMM_HIGHER_HALF_BASE + VM_DIRECT_MAP_SIZE) return "kernel direct map";
+
 	if (address >= VM_KERN_BASE && (uint64_t)address < (uint64_t)VM_KERN_BASE + VM_KERN_SIZE) return "vm_kern arena";
+
 	if (address >= VM_MMIO_BASE) return "mmio window";
 
 	return "reserved kernel range";

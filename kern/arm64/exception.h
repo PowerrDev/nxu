@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/arm64/exception.h
+ *
+ * Defines ARM64 exception frames and exception handling interfaces.
+ */
 #ifndef NXU_EXCEPTION_H
 #define NXU_EXCEPTION_H
 

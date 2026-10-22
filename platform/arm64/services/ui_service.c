@@ -5,7 +5,7 @@
 #include <kern/arm64/timer.h>
 #include <drivers/input/mouse.h>
 #include <drivers/input/keyboard.h>
-#include <drivers/video/ui_service_bridge.h>
+#include <drivers/video/ui_session_manager.h>
 #include <drivers/video/display.h>
 #include <skylight/skylight.h>
 #include <drivers/video/ramfb_console.h>
@@ -26,7 +26,7 @@
 #if defined(NXU_UI_SERVICE)
 #include <UIService.h>
 #include <drivers/video/ui_service_activity.h>
-#include <drivers/video/ui_service_bridge.h>
+#include <drivers/video/ui_session_manager.h>
 #include <drivers/video/ui_service_login.h>
 #if defined(NXU_WINDOWSERVER)
 #include <WindowServer/WSPrivate.h>
@@ -749,7 +749,7 @@ ui_service_bootstrap(void)
 	/*
 	 * The desktop: no app is linked into the kernel. Apps are processes in
 	 * /Applications that bootd's Dock starts; they reach the desktop through
-	 * the UI session bridge (drivers/video/ui_service_bridge.c).
+	 * the UI session manager (drivers/video/ui_session_manager.c).
 	 */
 	g_ui_service_running = true;
 	g_secure_context = &context;

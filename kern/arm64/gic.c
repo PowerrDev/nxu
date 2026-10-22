@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/arm64/gic.c
+ *
+ * Initializes and manages the ARM Generic Interrupt Controller.
+ */
 #include <kern/arm64/gic.h>
 #include <kern/cpuset.h>
 #include <kern/machine/smp.h>
@@ -83,6 +91,7 @@ gic_local_redistributor(void)
 	uint32_t cpu = machine_cpu_id();
 
 	if (cpu == 0U || cpu >= NXU_MAX_CPUS) return g_gicr_base;
+
 	return g_gicr_frames[cpu];
 }
 
@@ -95,20 +104,14 @@ gicr_sgi_base(void)
 bool
 gic_enter_higher_half(void)
 {
-	if (g_gic_higher_half || !vmm_higher_half_direct_map_enabled()) {
-		return false;
-	}
+	if (g_gic_higher_half || !vmm_higher_half_direct_map_enabled()) return false;
 
 	uint64_t distributor;
 	uint64_t redistributor;
 
-	if (!vmm_physical_to_higher_half(GICD_EARLY_BASE, &distributor)) {
-		return false;
-	}
+	if (!vmm_physical_to_higher_half(GICD_EARLY_BASE, &distributor)) return false;
 
-	if (!vmm_physical_to_higher_half(GICR_EARLY_BASE, &redistributor)) {
-		return false;
-	}
+	if (!vmm_physical_to_higher_half(GICR_EARLY_BASE, &redistributor)) return false;
 
 	g_gicd_base = distributor;
 	g_gicr_base = redistributor;
@@ -320,6 +323,7 @@ gic_find_redistributor(uint64_t mpidr)
 		uint64_t typer = mmio_read64(frame + GICR_TYPER);
 
 		if ((uint32_t)(typer >> 32U) == wanted) return frame;
+
 		if ((typer & GICR_TYPER_LAST) != 0ULL) return 0ULL;
 
 		frame += (typer & GICR_TYPER_VLPIS) != 0ULL ? GICR_FRAME_STRIDE_V4 : GICR_FRAME_STRIDE_V3;
@@ -420,9 +424,7 @@ gic_send_sgi_others(uint32_t intid)
 void
 gic_enable_ppi(uint32_t intid, uint8_t priority)
 {
-	if (intid < 16U || intid > 31U) {
-		return;
-	}
+	if (intid < 16U || intid > 31U) return;
 
 	uint32_t mask = 1U << intid;
 

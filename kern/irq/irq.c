@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/irq/irq.c
+ *
+ * Implements interrupt registration, dispatch, and masking.
+ */
 #include <kern/irq/irq.h>
 
 #include <kern/machine/machine_routines.h>
@@ -39,6 +47,7 @@ bool
 irq_init(void)
 {
 	if (g_irq_initialized) return true;
+
 	memset(g_irq_table, 0, sizeof(g_irq_table));
 	g_irq_initialized = true;
 	return true;
@@ -68,8 +77,8 @@ irq_register(uint32_t intid, irq_handler_t handler, void *context)
 			ml_irq_restore(irq_state);
 			return false;
 		}
-	}
 
+	}
 	if (free_entry == 0) {
 		ml_irq_restore(irq_state);
 		return false;
@@ -126,6 +135,7 @@ irq_dispatch(uint32_t intid)
 		irq_handler_t handler = __atomic_load_n(&chain[index].handler, __ATOMIC_ACQUIRE);
 
 		if (handler == 0) continue;
+
 		handler(intid, chain[index].context);
 		handled = true;
 	}
@@ -153,6 +163,7 @@ bool
 irq_init(void)
 {
 	if (g_irq_initialized) return true;
+
 	memset(g_irq_table, 0, sizeof(g_irq_table));
 	g_irq_initialized = true;
 	return true;
@@ -224,6 +235,7 @@ irq_dispatch(uint32_t intid)
 	irq_handler_t handler = __atomic_load_n(&entry->handler, __ATOMIC_ACQUIRE);
 
 	if (handler == 0) return false;
+
 	handler(intid, entry->context);
 	return true;
 }

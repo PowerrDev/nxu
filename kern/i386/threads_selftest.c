@@ -107,6 +107,7 @@ log_equals(const char *expected)
 
 	while (expected[index] != '\0') {
 		if (index >= g_log_length || g_log[index] != expected[index]) return false;
+
 		index++;
 	}
 
@@ -156,6 +157,7 @@ selftest_tick_to_level(uint8_t level)
 
 	for (uint32_t ticks = 0U; ticks < 2U * SCHED_MLFQ_BOOST_INTERVAL_TICKS; ticks++) {
 		if (self->mlfq_level == level) return true;
+
 		sched_tick();
 	}
 
@@ -174,6 +176,7 @@ selftest_boost_self(void)
 			sched_clear_preemption();
 			return true;
 		}
+
 	}
 
 	return false;
@@ -709,6 +712,7 @@ selftest_spawn(const char *name, void (*entry)(void), uint32_t argument, selftes
 	if (argument != 0U && !thread_set_user_state(process->thread, entry_address, stack_top, argument)) return false;
 
 	if (!thread_stack_alloc(process->thread)) return false;
+
 	if (!proc_make_runnable(process->proc) || !proc_mark_running(process->proc)) return false;
 
 	return sched_thread_start(process->thread);

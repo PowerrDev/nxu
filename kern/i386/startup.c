@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/i386/startup.c
+ *
+ * Runs automatic i386 startup validation before normal kernel operation.
+ */
 /* Automatic startup validation. Destructive storage tests remain explicit. */
 
 #include <kern/i386/startup.h>
@@ -30,9 +38,7 @@ i386_startup_core_test(void)
 	}
 
 	kputln("NXU_CRC32C_Checksum: self-test passed");
-	if (!shm_registry_self_test() || !statistics_self_test()) {
-		return false;
-	}
+	if (!shm_registry_self_test() || !statistics_self_test()) return false;
 
 	kputln("i386_startup: core self-tests passed");
 	return true;
@@ -53,20 +59,16 @@ i386_startup_storage_test(void)
 
 	vnode_t root;
 
-	if (vfs_lookup("/disk", &root) != VFS_STATUS_OK) {
-		return false;
-	}
+	if (vfs_lookup("/Volumes/mainOS", &root) != VFS_STATUS_OK) return false;
 
 	bool ok = root->v_type == VNODE_TYPE_DIRECTORY;
 
 	vnode_rele(root);
-	if (!ok) {
-		return false;
-	}
+	if (!ok) return false;
 
 	uint32_t fd;
 
-	if (vfs_open(&proc_kernel()->p_fd, "/disk", VFS_OPEN_READ, &fd) != VFS_STATUS_OK) {
+	if (vfs_open(&proc_kernel()->p_fd, "/Volumes/mainOS", VFS_OPEN_READ, &fd) != VFS_STATUS_OK) {
 		return false;
 	}
 

@@ -228,6 +228,7 @@ smp_handle_ipi(uint32_t vector)
 	default:
 		break;
 	}
+
 }
 
 void
@@ -387,7 +388,6 @@ smp_boot_secondaries(void)
 	for (uint32_t index = 0U; index < table.cpu_count; index++) {
 		if (table.cpus[index].apic_id == boot_apic_id) boot_index = index;
 	}
-
 	if (boot_index == table.cpu_count) {
 		kprintf("SMP: boot CPU Local APIC id %u is not in the MP table\n", boot_apic_id);
 		return 1U;

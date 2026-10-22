@@ -1,10 +1,17 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/i386/i386_init.c
+ *
+ * Initializes architecture-specific i386 kernel state.
+ */
 #include <kern/sched_prism/sched.h>
 #include <kern/logging/diagnostics.h>
 /*
  * Copyright (c) 2026 NXU Project. All rights reserved.
  */
 /*
- * File:        kern/i386/i386_init.c
  *
  * First C code on an x86 boot. Initializes the console and runs the complete
  * platform, VM, kernel, scheduler, SMP, driver and userspace startup sequence.
@@ -64,6 +71,7 @@ i386_print_cpu(void)
 	uint32_t family = (eax >> 8U) & 0xFU;
 	uint32_t model = (eax >> 4U) & 0xFU;
 	if (family == 6U || family == 15U) model |= ((eax >> 16U) & 0xFU) << 4U;
+
 	if (family == 15U) family += (eax >> 20U) & 0xFFU;
 	kprintf("i386_init: cpu family %u\n", family);
 	kprintf("i386_init: cpu model %u\n", model);
@@ -273,7 +281,6 @@ i386_init(uint32_t magic, const multiboot_info_t *info)
 
 		if (i386_boot_arg("trap-test", test, sizeof(test))) i386_trap_test(test);
 	}
-
 	for (uint32_t index = 0U; index < sizeof(g_phases) / sizeof(g_phases[0]); index++) {
 		const i386_phase_t *phase = &g_phases[index];
 
@@ -284,11 +291,11 @@ i386_init(uint32_t magic, const multiboot_info_t *info)
 											 strcmp(phase->name, "threads") == 0 || strcmp(phase->name, "smp") == 0)) {
 			kprintf("i386_startup: running %s power-on self-tests\n", phase->name);
 			if (!phase->selftest(&g_boot_info)) i386_fail(phase->name, "power-on self-test");
+
 			if (strcmp(phase->name, "threads") == 0 && !i386_startup_core_test())
 				i386_fail("core", "power-on self-test");
 			kprintf("i386_startup: %s power-on self-tests passed\n", phase->name);
 		}
-
 		if (i386_boot_test_requested(phase->name)) {
 			kprintf("i386_init: running %s self-test\n", phase->name);
 
@@ -309,7 +316,6 @@ i386_init(uint32_t magic, const multiboot_info_t *info)
 
 		if (i386_boot_arg("qemu-exit", exit_value, sizeof(exit_value))) i386_shutdown(0x00U);
 	}
-
 	for (;;) {
 		(void)sched_yield();
 		__asm__ volatile("sti\n\thlt");

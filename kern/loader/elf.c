@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/loader/elf.c
+ *
+ * Loads and validates ELF images for kernel and user processes.
+ */
 #include <kern/console/display_owner.h>
 #include <kern/loader/elf.h>
 #include <kern/loader/elf_format.h>
@@ -11,6 +19,7 @@
 #include <kern/process/thread.h>
 #include <libk/sha256.h>
 #include <drivers/tep/tep_crypto.h>
+#include <drivers/tep/tep_mailbox.h>
 #include <kern/boot/boot_args.h>
 #include <kern/sched_prism/sched.h>
 #include <vfs/vfs.h>
@@ -43,6 +52,7 @@ loader_vnode_read_exact(vnode_t vnode, uint64_t offset, void *buffer, uint64_t s
 		uint64_t read_size = 0ULL;
 		vfs_status_t status = vnode_read(vnode, offset + complete, bytes + complete, size - complete, &read_size);
 		if (status != VFS_STATUS_OK || read_size == 0ULL) return LOADER_STATUS_IO_ERROR;
+
 		complete += read_size;
 	}
 
@@ -53,6 +63,7 @@ static bool
 loader_segment_protection(const loader_segment_t *segment, vm_user_protection_t *protection)
 {
 	if (segment == 0 || protection == 0) return false;
+
 	if (!loader_segment_flags_valid(segment->flags)) return false;
 
 	if ((segment->flags & ELF_PF_X) != 0U) {
@@ -99,6 +110,7 @@ loader_map_segment(vm_address_space_t *map, const loader_segment_t *segment)
 	uint64_t page_end = (segment_end + PMM_PAGE_SIZE - 1ULL) & ~(PMM_PAGE_SIZE - 1ULL);
 #else
 	if (segment->memory_size < segment->file_size || segment->memory_size == 0ULL) return LOADER_STATUS_BAD_FORMAT;
+
 	if ((segment->virtual_address & (PMM_PAGE_SIZE - 1ULL)) != (segment->offset & (PMM_PAGE_SIZE - 1ULL)))
 		return LOADER_STATUS_BAD_FORMAT;
 
@@ -150,20 +162,22 @@ loader_copy_segment(vnode_t vnode, vm_address_space_t *map, const loader_segment
 		loader_status_t status =
 			loader_vnode_read_exact(vnode, segment->offset + copied, (void *)(kernel_address + page_offset), chunk);
 		if (status != LOADER_STATUS_OK) return status;
+
 		sha256_update(identity, (const void *)(kernel_address + page_offset), chunk);
 		copied += chunk;
 	}
-
 	if ((segment->flags & ELF_PF_X) != 0U) {
 		uint64_t start_mapping = segment->virtual_address & ~(PMM_PAGE_SIZE - 1ULL);
 		uint64_t end;
 		if (loader_add_overflow(segment->virtual_address, segment->memory_size, &end)) return LOADER_STATUS_BAD_FORMAT;
+
 		uint64_t page_end;
 		if (!loader_align_up(end, PMM_PAGE_SIZE, &page_end)) return LOADER_STATUS_BAD_FORMAT;
 
 		for (uint64_t address = start_mapping; address < page_end; address += PMM_PAGE_SIZE) {
 			vm_user_page_mapping_t mapping;
 			if (!vm_address_space_query_page(map, address, &mapping)) return LOADER_STATUS_PROCESS_ERROR;
+
 			uint64_t kernel_address;
 			if (!vmm_physical_to_higher_half(mapping.physical_address, &kernel_address))
 				return LOADER_STATUS_PROCESS_ERROR;
@@ -231,6 +245,7 @@ loader_handoff_bootstrap_port(proc_t proc)
 {
 	ipc_port_t bootstrap = ipc_bootstrap_registry_port();
 	if (bootstrap == IPC_PORT_NULL) return;
+
 	if (!ipc_port_reference(bootstrap)) return;
 
 	uint32_t name;
@@ -246,6 +261,7 @@ static void
 loader_discard_process(proc_t parent, proc_t proc)
 {
 	if (parent == 0 || proc == 0) return;
+
 	proc_id_t pid = proc->p_ident.pid;
 	(void)proc_exit(proc, 127ULL);
 	uint64_t status;
@@ -256,11 +272,13 @@ loader_status_t
 loader_images_equal(const char *left_path, const char *right_path, bool *equal)
 {
 	if (equal != 0) *equal = false;
+
 	if (left_path == 0 || right_path == 0 || equal == 0) return LOADER_STATUS_INVALID;
 
 	vnode_t left;
 	vfs_status_t left_status = vfs_lookup(left_path, &left);
 	if (left_status == VFS_STATUS_NOT_FOUND) return LOADER_STATUS_NOT_FOUND;
+
 	if (left_status != VFS_STATUS_OK) return LOADER_STATUS_IO_ERROR;
 
 	vnode_t right;
@@ -293,6 +311,7 @@ loader_images_equal(const char *left_path, const char *right_path, bool *equal)
 
 		loader_status_t status = loader_vnode_read_exact(left, offset, left_buffer, chunk);
 		if (status == LOADER_STATUS_OK) status = loader_vnode_read_exact(right, offset, right_buffer, chunk);
+
 		if (status != LOADER_STATUS_OK) {
 			vnode_rele(right);
 			vnode_rele(left);
@@ -364,12 +383,15 @@ loader_spawn_internal(proc_t parent, const char *path, const char *name, uint32_
 					  proc_t *result)
 {
 	if (result != 0) *result = 0;
+
 	if (parent == 0 || path == 0 || name == 0 || result == 0) return LOADER_STATUS_INVALID;
 
 	vnode_t vnode;
 	vfs_status_t lookup_status = vfs_lookup(path, &vnode);
 	if (lookup_status == VFS_STATUS_NOT_FOUND) return LOADER_STATUS_NOT_FOUND;
+
 	if (lookup_status != VFS_STATUS_OK) return LOADER_STATUS_IO_ERROR;
+
 	if (vnode->v_type != VNODE_TYPE_REGULAR) {
 		vnode_rele(vnode);
 		return LOADER_STATUS_BAD_FORMAT;
@@ -421,15 +443,17 @@ loader_spawn_internal(proc_t parent, const char *path, const char *name, uint32_
 		vnode_rele(vnode);
 		return status;
 	}
+
 	if (loader_is_pie(&header)) {
 		vnode_rele(vnode);
-		return loader_spawn_internal(parent, "/disk" NXU_DYRLD_INTERPRETER, name, caps, path, result);
+		return loader_spawn_internal(parent, "/Volumes/mainOS" NXU_DYRLD_INTERPRETER, name, caps, path, result);
 	}
 
 	bool loadable = false;
 	for (uint32_t index = 0U; index < header.program_header_count; index++) {
 		loader_segment_t *segment = &programs[index];
 		if (segment->type != ELF_PT_LOAD) continue;
+
 		loadable = true;
 #if LOADER_ELF_WIDEN
 		if (!loader_segment_in_file(segment, vnode->v_size)) {
@@ -440,6 +464,7 @@ loader_spawn_internal(proc_t parent, const char *path, const char *name, uint32_
 			vnode_rele(vnode);
 			return LOADER_STATUS_BAD_FORMAT;
 		}
+
 	}
 
 	if (!loadable) {
@@ -463,14 +488,14 @@ loader_spawn_internal(proc_t parent, const char *path, const char *name, uint32_
 
 	for (uint32_t index = 0U; status == LOADER_STATUS_OK && index < header.program_header_count; index++) {
 		if (programs[index].type != ELF_PT_LOAD) continue;
+
 		status = loader_map_segment(map, &programs[index]);
 	}
-
 	for (uint32_t index = 0U; status == LOADER_STATUS_OK && index < header.program_header_count; index++) {
 		if (programs[index].type != ELF_PT_LOAD) continue;
+
 		status = loader_copy_segment(vnode, map, &programs[index], &identity);
 	}
-
 	if (status == LOADER_STATUS_OK) status = loader_map_stack(map);
 
 	if (status == LOADER_STATUS_OK) {
@@ -510,6 +535,7 @@ loader_spawn_internal(proc_t parent, const char *path, const char *name, uint32_
 		}
 		status = loader_start_process(proc);
 	}
+
 	if (status != LOADER_STATUS_OK) {
 		loader_discard_process(parent, proc);
 		return status;
@@ -545,6 +571,7 @@ loader_stack_write(vm_address_space_t *map, uint64_t address, const void *data, 
 		vm_user_page_mapping_t mapping;
 		if (!vm_address_space_query_page(map, page_address, &mapping)) {
 			if (!vm_fault_user(map, page_address, VM_FAULT_WRITE)) return LOADER_STATUS_NO_MEMORY;
+
 			if (!vm_address_space_query_page(map, page_address, &mapping)) return LOADER_STATUS_PROCESS_ERROR;
 		}
 
@@ -617,6 +644,7 @@ loader_status_t
 loader_exec_internal(proc_t proc, const char *path, const loader_exec_args_t *args, const char *dynamic_main)
 {
 	if (proc == 0 || path == 0 || args == 0) return LOADER_STATUS_INVALID;
+
 	if (args->argc == 0U || args->argc > NXU_EXEC_ARGV_MAX || args->length > NXU_EXEC_ARGV_BYTES)
 		return LOADER_STATUS_INVALID;
 
@@ -629,7 +657,9 @@ loader_exec_internal(proc_t proc, const char *path, const loader_exec_args_t *ar
 	vnode_t vnode;
 	vfs_status_t lookup_status = vfs_lookup(path, &vnode);
 	if (lookup_status == VFS_STATUS_NOT_FOUND) return LOADER_STATUS_NOT_FOUND;
+
 	if (lookup_status != VFS_STATUS_OK) return LOADER_STATUS_IO_ERROR;
+
 	if (vnode->v_type != VNODE_TYPE_REGULAR) {
 		vnode_rele(vnode);
 		return LOADER_STATUS_BAD_FORMAT;
@@ -662,14 +692,16 @@ loader_exec_internal(proc_t proc, const char *path, const loader_exec_args_t *ar
 		vnode_rele(vnode);
 		return status;
 	}
+
 	if (loader_is_pie(&header)) {
 		vnode_rele(vnode);
-		return loader_exec_internal(proc, "/disk" NXU_DYRLD_INTERPRETER, args, path);
+		return loader_exec_internal(proc, "/Volumes/mainOS" NXU_DYRLD_INTERPRETER, args, path);
 	}
 
 	bool loadable = false;
 	for (uint32_t index = 0U; index < header.program_header_count; index++) {
 		if (programs[index].type != ELF_PT_LOAD) continue;
+
 		loadable = true;
 
 		uint64_t file_end;
@@ -678,8 +710,8 @@ loader_exec_internal(proc_t proc, const char *path, const loader_exec_args_t *ar
 			vnode_rele(vnode);
 			return LOADER_STATUS_BAD_FORMAT;
 		}
-	}
 
+	}
 	if (!loadable) {
 		vnode_rele(vnode);
 		return LOADER_STATUS_BAD_FORMAT;
@@ -696,14 +728,14 @@ loader_exec_internal(proc_t proc, const char *path, const loader_exec_args_t *ar
 
 	for (uint32_t index = 0U; status == LOADER_STATUS_OK && index < header.program_header_count; index++) {
 		if (programs[index].type != ELF_PT_LOAD) continue;
+
 		status = loader_map_segment(&staging, &programs[index]);
 	}
-
 	for (uint32_t index = 0U; status == LOADER_STATUS_OK && index < header.program_header_count; index++) {
 		if (programs[index].type != ELF_PT_LOAD) continue;
+
 		status = loader_copy_segment(vnode, &staging, &programs[index], &identity);
 	}
-
 	if (status == LOADER_STATUS_OK) status = loader_map_stack(&staging);
 
 	if (status == LOADER_STATUS_OK) {
@@ -830,6 +862,7 @@ loader_status_name(loader_status_t status)
 	default:
 		return "unknown";
 	}
+
 }
 
 loader_status_t
@@ -859,9 +892,12 @@ loader_dyrld_map(proc_t proc, nxu_dyrld_image_t *image)
 			*image = proc->p_dyrld_images[i];
 			return LOADER_STATUS_OK;
 		}
+
 	if (proc->p_dyrld_count == NXU_DYRLD_IMAGES) return LOADER_STATUS_NO_MEMORY;
+
 	vnode_t vnode;
 	if (vfs_lookup(image->path, &vnode) != VFS_STATUS_OK) return LOADER_STATUS_NOT_FOUND;
+
 	loader_header_t header;
 	loader_segment_t programs[ELF_PROGRAM_HEADER_MAX];
 #if LOADER_ELF_WIDEN
@@ -903,9 +939,16 @@ loader_dyrld_map(proc_t proc, nxu_dyrld_image_t *image)
 	memcpy(result.path, image->path, sizeof(result.path));
 	uint32_t random = 0;
 	if (boot_arg_uint32("dyrld.aslr", 1) && tep_random(&random, sizeof(random)) != TEP_OK) {
-		vnode_rele(vnode);
-		return LOADER_STATUS_IO_ERROR;
+		/* A machine with no enclave UART has no source for randomized slides.
+		 * Keep the ordinary untrusted desktop usable with fixed slides there.
+		 * If a mailbox is present but tepOS is not answering, retain the
+		 * fail-closed behavior instead of silently weakening ASLR. */
+		if (tep_mailbox_link_state() != TEP_LINK_ABSENT) {
+			vnode_rele(vnode);
+			return LOADER_STATUS_IO_ERROR;
+		}
 	}
+
 #if defined(__i386__)
 	/* Sixteen 56-MiB slots fit below the anonymous-mapping window. Each
 	 * reserves 32 MiB for the image and 24 MiB for its 64-KiB ASLR slide. */
@@ -934,9 +977,11 @@ loader_dyrld_map(proc_t proc, nxu_dyrld_image_t *image)
 				status = LOADER_STATUS_BAD_FORMAT;
 				break;
 			}
+
 			relro_start = result.bias + segment->virtual_address;
 			relro_end = result.bias + end;
 		}
+
 		if (segment->type == 2U) {
 			if (result.dynamic != 0 || segment->memory_size == 0 || segment->memory_size > 65536 ||
 				segment->virtual_address > 0x2000000ULL ||
@@ -944,10 +989,13 @@ loader_dyrld_map(proc_t proc, nxu_dyrld_image_t *image)
 				status = LOADER_STATUS_BAD_FORMAT;
 				break;
 			}
+
 			result.dynamic = result.bias + segment->virtual_address;
 			result.dynamic_size = segment->memory_size;
 		}
+
 		if (segment->type != ELF_PT_LOAD || segment->memory_size == 0) continue;
+
 		uint64_t end;
 		if (!loader_segment_flags_valid(segment->flags) || !loader_segment_in_file(segment, vnode->v_size) ||
 			segment->memory_size < segment->file_size ||
@@ -957,6 +1005,7 @@ loader_dyrld_map(proc_t proc, nxu_dyrld_image_t *image)
 			status = LOADER_STATUS_BAD_FORMAT;
 			break;
 		}
+
 		uint64_t start = (result.bias + segment->virtual_address) & ~4095ULL;
 		uint64_t page_end = (result.bias + end + 4095) & ~4095ULL;
 		for (uint32_t j = 0; j < result.segment_count; j++) {
@@ -970,6 +1019,7 @@ loader_dyrld_map(proc_t proc, nxu_dyrld_image_t *image)
 			if (vm_address_space_query_page(map, address, &existing)) status = LOADER_STATUS_BAD_FORMAT;
 		}
 		if (status != LOADER_STATUS_OK) break;
+
 		result.segments[result.segment_count++] =
 			(nxu_dyrld_segment_t){result.bias + segment->virtual_address, segment->memory_size, segment->flags, 0};
 	}
@@ -984,6 +1034,7 @@ loader_dyrld_map(proc_t proc, nxu_dyrld_image_t *image)
 			entry_valid = true;
 	}
 	if (!dynamic_valid || !entry_valid || result.segment_count == 0) status = LOADER_STATUS_BAD_FORMAT;
+
 	if (relro_start) {
 		bool contained = false;
 		for (uint32_t i = 0; i < result.segment_count; i++) {
@@ -1001,6 +1052,7 @@ loader_dyrld_map(proc_t proc, nxu_dyrld_image_t *image)
 	for (uint32_t i = 0; status == LOADER_STATUS_OK && i < header.program_header_count; i++) {
 		loader_segment_t segment = programs[i];
 		if (segment.type != ELF_PT_LOAD || segment.memory_size == 0) continue;
+
 		segment.virtual_address += result.bias;
 		status = loader_map_segment(map, &segment);
 		if (status == LOADER_STATUS_OK) status = loader_copy_segment(vnode, map, &segment, &identity);
@@ -1019,6 +1071,7 @@ loader_dyrld_map(proc_t proc, nxu_dyrld_image_t *image)
 			}
 		return status;
 	}
+
 	sha256_final(&identity, result.identity);
 	proc->p_dyrld_relro_start[proc->p_dyrld_count] = relro_start & ~4095ULL;
 	proc->p_dyrld_relro_end[proc->p_dyrld_count] = relro_end;
@@ -1035,8 +1088,11 @@ loader_status_t
 loader_dyrld_finalize(proc_t proc)
 {
 	if (!proc || proc->p_task.thread_count != 1U) return LOADER_STATUS_BUSY;
+
 	if (!proc->p_dyrld_count) return LOADER_STATUS_INVALID;
+
 	if (proc->p_dyrld_finalized) return LOADER_STATUS_OK;
+
 	vm_address_space_t *map = proc_vm_map(proc);
 	for (uint32_t i = 0; i < proc->p_dyrld_count; i++) {
 		for (uint64_t address = proc->p_dyrld_relro_start[i]; address < proc->p_dyrld_relro_end[i]; address += 4096) {

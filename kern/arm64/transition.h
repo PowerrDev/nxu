@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/arm64/transition.h
+ *
+ * Defines the ARM64 user and kernel transition frame layout.
+ */
 #ifndef NXU_ARCH_ARM64_TRANSITION_H
 #define NXU_ARCH_ARM64_TRANSITION_H
 

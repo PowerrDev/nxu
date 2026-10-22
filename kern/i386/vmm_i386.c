@@ -99,6 +99,7 @@ static vmm_protection_t
 vmm_entry_protection(pmap_entry_t entry)
 {
 	if ((entry & PTE_WRITE) != 0U) return VMM_PROTECTION_READ_WRITE;
+
 	return (entry & PTE_SOFTWARE_EXEC) != 0U ? VMM_PROTECTION_READ_EXECUTE : VMM_PROTECTION_READ_ONLY;
 }
 
@@ -133,6 +134,7 @@ vmm_walk(uint64_t virtual_address, pmap_entry_t *leaf, uint64_t *physical_addres
 
 	if ((directory_entry & PTE_LARGE) != 0U) {
 		if (leaf != 0) *leaf = directory_entry;
+
 		if (physical_address != 0)
 			*physical_address = (uint64_t)(directory_entry & 0xFFE00000ULL) | (address & (PMAP_LARGE_PAGE_SIZE - 1U));
 		if (writable != 0) *writable = (directory_entry & PTE_WRITE) != 0U;
@@ -144,7 +146,9 @@ vmm_walk(uint64_t virtual_address, pmap_entry_t *leaf, uint64_t *physical_addres
 	if ((entry & PTE_PRESENT) == 0U) return false;
 
 	if (leaf != 0) *leaf = entry;
+
 	if (physical_address != 0) *physical_address = (uint64_t)(entry & PTE_FRAME) | (address & PMAP_PAGE_MASK);
+
 	if (writable != 0) *writable = (entry & PTE_WRITE) != 0U && (directory_entry & PTE_WRITE) != 0U;
 	return true;
 }
@@ -161,8 +165,8 @@ vmm_init(const platform_t *platform)
 			kprintf("vmm_init: region %u is not covered by the direct map\n", index);
 			return false;
 		}
-	}
 
+	}
 	if (!pmap_init()) return false;
 
 	g_vmm_enabled = true;
@@ -195,6 +199,7 @@ vmm_map_page(uint64_t virtual_address, uint64_t physical_address, vmm_memory_typ
 	pmap_entry_t *entry;
 
 	if (!pmap_get_entry(pmap_kernel_directory(), (uint32_t)virtual_address, false, false, 0, &entry)) return false;
+
 	if ((*entry & PTE_PRESENT) != 0U) return false;
 
 	pmap_entry_store(entry, (uint32_t)physical_address | flags);
@@ -210,6 +215,7 @@ vmm_unmap_page(uint64_t virtual_address, uint64_t *physical_address)
 	pmap_entry_t *entry;
 
 	if (!pmap_get_entry(pmap_kernel_directory(), (uint32_t)virtual_address, false, false, 0, &entry)) return false;
+
 	if ((*entry & PTE_PRESENT) == 0U) return false;
 
 	if (physical_address != 0) *physical_address = *entry & PTE_FRAME;
@@ -234,6 +240,7 @@ vmm_protect_page(uint64_t virtual_address, vmm_protection_t protection)
 	pmap_entry_t *entry;
 
 	if (!pmap_get_entry(pmap_kernel_directory(), (uint32_t)virtual_address, false, false, 0, &entry)) return false;
+
 	if ((*entry & PTE_PRESENT) == 0U) return false;
 
 	pmap_entry_store(entry, (pmap_entry_load(entry) & ~(PTE_WRITE | PTE_SOFTWARE_EXEC | PTE_NX)) |
@@ -391,14 +398,19 @@ vmm_validate_section(uint64_t start, uint64_t end, bool writable, bool executabl
 		/* The boot stack's guard page is deliberately unmapped. */
 		if (address == (uintptr_t)i386_boot_stack_guard) {
 			if (vmm_translate(address, &physical)) return false;
+
 			continue;
 		}
 
 		if (!vmm_kernel_address_to_physical(address, &expected)) return false;
+
 		if (!vmm_translate(address, &physical) || physical != expected) return false;
+
 		if (vmm_translate_write(address, &physical) != writable) return false;
+
 		pmap_entry_t leaf;
 		if (!vmm_walk(address, &leaf, 0, 0)) return false;
+
 		if (pmap_nx_enabled() && ((leaf & PTE_NX) == 0) != executable) return false;
 	}
 
@@ -434,6 +446,7 @@ vmm_validate_linked_kernel_layout(void)
 
 	for (uint32_t index = 0U; index < sizeof(bounds) / sizeof(bounds[0]); index++) {
 		if (((uintptr_t)bounds[index] & PMAP_PAGE_MASK) != 0U) return false;
+
 		if (index != 0U && bounds[index] < bounds[index - 1U]) return false;
 	}
 
@@ -457,6 +470,7 @@ vmm_validate_higher_half_direct_map(const platform_t *platform)
 			uint64_t physical;
 
 			if (!vmm_physical_to_higher_half(probes[probe], &virtual_address)) return false;
+
 			if (!vmm_walk(virtual_address, 0, &physical, 0) || physical != probes[probe]) return false;
 		}
 	}

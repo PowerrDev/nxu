@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/arm64/thread.h
+ *
+ * Defines ARM64 thread state and context interfaces.
+ */
 #ifndef NXU_ARCH_ARM64_THREAD_H
 #define NXU_ARCH_ARM64_THREAD_H
 

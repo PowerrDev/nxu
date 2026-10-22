@@ -1,3 +1,12 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/acpi/host.c
+ *
+ * Implements the boot-time uACPI host services. Runtime SCI and GPE delivery are
+ * disabled.
+ */
 /* NXU's boot-time uACPI host. Runtime SCI/GPE delivery is not enabled here. */
 
 #include <uacpi/kernel_api.h>
@@ -21,13 +30,9 @@ uacpi_kernel_get_rsdp(uacpi_phys_addr *out)
 void *
 uacpi_kernel_map(uacpi_phys_addr addr, uacpi_size len)
 {
-	if (!len || addr + len < addr || addr + len > 0x100000000ULL) {
-		return UACPI_MAP_FAILED;
-	}
+	if (!len || addr + len < addr || addr + len > 0x100000000ULL) return UACPI_MAP_FAILED;
 
-	if (addr + len <= VM_DIRECT_MAP_SIZE) {
-		return (void *)(uintptr_t)(addr + VMM_HIGHER_HALF_BASE);
-	}
+	if (addr + len <= VM_DIRECT_MAP_SIZE) return (void *)(uintptr_t)(addr + VMM_HIGHER_HALF_BASE);
 
 	void *mapped = 0;
 
@@ -53,7 +58,6 @@ uacpi_kernel_log(uacpi_log_level level, const char *message)
 		while (*message && *message != '\n' && n < sizeof(line) - 1) {
 			line[n++] = *message++;
 		}
-
 		if (*message == '\n') {
 			message++;
 		}
@@ -148,9 +152,7 @@ uacpi_kernel_acquire_mutex(uacpi_handle h, uacpi_u16 timeout)
 	uint64_t end = timer_get_microseconds() + (uint64_t)timeout * 1000;
 
 	do {
-		if (nxu_spin_trylock(h)) {
-			return UACPI_STATUS_OK;
-		}
+		if (nxu_spin_trylock(h)) return UACPI_STATUS_OK;
 
 		cpu_relax();
 	} while (timeout == 0xffff || timer_get_microseconds() < end);
@@ -277,14 +279,10 @@ typedef struct {
 uacpi_status
 uacpi_kernel_io_map(uacpi_io_addr base, uacpi_size length, uacpi_handle *out)
 {
-	if (!length || base >= 65536 || length > 65536 - base) {
-		return UACPI_STATUS_INVALID_ARGUMENT;
-	}
+	if (!length || base >= 65536 || length > 65536 - base) return UACPI_STATUS_INVALID_ARGUMENT;
 
 	io_range *r = kmalloc(sizeof(*r));
-	if (!r) {
-		return UACPI_STATUS_OUT_OF_MEMORY;
-	}
+	if (!r) return UACPI_STATUS_OUT_OF_MEMORY;
 
 	*r = (io_range){base, length};
 	*out = r;
@@ -320,15 +318,11 @@ IO_ACCESS(8, "b") IO_ACCESS(16, "w") IO_ACCESS(32, "l") static nxu_spinlock_t pc
 uacpi_status
 uacpi_kernel_pci_device_open(uacpi_pci_address a, uacpi_handle *out)
 {
-	if (a.segment || a.device > 31 || a.function > 7) {
-		return UACPI_STATUS_NOT_FOUND;
-	}
+	if (a.segment || a.device > 31 || a.function > 7) return UACPI_STATUS_NOT_FOUND;
 
 	uint32_t *p = kmalloc(sizeof(*p));
 
-	if (!p) {
-		return UACPI_STATUS_OUT_OF_MEMORY;
-	}
+	if (!p) return UACPI_STATUS_OUT_OF_MEMORY;
 
 	*p = 0x80000000U | ((uint32_t)a.bus << 16) | ((uint32_t)a.device << 11) | ((uint32_t)a.function << 8);
 	*out = p;

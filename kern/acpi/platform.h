@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/acpi/platform.h
+ *
+ * Declares ACPI platform discovery and initialization interfaces.
+ */
 #ifndef NXU_ACPI_PLATFORM_H
 #define NXU_ACPI_PLATFORM_H
 

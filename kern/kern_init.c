@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/kern_init.c
+ *
+ * Coordinates kernel subsystem initialization and starts normal operation.
+ */
 #include <kern/tests/net_test.h>
 #include <kern/net/netif.h>
 #include <kern/logging/diagnostics.h>
@@ -137,17 +145,12 @@ kern_test_pmm(void)
 	uint64_t test_pages[3];
 
 	for (uint32_t index = 0U; index < 3U; index++) {
-		if (!pmm_allocate_page(&test_pages[index])) {
-			return false;
-		}
+		if (!pmm_allocate_page(&test_pages[index])) return false;
 
 		kverbosef("kern_test_pmm: allocated test page %u at 0x%llx\n", index, (unsigned long long)test_pages[index]);
 	}
-
 	for (uint32_t index = 0U; index < 3U; index++) {
-		if (!pmm_free_page(test_pages[index])) {
-			return false;
-		}
+		if (!pmm_free_page(test_pages[index])) return false;
 	}
 
 	return true;
@@ -176,9 +179,7 @@ kern_test_live_vmm(void)
 {
 	uint64_t physical_address;
 
-	if (!pmm_allocate_page(&physical_address)) {
-		return false;
-	}
+	if (!pmm_allocate_page(&physical_address)) return false;
 
 	bool mapped = false;
 	bool passed = false;
@@ -201,7 +202,6 @@ kern_test_live_vmm(void)
 		mapping.protection != VMM_PROTECTION_READ_WRITE) {
 		goto cleanup;
 	}
-
 	if (!vmm_translate(KERNEL_VMM_TEST_ADDRESS, &translated_address)) {
 		goto cleanup;
 	}
@@ -264,14 +264,10 @@ cleanup:
 	if (mapped) {
 		uint64_t ignored_address;
 
-		if (!vmm_unmap_page(KERNEL_VMM_TEST_ADDRESS, &ignored_address)) {
-			return false;
-		}
+		if (!vmm_unmap_page(KERNEL_VMM_TEST_ADDRESS, &ignored_address)) return false;
 	}
 
-	if (!pmm_free_page(physical_address)) {
-		return false;
-	}
+	if (!pmm_free_page(physical_address)) return false;
 
 	return passed;
 }
@@ -293,19 +289,13 @@ kern_test_higher_half_alias(void)
 
 	uint64_t higher_half_address;
 
-	if (!vmm_physical_to_higher_half(physical_address, &higher_half_address)) {
-		return false;
-	}
+	if (!vmm_physical_to_higher_half(physical_address, &higher_half_address)) return false;
 
 	uint64_t translated_address;
 
-	if (!vmm_translate(higher_half_address, &translated_address)) {
-		return false;
-	}
+	if (!vmm_translate(higher_half_address, &translated_address)) return false;
 
-	if (translated_address != physical_address) {
-		return false;
-	}
+	if (translated_address != physical_address) return false;
 
 	const uint64_t left = 0x123456789ABCDEF0ULL;
 	const uint64_t right = 0x0000000000000042ULL;
@@ -346,9 +336,7 @@ kern_test_higher_half_ram_alias(void)
 {
 	uint64_t physical_address;
 
-	if (!pmm_allocate_page(&physical_address)) {
-		return false;
-	}
+	if (!pmm_allocate_page(&physical_address)) return false;
 
 	uint64_t virtual_address;
 
@@ -396,9 +384,7 @@ kern_validate_higher_half_state(void)
 	const platform_t *platform = platform_get();
 	const dtb_t *device_tree = dtb_get_boot();
 
-	if (platform == 0 || device_tree == 0) {
-		return false;
-	}
+	if (platform == 0 || device_tree == 0) return false;
 
 	if (!vmm_is_higher_half_address((uint64_t)platform) || !vmm_is_higher_half_address((uint64_t)device_tree)) {
 		return false;
@@ -406,25 +392,15 @@ kern_validate_higher_half_state(void)
 
 	uint64_t physical_address;
 
-	if (!vmm_translate(pc, &physical_address)) {
-		return false;
-	}
+	if (!vmm_translate(pc, &physical_address)) return false;
 
-	if (!vmm_translate_write(sp - 16ULL, &physical_address)) {
-		return false;
-	}
+	if (!vmm_translate_write(sp - 16ULL, &physical_address)) return false;
 
-	if (!vmm_translate(vbar, &physical_address)) {
-		return false;
-	}
+	if (!vmm_translate(vbar, &physical_address)) return false;
 
-	if (!vmm_translate_write((uint64_t)platform, &physical_address)) {
-		return false;
-	}
+	if (!vmm_translate_write((uint64_t)platform, &physical_address)) return false;
 
-	if (!vmm_translate_write((uint64_t)device_tree, &physical_address)) {
-		return false;
-	}
+	if (!vmm_translate_write((uint64_t)device_tree, &physical_address)) return false;
 
 	return true;
 }
@@ -446,26 +422,16 @@ kern_dump_higher_half_state(void)
 static bool
 kern_prepare_higher_half_runtime(void)
 {
-	if (!vmm_rebase_kernel_pointers()) {
-		return false;
-	}
+	if (!vmm_rebase_kernel_pointers()) return false;
 
-	if (!pmm_enter_higher_half()) {
-		return false;
-	}
+	if (!pmm_enter_higher_half()) return false;
 
-	if (!dtb_enter_higher_half()) {
-		return false;
-	}
+	if (!dtb_enter_higher_half()) return false;
 
-	if (!gic_enter_higher_half()) {
-		return false;
-	}
+	if (!gic_enter_higher_half()) return false;
 
 	/* Switch the console last so earlier failures still print safely. */
-	if (!uart_enter_higher_half()) {
-		return false;
-	}
+	if (!uart_enter_higher_half()) return false;
 
 	return true;
 }
@@ -482,16 +448,12 @@ kern_validate_ttbr0_shutdown(void)
 
 	uint64_t lower_pc;
 
-	if (!vmm_higher_half_to_physical(higher_pc, &lower_pc)) {
-		return false;
-	}
+	if (!vmm_higher_half_to_physical(higher_pc, &lower_pc)) return false;
 
 	uint64_t translated_address;
 
 	/* The old TTBR0 alias must now fault. */
-	if (vmm_translate(lower_pc, &translated_address)) {
-		return false;
-	}
+	if (vmm_translate(lower_pc, &translated_address)) return false;
 
 	/* The same instruction must remain reachable through TTBR1. */
 	if (!vmm_translate(higher_pc, &translated_address) || translated_address != lower_pc) {
@@ -697,7 +659,7 @@ kern_init_processes(void)
 /*
  * kern_init_filesystem
  *
- * VFS with the ramfs root and the /disk mountpoint. The system volume
+ * VFS with the ramfs root and the /Volumes/mainOS mountpoint. The system volume
  * itself is mounted later, once the block device is known to exist.
  */
 static void
@@ -706,8 +668,11 @@ kern_init_filesystem(void)
 	kputln("IOVirtualFSDriver initializing virtual filesystem");
 
 	if (!vfs_init()) kern_fail("IOVirtualFSDriver initialization failed");
+
 	if (!ramfs_register()) kern_fail("IOVirtualFSDriver ramfs registration failed");
+
 	if (!ext4_register()) kern_fail("IOVirtualFSDriver ext4 registration failed");
+
 	if (!devfs_register()) kern_fail("IOVirtualFSDriver devfs registration failed");
 
 	vfs_status_t mount_status = vfs_mount("ramfs", 0, "/");
@@ -715,7 +680,8 @@ kern_init_filesystem(void)
 
 	kputln("IOVirtualFSDriver mounted ramfs at /");
 
-	if (vfs_mkdir("/disk") != VFS_STATUS_OK) kern_fail("IOVirtualFSDriver: /disk mountpoint creation failed");
+	if (vfs_mkdir("/Volumes") != VFS_STATUS_OK || vfs_mkdir("/Volumes/mainOS") != VFS_STATUS_OK)
+		kern_fail("IOVirtualFSDriver: /Volumes/mainOS mountpoint creation failed");
 
 	if (vfs_mkdir("/dev") != VFS_STATUS_OK || vfs_mount("devfs", 0, "/dev") != VFS_STATUS_OK)
 		kern_fail("IOVirtualFSDriver: devfs mount at /dev failed");
@@ -750,14 +716,14 @@ kern_init_scheduler(void)
 /*
  * kern_mount_system_volume
  *
- * Mount the ext4 system volume from disk0 at /disk.
+ * Mount the ext4 system volume from disk0 at /Volumes/mainOS.
  */
 static void
 kern_mount_system_volume(void)
 {
-	kputln("IOFilesystemFamily: mounting disk0 at /disk");
+	kputln("IOFilesystemFamily: mounting disk0 at /Volumes/mainOS");
 
-	vfs_status_t ext4_mount_status = vfs_mount("ext4", boot_system_volume_device(), "/disk");
+	vfs_status_t ext4_mount_status = vfs_mount("ext4", boot_system_volume_device(), "/Volumes/mainOS");
 
 	if (ext4_mount_status != VFS_STATUS_OK) {
 		kputs("IOFilesystemFamily: mount failed: ");
@@ -768,6 +734,7 @@ kern_mount_system_volume(void)
 			kputln("boot: system mount failed; starting the recovery partition");
 			return;
 		}
+
 		kern_fail("IOFilesystemFamily: mount failed");
 	}
 
@@ -788,8 +755,8 @@ static void
 kern_launch_init_process(display_device_t *boot_display)
 {
 	bool recovery_boot = boot_mode_is_triage_os();
-	const char *bootd_recovery_path = "/disk/System/Library/CoreServices/bootd.recovery";
-	const char *init_path = recovery_boot ? boot_update_recovery_program() : "/disk/System/Library/CoreServices/bootd";
+	const char *bootd_recovery_path = "/Volumes/mainOS/System/Library/CoreServices/bootd.recovery";
+	const char *init_path = recovery_boot ? boot_update_recovery_program() : "/Volumes/mainOS/System/Library/CoreServices/bootd";
 	const char *init_name = recovery_boot ? "triageOS" : "bootd";
 	bool init_uses_fallback = false;
 
@@ -954,7 +921,7 @@ kern_init_higher_half(void)
 	if (tep_mailbox_start()) (void)tep_boot_check_start();
 
 	if (!boot_mode_is_triage_os() && boot_arg_bool("ui.userland", false) && !ui_service_trusted_prepare())
-		kern_fail("trusted-login: unable to establish login boundary");
+		kern_fail("NXUKeystoreManager: unable to establish login boundary");
 
 	boot_test_graphical(boot_display);
 

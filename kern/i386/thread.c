@@ -43,6 +43,7 @@ void
 machine_thread_init_kernel(machine_thread_t *machine)
 {
 	if (machine == 0) return;
+
 	machine_thread_zero(machine);
 }
 
@@ -59,6 +60,7 @@ bool
 machine_thread_set_user_state(machine_thread_t *machine, uint64_t entry, uint64_t stack, uint64_t arg)
 {
 	if (machine == 0 || entry == 0ULL || stack == 0ULL) return false;
+
 	if (!machine_thread_fits(entry) || !machine_thread_fits(stack) || !machine_thread_fits(arg)) return false;
 
 	machine->user.pc = (uint32_t)entry;

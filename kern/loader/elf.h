@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/loader/elf.h
+ *
+ * Declares the kernel loader elf interfaces and data structures.
+ */
 #ifndef NXU_KERN_LOADER_ELF_H
 #define NXU_KERN_LOADER_ELF_H
 

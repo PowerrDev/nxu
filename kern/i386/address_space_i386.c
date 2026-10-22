@@ -146,6 +146,7 @@ vm_address_space_translate(const vm_address_space_t *space, uint64_t virtual_add
 	pmap_entry_t entry = pmap_entry_load(&pmap_table_pointer(directory_entry & PTE_FRAME)[pmap_table_index(address)]);
 
 	if ((entry & (PTE_PRESENT | PTE_USER)) != (PTE_PRESENT | PTE_USER)) return false;
+
 	if (write && (entry & PTE_WRITE) == 0U) return false;
 
 	*physical_address = (uint64_t)(entry & PTE_FRAME) | (address & PMAP_PAGE_MASK);
@@ -485,6 +486,7 @@ vm_address_space_destroy(vm_address_space_t *space)
 
 	/* Never free a directory a CPU is still walking. */
 	if (space == vm_space_local() && !vm_address_space_deactivate()) return false;
+
 	if (!cpuset_empty(&space->active_cpus) && !vm_address_space_quiesce(space)) return false;
 
 	pmap_entry_t *directory = (pmap_entry_t *)space->root;

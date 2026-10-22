@@ -115,7 +115,9 @@ mp_scan_range(uint32_t base, uint32_t length)
 		const mp_floating_pointer_t *candidate = (const mp_floating_pointer_t *)mp_direct(base + offset);
 
 		if (memcmp(candidate->signature, "_MP_", 4U) != 0) continue;
+
 		if (candidate->length != 1U) continue;
+
 		if (mp_checksum(candidate, sizeof(*candidate)) != 0U) continue;
 
 		return candidate;
@@ -217,6 +219,7 @@ acpi_scan(mp_table_t *table)
 				kprintf("NxuACPIPlatform: x2APIC id=%u exceeds this kernel's xAPIC support\n", apic_id);
 			}
 		}
+
 		if (entry_type == 5U && entry_length >= 12U) {
 			uint64_t override;
 			memcpy(&override, cursor + 4U, 8U);
@@ -321,6 +324,7 @@ mp_table_scan(mp_table_t *table)
 			/* An unrecognised entry type: the table is malformed from here on, stop. */
 			break;
 		}
+
 	}
 
 	kprintf("mp_table_scan: %u CPU(s), Local APIC at phys 0x%x\n", table->cpu_count, table->lapic_physical);

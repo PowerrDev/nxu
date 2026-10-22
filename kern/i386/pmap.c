@@ -145,10 +145,12 @@ pmap_root_alloc(pmap_entry_t **directory, uint32_t *root_physical)
 {
 	uint64_t physical;
 	if (!pmm_allocate_contiguous_pages(PMAP_ROOT_PAGES, &physical)) return false;
+
 	if (physical + PMAP_ROOT_PAGES * PMAP_PAGE_SIZE > VM_DIRECT_MAP_SIZE) {
 		(void)pmm_free_contiguous_pages(physical, PMAP_ROOT_PAGES);
 		return false;
 	}
+
 	*directory = pmap_table_pointer((uint32_t)physical);
 	*root_physical = (uint32_t)physical + 4U * PMAP_PAGE_SIZE;
 	memset(*directory, 0, PMAP_ROOT_PAGES * PMAP_PAGE_SIZE);
@@ -188,7 +190,9 @@ i386_boot_relocate(uint32_t magic, uint32_t info_physical)
 		info = (multiboot_info_t *)pmap_table_pointer(info_physical);
 
 		if ((info->flags & MULTIBOOT_INFO_CMDLINE) != 0U) pmap_rebase(&info->cmdline);
+
 		if ((info->flags & MULTIBOOT_INFO_MODS) != 0U && info->mods_count != 0U) pmap_rebase(&info->mods_addr);
+
 		if ((info->flags & MULTIBOOT_INFO_MMAP) != 0U) pmap_rebase(&info->mmap_addr);
 	}
 
@@ -359,7 +363,6 @@ pmap_init(void)
 		directory[PMAP_ARENA_FIRST_PDE + index] = table_physical | PTE_PRESENT | PTE_WRITE;
 		g_pmap.table_count++;
 	}
-
 	for (uint32_t index = 0U; index < PMAP_MMIO_PDES; index++) {
 		uint32_t table_physical;
 
@@ -410,6 +413,7 @@ pmap_map_mmio(uint64_t physical_address, uint64_t size, void **virtual_address)
 	if (virtual_address != 0) *virtual_address = 0;
 
 	if (!g_pmap.initialized || virtual_address == 0 || size == 0ULL || size > VM_MMIO_SIZE) return false;
+
 	if (physical_address >= 0x100000000ULL || size > 0x100000000ULL - physical_address) return false;
 
 	uint32_t offset = (uint32_t)(physical_address & PMAP_PAGE_MASK);
@@ -433,8 +437,8 @@ pmap_map_mmio(uint64_t physical_address, uint64_t size, void **virtual_address)
 			found = true;
 			break;
 		}
-	}
 
+	}
 	if (!found) return false;
 
 	pmap_entry_t *directory = pmap_kernel_directory();
@@ -488,7 +492,6 @@ pmap_unmap_mmio(void *virtual_address, uint64_t size)
 			pmap_invalidate_page(page_address);
 		}
 	}
-
 	for (uint32_t index = 0U; index < reserved; index++)
 		pmap_mmio_set_bit(first + index, false);
 

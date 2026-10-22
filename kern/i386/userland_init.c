@@ -55,8 +55,8 @@
 #include <stdint.h>
 #include <string.h>
 
-#define USERLAND_BOOTD_PATH "/disk/System/Library/CoreServices/bootd"
-#define USERLAND_BOOTD_RECOVERY_PATH "/disk/System/Library/CoreServices/bootd.recovery"
+#define USERLAND_BOOTD_PATH "/Volumes/mainOS/System/Library/CoreServices/bootd"
+#define USERLAND_BOOTD_RECOVERY_PATH "/Volumes/mainOS/System/Library/CoreServices/bootd.recovery"
 
 static proc_t g_boot_process;
 static waitq_t g_boot_dispatch_wait;
@@ -132,9 +132,7 @@ i386_init_userland(const i386_boot_info_t *boot)
 	(void)boot;
 
 	if (boot_arg_bool("net.test", false)) {
-		if (!net_start()) {
-			return false;
-		}
+		if (!net_start()) return false;
 
 		return net_test();
 	}
@@ -179,7 +177,9 @@ i386_init_userland(const i386_boot_info_t *boot)
 		char option[24];
 
 		if (i386_boot_arg("btrfs-dev", option, sizeof(option))) list_request.device_index = userland_parse_u32(option);
+
 		if (i386_boot_arg("btrfs-subvol", option, sizeof(option))) list_request.subvolume = userland_parse_u32(option);
+
 		if (i386_boot_arg("btrfs-max", option, sizeof(option))) list_request.max_entries = userland_parse_u32(option);
 		list_request.noverify = i386_boot_arg("btrfs-noverify", option, sizeof(option));
 
@@ -196,9 +196,9 @@ i386_init_userland(const i386_boot_info_t *boot)
 
 	boot_mode_init();
 
-	kputln("i386_init_userland: mounting disk0 at /disk");
+	kputln("i386_init_userland: mounting disk0 at /Volumes/mainOS");
 
-	vfs_status_t mount_status = vfs_mount("ext4", boot_system_volume_device(), "/disk");
+	vfs_status_t mount_status = vfs_mount("ext4", boot_system_volume_device(), "/Volumes/mainOS");
 
 	if (mount_status != VFS_STATUS_OK) {
 		kprintf("i386_init_userland: ext4 mount failed: %s\n", vfs_status_name(mount_status));
@@ -208,18 +208,18 @@ i386_init_userland(const i386_boot_info_t *boot)
 			kputln("boot: system mount failed; starting the recovery partition");
 			return userland_spawn_bootd();
 		}
+
 		return false;
 	}
 
 	boot_mount_recovery_volume();
-	if (!boot_update_install()) {
-		return false;
-	}
+	if (!boot_update_install()) return false;
 
 	if (!boot_update_is_active() && i386_startup_tests_enabled() && !i386_startup_storage_test()) {
 		kputln("i386_startup: storage self-tests failed");
 		return false;
 	}
+
 	ext4_dump();
 	vfs_dump();
 
@@ -283,6 +283,7 @@ i386_init_userland(const i386_boot_info_t *boot)
 	}
 	/* Stop the boot log sink before recovery or the desktop owns scanout. */
 	if (display_primary()) (void)boot_splash_finish();
+
 	if (boot_mode_is_triage_os()) return userland_spawn_bootd();
 
 	/*
@@ -301,7 +302,9 @@ i386_init_userland(const i386_boot_info_t *boot)
 		diagnostics_start();
 		if (boot_arg_bool("ui.userland", false)) {
 			if (!boot_mode_is_triage_os() && !ui_service_trusted_prepare()) return false;
+
 			if (!userland_spawn_bootd()) return false;
+
 			boot_chime_arm();
 			boot_chime_start();
 			return true;
@@ -312,7 +315,7 @@ i386_init_userland(const i386_boot_info_t *boot)
 
 		/*
 		 * The boot chime, as on arm64: the display is about to show the
-		 * desktop and /disk (with Boot_Audio.wav) is mounted, so the chime
+		 * desktop and /Volumes/mainOS (with Boot_Audio.wav) is mounted, so the chime
 		 * thread can start; it plays while the UI loop yields.
 		 */
 		boot_chime_arm();

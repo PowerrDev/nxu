@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/arm64/timer.c
+ *
+ * Implements ARM64 timer setup and per-CPU timer operations.
+ */
 #include <kern/arm64/smp.h>
 #include <kern/arm64/timer.h>
 
@@ -52,9 +60,7 @@ timer_ticks_to_microseconds(uint64_t ticks)
 {
 	uint64_t frequency = timer_get_frequency();
 
-	if (frequency == 0) {
-		return 0;
-	}
+	if (frequency == 0) return 0;
 
 	uint64_t seconds = ticks / frequency;
 	uint64_t remaining_ticks = ticks % frequency;
@@ -106,9 +112,7 @@ timer_start_periodic(uint32_t frequency_hz)
 {
 	uint64_t counter_frequency = timer_get_frequency();
 
-	if (frequency_hz == 0U || counter_frequency == 0U) {
-		return;
-	}
+	if (frequency_hz == 0U || counter_frequency == 0U) return;
 
 	uint64_t interval = counter_frequency / frequency_hz;
 
@@ -152,9 +156,7 @@ timer_start_local(void)
 	 * interval is the one timer_start_periodic() chose on the boot CPU; it is
 	 * written once before any secondary starts and only read afterwards.
 	 */
-	if (g_timer_interval_ticks == 0U) {
-		return;
-	}
+	if (g_timer_interval_ticks == 0U) return;
 
 	arm64_write_physical_timer_value(g_timer_interval_ticks);
 	arm64_write_physical_timer_control(1U);

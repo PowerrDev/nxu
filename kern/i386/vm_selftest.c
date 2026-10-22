@@ -265,7 +265,6 @@ vm_test_pmm(const i386_boot_info_t *boot)
 		for (uint32_t other = 0U; other < index; other++)
 			VM_CHECK(pages[other] != pages[index]);
 	}
-
 	for (uint32_t index = 0U; index < 96U; index += 2U)
 		VM_CHECK(pmm_free_page(pages[index]));
 	for (uint32_t index = 1U; index < 96U; index += 2U)
@@ -495,7 +494,6 @@ vm_test_vm_kern(void)
 
 		*word = 0xB16B00B5U ^ page;
 	}
-
 	for (uint32_t page = 0U; page < 1280U; page += 7U)
 		VM_CHECK(*vm_word((uintptr_t)big + page * PMM_PAGE_SIZE) == (0xB16B00B5U ^ page));
 
@@ -994,7 +992,6 @@ vm_test_heap(void)
 		VM_CHECK(many[index] != 0);
 		*(uint32_t *)many[index] = index;
 	}
-
 	for (uint32_t index = 0U; index < 200U; index++)
 		VM_CHECK(*(uint32_t *)many[index] == index);
 	for (uint32_t index = 0U; index < 200U; index += 2U)
@@ -1025,6 +1022,7 @@ vm_probe_execute(uint32_t address)
 {
 	i386_vm_probe_execute(address);
 	if (i386_vm_fault_expectation.hits == 0U) return true;
+
 	return false;
 }
 
@@ -1035,6 +1033,7 @@ i386_execute_selftest(void)
 		kputln("i386_execute_selftest: unavailable (CPU lacks NX)");
 		return true;
 	}
+
 	uint64_t physical;
 	VM_CHECK(pmm_allocate_page(&physical));
 	uint8_t *bytes = (void *)(uintptr_t)(physical + VMM_HIGHER_HALF_BASE);
@@ -1078,12 +1077,14 @@ vm_selftest_deliberate_fault(const char *name)
 	if (strcmp(name, "execute-data") == 0) {
 		void *page;
 		if (!vm_kern_allocate(PMM_PAGE_SIZE, VMM_PROTECTION_READ_WRITE, &page)) return;
+
 		*(volatile uint8_t *)page = 0xC3;
 		((void (*)(void))page)();
 	} else if (strcmp(name, "write-ro") == 0) {
 		void *page;
 
 		if (!vm_kern_allocate(PMM_PAGE_SIZE, VMM_PROTECTION_READ_ONLY, &page)) return;
+
 		*(volatile uint32_t *)page = 1U;
 	} else if (strcmp(name, "write-text") == 0) {
 		*(volatile uint32_t *)(uintptr_t)__text_start = 1U;
@@ -1100,7 +1101,9 @@ vm_selftest_deliberate_fault(const char *name)
 		uint64_t page;
 
 		if (!vm_address_space_create(&space) || !pmm_allocate_page(&page)) return;
+
 		if (!vm_address_space_map_page(&space, VM_USER_RO, page, VM_USER_PROTECTION_READ_ONLY)) return;
+
 		if (!vm_address_space_activate(&space)) return;
 
 		if (strcmp(name, "user-null") == 0) {
@@ -1128,13 +1131,18 @@ i386_init_vm_selftest(const i386_boot_info_t *boot)
 	}
 
 	if (!vm_test_pmm(boot)) return false;
+
 	if (!vm_test_direct_map(&platform)) return false;
+
 	if (!vm_test_vm_kern()) return false;
+
 	if (!vm_test_kernel_mappings()) return false;
 
 	/* The heap backs vm_shm, vm_map and the address-space tests' bookkeeping. */
 	if (!i386_execute_selftest()) return false;
+
 	if (!vm_test_heap()) return false;
+
 	if (!vm_test_address_spaces()) return false;
 
 	if (!vm_shm_self_test()) {

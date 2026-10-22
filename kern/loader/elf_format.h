@@ -185,6 +185,7 @@ static inline bool
 loader_add_overflow(uint64_t left, uint64_t right, uint64_t *result)
 {
 	if (result == 0 || left > UINT64_MAX - right) return true;
+
 	*result = left + right;
 	return false;
 }
@@ -193,7 +194,9 @@ static inline bool
 loader_align_up(uint64_t value, uint64_t alignment, uint64_t *result)
 {
 	if (result == 0 || alignment == 0ULL || (alignment & (alignment - 1ULL)) != 0ULL) return false;
+
 	if (value > UINT64_MAX - (alignment - 1ULL)) return false;
+
 	*result = (value + alignment - 1ULL) & ~(alignment - 1ULL);
 	return true;
 }
@@ -202,6 +205,7 @@ static inline bool
 loader_header_valid(const loader_header_t *header)
 {
 	if (header == 0) return false;
+
 	if (header->ident[0] != 0x7FU || header->ident[1] != 'E' || header->ident[2] != 'L' || header->ident[3] != 'F')
 		return false;
 	if (header->ident[4] != LOADER_ELF_CLASS || header->ident[5] != ELF_DATA_LSB ||
@@ -214,6 +218,7 @@ loader_header_valid(const loader_header_t *header)
 		header->program_header_entry_size != LOADER_ELF_PROGRAM_HEADER_SIZE)
 		return false;
 	if (header->program_header_count == 0U || header->program_header_count > ELF_PROGRAM_HEADER_MAX) return false;
+
 	return header->entry != 0ULL;
 }
 
@@ -242,11 +247,13 @@ static inline bool
 loader_segment_valid(const loader_segment_t *segment)
 {
 	if (segment->memory_size < segment->file_size || segment->memory_size == 0ULL) return false;
+
 	if ((segment->virtual_address & (LOADER_PAGE_SIZE - 1ULL)) != (segment->offset & (LOADER_PAGE_SIZE - 1ULL)))
 		return false;
 
 	uint64_t segment_end;
 	if (loader_add_overflow(segment->virtual_address, segment->memory_size, &segment_end)) return false;
+
 	if (segment->virtual_address < LOADER_PAGE_SIZE || segment_end > LOADER_USER_STACK_BASE) return false;
 
 	uint64_t page_end;
@@ -265,6 +272,7 @@ loader_program_table_valid(const loader_header_t *header, uint64_t file_size, ui
 	uint64_t size = (uint64_t)header->program_header_count * LOADER_ELF_PROGRAM_HEADER_SIZE;
 	uint64_t end;
 	if (loader_add_overflow(header->program_header_offset, size, &end) || end > file_size) return false;
+
 	*table_size = size;
 	return true;
 }
@@ -299,6 +307,7 @@ loader_image_inspect(const void *image, uint64_t size, loader_image_info_t *info
 	loader_header_t header;
 
 	if (image == 0 || info == 0) return "no image";
+
 	if (size < sizeof(disk_header)) return "truncated header";
 
 	for (uint32_t index = 0U; index < sizeof(disk_header); index++)
@@ -339,7 +348,9 @@ loader_image_inspect(const void *image, uint64_t size, loader_image_info_t *info
 		const loader_segment_t *segment = &segments[index];
 
 		if (segment->type != ELF_PT_LOAD) continue;
+
 		if (!loader_segment_in_file(segment, size)) return "segment outside file";
+
 		if (!loader_segment_valid(segment)) return "bad segment";
 
 		uint64_t page_start = segment->virtual_address & ~(LOADER_PAGE_SIZE - 1ULL);
@@ -357,16 +368,17 @@ loader_image_inspect(const void *image, uint64_t size, loader_image_info_t *info
 
 			if (page_start < earlier_end && earlier_start < page_end) return "segments share a page";
 		}
-
 		if ((segment->flags & ELF_PF_X) != 0U && entry_page >= page_start && entry_page < page_end) entry_ok = true;
 
 		info->segment_count++;
 		if (page_start < info->image_low) info->image_low = page_start;
+
 		if (page_end > info->image_high) info->image_high = page_end;
 	}
-
 	if (info->segment_count == 0U) return "no loadable segment";
+
 	if (!entry_ok) return "entry not in executable segment";
+
 	return 0;
 }
 

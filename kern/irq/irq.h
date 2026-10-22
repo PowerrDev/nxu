@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/irq/irq.h
+ *
+ * Declares the kernel irq irq interfaces and data structures.
+ */
 #ifndef NXU_KERN_IRQ_H
 #define NXU_KERN_IRQ_H
 

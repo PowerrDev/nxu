@@ -168,6 +168,7 @@ smp_psci_status_name(int64_t status)
 	default:
 		return "unknown status";
 	}
+
 }
 
 /* ---- cache and system register helpers ---------------------------------- */
@@ -364,6 +365,7 @@ smp_handle_ipi(uint32_t vector)
 	default:
 		break;
 	}
+
 }
 
 void
@@ -486,7 +488,6 @@ smp_boot_secondaries(void)
 	for (uint32_t index = 0U; index < platform->cpu_count; index++) {
 		if (platform->cpu_mpidr[index] == boot_mpidr) boot_index = index;
 	}
-
 	if (boot_index == platform->cpu_count) {
 		kprintf("SMP: boot CPU MPIDR 0x%llx is not in the Device Tree CPU list\n", (unsigned long long)boot_mpidr);
 		return 1U;

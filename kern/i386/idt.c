@@ -56,7 +56,6 @@ i386_idt_init(void)
 	for (uint32_t vector = 0U; vector < IDT_ENTRY_COUNT; vector++) {
 		g_idt[vector] = (idt_entry_t){0};
 	}
-
 	for (uint32_t vector = 0U; vector < I386_ISR_COUNT; vector++) {
 		i386_idt_set_gate((uint8_t)vector, i386_isr_table[vector], GDT_KERNEL_CODE_SEL, IDT_GATE_INTERRUPT);
 	}

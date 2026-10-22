@@ -2,6 +2,11 @@
  * Copyright (c) 2026 NXU Project. All rights reserved.
  */
 /*
+ * File:        kern/i386/pmap.h
+ *
+ * Declares the kernel i386 pmap interfaces and data structures.
+ */
+/*
  * PAE paging: four 512-entry directories and a four-entry PDPT. Directory
  * pointers expose a contiguous 2048-entry view, with the last 512 entries
  * shared by every task through final kernel PDEs. CR3 names the PDPT.

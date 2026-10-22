@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/arm64/cache.h
+ *
+ * Declares ARM64 cache maintenance operations.
+ */
 #ifndef NXU_CACHE_H
 #define NXU_CACHE_H
 

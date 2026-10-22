@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/arm64/thread.c
+ *
+ * Implements ARM64 thread context setup and context switching support.
+ */
 #include <kern/arm64/thread.h>
 
 #include <stdbool.h>
@@ -44,6 +52,7 @@ void
 machine_thread_init_kernel(machine_thread_t *machine)
 {
 	if (machine == 0) return;
+
 	machine_thread_zero(machine);
 }
 

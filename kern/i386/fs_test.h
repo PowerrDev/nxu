@@ -24,7 +24,7 @@
 #include <stdbool.h>
 
 /*
- * Run one mode against the filesystem mounted at /disk. Returns true on pass.
+ * Run one mode against the filesystem mounted at /Volumes/mainOS. Returns true on pass.
  * "journal-crash" does not return on success: it powers the machine off.
  */
 bool i386_fs_test_run(const char *mode);

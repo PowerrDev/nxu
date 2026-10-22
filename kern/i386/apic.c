@@ -60,6 +60,7 @@ apic_wait_icr_idle(void)
 
 	while ((apic_read(APIC_REG_ICR_LOW) & APIC_ICR_DELIVERY_STATUS_PENDING) != 0U) {
 		if (timer_get_microseconds() > deadline) return;
+
 		cpu_relax();
 	}
 }

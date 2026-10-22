@@ -121,6 +121,7 @@ test_pic(void)
 
 	for (uint32_t line = 0U; line < PIC_LINE_COUNT; line++) {
 		if (line == PIC_CASCADE_LINE) continue;
+
 		if (((imr >> line) & 1U) != (pic_is_masked(line) ? 1U : 0U)) consistent = false;
 	}
 
@@ -180,6 +181,7 @@ measure_windows(uint32_t windows, uint64_t delay_ms)
 		uint64_t slack = 2ULL + expected / 10ULL;
 
 		if (elapsed < result.shortest_us) result.shortest_us = elapsed;
+
 		if (ticks > expected + slack) result.none_too_many = false;
 
 		if (ticks <= expected + slack && ticks * 10ULL >= expected * 6ULL && ticks >= result.best_ticks) {

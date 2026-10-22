@@ -142,6 +142,7 @@ machine_user_signal_pop(uint32_t *saved_mask)
 	arm64_sigframe_t saved;
 
 	if (!vm_copy_from_user(&saved, frame_address, sizeof(saved))) return false;
+
 	if (saved.magic != ARM64_SIGFRAME_MAGIC) return false;
 
 	/* The frame is user-writable, so treat every field as untrusted: the

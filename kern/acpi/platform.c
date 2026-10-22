@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/acpi/platform.c
+ *
+ * Discovers and initializes ACPI platform information during boot.
+ */
 #include <kern/acpi/platform.h>
 #include <boot/handoff.h>
 #include <kern/i386/vm_param.h>
@@ -40,16 +48,12 @@ legacy_rsdp(void)
 	for (unsigned region = 0; region < 2; region++) {
 		uint32_t start = region ? 0xe0000 : base, size = region ? 0x20000 : 1024;
 
-		if (!start || start + size > 0x100000) {
-			continue;
-		}
+		if (!start || start + size > 0x100000) continue;
 
 		for (uint32_t offset = 0; offset + 20 <= size; offset += 16) {
 			const uint8_t *p = low + start + offset;
 
-			if (!memcmp(p, "RSD PTR ", 8) && !checksum(p, 20)) {
-				return start + offset;
-			}
+			if (!memcmp(p, "RSD PTR ", 8) && !checksum(p, 20)) return start + offset;
 		}
 	}
 
@@ -59,9 +63,7 @@ legacy_rsdp(void)
 static void
 log_madt(const uint8_t *bytes, uint32_t length)
 {
-	if (length < 44) {
-		return;
-	}
+	if (length < 44) return;
 
 	uint32_t cursor = 44;
 
@@ -220,15 +222,11 @@ log_device(void *ctx, uacpi_namespace_node *node, uacpi_u32 depth)
 const void *
 nxu_acpi_find_table(const char *signature)
 {
-	if (!ready) {
-		return 0;
-	}
+	if (!ready) return 0;
 
 	uacpi_table table;
 
-	if (uacpi_table_find_by_signature(signature, &table) != UACPI_STATUS_OK) {
-		return 0;
-	}
+	if (uacpi_table_find_by_signature(signature, &table) != UACPI_STATUS_OK) return 0;
 
 	/* Firmware mappings are retained while SMP consumes this table. */
 	return table.ptr;

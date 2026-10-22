@@ -156,6 +156,7 @@ timer_start_periodic(uint32_t frequency_hz)
 	uint64_t divisor = (PIT_FREQUENCY_HZ + frequency_hz / 2U) / frequency_hz;
 
 	if (divisor < PIT_MIN_DIVISOR) divisor = PIT_MIN_DIVISOR;
+
 	if (divisor > PIT_MAX_DIVISOR) divisor = PIT_MAX_DIVISOR;
 
 	uint64_t state = ml_irq_save();
