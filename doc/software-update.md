@@ -61,11 +61,11 @@ is already mounted and the process has filesystem-write capability, use:
 patchd --prepare /Volumes/Recovery/mainOS/build-402.nsw
 ```
 
-The running daemon also polls `/disk/var/db/patchd/prepare-update`. A request is
+The running daemon also polls `/Volumes/mainOS/var/db/patchd/prepare-update`. A request is
 the full package path plus one terminating newline; append the newline only
 when the request is complete. Daemon requests must name a single `.nsw` file
 under `/Volumes/Recovery/mainOS`. The daemon consumes complete requests and
-records `prepared` or `failed` in `/disk/var/db/patchd/update-status`. Incomplete
+records `prepared` or `failed` in `/Volumes/mainOS/var/db/patchd/update-status`. Incomplete
 requests remain pending. It retains its existing daemon-integrity repair loop, logging the destination
 of every repaired daemon.
 For normal mainOS boots, `recovery.volume=DEVICE_INDEX` mounts the chosen ext4
@@ -90,7 +90,7 @@ no usable ready marker (a torn marker is removed on retry) and can be retried in
 
 `make run-i386-desktop` now creates and boots
 `BUILD/BUILD-i386-desktop/i386/ssd.img`. This is one GPT disk with two named
-ext4 partitions: `NXU System` at `/disk` and `NXU Recovery` at
+ext4 partitions: `NXU System` at `/Volumes/mainOS` and `NXU Recovery` at
 `/Volumes/Recovery`. The kernel discovers those partitions automatically;
 no recovery device index or additional QEMU disk is needed. ARM64 supports the
 same named GPT layout through its normal system-volume boot path.
@@ -179,7 +179,7 @@ In triageOS, use `nsw install 402`. The command verifies the prepared manifest
 and both images again, queues the build, syncs the queue and reboots. If the
 calling shell cannot reset the machine, the queue remains for the next reboot.
 For the running patchd service, write `402` plus a terminating newline to
-`/disk/var/db/patchd/install-update`. Patchd consumes that request and reboots
+`/Volumes/mainOS/var/db/patchd/install-update`. Patchd consumes that request and reboots
 without another confirmation prompt. Its service plist grants filesystem-write
 and reset capabilities. Merely placing or preparing a package never schedules
 installation.
@@ -193,7 +193,7 @@ Version 1 permits at most 1,024 entries and paths fitting the VFS path limit.
 The three core daemons must have matching `.recovery` copies in the payload. Image mounts require a clean supported ext4 filesystem
 with an internal journal and metadata checksums.
 
-The installer preserves `/disk/Users`, `/disk/var` and existing files absent
+The installer preserves `/Volumes/mainOS/Users`, `/Volumes/mainOS/var` and existing files absent
 from the selected system image. It updates the mounted system filesystem;
 external EFI boot media and the running kernel boot image are not replaced.
 The kernel included in the recovery image is retained as a recovery artifact,
@@ -204,10 +204,10 @@ Before replacing any file, the installer copies originals to
 architecture-independent journal. It logs directories and each changed file:
 
 ```text
-patchd: backing up /disk/System/Library/CoreServices/bootd
-patchd: applying patches to /disk/System/
-patchd: applying patches to /disk/System/Library/CoreServices/bootd
-patchd: applying patches to /disk/Applications/Terminal.app/Contents/SevOS/Terminal
+patchd: backing up /Volumes/mainOS/System/Library/CoreServices/bootd
+patchd: applying patches to /Volumes/mainOS/System/
+patchd: applying patches to /Volumes/mainOS/System/Library/CoreServices/bootd
+patchd: applying patches to /Volumes/mainOS/Applications/Terminal.app/Contents/SevOS/Terminal
 ```
 
 Each copied file is checked against its SHA-256 digest. Copy or sync failures
@@ -231,23 +231,3 @@ hash. `InstallReady` is published only after the pending record is synced.
 Only an explicitly requested local installation is authorized. Package hashes
 detect corruption; they do not authenticate an update publisher. Network
 updates and publisher-signature verification are not implemented.
-
-Run `python3 tools/check_nsw.py` for sanitizer-backed extraction and rejection
-tests with real ISO images, short I/O, corrupt payloads and write/sync failures.
-`python3 tools/check_nsw_vm.py --arch i386` checks native i386 extraction.
-
-Run `python3 tools/check_update_vm.py --partitioned --arch arm64 --case success` for queue,
-automatic reboot, installation, daemon confirmation and a second boot. Repeat
-with `--arch i386`. Cases `failure`, `interrupted`, `unconfirmed`, `tamper` and
-`recovery` exercise copy-failure rollback, power loss during copying, an
-interrupted trial, manifest rejection and verified recovery fallback. Case
-`core` replaces all three daemon images and their recovery copies;
-`core-unconfirmed` verifies restoration of those binaries. Cases `incomplete`,
-`unsupported` and `watchdog` check torn queue publication, symlink rejection
-and automatic reboot of an unconfirmed boot. These checks use separate system
-and recovery volumes, assert per-file logs and verify preservation of user/state
-files. For parallel VM cases, build once and add `--no-build`.
-
-`--case partition-recovery --partitioned` corrupts the system filesystem and
-checks booting the standalone recovery partition. `--damage-primary-gpt` checks
-GPT discovery through the backup map.

@@ -1,4 +1,11 @@
-/* Copyright (c) 2026 NXU Project. All rights reserved. */
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/update/update.h
+ *
+ * Declares the kernel update update interfaces and data structures.
+ */
 #ifndef NXU_KERN_UPDATE_H
 #define NXU_KERN_UPDATE_H
 

@@ -20,8 +20,8 @@ static const char *
 host_path(const char *path)
 {
 	static char translated[1024];
-	if (g_recovery_root != NULL && strncmp(path, "/disk/", 6) == 0) {
-		(void)snprintf(translated, sizeof(translated), "%s/SystemVolume%s", g_recovery_root, path + 5);
+	if (g_recovery_root != NULL && strncmp(path, "/Volumes/mainOS/", sizeof("/Volumes/mainOS/") - 1) == 0) {
+		(void)snprintf(translated, sizeof(translated), "%s/SystemVolume%s", g_recovery_root, path + sizeof("/Volumes/mainOS") - 1);
 		return translated;
 	}
 	const char *prefix = NSW_RECOVERY_ROOT;

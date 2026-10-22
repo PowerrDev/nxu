@@ -15,7 +15,7 @@
 #define PATCHD_INTERVAL_US 30000000ULL
 /* How often the loop looks for a repair request: an open() per pass of a yield loop is real work. */
 #define PATCHD_REQUEST_POLL_US 500000ULL
-#define PATCHD_REQUEST_PATH "/disk/var/db/patchd/repair-all"
+#define PATCHD_REQUEST_PATH "/Volumes/mainOS/var/db/patchd/repair-all"
 
 typedef struct {
 	const char *primary;
@@ -23,9 +23,9 @@ typedef struct {
 } patchd_target_t;
 
 static const patchd_target_t g_targets[] = {
-	{"/disk/System/Library/CoreServices/bootd", "/disk/System/Library/CoreServices/bootd.recovery"},
-	{"/disk/System/Library/CoreServices/logd", "/disk/System/Library/CoreServices/logd.recovery"},
-	{"/disk/System/Library/CoreServices/patchd", "/disk/System/Library/CoreServices/patchd.recovery"}};
+	{"/Volumes/mainOS/System/Library/CoreServices/bootd", "/Volumes/mainOS/System/Library/CoreServices/bootd.recovery"},
+	{"/Volumes/mainOS/System/Library/CoreServices/logd", "/Volumes/mainOS/System/Library/CoreServices/logd.recovery"},
+	{"/Volumes/mainOS/System/Library/CoreServices/patchd", "/Volumes/mainOS/System/Library/CoreServices/patchd.recovery"}};
 
 static void
 patchd_log(const char *message)
@@ -157,7 +157,7 @@ patchd_repair_requested(void)
 static void
 patchd_prepare_requested(void)
 {
-	const char *request_path = "/disk/var/db/patchd/prepare-update";
+	const char *request_path = "/Volumes/mainOS/var/db/patchd/prepare-update";
 	int64_t descriptor = nxu_open(request_path, NXU_O_READ);
 	if (descriptor < 0) {
 		return;
@@ -189,7 +189,7 @@ patchd_prepare_requested(void)
 		patchd_log("patchd: invalid NSW preparation request\n");
 	}
 
-	int64_t status = nxu_open("/disk/var/db/patchd/update-status", NXU_O_WRITE | NXU_O_CREATE | NXU_O_TRUNCATE);
+	int64_t status = nxu_open("/Volumes/mainOS/var/db/patchd/update-status", NXU_O_WRITE | NXU_O_CREATE | NXU_O_TRUNCATE);
 	if (status >= 0) {
 		const char *message = success ? "prepared\n" : "failed\n";
 		(void)nxu_write(status, message, nxu_strlen(message));
@@ -215,7 +215,7 @@ patchd_install(const char *build)
 static void
 patchd_install_requested(void)
 {
-	const char *path = "/disk/var/db/patchd/install-update";
+	const char *path = "/Volumes/mainOS/var/db/patchd/install-update";
 	int64_t descriptor = nxu_open(path, NXU_O_READ);
 	if (descriptor < 0) {
 		return;

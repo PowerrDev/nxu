@@ -5,7 +5,7 @@
 int
 main(void)
 {
-	const char *marker = "/disk/var/db/patchd/install-test-queued";
+	const char *marker = "/Volumes/mainOS/var/db/patchd/install-test-queued";
 	int64_t descriptor = nxu_open(marker, NXU_O_READ);
 	if (descriptor >= 0) {
 		(void)nxu_close(descriptor);
@@ -19,7 +19,7 @@ main(void)
 	}
 
 	/* Exercise the real daemon request, including patchd's reset capability. */
-	descriptor = nxu_open("/disk/var/db/patchd/install-update", NXU_O_WRITE | NXU_O_CREATE);
+	descriptor = nxu_open("/Volumes/mainOS/var/db/patchd/install-update", NXU_O_WRITE | NXU_O_CREATE);
 	if (descriptor < 0 || nxu_write(descriptor, "install-test\n", 13) != 13 || nxu_close(descriptor) < 0 ||
 		nxu_sync() < 0) {
 		const char *message = "install-vm: FAIL request\n";

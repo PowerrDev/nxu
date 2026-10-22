@@ -17,7 +17,7 @@ typedef struct {
 #define NSW_RECOVERY_ROOT "/Volumes/Recovery"
 #define NSW_PREPARED_ROOT NSW_RECOVERY_ROOT "/Prepared"
 #define NSW_TRANSACTIONS_ROOT NSW_RECOVERY_ROOT "/Transactions"
-#define NSW_ACTIVE_UPDATE "/disk/var/db/patchd/update-active"
+#define NSW_ACTIVE_UPDATE "/Volumes/mainOS/var/db/patchd/update-active"
 #define NSW_INSTALL_PENDING NSW_RECOVERY_ROOT "/InstallPending"
 #define NSW_INSTALL_READY NSW_RECOVERY_ROOT "/InstallReady"
 

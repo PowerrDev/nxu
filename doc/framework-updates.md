@@ -4,7 +4,7 @@ GUI migration boundaries, proposed host ABI and audited linker blockers are
 defined in [GUI framework migration](architecture/gui-framework-migration.md).
 
 ARM64 now has an ELF runtime loader. Frameworks are installed in
-`/System/Library/Frameworks` (accessed through `/disk` by current VFS clients).
+`/System/Library/Frameworks` (accessed through `/Volumes/mainOS` by current VFS clients).
 The build produces `Runtime.framework/Runtime.so` and
 `CoreFoundation.framework/CoreFoundation.so` separately from the kernel.
 
@@ -29,9 +29,11 @@ application stranded when the daemon restarts during launch.
 
 Mappings reject overlapping segments, writable executable segments, excessive
 size, unsupported interpreters and dependency paths outside the framework root.
-ASLR obtains randomness from tepOS and fails closed when unavailable. The
-explicit developer boot argument `dyrld.aslr=0` disables random sliding for
-isolated tests. Each process can load 16 images plus its interpreter.
+ASLR obtains randomness from tepOS. When the machine has no enclave mailbox,
+frameworks use fixed slides so the untrusted desktop can still launch. If a
+mailbox is present but tepOS is unavailable, mapping fails closed. The explicit
+developer boot argument `dyrld.aslr=0` disables random sliding for isolated
+tests. Each process can load 16 images plus its interpreter.
 
 Supported relocations are AArch64 RELATIVE, ABS64, GLOB_DAT and JUMP_SLOT.
 The first version requires SysV hash tables, RELA and ordinary global/local/weak
