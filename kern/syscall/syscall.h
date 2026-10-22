@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/syscall/syscall.h
+ *
+ * Declares the kernel syscall syscall interfaces and data structures.
+ */
 #ifndef NXU_KERN_SYSCALL_H
 #define NXU_KERN_SYSCALL_H
 

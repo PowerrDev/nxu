@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/syscall/ui_session_defs.h
+ *
+ * Defines the kernel syscall ABI data structures and constants.
+ */
 #ifndef NXU_KERN_SYSCALL_UI_SESSION_DEFS_H
 #define NXU_KERN_SYSCALL_UI_SESSION_DEFS_H
 

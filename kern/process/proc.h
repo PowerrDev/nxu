@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/process/proc.h
+ *
+ * Declares the kernel process proc interfaces and data structures.
+ */
 #ifndef NXU_KERN_PROC_H
 #define NXU_KERN_PROC_H
 
@@ -10,7 +18,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define PROC_MAX 64U
+#define PROC_MAX 256U /* storage ceiling; the runtime limit is resource-derived */
 #define PROC_PID_KERNEL 0U
 #define PROC_PID_MAX 99999U
 #define PROC_PID_INVALID UINT32_MAX
@@ -158,6 +166,7 @@ struct proc {
 };
 
 bool proc_bootstrap(void);
+uint32_t proc_limit(void);
 
 proc_t proc_kernel(void);
 proc_t proc_initproc(void);

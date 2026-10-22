@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/syscall/dyrld_defs.h
+ *
+ * Defines the kernel syscall ABI data structures and constants.
+ */
 #ifndef NXU_DYRLD_DEFS_H
 #define NXU_DYRLD_DEFS_H
 #include <stdint.h>
@@ -8,7 +16,7 @@
 #define NXU_DYRLD_LOAD 2U
 #define NXU_DYRLD_FINALIZE 3U
 #define NXU_DYRLD_INTERPRETER "/System/Library/CoreServices/dyrld-runtime"
-#define NXU_DYRLD_FRAMEWORKS "/disk/System/Library/Frameworks/"
+#define NXU_DYRLD_FRAMEWORKS "/Volumes/mainOS/System/Library/Frameworks/"
 
 typedef struct {
 	uint64_t address, size;

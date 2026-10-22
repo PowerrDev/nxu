@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/sched_prism/processor.c
+ *
+ * Manages per-processor scheduler state and CPU coordination.
+ */
 #include <kern/machine/smp.h>
 #include <kern/sched_prism/processor.h>
 
@@ -56,6 +64,7 @@ current_processor(void)
 	void *local = machine_cpu_local();
 
 	if (local != 0) return local;
+
 	return g_processor_initialized ? &g_processors[0] : 0;
 }
 
@@ -66,6 +75,7 @@ processor_t
 processor_register(uint32_t cpu_id, uint64_t mpidr)
 {
 	if (!g_processor_initialized || cpu_id == 0U || cpu_id >= NXU_MAX_CPUS) return 0;
+
 	if (cpu_id < g_processor_count && g_processors[cpu_id].mpidr != 0ULL) return 0;
 
 	processor_init_slot(&g_processors[cpu_id], cpu_id, mpidr);
@@ -81,6 +91,7 @@ processor_t
 processor_by_id(uint32_t cpu_id)
 {
 	if (!g_processor_initialized || cpu_id >= g_processor_count) return 0;
+
 	return &g_processors[cpu_id];
 }
 

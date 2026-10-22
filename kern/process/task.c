@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/process/task.c
+ *
+ * Implements task address spaces, process membership, and task lifecycle.
+ */
 #include <kern/process/task.h>
 #include <kern/process/crash.h>
 #include <kern/ipc/shm_registry.h>
@@ -71,9 +79,7 @@ task_init_kernel(task_t task, uint64_t uniqueid, struct proc *bsd_info)
 bool
 task_init_user(task_t task, uint64_t uniqueid, struct proc *bsd_info, uint64_t entry, uint64_t stack)
 {
-	if (task == 0 || bsd_info == 0 || entry == 0ULL || stack == 0ULL) {
-		return false;
-	}
+	if (task == 0 || bsd_info == 0 || entry == 0ULL || stack == 0ULL) return false;
 
 	task_reset(task);
 
@@ -206,9 +212,7 @@ task_deallocate(task_t task)
 bool
 task_activate_address_space(task_t task)
 {
-	if (task == 0 || !task->active || task_is_kernel(task)) {
-		return false;
-	}
+	if (task == 0 || !task->active || task_is_kernel(task)) return false;
 
 	return vm_address_space_activate(&task->map);
 }
@@ -252,9 +256,7 @@ task_release_shm_attachments(task_t task)
 bool
 task_terminate(task_t task)
 {
-	if (task == 0 || !task->active || task->state == TASK_STATE_TERMINATED) {
-		return false;
-	}
+	if (task == 0 || !task->active || task->state == TASK_STATE_TERMINATED) return false;
 
 	task->halting = true;
 	task->state = TASK_STATE_HALTING;
@@ -286,7 +288,6 @@ task_terminate(task_t task)
 		 * No crash backtrace reads an address space another sibling can mutate. */
 		stopped[stopped_count++] = thread;
 	}
-
 	for (uint32_t i = 0U; i < stopped_count; i++) {
 		thread_t thread = stopped[i];
 		/*
@@ -303,7 +304,6 @@ task_terminate(task_t task)
 			kputln("task_terminate: its memory is leaked");
 		}
 	}
-
 	for (uint32_t i = 0U; i < stopped_count; i++) {
 		thread_t thread = stopped[i];
 		/*
@@ -383,6 +383,7 @@ vm_address_space_t *
 task_map(task_t task)
 {
 	if (task == 0) return 0;
+
 	return &task->map;
 }
 
@@ -393,6 +394,7 @@ struct proc *
 task_get_proc(task_t task)
 {
 	if (task == 0) return 0;
+
 	return task->bsd_info;
 }
 

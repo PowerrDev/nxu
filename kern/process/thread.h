@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/process/thread.h
+ *
+ * Declares the kernel process thread interfaces and data structures.
+ */
 #ifndef NXU_KERN_THREAD_H
 #define NXU_KERN_THREAD_H
 

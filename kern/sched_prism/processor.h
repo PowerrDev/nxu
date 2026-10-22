@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/sched_prism/processor.h
+ *
+ * Declares the kernel sched_prism processor interfaces and data structures.
+ */
 #ifndef NXU_KERN_PROCESSOR_H
 #define NXU_KERN_PROCESSOR_H
 

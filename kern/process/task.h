@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/process/task.h
+ *
+ * Declares the kernel process task interfaces and data structures.
+ */
 #ifndef NXU_KERN_TASK_H
 #define NXU_KERN_TASK_H
 

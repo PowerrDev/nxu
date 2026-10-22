@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/process/statistics.h
+ *
+ * Declares the kernel process statistics interfaces and data structures.
+ */
 #ifndef NXU_KERNEL_STATISTICS_H
 #define NXU_KERNEL_STATISTICS_H
 #include <kern/syscall/statistics.h>

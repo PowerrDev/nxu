@@ -179,6 +179,7 @@ socket_registry_remove(socket_t s)
 			g_socket_registry[index].name[0] = '\0';
 			break;
 		}
+
 	}
 
 	nxu_spin_unlock(&g_socket_registry_lock);
@@ -196,8 +197,8 @@ socket_registry_lookup(const char *name)
 			found = g_socket_registry[index].socket;
 			break;
 		}
-	}
 
+	}
 	if (found != SOCKET_NULL && !socket_reference(found)) found = SOCKET_NULL;
 
 	nxu_spin_unlock(&g_socket_registry_lock);
@@ -209,6 +210,7 @@ bool
 socket_create(socket_t *result)
 {
 	if (result != 0) *result = SOCKET_NULL;
+
 	if (result == 0) return false;
 
 	socket_t s = kmalloc(sizeof(struct socket));
@@ -267,6 +269,7 @@ socket_listen(socket_t s, const char *name, uint32_t backlog)
 			duplicate = true;
 			break;
 		}
+
 		if (free_slot < 0 && g_socket_registry[index].socket == SOCKET_NULL) free_slot = (int32_t)index;
 	}
 
@@ -295,6 +298,7 @@ bool
 socket_connect(const char *name, bool block, socket_t *result)
 {
 	if (result != 0) *result = SOCKET_NULL;
+
 	if (name == 0 || result == 0) return false;
 
 	socket_t listener = socket_registry_lookup(name);
@@ -331,6 +335,7 @@ socket_connect(const char *name, bool block, socket_t *result)
 	nxu_spin_lock(&client->lock);
 	while (client->peer == SOCKET_NULL && !client->refused) {
 		if (!block) break;
+
 		/* Sequence taken under the lock, after the condition was checked: a wakeup made
 		 * after the unlock (the waker changes the condition under this same lock, then wakes)
 		 * moves it and the sleep below returns at once instead of missing it. */
@@ -355,6 +360,7 @@ bool
 socket_accept(socket_t listener, bool block, socket_t *result)
 {
 	if (result != 0) *result = SOCKET_NULL;
+
 	if (listener == SOCKET_NULL || result == 0) return false;
 
 	nxu_spin_lock(&listener->lock);
@@ -369,6 +375,7 @@ socket_accept(socket_t listener, bool block, socket_t *result)
 			nxu_spin_unlock(&listener->lock);
 			return false;
 		}
+
 		/* Sequence taken under the lock, after the condition was checked: a wakeup made
 		 * after the unlock (the waker changes the condition under this same lock, then wakes)
 		 * moves it and the sleep below returns at once instead of missing it. */
@@ -381,6 +388,7 @@ socket_accept(socket_t listener, bool block, socket_t *result)
 			nxu_spin_unlock(&listener->lock);
 			return false;
 		}
+
 	}
 
 	socket_t client = listener->pending_head;
@@ -425,9 +433,7 @@ socket_accept(socket_t listener, bool block, socket_t *result)
 int64_t
 socket_read_poll(socket_t socket, void *buffer, uint64_t length)
 {
-	if (socket == SOCKET_NULL || buffer == 0) {
-		return -1;
-	}
+	if (socket == SOCKET_NULL || buffer == 0) return -1;
 
 	nxu_spin_lock(&socket->lock);
 
@@ -525,6 +531,7 @@ socket_write(socket_t s, const void *buffer, uint64_t length)
 	nxu_spin_unlock(&target->lock);
 
 	if (written > 0ULL) return (int64_t)written;
+
 	return length == 0ULL ? 0 : -1;
 }
 

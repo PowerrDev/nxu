@@ -47,6 +47,7 @@ bool
 shm_registry_publish_owned(vm_shm_region_t region, uint64_t owner_uniqueid, uint32_t *out_id)
 {
 	if (out_id != 0) *out_id = SHM_REGISTRY_ID_INVALID;
+
 	if (region == VM_SHM_REGION_NULL || out_id == 0) return false;
 
 	shm_registry_lock();
@@ -71,6 +72,7 @@ bool
 shm_registry_attach(uint32_t id, vm_shm_region_t *out_region)
 {
 	if (out_region != 0) *out_region = VM_SHM_REGION_NULL;
+
 	if (id == SHM_REGISTRY_ID_INVALID || id > SHM_REGISTRY_MAX || out_region == 0) return false;
 
 	/*

@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/syscall/crash_defs.h
+ *
+ * Defines the kernel syscall ABI data structures and constants.
+ */
 #ifndef NXU_CRASH_DEFS_H
 #define NXU_CRASH_DEFS_H
 #include <stdint.h>

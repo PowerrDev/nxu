@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/sched_prism/run_queue.h
+ *
+ * Declares the kernel sched_prism run queue interfaces and data structures.
+ */
 #ifndef NXU_KERN_RUN_QUEUE_H
 #define NXU_KERN_RUN_QUEUE_H
 

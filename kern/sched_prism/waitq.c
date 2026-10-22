@@ -134,6 +134,7 @@ waitq_remove(thread_t thread)
 		nxu_spin_unlock_irqrestore(&queue->lock, irq_state);
 		return true;
 	}
+
 }
 
 uint32_t

@@ -1,8 +1,15 @@
 /*
  * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/syscall/net_defs.h
  *
+ * Defines the kernel syscall ABI data structures and constants.
+ */
+/*
  * Fixed-width network diagnostics ABI shared by both architectures.
  */
+
 #ifndef NXU_KERN_SYSCALL_NET_DEFS_H
 #define NXU_KERN_SYSCALL_NET_DEFS_H
 

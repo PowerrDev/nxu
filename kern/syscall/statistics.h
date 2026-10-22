@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/syscall/statistics.h
+ *
+ * Declares the kernel syscall statistics interfaces and data structures.
+ */
 #ifndef NXU_STATISTICS_ABI_H
 #define NXU_STATISTICS_ABI_H
 

@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/process/proc.c
+ *
+ * Implements process creation, lifecycle, and process-level operations.
+ */
 #include <kern/console/console.h>
 #include <kern/process/proc.h>
 #include <kern/process/crash.h>
@@ -8,6 +16,9 @@
 #include <vm/vm_map.h>
 #include <vm/pmm.h>
 #include <kern/sched_prism/sched.h>
+#include <kern/boot/boot_args.h>
+#include <kern/sched_prism/processor.h>
+#include <kern/memory/heap.h>
 
 #include <kern/machine/cpu.h>
 
@@ -22,8 +33,9 @@ typedef struct {
 
 static proc_lock_t g_proc_lock;
 
-static struct proc g_proc_slots[PROC_MAX];
+static struct proc *g_proc_slots;
 static bool g_proc_slot_used[PROC_MAX];
+static uint32_t g_proc_limit;
 
 static proc_t g_allproc_head;
 static proc_t g_allproc_tail;
@@ -81,7 +93,7 @@ proc_copy_name(char destination[PROC_NAME_MAX], const char *source)
 static proc_t
 proc_allocate_slot_locked(void)
 {
-	for (uint32_t index = 0U; index < PROC_MAX; index++) {
+	for (uint32_t index = 0U; index < g_proc_limit; index++) {
 		if (g_proc_slot_used[index]) continue;
 
 		g_proc_slot_used[index] = true;
@@ -106,7 +118,7 @@ proc_allocate_slot_locked(void)
 static void
 proc_release_slot_locked(proc_t proc)
 {
-	if (proc == 0 || proc->p_slot >= PROC_MAX) return;
+	if (proc == 0 || proc->p_slot >= g_proc_limit) return;
 
 	uint32_t slot = proc->p_slot;
 
@@ -119,12 +131,10 @@ proc_release_slot_locked(proc_t proc)
 static bool
 proc_pid_in_use_locked(proc_id_t pid)
 {
-	for (uint32_t index = 0U; index < PROC_MAX; index++) {
+	for (uint32_t index = 0U; index < g_proc_limit; index++) {
 		if (!g_proc_slot_used[index]) continue;
 
-		if (g_proc_slots[index].p_ident.pid == pid) {
-			return true;
-		}
+		if (g_proc_slots[index].p_ident.pid == pid) return true;
 	}
 
 	return false;
@@ -141,9 +151,7 @@ proc_allocate_pid_locked(void)
 		proc_id_t candidate = g_next_pid;
 		g_next_pid++;
 
-		if (!proc_pid_in_use_locked(candidate)) {
-			return candidate;
-		}
+		if (!proc_pid_in_use_locked(candidate)) return candidate;
 	}
 
 	return PROC_PID_INVALID;
@@ -287,9 +295,7 @@ static proc_t
 proc_find_live_locked(proc_id_t pid)
 {
 	for (proc_t proc = g_allproc_head; proc != 0; proc = proc->p_list_next) {
-		if (proc->p_ident.pid == pid) {
-			return proc;
-		}
+		if (proc->p_ident.pid == pid) return proc;
 	}
 
 	return 0;
@@ -299,9 +305,7 @@ static proc_t
 proc_find_zombie_locked(proc_id_t pid)
 {
 	for (proc_t proc = g_zombproc_head; proc != 0; proc = proc->p_list_next) {
-		if (proc->p_ident.pid == pid) {
-			return proc;
-		}
+		if (proc->p_ident.pid == pid) return proc;
 	}
 
 	return 0;
@@ -310,9 +314,7 @@ proc_find_zombie_locked(proc_id_t pid)
 static bool
 proc_reference_locked(proc_t proc)
 {
-	if (proc == 0 || proc->p_refcount == UINT32_MAX) {
-		return false;
-	}
+	if (proc == 0 || proc->p_refcount == UINT32_MAX) return false;
 
 	proc->p_refcount++;
 	return true;
@@ -327,7 +329,6 @@ proc_reparent_children_locked(proc_t proc)
 		new_parent->p_stat == PROC_STATE_DEAD) {
 		new_parent = g_kernproc;
 	}
-
 	while (proc->p_children != 0) {
 		proc_t child = proc->p_children;
 
@@ -345,6 +346,34 @@ proc_bootstrap(void)
 		proc_unlock(&g_proc_lock);
 		return true;
 	}
+
+	/* Scale the default with CPUs, then bound it by the memory needed for the
+	 * actual proc structure while leaving one quarter of free pages available.
+	 * proc.max can override the CPU-derived target within those hard bounds. */
+	uint64_t free_pages = pmm_get_free_page_count();
+	uint32_t cpus = processor_count();
+	if (cpus == 0U) cpus = 1U;
+	uint32_t target = 96U + cpus * 16U;
+	if (target > PROC_MAX) target = PROC_MAX;
+	uint32_t configured = boot_arg_uint32("proc.max", target);
+	if (configured < 2U) configured = 2U;
+	if (configured < target) target = configured;
+	else if (configured > target) target = configured > PROC_MAX ? PROC_MAX : configured;
+	uint64_t pages_per_proc = (sizeof(struct proc) + PMM_PAGE_SIZE - 1ULL) / PMM_PAGE_SIZE;
+	if (pages_per_proc == 0ULL) pages_per_proc = 1ULL;
+	uint64_t memory_limit = (free_pages / pages_per_proc) * 3ULL / 4ULL;
+	if (memory_limit < 2ULL) memory_limit = 2ULL;
+	if ((uint64_t)target > memory_limit) target = (uint32_t)memory_limit;
+	if (target > PROC_MAX) target = PROC_MAX;
+	g_proc_slots = kmalloc((size_t)target * sizeof(*g_proc_slots));
+	if (g_proc_slots == 0) {
+		proc_unlock(&g_proc_lock);
+		return false;
+	}
+	memset(g_proc_slots, 0, (size_t)target * sizeof(*g_proc_slots));
+	g_proc_limit = target;
+	kprintf("proc: runtime process limit %u (free pages %llu, configured CPUs %u)\n",
+			(unsigned)g_proc_limit, free_pages, (unsigned)cpus);
 
 	proc_t kernel_proc = proc_allocate_slot_locked();
 
@@ -387,6 +416,12 @@ proc_bootstrap(void)
 	return true;
 }
 
+uint32_t
+proc_limit(void)
+{
+	return g_proc_limit;
+}
+
 proc_t
 proc_kernel(void)
 {
@@ -402,9 +437,7 @@ proc_initproc(void)
 bool
 proc_create_user(proc_t parent, const char *name, uint64_t entry, uint64_t stack, proc_t *result)
 {
-	if (parent == 0 || result == 0 || entry == 0ULL || stack == 0ULL) {
-		return false;
-	}
+	if (parent == 0 || result == 0 || entry == 0ULL || stack == 0ULL) return false;
 
 	*result = 0;
 
@@ -829,9 +862,7 @@ proc_exit_current(uint64_t status)
 {
 	proc_t proc = current_proc();
 
-	if (proc == 0 || proc == g_kernproc) {
-		return false;
-	}
+	if (proc == 0 || proc == g_kernproc) return false;
 
 	return proc_exit(proc, status);
 }
@@ -855,6 +886,7 @@ proc_wait_child(proc_t parent, proc_id_t pid, proc_id_t *reaped_pid, uint64_t *s
 				zombie = candidate;
 				break;
 			}
+
 		}
 	} else {
 		proc_t live = proc_find_live_locked(pid);
@@ -868,6 +900,7 @@ proc_wait_child(proc_t parent, proc_id_t pid, proc_id_t *reaped_pid, uint64_t *s
 	proc_unlock(&g_proc_lock);
 
 	if (!has_child) return PROC_WAIT_NO_CHILD;
+
 	if (zombie == 0) return PROC_WAIT_NOT_YET;
 
 	proc_id_t zombie_pid = zombie->p_ident.pid;
@@ -971,9 +1004,7 @@ proc_selfpid(void)
 {
 	proc_t proc = current_proc();
 
-	if (proc == 0) {
-		return PROC_PID_INVALID;
-	}
+	if (proc == 0) return PROC_PID_INVALID;
 
 	return proc->p_ident.pid;
 }
@@ -993,9 +1024,7 @@ proc_set_caps(proc_t proc, uint32_t caps)
 proc_id_t
 proc_ppid(proc_t proc)
 {
-	if (proc == 0 || proc->p_pptr == 0) {
-		return PROC_PID_INVALID;
-	}
+	if (proc == 0 || proc->p_pptr == 0) return PROC_PID_INVALID;
 
 	return proc->p_pptr->p_ident.pid;
 }
@@ -1054,9 +1083,7 @@ proc_next_sibling_ref(proc_t proc)
 bool
 proc_is_inferior(proc_t proc, proc_t ancestor)
 {
-	if (proc == 0 || ancestor == 0) {
-		return false;
-	}
+	if (proc == 0 || ancestor == 0) return false;
 
 	proc_lock(&g_proc_lock);
 
@@ -1080,6 +1107,7 @@ task_t
 proc_task(proc_t proc)
 {
 	if (proc == 0) return 0;
+
 	return &proc->p_task;
 }
 
@@ -1087,15 +1115,14 @@ vm_address_space_t *
 proc_vm_map(proc_t proc)
 {
 	if (proc == 0) return 0;
+
 	return task_map(&proc->p_task);
 }
 
 bool
 proc_get_ident(proc_t proc, proc_ident_t *ident)
 {
-	if (proc == 0 || ident == 0) {
-		return false;
-	}
+	if (proc == 0 || ident == 0) return false;
 
 	proc_lock(&g_proc_lock);
 
@@ -1108,9 +1135,7 @@ proc_get_ident(proc_t proc, proc_ident_t *ident)
 bool
 proc_set_name(proc_t proc, const char *name)
 {
-	if (proc == 0 || name == 0) {
-		return false;
-	}
+	if (proc == 0 || name == 0) return false;
 
 	proc_lock(&g_proc_lock);
 
@@ -1123,9 +1148,7 @@ proc_set_name(proc_t proc, const char *name)
 bool
 proc_get_name(proc_t proc, char *buffer, uint32_t size)
 {
-	if (proc == 0 || buffer == 0 || size == 0U) {
-		return false;
-	}
+	if (proc == 0 || buffer == 0 || size == 0U) return false;
 
 	proc_lock(&g_proc_lock);
 
@@ -1146,9 +1169,7 @@ proc_get_name(proc_t proc, char *buffer, uint32_t size)
 proc_state_t
 proc_state(proc_t proc)
 {
-	if (proc == 0) {
-		return PROC_STATE_UNUSED;
-	}
+	if (proc == 0) return PROC_STATE_UNUSED;
 
 	return proc->p_stat;
 }
@@ -1198,6 +1219,7 @@ uint32_t
 proc_child_count(proc_t proc)
 {
 	if (proc == 0) return 0U;
+
 	return proc->p_childrencnt;
 }
 
@@ -1250,6 +1272,7 @@ proc_memory_snapshot(nxu_stats_process_memory_t *out, uint32_t capacity)
 	for (proc_t proc = g_allproc_head; proc != 0; proc = proc->p_list_next) {
 		uint32_t index = total++;
 		if (index >= capacity) continue;
+
 		nxu_stats_process_memory_t *info = &out[index];
 		*info = (nxu_stats_process_memory_t){.struct_size = sizeof(*info),
 											 .version = NXU_STATS_VERSION,
@@ -1260,6 +1283,7 @@ proc_memory_snapshot(nxu_stats_process_memory_t *out, uint32_t capacity)
 			info->flags = NXU_STATS_MEMORY_KERNEL;
 			continue;
 		}
+
 		vm_address_space_t *map = &task->map;
 		uint64_t irq = nxu_spin_lock_irqsave(&map->lock);
 		info->resident_pages = map->resident_pages;
@@ -1313,7 +1337,6 @@ proc_validate(void)
 
 			child_count++;
 		}
-
 		if (child_count != proc->p_childrencnt) {
 			proc_unlock(&g_proc_lock);
 			return false;
@@ -1321,7 +1344,6 @@ proc_validate(void)
 
 		live_count++;
 	}
-
 	for (proc_t proc = g_zombproc_head; proc != 0; proc = proc->p_list_next) {
 		if (proc->p_stat != PROC_STATE_ZOMBIE || task_is_active(&proc->p_task)) {
 			proc_unlock(&g_proc_lock);
@@ -1365,7 +1387,6 @@ proc_dump(void)
 		kputs(", name ");
 		kputln(proc->p_comm);
 	}
-
 	if (g_zombproc_head != 0) {
 		kputln("NXU_ProcessManager: zombie process list");
 	}

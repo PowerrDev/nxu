@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/process/thread.c
+ *
+ * Implements thread lifecycle, state, and kernel thread operations.
+ */
 #include <kern/console/console.h>
 #include <kern/machine/timer.h>
 #include <kern/process/thread.h>
@@ -154,9 +162,7 @@ thread_allocate_id_locked(void)
 	for (;;) {
 		thread_id_t thread_id = g_next_thread_id++;
 
-		if (thread_id != 0ULL && thread_id != THREAD_ID_INVALID) {
-			return thread_id;
-		}
+		if (thread_id != 0ULL && thread_id != THREAD_ID_INVALID) return thread_id;
 	}
 }
 
@@ -245,6 +251,7 @@ thread_task_remove_locked(thread_t thread)
 	}
 
 	if (task->thread_count != 0U) task->thread_count--;
+
 	if (thread->active && task->active_thread_count != 0U) task->active_thread_count--;
 
 	thread->task_prev = 0;
@@ -258,9 +265,7 @@ thread_task_remove_locked(thread_t thread)
 static bool
 thread_reference_locked(thread_t thread)
 {
-	if (thread == 0 || thread->ref_count == 0U || thread->ref_count == UINT32_MAX) {
-		return false;
-	}
+	if (thread == 0 || thread->ref_count == 0U || thread->ref_count == UINT32_MAX) return false;
 
 	thread->ref_count++;
 	return true;
@@ -279,6 +284,7 @@ thread_create_common(task_t task, bool kernel_thread, uint64_t entry, uint64_t s
 	if (task == 0 || result == 0 || !task_is_active(task) || task->halting) return false;
 
 	if (!kernel_thread && (entry == 0ULL || stack == 0ULL)) return false;
+
 	if (kernel_thread && continuation == 0) return false;
 
 	*result = 0;
@@ -291,6 +297,7 @@ thread_create_common(task_t task, bool kernel_thread, uint64_t entry, uint64_t s
 		thread_unlock(&g_thread_lock);
 		return false;
 	}
+
 	thread_t thread = thread_allocate_slot_locked();
 
 	if (thread == 0) {
@@ -409,9 +416,7 @@ kernel_thread_create(task_t task, thread_continue_t continuation, void *paramete
 bool
 thread_create_bootstrap(task_t task, thread_t *result)
 {
-	if (task == 0 || result == 0 || !task_is_active(task) || !task_is_kernel(task)) {
-		return false;
-	}
+	if (task == 0 || result == 0 || !task_is_active(task) || !task_is_kernel(task)) return false;
 
 	*result = 0;
 
@@ -526,6 +531,7 @@ thread_set_preemptible(thread_t thread, bool preemptible)
 	bool valid = thread->active && (thread->flags & TH_FLAG_KERNEL) != 0U;
 
 	if (valid && preemptible) thread->flags |= TH_FLAG_PREEMPTIBLE;
+
 	if (valid && !preemptible) thread->flags &= ~TH_FLAG_PREEMPTIBLE;
 
 	thread_unlock(&g_thread_lock);
@@ -1017,6 +1023,7 @@ thread_id_t
 thread_tid(thread_t thread)
 {
 	if (thread == 0) return THREAD_ID_INVALID;
+
 	return thread->thread_id;
 }
 
@@ -1027,6 +1034,7 @@ task_t
 thread_task(thread_t thread)
 {
 	if (thread == 0) return 0;
+
 	return thread->task;
 }
 
@@ -1195,9 +1203,7 @@ thread_base_priority(thread_t thread)
 uint64_t
 thread_user_entry(thread_t thread)
 {
-	if (thread == 0 || !machine_thread_has_user_state(&thread->machine)) {
-		return 0ULL;
-	}
+	if (thread == 0 || !machine_thread_has_user_state(&thread->machine)) return 0ULL;
 
 	return machine_thread_user_pc(&thread->machine);
 }
@@ -1208,9 +1214,7 @@ thread_user_entry(thread_t thread)
 uint64_t
 thread_user_stack(thread_t thread)
 {
-	if (thread == 0 || !machine_thread_has_user_state(&thread->machine)) {
-		return 0ULL;
-	}
+	if (thread == 0 || !machine_thread_has_user_state(&thread->machine)) return 0ULL;
 
 	return machine_thread_user_sp(&thread->machine);
 }
@@ -1221,9 +1225,7 @@ thread_user_stack(thread_t thread)
 bool
 thread_set_user_state(thread_t thread, uint64_t entry, uint64_t stack, uint64_t arg)
 {
-	if (thread == 0 || (thread->flags & TH_FLAG_KERNEL) != 0U) {
-		return false;
-	}
+	if (thread == 0 || (thread->flags & TH_FLAG_KERNEL) != 0U) return false;
 
 	thread_lock(&g_thread_lock);
 
@@ -1244,6 +1246,7 @@ uint64_t
 thread_kernel_stack_base(thread_t thread)
 {
 	if (thread == 0) return 0ULL;
+
 	return (uint64_t)thread->kernel_stack;
 }
 
@@ -1253,9 +1256,7 @@ thread_kernel_stack_base(thread_t thread)
 uint64_t
 thread_kernel_stack_top(thread_t thread)
 {
-	if (thread == 0 || thread->kernel_stack == 0) {
-		return 0ULL;
-	}
+	if (thread == 0 || thread->kernel_stack == 0) return 0ULL;
 
 	return (uint64_t)thread->kernel_stack + thread->kernel_stack_size;
 }
@@ -1308,8 +1309,8 @@ thread_validate(void)
 				thread_unlock(&g_thread_lock);
 				return false;
 			}
-		}
 
+		}
 		if (!found_in_task || task_count != thread->task->thread_count ||
 			active_count != thread->task->active_thread_count) {
 			thread_unlock(&g_thread_lock);
@@ -1323,6 +1324,7 @@ thread_validate(void)
 			thread_unlock(&g_thread_lock);
 			return false;
 		}
+
 	}
 
 	bool valid = previous == g_threads_tail && global_count == g_thread_count;

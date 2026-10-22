@@ -44,17 +44,11 @@ ipc_kmsg_init(void)
 ipc_return_t
 ipc_kmsg_alloc(const void *data, size_t size, ipc_port_t xfer_port, ipc_kmsg_t *kmsgp)
 {
-	if (data == 0 || kmsgp == 0 || size == 0U) {
-		return IPC_INVALID_ARGUMENT;
-	}
+	if (data == 0 || kmsgp == 0 || size == 0U) return IPC_INVALID_ARGUMENT;
 
-	if (size > IPC_KMSG_MAX_INLINE_SIZE) {
-		return IPC_MESSAGE_TOO_LARGE;
-	}
+	if (size > IPC_KMSG_MAX_INLINE_SIZE) return IPC_MESSAGE_TOO_LARGE;
 
-	if (size > (size_t)-1 - sizeof(struct ipc_kmsg)) {
-		return IPC_OVERFLOW;
-	}
+	if (size > (size_t)-1 - sizeof(struct ipc_kmsg)) return IPC_OVERFLOW;
 
 	ipc_kmsg_t kmsg = kmalloc(sizeof(struct ipc_kmsg) + size);
 	if (kmsg == IPC_KMSG_NULL) return IPC_NO_MEMORY;

@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/process/statistics.c
+ *
+ * Collects process and thread statistics for system diagnostics.
+ */
 #include <kern/process/statistics.h>
 #include <kern/process/proc.h>
 #include <kern/process/thread.h>
@@ -23,6 +31,7 @@ statistics_note_interrupt(void)
 	/* Before processor bootstrap only the boot CPU can take interrupts. */
 	uint32_t id = cpu != 0 ? cpu->cpu_id : 0U;
 	if (id >= NXU_MAX_CPUS) return;
+
 	cpu_events_t *events = &g_cpu_events[id];
 	uint64_t irq = nxu_spin_lock_irqsave(&events->lock);
 	events->interrupts++;
@@ -40,9 +49,12 @@ statistics_note_page_fault(bool user)
 		events->page_faults++;
 		nxu_spin_unlock_irqrestore(&events->lock, irq);
 	}
+
 	if (!user) return;
+
 	thread_t thread = current_thread();
 	if (thread == 0) return;
+
 	uint64_t irq = nxu_spin_lock_irqsave(&thread->accounting_lock);
 	thread->page_faults++;
 	nxu_spin_unlock_irqrestore(&thread->accounting_lock, irq);
@@ -88,6 +100,7 @@ statistics_record_size(uint32_t kind)
 	default:
 		return 0U;
 	}
+
 }
 
 uint32_t
@@ -99,13 +112,13 @@ statistics_capacity(uint32_t kind)
 	case NXU_STATS_CPU:
 		return NXU_MAX_CPUS;
 	case NXU_STATS_PROCESS:
-		return PROC_MAX;
+		return proc_limit();
 	case NXU_STATS_THREAD:
 		return THREAD_MAX;
 	case NXU_STATS_THREAD_EVENTS:
 		return THREAD_MAX;
 	case NXU_STATS_PROCESS_MEMORY:
-		return PROC_MAX;
+		return proc_limit();
 	case NXU_STATS_CPU_EVENTS:
 		return NXU_MAX_CPUS;
 	case NXU_STATS_VIRTIO:
@@ -113,6 +126,7 @@ statistics_capacity(uint32_t kind)
 	default:
 		return 0U;
 	}
+
 }
 
 void
@@ -121,6 +135,7 @@ statistics_cpu_snapshot(uint32_t cpu, nxu_stats_cpu_t *out)
 	*out = (nxu_stats_cpu_t){.struct_size = sizeof(*out), .version = NXU_STATS_VERSION, .cpu_id = cpu};
 	processor_t processor = processor_by_id(cpu);
 	if (processor == 0) return;
+
 	/* These accounting writers hold runq_lock. Mask local IRQs before taking
 	 * a remote queue lock; release before any user copy or allocation. */
 	uint64_t irq = nxu_spin_lock_irqsave(&processor->runq_lock);
@@ -145,6 +160,7 @@ statistics_snapshot(uint32_t kind, void *records, uint32_t capacity, uint32_t *t
 	if (kind == NXU_STATS_SYSTEM) {
 		*total = 1U;
 		if (capacity == 0U) return 0;
+
 		nxu_stats_system_t *out = records;
 		*out = (nxu_stats_system_t){.struct_size = sizeof(*out),
 									.version = NXU_STATS_VERSION,
@@ -158,6 +174,7 @@ statistics_snapshot(uint32_t kind, void *records, uint32_t capacity, uint32_t *t
 									.thread_count = thread_count()};
 		return 1;
 	}
+
 	if (kind == NXU_STATS_CPU) {
 		*total = processor_count();
 		uint32_t count = capacity < *total ? capacity : *total;
@@ -165,10 +182,12 @@ statistics_snapshot(uint32_t kind, void *records, uint32_t capacity, uint32_t *t
 			statistics_cpu_snapshot(cpu, &((nxu_stats_cpu_t *)records)[cpu]);
 		return count;
 	}
+
 	if (kind == NXU_STATS_PROCESS_MEMORY) {
 		*total = proc_memory_snapshot(records, capacity);
 		return capacity < *total ? capacity : *total;
 	}
+
 	if (kind == NXU_STATS_CPU_EVENTS) {
 		*total = processor_count();
 		uint32_t count = capacity < *total ? capacity : *total;
@@ -184,16 +203,20 @@ statistics_snapshot(uint32_t kind, void *records, uint32_t capacity, uint32_t *t
 		}
 		return count;
 	}
+
 	if (kind == NXU_STATS_VIRTIO) {
 		*total = 1U;
 		if (capacity == 0U) return 0;
+
 		virtqueue_statistics(records);
 		return 1;
 	}
+
 	/* Caller-local storage makes simultaneous observers independent. Table
 	 * locks are taken separately, so process/thread joins are best effort. */
 	thread_snapshot_t *threads = kmalloc(THREAD_MAX * sizeof(*threads));
 	if (threads == 0) return -NXU_SYS_E_NO_MEMORY;
+
 	uint32_t thread_total = thread_snapshot(threads, THREAD_MAX);
 	int64_t result;
 	if (kind == NXU_STATS_THREAD_EVENTS) {
@@ -208,6 +231,7 @@ statistics_snapshot(uint32_t kind, void *records, uint32_t capacity, uint32_t *t
 		kfree(threads);
 		return count;
 	}
+
 	if (kind == NXU_STATS_THREAD) {
 		*total = thread_total;
 		uint32_t count = capacity < *total ? capacity : *total;
@@ -227,12 +251,13 @@ statistics_snapshot(uint32_t kind, void *records, uint32_t capacity, uint32_t *t
 		}
 		result = count;
 	} else {
-		proc_snapshot_t *procs = kmalloc(PROC_MAX * sizeof(*procs));
+		proc_snapshot_t *procs = kmalloc(proc_limit() * sizeof(*procs));
 		if (procs == 0) {
 			kfree(threads);
 			return -NXU_SYS_E_NO_MEMORY;
 		}
-		*total = proc_snapshot(procs, PROC_MAX);
+
+		*total = proc_snapshot(procs, proc_limit());
 		uint32_t count = capacity < *total ? capacity : *total;
 		nxu_stats_process_t *out = records;
 		for (uint32_t i = 0U; i < count; i++) {
@@ -248,6 +273,7 @@ statistics_snapshot(uint32_t kind, void *records, uint32_t capacity, uint32_t *t
 			out[i].name[sizeof(out[i].name) - 1U] = '\0';
 			for (uint32_t j = 0U; j < thread_total; j++) {
 				if (threads[j].task_uniqueid != p->uniqueid || threads[j].idle) continue;
+
 				out[i].cpu_us += threads[j].run_us;
 				out[i].threads++;
 			}

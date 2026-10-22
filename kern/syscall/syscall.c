@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/syscall/syscall.c
+ *
+ * Dispatches system calls and implements kernel system call handlers.
+ */
 #include <kern/net/netif.h>
 #include <kern/logging/diagnostics.h>
 #include <kern/syscall/syscall.h>
@@ -13,7 +21,7 @@
 #include <drivers/input/mouse.h>
 #include <drivers/virtio/virtio_input.h>
 #include <drivers/video/display.h>
-#include <drivers/video/ui_service_bridge.h>
+#include <drivers/video/ui_session_manager.h>
 #include <kern/console/console.h>
 #include <kern/console/display_owner.h>
 #include <kern/loader/elf.h>
@@ -116,6 +124,7 @@ syscall_vfs_error(vfs_status_t status)
 	default:
 		return SYSCALL_ERROR_IO;
 	}
+
 }
 
 static syscall_error_t
@@ -147,6 +156,7 @@ syscall_ipc_error(ipc_return_t status)
 	default:
 		return SYSCALL_ERROR_IO;
 	}
+
 }
 
 static syscall_result_t
@@ -224,7 +234,6 @@ syscall_copy_exec_args(loader_exec_args_t *args, const char *path, uint64_t user
 		args->length += (uint32_t)strlen(args->strings + args->length) + 1U;
 		args->argc++;
 	}
-
 	if (args->argc == 0U) return SYSCALL_ERROR_INVALID_ARGUMENT;
 
 	return (syscall_error_t)0;
@@ -270,6 +279,7 @@ syscall_exec(uint64_t user_path, uint64_t user_argv)
 	default:
 		return syscall_error(SYSCALL_ERROR_IO);
 	}
+
 #else
 	(void)user_path;
 	(void)user_argv;
@@ -295,6 +305,7 @@ syscall_kill(uint64_t pid, uint64_t signal)
 	default:
 		return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 	}
+
 #else
 	(void)pid;
 	(void)signal;
@@ -405,6 +416,7 @@ static syscall_result_t
 syscall_write(uint64_t file_descriptor, uint64_t user_buffer, uint64_t length)
 {
 	if (length > SYSCALL_MAX_RETURN_VALUE) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
 	if (length != 0ULL && length - 1ULL > UINT64_MAX - user_buffer) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 
 	char buffer[SYSCALL_FILE_IO_BUFFER_SIZE];
@@ -413,6 +425,7 @@ syscall_write(uint64_t file_descriptor, uint64_t user_buffer, uint64_t length)
 	while (written < length) {
 		uint64_t chunk_size = length - written;
 		if (chunk_size > sizeof(buffer)) chunk_size = sizeof(buffer);
+
 		if (!vm_copy_from_user(buffer, user_buffer + written, chunk_size))
 			return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 
@@ -424,14 +437,10 @@ syscall_write(uint64_t file_descriptor, uint64_t user_buffer, uint64_t length)
 				vfs_status_t status = file_write(redirected, buffer, chunk_size, &count);
 				file_rele(redirected);
 
-				if (status != VFS_STATUS_OK) {
-					return syscall_error(syscall_vfs_error(status));
-				}
+				if (status != VFS_STATUS_OK) return syscall_error(syscall_vfs_error(status));
 
 				written += count;
-				if (count != chunk_size) {
-					break;
-				}
+				if (count != chunk_size) break;
 			} else {
 				for (uint64_t index = 0; index < chunk_size; index++) {
 					kputc(buffer[index]);
@@ -448,6 +457,7 @@ syscall_write(uint64_t file_descriptor, uint64_t user_buffer, uint64_t length)
 		vfs_status_t status =
 			vfs_write(&current_proc()->p_fd, (uint32_t)file_descriptor, buffer, chunk_size, &file_written);
 		if (status != VFS_STATUS_OK) return syscall_error(syscall_vfs_error(status));
+
 		written += file_written;
 		if (file_written != chunk_size) break;
 	}
@@ -459,7 +469,9 @@ static syscall_result_t
 syscall_read(uint64_t file_descriptor, uint64_t user_buffer, uint64_t length)
 {
 	if (file_descriptor >= VFS_FD_MAX) return syscall_error(SYSCALL_ERROR_BAD_FD);
+
 	if (length > SYSCALL_MAX_RETURN_VALUE) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
 	if (length != 0ULL && length - 1ULL > UINT64_MAX - user_buffer) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 
 	char buffer[SYSCALL_FILE_IO_BUFFER_SIZE];
@@ -473,7 +485,9 @@ syscall_read(uint64_t file_descriptor, uint64_t user_buffer, uint64_t length)
 		vfs_status_t status =
 			vfs_read(&current_proc()->p_fd, (uint32_t)file_descriptor, buffer, chunk_size, &read_size);
 		if (status != VFS_STATUS_OK) return syscall_error(syscall_vfs_error(status));
+
 		if (read_size == 0ULL) break;
+
 		if (!vm_copy_to_user(user_buffer + complete, buffer, read_size))
 			return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 		complete += read_size;
@@ -519,6 +533,7 @@ syscall_open(uint64_t user_path, uint64_t flags)
 	uint32_t descriptor;
 	vfs_status_t status = vfs_open(&current_proc()->p_fd, path, (uint32_t)flags, &descriptor);
 	if (status != VFS_STATUS_OK) return syscall_error(syscall_vfs_error(status));
+
 	return syscall_return(descriptor);
 }
 
@@ -531,6 +546,7 @@ static syscall_result_t
 syscall_ioctl(uint64_t descriptor, uint64_t command, uint64_t user_argument)
 {
 	if (descriptor < VFS_FD_FIRST_FILE || descriptor >= VFS_FD_MAX) return syscall_error(SYSCALL_ERROR_BAD_FD);
+
 	if (command > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
 	uint32_t request = (uint32_t)command;
@@ -558,6 +574,7 @@ static syscall_result_t
 syscall_close(uint64_t descriptor)
 {
 	if (descriptor >= VFS_FD_MAX) return syscall_error(SYSCALL_ERROR_BAD_FD);
+
 	vfs_status_t status = vfs_close(&current_proc()->p_fd, (uint32_t)descriptor);
 	return status == VFS_STATUS_OK ? syscall_return(0ULL) : syscall_error(syscall_vfs_error(status));
 }
@@ -571,17 +588,21 @@ syscall_spawn(uint64_t user_path, uint64_t user_name, uint64_t caps)
 	 * that are not capabilities are an invalid argument.
 	 */
 	if (caps > (uint64_t)NXU_CAP_ALL) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
 	if (!syscall_has_caps((uint32_t)caps)) return syscall_error(SYSCALL_ERROR_DENIED);
 
 	char path[VFS_PATH_MAX];
 	char name[PROC_NAME_MAX];
 	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
 	if (!vm_copy_string_from_user(name, user_name, sizeof(name))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 
 	proc_t child;
 	loader_status_t status = loader_spawn_caps(current_proc(), path, name, (uint32_t)caps, &child);
 	if (status == LOADER_STATUS_NOT_FOUND) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+
 	if (status == LOADER_STATUS_NO_MEMORY) return syscall_error(SYSCALL_ERROR_NO_MEMORY);
+
 	if (status != LOADER_STATUS_OK || child == 0) return syscall_error(SYSCALL_ERROR_IO);
 
 	return syscall_return(child->p_ident.pid);
@@ -594,6 +615,7 @@ syscall_crash(uint64_t operation, uint64_t argument)
 	if (operation == NXU_CRASH_UI_NEXT || operation == NXU_CRASH_NOTIFY) {
 		uint32_t cap = operation == NXU_CRASH_UI_NEXT ? NXU_CAP_CRASH_UI : NXU_CAP_CRASH;
 		if (!syscall_has_caps(cap)) return syscall_error(SYSCALL_ERROR_DENIED);
+
 		nxu_crash_notification_t notification;
 		int64_t result;
 		if (operation == NXU_CRASH_NOTIFY) {
@@ -610,18 +632,24 @@ syscall_crash(uint64_t operation, uint64_t argument)
 		}
 		return result < 0 ? syscall_error((syscall_error_t)-result) : syscall_return(0);
 	}
+
 	if (!syscall_has_caps(NXU_CAP_CRASH)) return syscall_error(SYSCALL_ERROR_DENIED);
+
 	if (operation == NXU_CRASH_RELEASE) {
 		crash_release(proc);
 		return syscall_return(0);
 	}
+
 	if (operation == NXU_CRASH_ACK) {
 		int64_t result = crash_ack(proc, argument);
 		return result < 0 ? syscall_error((syscall_error_t)-result) : syscall_return(0);
 	}
+
 	if (operation != NXU_CRASH_NEXT) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
 	nxu_crash_report_t *report = kmalloc(sizeof(*report));
 	if (report == 0) return syscall_error(SYSCALL_ERROR_NO_MEMORY);
+
 	int64_t result = crash_next(proc, report);
 	if (result == 0 && !vm_copy_to_user(argument, report, sizeof(*report))) result = -NXU_SYS_E_BAD_ADDRESS;
 	(void)kfree(report);
@@ -645,7 +673,9 @@ syscall_get_boot_args(uint64_t user_buffer, uint64_t capacity)
 	const char *arguments = boot_args_raw();
 	uint64_t length = strlen(arguments) + 1ULL;
 	if (capacity < length) return syscall_error(SYSCALL_ERROR_NO_SPACE);
+
 	if (!vm_copy_to_user(user_buffer, arguments, length)) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
 	return syscall_return(length - 1ULL);
 }
 
@@ -654,6 +684,7 @@ syscall_klog_read(uint64_t user_cursor, uint64_t user_buffer, uint64_t capacity)
 {
 	uint64_t cursor;
 	if (!vm_copy_from_user(&cursor, user_cursor, sizeof(cursor))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
 	if (capacity > SYSCALL_IO_BUFFER_SIZE) capacity = SYSCALL_IO_BUFFER_SIZE;
 
 	char buffer[SYSCALL_IO_BUFFER_SIZE];
@@ -663,6 +694,7 @@ syscall_klog_read(uint64_t user_cursor, uint64_t user_buffer, uint64_t capacity)
 	if (read_size != 0ULL && !vm_copy_to_user(user_buffer, buffer, read_size))
 		return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 	if (!vm_copy_to_user(user_cursor, &cursor, sizeof(cursor))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
 	return syscall_return(read_size);
 }
 
@@ -681,16 +713,19 @@ syscall_readdir(uint64_t descriptor, uint64_t user_entry)
 	vfs_dirent_t entry;
 	vfs_status_t status = vfs_readdir(&current_proc()->p_fd, (uint32_t)descriptor, &entry);
 	if (status == VFS_STATUS_END_OF_DIRECTORY) return syscall_return(0ULL);
+
 	if (status != VFS_STATUS_OK) return syscall_error(syscall_vfs_error(status));
 
 	nxu_dirent_t user = {.inode = entry.inode, .type = NXU_DIRENT_TYPE_UNKNOWN, .name_length = entry.name_length};
 
 	if (entry.type == VNODE_TYPE_REGULAR) user.type = NXU_DIRENT_TYPE_REGULAR;
+
 	if (entry.type == VNODE_TYPE_DIRECTORY) user.type = NXU_DIRENT_TYPE_DIRECTORY;
 
 	for (uint32_t index = 0U; index <= entry.name_length; index++)
 		user.name[index] = entry.name[index];
 	if (!vm_copy_to_user(user_entry, &user, sizeof(user))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
 	return syscall_return(1ULL);
 }
 
@@ -698,6 +733,7 @@ static syscall_result_t
 syscall_seek(uint64_t descriptor, uint64_t offset)
 {
 	if (descriptor < VFS_FD_FIRST_FILE || descriptor >= VFS_FD_MAX) return syscall_error(SYSCALL_ERROR_BAD_FD);
+
 	vfs_status_t status = vfs_seek(&current_proc()->p_fd, (uint32_t)descriptor, offset);
 	return status == VFS_STATUS_OK ? syscall_return(offset) : syscall_error(syscall_vfs_error(status));
 }
@@ -715,12 +751,16 @@ syscall_stat(uint64_t user_path, uint64_t user_stat)
 	nxu_stat_t stat = {.inode = vnode->v_id, .size = vnode->v_size, .type = NXU_STAT_TYPE_UNKNOWN, .reserved = 0U};
 
 	if (vnode->v_type == VNODE_TYPE_REGULAR) stat.type = NXU_STAT_TYPE_REGULAR;
+
 	if (vnode->v_type == VNODE_TYPE_DIRECTORY) stat.type = NXU_STAT_TYPE_DIRECTORY;
+
 	if (vnode->v_type == VNODE_TYPE_CHARACTER) stat.type = NXU_STAT_TYPE_CHARACTER;
+
 	if (vnode->v_type == VNODE_TYPE_BLOCK) stat.type = NXU_STAT_TYPE_BLOCK;
 	vnode_rele(vnode);
 
 	if (!vm_copy_to_user(user_stat, &stat, sizeof(stat))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
 	return syscall_return(0ULL);
 }
 
@@ -731,6 +771,7 @@ syscall_mkdir(uint64_t user_path)
 
 	char path[VFS_PATH_MAX];
 	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
 	vfs_status_t status = vfs_mkdir(path);
 	return status == VFS_STATUS_OK ? syscall_return(0ULL) : syscall_error(syscall_vfs_error(status));
 }
@@ -745,6 +786,7 @@ static syscall_result_t
 syscall_recovery_fs_mount_info(uint64_t index, uint64_t user_info)
 {
 	if (!syscall_recovery_privileged()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+
 	if (index > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
 	vfs_mount_info_t mount;
@@ -756,6 +798,7 @@ syscall_recovery_fs_mount_info(uint64_t index, uint64_t user_info)
 	memcpy(info.device, mount.device, sizeof(info.device));
 
 	if (!vm_copy_to_user(user_info, &info, sizeof(info))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
 	return syscall_return(0ULL);
 }
 
@@ -763,6 +806,7 @@ static syscall_result_t
 syscall_recovery_fs_mount(uint64_t user_filesystem, uint64_t device_index, uint64_t user_path)
 {
 	if (!syscall_recovery_privileged()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+
 	if (device_index > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
 	char filesystem[NXU_RECOVERY_FS_TYPE_MAX + 1U];
@@ -773,6 +817,7 @@ syscall_recovery_fs_mount(uint64_t user_filesystem, uint64_t device_index, uint6
 
 	block_device_t device = block_device_get((uint32_t)device_index);
 	if (device == 0) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+
 	vfs_status_t status = vfs_mount(filesystem, device, path);
 	return status == VFS_STATUS_OK ? syscall_return(0ULL) : syscall_error(syscall_vfs_error(status));
 }
@@ -784,6 +829,7 @@ syscall_recovery_fs_unmount(uint64_t user_path)
 
 	char path[VFS_PATH_MAX];
 	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
 	if (path[0] == '/' && path[1] == '\0') return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
 	vfs_status_t status = vfs_unmount(path);
@@ -794,6 +840,7 @@ static syscall_result_t
 syscall_recovery_block_info(uint64_t index, uint64_t user_info)
 {
 	if (!syscall_recovery_privileged()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+
 	if (index > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
 	block_device_t device = block_device_get((uint32_t)index);
@@ -806,6 +853,7 @@ syscall_recovery_block_info(uint64_t index, uint64_t user_info)
 									  .reserved = 0U};
 	memcpy(info.name, device->name, sizeof(info.name));
 	if (!vm_copy_to_user(user_info, &info, sizeof(info))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
 	return syscall_return(0ULL);
 }
 
@@ -826,6 +874,7 @@ syscall_recovery_fs_space_info(uint64_t user_path, uint64_t user_info)
 										 .block_size = space.block_size,
 										 .read_only = space.read_only ? 1U : 0U};
 	if (!vm_copy_to_user(user_info, &info, sizeof(info))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
 	return syscall_return(0ULL);
 }
 
@@ -833,16 +882,19 @@ static syscall_result_t
 syscall_recovery_block_layout_info(uint64_t index, uint64_t user_info)
 {
 	if (!syscall_recovery_privileged()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+
 	if (index > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
 	block_device_t device = block_device_get((uint32_t)index);
 	if (device == 0) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+
 	block_layout_info_t layout;
 	if (!block_layout_inspect(device, &layout)) return syscall_error(SYSCALL_ERROR_IO);
 
 	nxu_recovery_block_layout_info_t info = {.scheme = (uint32_t)layout.scheme,
 											 .partition_count = layout.partition_count};
 	if (!vm_copy_to_user(user_info, &info, sizeof(info))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
 	return syscall_return(0ULL);
 }
 
@@ -850,10 +902,12 @@ static syscall_result_t
 syscall_recovery_block_partition_info(uint64_t device_index, uint64_t partition_index, uint64_t user_info)
 {
 	if (!syscall_recovery_privileged()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+
 	if (device_index > UINT32_MAX || partition_index > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
 	block_device_t device = block_device_get((uint32_t)device_index);
 	if (device == 0) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+
 	block_partition_info_t partition;
 	if (!block_partition_get(device, (uint32_t)partition_index, &partition))
 		return syscall_error(SYSCALL_ERROR_NOT_FOUND);
@@ -866,6 +920,7 @@ syscall_recovery_block_partition_info(uint64_t device_index, uint64_t partition_
 												.reserved = 0U};
 	memcpy(info.name, partition.name, sizeof(info.name));
 	if (!vm_copy_to_user(user_info, &info, sizeof(info))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
 	return syscall_return(0ULL);
 }
 
@@ -873,10 +928,12 @@ static syscall_result_t
 syscall_recovery_block_health_info(uint64_t device_index, uint64_t user_info)
 {
 	if (!syscall_recovery_privileged()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+
 	if (device_index > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
 	block_device_t device = block_device_get((uint32_t)device_index);
 	if (device == 0) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+
 	uint64_t errors = device->read_errors + device->write_errors + device->flush_errors;
 	nxu_recovery_block_health_info_t info = {.read_operations = device->read_operations,
 											 .write_operations = device->write_operations,
@@ -889,6 +946,7 @@ syscall_recovery_block_health_info(uint64_t device_index, uint64_t user_info)
 											 .read_only = device->read_only ? 1U : 0U,
 											 .flush_supported = device->flush_supported ? 1U : 0U};
 	if (!vm_copy_to_user(user_info, &info, sizeof(info))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
 	return syscall_return(0ULL);
 }
 
@@ -896,9 +954,12 @@ static syscall_result_t
 syscall_recovery_block_partition_delete(uint64_t device_index, uint64_t partition_index)
 {
 	if (!syscall_recovery_privileged()) return syscall_error(SYSCALL_ERROR_DENIED);
+
 	if (device_index > UINT32_MAX || partition_index > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
 	block_device_t device = block_device_get((uint32_t)device_index);
 	if (device == 0) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+
 	/* A mounted filesystem may still write using the old partition layout. */
 	vfs_mount_info_t mount;
 	for (uint32_t index = 0; vfs_mount_get(index, &mount); index++)
@@ -918,15 +979,19 @@ syscall_recovery_block_partition_delete(uint64_t device_index, uint64_t partitio
 	default:
 		return syscall_error(SYSCALL_ERROR_IO);
 	}
+
 }
 
 static syscall_result_t
 syscall_recovery_block_verify(uint64_t device_index)
 {
 	if (!syscall_recovery_privileged()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+
 	if (device_index > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
 	block_device_t device = block_device_get((uint32_t)device_index);
 	if (device == 0) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+
 	return block_device_verify(device) ? syscall_return(0ULL) : syscall_error(SYSCALL_ERROR_IO);
 }
 
@@ -948,6 +1013,7 @@ syscall_recovery_display_info(uint64_t user_info)
 		.width = display->width, .height = display->height, .stride = display->width, .pixel_format = 1U};
 
 	if (!vm_copy_to_user(user_info, &info, sizeof(info))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
 	return syscall_return(0ULL);
 }
 
@@ -959,6 +1025,7 @@ syscall_recovery_present(uint64_t user_pixels, uint64_t stride, uint64_t x, uint
 {
 #if defined(__aarch64__) || defined(__i386__)
 	if (!ui_service_untrusted_enter()) return syscall_error(SYSCALL_ERROR_DENIED);
+
 #endif
 	syscall_result_t result = syscall_recovery_present_inner(user_pixels, stride, x, y, width, height);
 #if defined(__aarch64__) || defined(__i386__)
@@ -973,12 +1040,14 @@ syscall_recovery_present_inner(uint64_t user_pixels, uint64_t stride, uint64_t x
 {
 #if defined(__aarch64__) || defined(__i386__)
 	if (ui_service_secure_active()) return syscall_error(SYSCALL_ERROR_DENIED);
+
 #endif
 	if (!boot_mode_is_triage_os() && !display_owner_is(proc_selfpid()))
 		return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
 
 	display_device_t *display = display_primary();
 	if (display == 0 || display->framebuffer == 0) return syscall_error(SYSCALL_ERROR_IO);
+
 	if (stride < display->width || x >= display->width || y >= display->height || width == 0ULL || height == 0ULL)
 		return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 	if (width > display->width - x || height > display->height - y)
@@ -987,8 +1056,10 @@ syscall_recovery_present_inner(uint64_t user_pixels, uint64_t stride, uint64_t x
 	for (uint64_t row = 0ULL; row < height; row++) {
 		uint64_t pixel_offset = (y + row) * stride + x;
 		if (pixel_offset > (UINT64_MAX / sizeof(uint32_t))) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
 		uint64_t byte_offset = pixel_offset * sizeof(uint32_t);
 		if (user_pixels > UINT64_MAX - byte_offset) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
 		uint32_t *destination = display->framebuffer + (y + row) * display->stride + x;
 		if (!vm_copy_from_user(destination, user_pixels + byte_offset, width * sizeof(uint32_t)))
 			return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
@@ -1006,6 +1077,7 @@ syscall_recovery_input(uint64_t user_event)
 {
 #if defined(__aarch64__) || defined(__i386__)
 	if (!ui_service_untrusted_enter()) return syscall_error(SYSCALL_ERROR_DENIED);
+
 #endif
 	syscall_result_t result = syscall_recovery_input_inner(user_event);
 #if defined(__aarch64__) || defined(__i386__)
@@ -1019,6 +1091,7 @@ syscall_recovery_input_inner(uint64_t user_event)
 {
 #if defined(__aarch64__) || defined(__i386__)
 	if (ui_service_secure_active()) return syscall_error(SYSCALL_ERROR_DENIED);
+
 #endif
 	if (!boot_mode_is_triage_os() && !ui_bridge_host_input(current_proc()) &&
 		(ui_bridge_host_active() || !display_owner_is(proc_selfpid())))
@@ -1067,6 +1140,7 @@ syscall_recovery_input_inner(uint64_t user_event)
 			};
 		} else {
 			if (!input_read(&input)) return syscall_return(0ULL);
+
 			continue;
 		}
 
@@ -1084,7 +1158,9 @@ static syscall_result_t
 syscall_system_reset(void)
 {
 	if (!syscall_has_caps(NXU_CAP_RESET)) return syscall_error(SYSCALL_ERROR_DENIED);
+
 	if (vfs_sync_all() != VFS_STATUS_OK) return syscall_error(SYSCALL_ERROR_IO);
+
 	machine_system_reset();
 	return syscall_error(SYSCALL_ERROR_IO);
 }
@@ -1093,13 +1169,16 @@ static syscall_result_t
 syscall_gui_host(uint64_t user_record, uint64_t capacity)
 {
 	if (!syscall_has_caps(NXU_CAP_DISPLAY)) return syscall_error(SYSCALL_ERROR_DENIED);
+
 #if defined(__aarch64__) || defined(__i386__)
 	if (!ui_service_untrusted_enter()) return syscall_error(SYSCALL_ERROR_DENIED);
+
 	/* The legacy kernel desktop retains its display until migrated. */
 	if (ui_service_running()) {
 		ui_service_untrusted_leave();
 		return syscall_error(SYSCALL_ERROR_BUSY);
 	}
+
 #endif
 	nxu_gui_host_header_t header = {0};
 	int64_t status = -NXU_SYS_E_INVALID_ARGUMENT;
@@ -1136,6 +1215,7 @@ syscall_gui_host(uint64_t user_record, uint64_t capacity)
 				else {
 					status = display_owner_host(current_proc(), &request, &reply);
 					if (!status && header.operation == NXU_GUI_HOST_RELEASE) ui_bridge_host_release(current_proc());
+
 					if (!vm_copy_to_user(user_record, &reply, sizeof(reply))) {
 						display_owner_release(current_proc());
 						status = -NXU_SYS_E_BAD_ADDRESS;
@@ -1156,28 +1236,36 @@ syscall_dyrld(uint64_t operation, uint64_t argument)
 	proc_t proc = current_proc();
 	if (operation == NXU_DYRLD_FINALIZE) {
 		if (argument) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
 		loader_status_t status = loader_dyrld_finalize(proc);
 		return status == LOADER_STATUS_OK
 				   ? syscall_return(0)
 				   : syscall_error(status == LOADER_STATUS_BUSY ? SYSCALL_ERROR_BUSY : SYSCALL_ERROR_INVALID_ARGUMENT);
 	}
+
 	if (operation == NXU_DYRLD_MAIN_PATH) {
 		if (proc->p_dyrld_main[0] == 0) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+
 		return vm_copy_to_user(argument, proc->p_dyrld_main, sizeof(proc->p_dyrld_main))
 				   ? syscall_return(0)
 				   : syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 	}
+
 	if (operation != NXU_DYRLD_LOAD) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
 	nxu_dyrld_image_t *image = kcalloc(1, sizeof(*image));
 	if (image == 0) return syscall_error(SYSCALL_ERROR_NO_MEMORY);
+
 	if (!vm_copy_from_user(image, argument, sizeof(*image))) {
 		kfree(image);
 		return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 	}
+
 	loader_status_t status = loader_dyrld_map(proc, image);
 	bool copied = status != LOADER_STATUS_OK || vm_copy_to_user(argument, image, sizeof(*image));
 	kfree(image);
 	if (!copied) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
 	return status == LOADER_STATUS_OK ? syscall_return(0)
 									  : syscall_error(status == LOADER_STATUS_NOT_FOUND	  ? SYSCALL_ERROR_NOT_FOUND
 													  : status == LOADER_STATUS_NO_MEMORY ? SYSCALL_ERROR_NO_MEMORY
@@ -1189,8 +1277,10 @@ static syscall_result_t
 syscall_sap_remove_tree(uint64_t user_path)
 {
 	if (!syscall_recovery_privileged()) return syscall_error(SYSCALL_ERROR_DENIED);
+
 	char path[VFS_PATH_MAX];
 	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
 	vfs_status_t status = sap_remove_tree(current_proc(), path);
 	return status == VFS_STATUS_OK ? syscall_return(0) : syscall_error(syscall_vfs_error(status));
 }
@@ -1200,6 +1290,7 @@ syscall_sap_delete(uint64_t user_path)
 {
 	char path[VFS_PATH_MAX];
 	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
 	vfs_status_t status = sap_delete(current_proc(), path);
 	return status == VFS_STATUS_OK ? syscall_return(0) : syscall_error(syscall_vfs_error(status));
 }
@@ -1209,12 +1300,15 @@ syscall_unlink(uint64_t user_path)
 {
 	char path[VFS_PATH_MAX], canonical[VFS_PATH_MAX];
 	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
 	if (!sap_canonical_path(path, canonical)) return syscall_error(SYSCALL_ERROR_DENIED);
+
 	vfs_status_t status;
 	if (sap_protected_path(canonical))
 		status = sap_delete(current_proc(), canonical);
 	else {
 		if (!syscall_has_caps(NXU_CAP_FS_WRITE)) return syscall_error(SYSCALL_ERROR_DENIED);
+
 		status = vfs_unlink(canonical);
 	}
 	return status == VFS_STATUS_OK ? syscall_return(0) : syscall_error(syscall_vfs_error(status));
@@ -1225,6 +1319,7 @@ syscall_rmdir(uint64_t user_path)
 {
 	char path[VFS_PATH_MAX], canonical[VFS_PATH_MAX];
 	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
 	if (!syscall_has_caps(NXU_CAP_FS_WRITE) || !sap_canonical_path(path, canonical) || sap_protected_path(canonical))
 		return syscall_error(SYSCALL_ERROR_DENIED);
 	vfs_status_t status = vfs_rmdir(canonical);
@@ -1235,6 +1330,7 @@ static syscall_result_t
 syscall_get_version(uint64_t user_buffer, uint64_t capacity)
 {
 	if (capacity < SYSCALL_VERSION_LENGTH) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
 	if (!vm_copy_to_user(user_buffer, g_syscall_version, SYSCALL_VERSION_LENGTH))
 		return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 	return syscall_return(SYSCALL_VERSION_LENGTH);
@@ -1275,6 +1371,7 @@ syscall_ipc_bootstrap_port(void)
 {
 	proc_t proc = current_proc();
 	if (proc->p_ipc_bootstrap_name == IPC_SPACE_NAME_INVALID) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+
 	return syscall_return(proc->p_ipc_bootstrap_name);
 }
 
@@ -1288,7 +1385,9 @@ static syscall_result_t
 syscall_ipc_send(uint64_t dest_name, uint64_t user_buffer, uint64_t length, uint64_t xfer_name)
 {
 	if (dest_name == 0ULL || dest_name > IPC_SPACE_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
 	if (length == 0ULL || length > IPC_KMSG_MAX_INLINE_SIZE) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
 	if (xfer_name > IPC_SPACE_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
 	/* Heap, not stack: syscall handlers run on a 16 KiB kernel stack (see
@@ -1310,6 +1409,7 @@ syscall_ipc_send(uint64_t dest_name, uint64_t user_buffer, uint64_t length, uint
 			(void)kfree(buffer);
 			return syscall_error(syscall_ipc_error(lookup_status));
 		}
+
 	}
 
 	ipc_port_t dest_port;
@@ -1328,6 +1428,7 @@ syscall_ipc_send(uint64_t dest_name, uint64_t user_buffer, uint64_t length, uint
 		ipc_port_release(dest_port);
 		return syscall_error(syscall_ipc_error(status));
 	}
+
 	/* Identity comes from the sending process, never the payload. */
 	kmsg->ikm_sender =
 		(nxu_ipc_peer_t){proc->p_ident.pid, proc->p_ident.idversion, proc->p_ident.uniqueid, proc->p_caps, 0};
@@ -1394,10 +1495,12 @@ syscall_ipc_receive_impl(uint64_t port_name, uint64_t user_buffer, uint64_t capa
 			interrupted = true;
 			break;
 		}
+
 	}
 
 	ipc_port_release(port);
 	if (interrupted) return syscall_error(SYSCALL_ERROR_INTERRUPTED);
+
 	if (status != IPC_SUCCESS) return syscall_error(syscall_ipc_error(status));
 
 	if ((uint64_t)kmsg->ikm_size > capacity) {
@@ -1441,6 +1544,7 @@ syscall_ipc_receive_impl(uint64_t port_name, uint64_t user_buffer, uint64_t capa
 		return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 
 	if (user_peer && !vm_copy_to_user(user_peer, &peer, sizeof(peer))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
 	return syscall_return(received_size);
 }
 
@@ -1465,13 +1569,16 @@ static syscall_result_t
 syscall_process_identity(uint64_t pid, uint64_t output)
 {
 	if (pid > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
 	proc_t process = proc_find((proc_id_t)pid);
 	if (!process) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+
 	nxu_ipc_peer_t peer = {process->p_ident.pid, process->p_ident.idversion, process->p_ident.uniqueid, process->p_caps,
 						   0};
 	bool alive = !(process->p_flag & PROC_FLAG_EXITING);
 	proc_rele(process);
 	if (!alive) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+
 	return vm_copy_to_user(output, &peer, sizeof(peer)) ? syscall_return(0) : syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 }
 
@@ -1531,6 +1638,7 @@ syscall_wait(uint64_t pid, uint64_t user_status)
 		if (signal_pending_for(self, thread) || !waitq_block_seq(&self->p_waitq, seq, true)) {
 			return syscall_error(SYSCALL_ERROR_INTERRUPTED);
 		}
+
 	}
 }
 
@@ -1538,6 +1646,7 @@ static syscall_result_t
 syscall_ipc_register_bootstrap(uint64_t port_name)
 {
 	if (proc_selfpid() != 1U) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+
 	if (port_name == 0ULL || port_name > IPC_SPACE_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
 	ipc_port_t port;
@@ -1555,6 +1664,7 @@ syscall_display_claim(void)
 {
 #if defined(__aarch64__) || defined(__i386__)
 	if (!ui_service_untrusted_enter()) return syscall_error(SYSCALL_ERROR_DENIED);
+
 #endif
 	syscall_result_t result = syscall_display_claim_inner();
 #if defined(__aarch64__) || defined(__i386__)
@@ -1568,6 +1678,7 @@ syscall_display_claim_inner(void)
 {
 #if defined(__aarch64__) || defined(__i386__)
 	if (ui_service_secure_active()) return syscall_error(SYSCALL_ERROR_DENIED);
+
 #endif
 	if (!syscall_has_caps(NXU_CAP_DISPLAY)) return syscall_error(SYSCALL_ERROR_DENIED);
 
@@ -1705,7 +1816,9 @@ static syscall_result_t
 syscall_shm_withdraw(uint64_t id)
 {
 	if (id == 0ULL || id > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
 	if (!shm_registry_withdraw((uint32_t)id)) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+
 	return syscall_return(0ULL);
 }
 
@@ -1725,6 +1838,7 @@ syscall_mmap_protection(uint64_t prot_flags, vm_user_protection_t *protection)
 	default:
 		return false;
 	}
+
 }
 
 static syscall_result_t
@@ -1811,13 +1925,9 @@ syscall_thread_exit(uint64_t status)
 	 * thread that empties the task; if two threads empty it together both may see
 	 * zero, and proc_exit lets only one of them proceed.
 	 */
-	if (!sched_thread_terminate(current_thread())) {
-		return syscall_error(SYSCALL_ERROR_IO);
-	}
+	if (!sched_thread_terminate(current_thread())) return syscall_error(SYSCALL_ERROR_IO);
 
-	if (task_active_thread_count(task) == 0U) {
-		return syscall_exit(status);
-	}
+	if (task_active_thread_count(task) == 0U) return syscall_exit(status);
 
 	sched_exit_current();
 }
@@ -1937,6 +2047,7 @@ syscall_setaffinity(uint64_t mask)
 	cpuset_intersect(&allowed, &requested, &online);
 
 	if (cpuset_empty(&allowed)) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
 	if (!thread_set_affinity(current_thread(), &requested)) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
 	if (!cpuset_contains(&requested, current_processor()->cpu_id)) (void)sched_yield();
@@ -1945,7 +2056,7 @@ syscall_setaffinity(uint64_t mask)
 }
 
 /*
- * The UI session calls (see drivers/video/ui_service_bridge.h) answer with a
+ * The UI session calls (see drivers/video/ui_session_manager.h) answer with a
  * value >= 0 or -NXU_SYS_E_*.
  */
 /*
@@ -1960,6 +2071,7 @@ syscall_statistics(uint64_t user_request)
 {
 	nxu_stats_request_t request;
 	if (!vm_copy_from_user(&request, user_request, sizeof(request))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
 	if (request.struct_size != sizeof(request) || request.version != NXU_STATS_VERSION || request.reserved != 0U ||
 		request.record_size == 0U || request.record_size != statistics_record_size(request.kind))
 		return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
@@ -1970,14 +2082,17 @@ syscall_statistics(uint64_t user_request)
 		return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 	void *records = capacity != 0U ? kmalloc((size_t)bytes) : 0;
 	if (capacity != 0U && records == 0) return syscall_error(SYSCALL_ERROR_NO_MEMORY);
+
 	int64_t count = statistics_snapshot(request.kind, records, capacity, &request.total);
 	if (count < 0) {
 		if (records != 0) kfree(records);
 		return syscall_error((syscall_error_t)-count);
 	}
+
 	request.count = (uint32_t)count;
 	bool copied = count == 0 || vm_copy_to_user(request.records, records, (uint64_t)count * request.record_size);
 	if (records != 0) kfree(records);
+
 	if (!copied || !vm_copy_to_user(user_request, &request, sizeof(request)))
 		return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 	return syscall_return(request.count);
@@ -1987,7 +2102,9 @@ static syscall_result_t
 syscall_sleep_us(uint64_t microseconds)
 {
 	if (microseconds > SYSCALL_SLEEP_MAX_US) microseconds = SYSCALL_SLEEP_MAX_US;
+
 	if (!sched_sleep_us(microseconds)) return syscall_error(SYSCALL_ERROR_INTERRUPTED);
+
 	return syscall_return(0ULL);
 }
 
@@ -1995,6 +2112,7 @@ static syscall_result_t
 syscall_from_bridge(int64_t value)
 {
 	if (value < 0) return syscall_error((syscall_error_t)-value);
+
 	return syscall_return((uint64_t)value);
 }
 
@@ -2053,7 +2171,7 @@ syscall_is_cpu_agnostic(uint64_t number)
 	case SYSCALL_GETCPU:
 	case SYSCALL_SETAFFINITY:
 	/*
-	 * An app's frames and messages: the UI session bridge locks each
+	 * An app's frames and messages: the UI session manager locks each
 	 * connection itself and only copies memory, so a frame is copied on the
 	 * app's own CPU instead of queueing for the boot CPU. Connecting and the
 	 * control calls allocate and read the process table: they stay bound.
@@ -2068,6 +2186,7 @@ syscall_is_cpu_agnostic(uint64_t number)
 	default:
 		return false;
 	}
+
 }
 
 static syscall_result_t
@@ -2091,9 +2210,7 @@ syscall_network(uint64_t operation, uint64_t user_argument)
 	int64_t result =
 		operation == NXU_NET_INTERFACE ? net_interface_info(&argument.interface) : net_ping(&argument.ping);
 
-	if (result < 0) {
-		return syscall_error((syscall_error_t)-result);
-	}
+	if (result < 0) return syscall_error((syscall_error_t)-result);
 
 	if (!vm_copy_to_user(user_argument, &argument, size)) {
 		return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
@@ -2136,9 +2253,7 @@ syscall_read_poll(uint64_t descriptor, uint64_t user_buffer, uint64_t length)
 	int64_t count = socket_read_poll(file->f_socket, buffer, capacity);
 	file_rele(file);
 
-	if (count < 0) {
-		return syscall_error(count == -2 ? SYSCALL_ERROR_AGAIN : SYSCALL_ERROR_IO);
-	}
+	if (count < 0) return syscall_error(count == -2 ? SYSCALL_ERROR_AGAIN : SYSCALL_ERROR_IO);
 
 	if (count != 0 && !vm_copy_to_user(user_buffer, buffer, count)) {
 		return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
@@ -2335,6 +2450,7 @@ syscall_dispatch_inner(const syscall_request_t *request)
 										request->arguments[3], request->arguments[4], 0);
 	case SYSCALL_IPC_RECEIVE_TIMED:
 		if (request->arguments[5] > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
 		return syscall_ipc_receive_wait(request->arguments[0], request->arguments[1], request->arguments[2],
 										request->arguments[3], request->arguments[4], request->arguments[5]);
 	case SYSCALL_GETCPU:
@@ -2359,4 +2475,5 @@ syscall_dispatch_inner(const syscall_request_t *request)
 	default:
 		return syscall_error(SYSCALL_ERROR_UNKNOWN);
 	}
+
 }

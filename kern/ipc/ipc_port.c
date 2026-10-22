@@ -299,6 +299,7 @@ ipc_object_id_t
 ipc_port_object_id(ipc_port_t port)
 {
 	if (port == IPC_PORT_NULL) return IPC_OBJECT_ID_NULL;
+
 	return port->ip_object_id;
 }
 
@@ -317,6 +318,7 @@ uint32_t
 ipc_port_qlimit(ipc_port_t port)
 {
 	if (port == IPC_PORT_NULL) return 0U;
+
 	return port->ip_qlimit;
 }
 

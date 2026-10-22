@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/process/crash.h
+ *
+ * Declares process crash capture and report collection interfaces.
+ */
 #ifndef NXU_PROCESS_CRASH_H
 #define NXU_PROCESS_CRASH_H
 #include <kern/process/proc.h>

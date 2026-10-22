@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/sched_prism/run_queue.c
+ *
+ * Implements scheduler run queues and thread selection support.
+ */
 #include <kern/sched_prism/run_queue.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -122,6 +130,7 @@ run_queue_remove(run_queue_t *runq, thread_t thread)
 	thread->runq = 0;
 
 	if (runq->count == 0U) return false;
+
 	runq->count--;
 
 	if (bucket->head == 0) {
@@ -149,6 +158,7 @@ run_queue_dequeue(run_queue_t *runq)
 	thread_t thread = runq->queues[runq->highq].head;
 
 	if (thread == 0 || !run_queue_remove(runq, thread)) return 0;
+
 	return thread;
 }
 
@@ -176,6 +186,7 @@ run_queue_dequeue_priority(run_queue_t *runq, uint16_t priority)
 	thread_t thread = runq->queues[priority].head;
 
 	if (thread == 0 || !run_queue_remove(runq, thread)) return 0;
+
 	return thread;
 }
 
@@ -210,12 +221,11 @@ run_queue_validate(const run_queue_t *runq)
 
 			if (bucket_count > THREAD_MAX || count > THREAD_MAX) return false;
 		}
-
 		if (previous != bucket->tail) return false;
 
 		if (bucket_count != 0U) bitmap |= run_queue_priority_mask(priority);
 	}
-
 	if (count != runq->count || bitmap != runq->bitmap) return false;
+
 	return runq->highq == run_queue_find_highq(bitmap);
 }

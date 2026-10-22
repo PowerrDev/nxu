@@ -1,5 +1,12 @@
 /*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
  * File:        kern/sched_prism/sched.c
+ *
+ * Implements the per-CPU multilevel feedback queue scheduler.
+ */
+/*
  *
  * The MLFQ scheduler, one run queue per CPU.
  *
@@ -192,10 +199,12 @@ sched_sleep_until_kicked_seq(uint64_t microseconds, uint32_t kicks, bool interru
 		uint32_t seq = waitq_seq(&g_sched_kick_queue);
 
 		if (__atomic_load_n(&g_sched_kicks, __ATOMIC_ACQUIRE) != kicks || timer_get_microseconds() >= deadline) break;
+
 		if (!waitq_block_seq(&g_sched_kick_queue, seq, interruptible)) {
 			completed = false;
 			break;
 		}
+
 	}
 
 	(void)__atomic_sub_fetch(&g_sched_kick_sleepers, 1U, __ATOMIC_ACQ_REL);
@@ -308,6 +317,7 @@ static bool
 sched_mlfq_charge_tick(thread_t thread, bool *quantum_expired)
 {
 	if (thread->quantum_remaining != 0U) thread->quantum_remaining--;
+
 	if (thread->mlfq_ticks != UINT32_MAX) thread->mlfq_ticks++;
 
 	bool expired = thread->quantum_remaining == 0U;
@@ -661,10 +671,10 @@ sched_select_cpu(thread_t thread)
 			best_load = load;
 		}
 	}
-
 	if (best == 0) return processor_by_id(0);
 
 	if (last_ok && best_load != 0U && processor_load(last) <= best_load + 1U) return last;
+
 	return best;
 }
 
@@ -941,6 +951,7 @@ sched_bootstrap(task_t kernel_task)
 	if (g_sched.initialized) return true;
 
 	if (kernel_task == 0 || !task_is_kernel(kernel_task)) return false;
+
 	if (!processor_bootstrap()) return false;
 
 	memset(&g_sched, 0, sizeof(g_sched));
@@ -1246,6 +1257,7 @@ sched_thread_start(thread_t thread)
 	if (!thread_start(thread)) return false;
 
 	if (thread_is_idle(thread)) return true;
+
 	return thread_setrun(thread, SCHED_TAILQ);
 }
 
@@ -1255,6 +1267,7 @@ sched_thread_wait(thread_t thread, bool uninterruptible)
 	if (thread == 0) return false;
 
 	if (thread->runq != 0 && !thread_run_queue_remove(thread)) return false;
+
 	return thread_wait(thread, uninterruptible);
 }
 
@@ -1276,6 +1289,7 @@ sched_thread_hold(thread_t thread)
 	if (thread == 0) return false;
 
 	if (thread->runq != 0 && !thread_run_queue_remove(thread)) return false;
+
 	return thread_hold(thread);
 }
 
@@ -1419,6 +1433,7 @@ sched_migrate_one(processor_t from, processor_t to)
 				victim = thread;
 				break;
 			}
+
 		}
 	}
 
@@ -1476,8 +1491,8 @@ sched_balance(processor_t self)
 			busiest_load = load;
 		}
 	}
-
 	if (busiest == 0 || busiest->runq.count == 0U) return;
+
 	if (busiest_load < own_load + (own_load == 0U ? 1U : 2U)) return;
 
 	(void)sched_migrate_one(busiest, self);
@@ -1514,6 +1529,7 @@ sched_tick(void)
 		bool demoted = sched_mlfq_charge_tick(thread, &quantum_expired);
 
 		if (quantum_expired) processor->quantum_expiration_count++;
+
 		if (demoted) __atomic_store_n(&processor->preemption_pending, true, __ATOMIC_RELEASE);
 	}
 
@@ -1554,6 +1570,7 @@ bool
 sched_preempt(void)
 {
 	if (!sched_preemption_pending()) return true;
+
 	return sched_switch(SCHED_SWITCH_PREEMPT);
 }
 
@@ -1605,15 +1622,19 @@ sched_run_queue_self_test(void)
 	if (!run_queue_enqueue(&runq, &low, RUN_QUEUE_TAIL)) return false;
 
 	if (!run_queue_enqueue(&runq, &high_a, RUN_QUEUE_TAIL)) return false;
+
 	if (!run_queue_enqueue(&runq, &high_b, RUN_QUEUE_TAIL)) return false;
 
 	if (!run_queue_validate(&runq)) return false;
+
 	if (run_queue_peek(&runq) != &high_a) return false;
 
 	if (run_queue_dequeue(&runq) != &high_a) return false;
+
 	if (run_queue_dequeue(&runq) != &high_b) return false;
 
 	if (run_queue_dequeue(&runq) != &low) return false;
+
 	if (run_queue_dequeue(&runq) != 0) return false;
 
 	return run_queue_validate(&runq);
@@ -1651,6 +1672,7 @@ sched_mlfq_self_test(void)
 	/* A thread starts life at the top queue (Rule 3). */
 	sched_mlfq_test_thread(&hog, SCHED_MLFQ_TOP_LEVEL);
 	if (hog.mlfq_level != SCHED_MLFQ_TOP_LEVEL) return false;
+
 	if (hog.sched_pri != sched_mlfq_level_priority(SCHED_MLFQ_TOP_LEVEL)) return false;
 
 	/*
@@ -1660,11 +1682,11 @@ sched_mlfq_self_test(void)
 	 */
 	for (uint8_t level = SCHED_MLFQ_TOP_LEVEL; level < SCHED_MLFQ_BOTTOM_LEVEL; level++) {
 		if (hog.mlfq_level != level) return false;
+
 		if (hog.quantum_remaining != sched_mlfq_level_quantum(level)) return false;
 
 		sched_mlfq_assign(&hog, (uint8_t)(hog.mlfq_level + 1U));
 	}
-
 	if (hog.mlfq_level != SCHED_MLFQ_BOTTOM_LEVEL) return false;
 
 	sched_mlfq_assign(&hog, (uint8_t)(hog.mlfq_level + 1U));
@@ -1690,8 +1712,8 @@ sched_mlfq_self_test(void)
 			/* The yield: the next dispatch grants a whole quantum again. */
 			if (!demoted) hog.quantum_remaining = sched_mlfq_level_quantum(level);
 		}
-
 		if (hog.mlfq_level != level + 1U) return false;
+
 		if (hog.mlfq_ticks != 0U) return false;
 	}
 
@@ -1713,7 +1735,6 @@ sched_mlfq_self_test(void)
 
 		sched_mlfq_blocked(&hog);
 	}
-
 	if (hog.mlfq_level != SCHED_MLFQ_TOP_LEVEL) return false;
 
 	/*
@@ -1725,6 +1746,7 @@ sched_mlfq_self_test(void)
 	sched_mlfq_test_thread(&running, SCHED_MLFQ_BOTTOM_LEVEL);
 
 	if (!run_queue_enqueue(&test_processor.runq, &queued_mid, RUN_QUEUE_TAIL)) return false;
+
 	if (!run_queue_enqueue(&test_processor.runq, &queued_bottom, RUN_QUEUE_TAIL)) return false;
 
 	test_processor.active_thread = &running;
@@ -1732,11 +1754,15 @@ sched_mlfq_self_test(void)
 	sched_mlfq_boost_locked(&test_processor);
 
 	if (queued_mid.mlfq_level != SCHED_MLFQ_TOP_LEVEL) return false;
+
 	if (queued_bottom.mlfq_level != SCHED_MLFQ_TOP_LEVEL) return false;
+
 	if (running.mlfq_level != SCHED_MLFQ_TOP_LEVEL) return false;
 
 	if (queued_mid.sched_pri != sched_mlfq_level_priority(SCHED_MLFQ_TOP_LEVEL)) return false;
+
 	if (queued_mid.runq != &test_processor.runq) return false;
+
 	if (queued_bottom.runq != &test_processor.runq) return false;
 
 	return run_queue_validate(&test_processor.runq);
@@ -1807,7 +1833,6 @@ sched_validate_all(void)
 			}
 		}
 	}
-
 	for (uint32_t cpu = count; cpu > 0U; cpu--)
 		nxu_spin_unlock(&processor_by_id(cpu - 1U)->runq_lock);
 

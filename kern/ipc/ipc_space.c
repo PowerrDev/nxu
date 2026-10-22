@@ -48,6 +48,7 @@ static ipc_return_t
 ipc_space_insert(ipc_space_t space, ipc_port_t port, uint32_t *name, bool receive)
 {
 	if (name != 0) *name = IPC_SPACE_NAME_INVALID;
+
 	if (space == 0 || port == IPC_PORT_NULL || name == 0 || !ipc_port_active(port)) return IPC_INVALID_ARGUMENT;
 
 	ipc_space_lock(space);
@@ -113,6 +114,7 @@ static ipc_return_t
 ipc_space_lookup(ipc_space_t space, uint32_t name, ipc_port_t *result, bool receive)
 {
 	if (result != 0) *result = IPC_PORT_NULL;
+
 	if (space == 0 || result == 0 || name < 1U || name > IPC_SPACE_MAX) return IPC_NAME_INVALID;
 
 	ipc_space_lock(space);
@@ -127,6 +129,7 @@ ipc_space_lookup(ipc_space_t space, uint32_t name, ipc_port_t *result, bool rece
 		ipc_space_unlock(space);
 		return IPC_ACCESS_DENIED;
 	}
+
 	if (!ipc_port_reference(entry->port)) {
 		ipc_space_unlock(space);
 		return IPC_PORT_INACTIVE;
@@ -141,6 +144,7 @@ ipc_return_t
 ipc_space_remove(ipc_space_t space, uint32_t name, ipc_port_t *result)
 {
 	if (result != 0) *result = IPC_PORT_NULL;
+
 	if (space == 0 || result == 0 || name < 1U || name > IPC_SPACE_MAX) return IPC_NAME_INVALID;
 
 	ipc_space_lock(space);
@@ -157,6 +161,7 @@ ipc_space_remove(ipc_space_t space, uint32_t name, ipc_port_t *result)
 	entry->type = IPC_SPACE_ENTRY_FREE;
 	entry->port = IPC_PORT_NULL;
 	if (space->is_open_count != 0U) space->is_open_count--;
+
 	if (name < space->is_freename) space->is_freename = name;
 
 	ipc_space_unlock(space);
@@ -182,6 +187,7 @@ bool
 ipc_space_can_receive(ipc_space_t space, uint32_t name)
 {
 	if (!space || !name || name > IPC_SPACE_MAX) return false;
+
 	ipc_space_lock(space);
 	bool allowed = space->is_entries[name - 1].type == IPC_SPACE_ENTRY_PORT && space->is_entries[name - 1].receive;
 	ipc_space_unlock(space);

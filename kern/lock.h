@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/lock.h
+ *
+ * Declares the kernel . lock interfaces and data structures.
+ */
 #ifndef NXU_KERN_LOCK_H
 #define NXU_KERN_LOCK_H
 

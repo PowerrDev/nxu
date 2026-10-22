@@ -57,6 +57,7 @@ signal_set_action(proc_t proc, uint32_t signal, const nxu_sigaction_t *action)
 
 	if (action->handler > NXU_SIG_IGN) {
 		if (action->handler >= VM_MAX_USER_ADDRESS) return false;
+
 		if (action->restorer == 0ULL || action->restorer >= VM_MAX_USER_ADDRESS) return false;
 	}
 
@@ -162,6 +163,7 @@ signal_send_result_t
 signal_send(proc_t sender, proc_id_t pid, uint32_t signal)
 {
 	if (sender == 0) return SIGNAL_SEND_INVALID;
+
 	if (signal != 0U && !signal_valid(signal)) return SIGNAL_SEND_INVALID;
 
 	if (signal == NXU_SIGSTOP || signal == NXU_SIGCONT) return SIGNAL_SEND_NOT_SUPPORTED;
