@@ -196,7 +196,7 @@ terminal_complete(void)
 		}
 	}
 
-	int64_t descriptor = nxu_open("/disk/System/Library/CoreServices", NXU_O_READ);
+	int64_t descriptor = nxu_open("/Volumes/mainOS/System/Library/CoreServices", NXU_O_READ);
 
 	if (descriptor < 0) {
 		return;
@@ -317,7 +317,7 @@ main(void)
 #if defined(__i386__)
 	const char *arguments[] = {"nzh", 0};
 	int64_t stream = -1;
-	int64_t shell_pid = nxu_spawn_io("/disk/System/Library/CoreServices/nzh", arguments, &stream);
+	int64_t shell_pid = nxu_spawn_io("/Volumes/mainOS/System/Library/CoreServices/nzh", arguments, &stream);
 
 	if (shell_pid <= 0) {
 		return 4;
@@ -340,7 +340,7 @@ main(void)
 		}
 
 		(void)nxu_close(stream);
-		(void)nxu_exec("/disk/System/Library/CoreServices/nzh", 0);
+		(void)nxu_exec("/Volumes/mainOS/System/Library/CoreServices/nzh", 0);
 		return 3;
 	}
 

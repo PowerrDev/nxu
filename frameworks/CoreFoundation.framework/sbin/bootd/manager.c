@@ -17,7 +17,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define BOOTD_SERVICE_DIRECTORY "/disk/System/Library/BootDaemons"
+#define BOOTD_SERVICE_DIRECTORY "/Volumes/mainOS/System/Library/BootDaemons"
 #define BOOTD_SERVICE_SUFFIX ".plist"
 #define BOOTD_SERVICE_PATH_MAX 256U
 

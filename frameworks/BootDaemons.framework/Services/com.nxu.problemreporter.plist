@@ -4,7 +4,7 @@
 		<key>Label</key>
 		<string>com.nxu.problemreporter</string>
 		<key>Program</key>
-		<string>/disk/System/Library/CoreServices/problemreporter</string>
+		<string>/Volumes/mainOS/System/Library/CoreServices/problemreporter</string>
 		<key>RunAtLoad</key>
 		<true />
 		<key>KeepAlive</key>

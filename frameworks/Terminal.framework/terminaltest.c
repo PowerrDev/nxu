@@ -61,7 +61,7 @@ main(uint64_t argc, const char *const *argv)
 
 		(void)nxu_close(stream);
 		const char *arguments[] = {"terminaltest", "--child", 0};
-		(void)nxu_exec("/disk/System/Library/CoreServices/terminaltest", arguments);
+		(void)nxu_exec("/Volumes/mainOS/System/Library/CoreServices/terminaltest", arguments);
 		return 5;
 	}
 

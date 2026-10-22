@@ -6,10 +6,10 @@
 	<string>com.nxu.patchd</string>
 
 	<key>Program</key>
-	<string>/disk/System/Library/CoreServices/patchd</string>
+	<string>/Volumes/mainOS/System/Library/CoreServices/patchd</string>
 
 	<key>RecoveryProgram</key>
-	<string>/disk/System/Library/CoreServices/patchd.recovery</string>
+	<string>/Volumes/mainOS/System/Library/CoreServices/patchd.recovery</string>
 
 	<key>RunAtLoad</key>
 	<true/>

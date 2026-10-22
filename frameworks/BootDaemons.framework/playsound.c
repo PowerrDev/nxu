@@ -26,7 +26,7 @@
  */
 
 #define PLAYSOUND_CHUNK_FRAMES 1024U
-#define PLAYSOUND_DEFAULT_PATH "/disk/System/Library/Resources/Audio/Boot_Audio.wav"
+#define PLAYSOUND_DEFAULT_PATH "/Volumes/mainOS/System/Library/Resources/Audio/Boot_Audio.wav"
 
 static void
 say(const char *text)

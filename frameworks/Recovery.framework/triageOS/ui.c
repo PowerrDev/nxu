@@ -1076,8 +1076,8 @@ triage_disk_toggle_mount(triage_ui_t *ui)
 		result = recovery_fs_unmount(ui->disk_mount_path);
 		triage_disk_set_status(ui, result < 0 ? "Unable to unmount sevOS System." : "sevOS System unmounted.");
 	} else if (ui->disk_layout.scheme == RECOVERY_BLOCK_LAYOUT_RAW) {
-		result = recovery_fs_mount("ext4", 0U, "/disk");
-		triage_disk_set_status(ui, result < 0 ? "Unable to mount sevOS System." : "sevOS System mounted at /disk.");
+		result = recovery_fs_mount("ext4", 0U, "/Volumes/mainOS");
+		triage_disk_set_status(ui, result < 0 ? "Unable to mount sevOS System." : "sevOS System mounted at /Volumes/mainOS.");
 	} else {
 		uint32_t system_device;
 		if (!triage_device_index(TRIAGE_SYSTEM_DEVICE, &system_device)) {
@@ -1086,8 +1086,8 @@ triage_disk_toggle_mount(triage_ui_t *ui)
 			return;
 		}
 
-		result = recovery_fs_mount("ext4", system_device, "/disk");
-		triage_disk_set_status(ui, result < 0 ? "Unable to mount sevOS System." : "sevOS System mounted at /disk.");
+		result = recovery_fs_mount("ext4", system_device, "/Volumes/mainOS");
+		triage_disk_set_status(ui, result < 0 ? "Unable to mount sevOS System." : "sevOS System mounted at /Volumes/mainOS.");
 	}
 
 	triage_disk_refresh(ui);

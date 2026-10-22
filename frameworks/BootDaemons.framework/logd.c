@@ -16,10 +16,10 @@ logd_stderr(const char *message)
 int
 main(void)
 {
-	int64_t log = nxu_open("/disk/var/log/system.log", NXU_O_WRITE | NXU_O_CREATE | NXU_O_APPEND);
+	int64_t log = nxu_open("/Volumes/mainOS/var/log/system.log", NXU_O_WRITE | NXU_O_CREATE | NXU_O_APPEND);
 
 	if (log < 0) {
-		logd_stderr("logd: unable to open /disk/var/log/system.log\n");
+		logd_stderr("logd: unable to open /Volumes/mainOS/var/log/system.log\n");
 		return 1;
 	}
 

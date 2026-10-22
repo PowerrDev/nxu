@@ -3,8 +3,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define SYSTEM_REPORTS "/disk/Library/Logs/DiagnosticReports/"
-#define USER_REPORTS "/disk/Users/Shared/Library/Logs/DiagnosticReports/"
+#define SYSTEM_REPORTS "/Volumes/mainOS/Library/Logs/DiagnosticReports/"
+#define USER_REPORTS "/Volumes/mainOS/Users/Shared/Library/Logs/DiagnosticReports/"
 #define OUTPUT_SIZE 4096U
 
 static nxu_crash_report_t g_report;

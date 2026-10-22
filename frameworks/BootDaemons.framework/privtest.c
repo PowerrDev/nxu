@@ -18,9 +18,9 @@
  * failed.
  */
 
-#define PRIVTEST_PATH "/disk/System/Library/CoreServices/privtest"
-#define PRIVTEST_FILE "/disk/var/privtest.tmp"
-#define PRIVTEST_DIR "/disk/var/privtest.d"
+#define PRIVTEST_PATH "/Volumes/mainOS/System/Library/CoreServices/privtest"
+#define PRIVTEST_FILE "/Volumes/mainOS/var/privtest.tmp"
+#define PRIVTEST_DIR "/Volumes/mainOS/var/privtest.d"
 
 #define PRIVTEST_PARENT_CAPS (NXU_CAP_FS_WRITE | NXU_CAP_DISPLAY)
 

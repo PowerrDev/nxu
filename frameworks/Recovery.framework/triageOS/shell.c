@@ -986,7 +986,7 @@ shell_mount_system_volume(void)
 	uint32_t device;
 	if (!shell_device_index("disk0p2", &device)) return -(int64_t)RECOVERY_ERROR_NOT_FOUND;
 
-	return recovery_fs_mount("ext4", device, "/disk");
+	return recovery_fs_mount("ext4", device, "/Volumes/mainOS");
 }
 
 static bool
@@ -994,9 +994,9 @@ shell_protected_path(const char *path)
 {
 	return shell_equal(path, "/") || shell_equal(path, "/System") || shell_prefix(path, "/System/") ||
 		   shell_equal(path, "/init") || shell_prefix(path, "/init/") || shell_equal(path, "/recovery") ||
-		   shell_prefix(path, "/recovery/") || shell_equal(path, "/disk") || shell_equal(path, "/disk/System") ||
-		   shell_prefix(path, "/disk/System/") || shell_equal(path, "/disk/Library") ||
-		   shell_prefix(path, "/disk/Library/") || shell_equal(path, "/disk/init") || shell_prefix(path, "/disk/init/");
+		   shell_prefix(path, "/recovery/") || shell_equal(path, "/Volumes/mainOS") || shell_equal(path, "/Volumes/mainOS/System") ||
+		   shell_prefix(path, "/Volumes/mainOS/System/") || shell_equal(path, "/Volumes/mainOS/Library") ||
+		   shell_prefix(path, "/Volumes/mainOS/Library/") || shell_equal(path, "/Volumes/mainOS/init") || shell_prefix(path, "/Volumes/mainOS/init/");
 }
 
 /* Create each missing component, matching mkdir -p in the normal userspace. */
@@ -1456,7 +1456,7 @@ triage_shell_execute(triage_shell_t *shell, const char *command)
 		shell_write(shell, "restoring system files...");
 		int64_t result = shell_mount_system_volume();
 		if (result >= 0) {
-			result = recovery_fs_copy("/recovery/System/Recovery/BaseSystem/launchd", "/disk/init/launchd");
+			result = recovery_fs_copy("/recovery/System/Recovery/BaseSystem/launchd", "/Volumes/mainOS/init/launchd");
 		}
 
 		if (result >= 0) {

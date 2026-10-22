@@ -6,7 +6,7 @@
 	<string>com.nxu.dock</string>
 
 	<key>Program</key>
-	<string>/disk/System/Library/CoreServices/Dock.app/Contents/SevOS/Dock</string>
+	<string>/Volumes/mainOS/System/Library/CoreServices/Dock.app/Contents/SevOS/Dock</string>
 
 	<key>RunAtLoad</key>
 	<true/>

@@ -1329,7 +1329,7 @@ case_top(void)
 
 	if (pid == 0) {
 		const char *argv[] = {"top", "--once", "--plain", 0};
-		(void)nxu_exec("/disk/System/Library/CoreServices/top", argv);
+		(void)nxu_exec("/Volumes/mainOS/System/Library/CoreServices/top", argv);
 		(void)nxu_exit(1ULL);
 	}
 

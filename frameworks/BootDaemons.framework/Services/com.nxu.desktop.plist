@@ -6,7 +6,7 @@
     <string>com.nxu.desktop</string>
 
     <key>Program</key>
-    <string>/disk/System/Library/CoreServices/desktop_service</string>
+    <string>/Volumes/mainOS/System/Library/CoreServices/desktop_service</string>
 
     <key>RunAtLoad</key>
     <true/>

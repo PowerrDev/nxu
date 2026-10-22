@@ -13,7 +13,7 @@
 
 #define PROCTEST_WAIT_SPINS 2000000U
 #define PROCTEST_MMAP_BYTES (16ULL * 1024ULL * 1024ULL)
-#define PROCTEST_EXEC_PATH "/disk/System/Library/CoreServices/execchild"
+#define PROCTEST_EXEC_PATH "/Volumes/mainOS/System/Library/CoreServices/execchild"
 #define PROCTEST_EXEC_STATUS 31
 
 #define SHARED_CHILD_READY 0U
@@ -232,7 +232,7 @@ main(void)
 		if (status == 99ULL) return fail(22, "exec returned");
 		if (status != (uint64_t)PROCTEST_EXEC_STATUS) return fail(23, "exec'd program reported the wrong status");
 
-		if (nxu_exec("/disk/System/Library/CoreServices/no-such-program", 0) != -NXU_SYS_E_NOT_FOUND)
+		if (nxu_exec("/Volumes/mainOS/System/Library/CoreServices/no-such-program", 0) != -NXU_SYS_E_NOT_FOUND)
 			return fail(24, "exec of a missing file did not fail cleanly");
 	}
 
@@ -494,10 +494,10 @@ main(void)
 	 */
 	{
 		if (nxu_get_caps() != 0) return fail(86, "a process the kernel started holds capabilities");
-		if (nxu_open("/disk/var/proctest.tmp", NXU_O_WRITE | NXU_O_CREATE) != -NXU_SYS_E_DENIED)
+		if (nxu_open("/Volumes/mainOS/var/proctest.tmp", NXU_O_WRITE | NXU_O_CREATE) != -NXU_SYS_E_DENIED)
 			return fail(87, "open for write was not refused");
-		if (nxu_unlink("/disk/var/proctest.tmp") != -NXU_SYS_E_DENIED) return fail(88, "unlink was not refused");
-		if (nxu_mkdir("/disk/var/proctest.d") != -NXU_SYS_E_DENIED) return fail(89, "mkdir was not refused");
+		if (nxu_unlink("/Volumes/mainOS/var/proctest.tmp") != -NXU_SYS_E_DENIED) return fail(88, "unlink was not refused");
+		if (nxu_mkdir("/Volumes/mainOS/var/proctest.d") != -NXU_SYS_E_DENIED) return fail(89, "mkdir was not refused");
 		if (nxu_display_claim() != -NXU_SYS_E_DENIED) return fail(90, "display_claim was not refused");
 		if (nxu_system_reset() != -NXU_SYS_E_DENIED) return fail(91, "system_reset was not refused");
 
