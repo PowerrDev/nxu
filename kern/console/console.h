@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/console/console.h
+ *
+ * Declares the kernel console console interfaces and data structures.
+ */
 #ifndef NXU_KERN_CONSOLE_H
 #define NXU_KERN_CONSOLE_H
 
@@ -51,8 +59,8 @@ int kvprintf(const char *format, va_list arguments);
  * Two tiers of boot output. kprintf() is the milestone log: what happened
  * and whether it passed, one fact per line, prefixed with the function that
  * printed it. kverbosef() is the detail behind it -- register values, per-slot
- * tables, allocator statistics -- enabled by default. log.verbose=0 selects
- * milestones; -v explicitly enables detail. Both take the same formats.
+ * tables, allocator statistics -- disabled by default. -v or log.verbose=1
+ * explicitly enables detail. Both take the same formats.
  */
 void kconsole_set_verbose(bool verbose);
 bool kconsole_verbose(void);

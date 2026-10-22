@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/console/bootlog.h
+ *
+ * Declares the kernel console bootlog interfaces and data structures.
+ */
 #ifndef NXU_KERN_BOOTLOG_H
 #define NXU_KERN_BOOTLOG_H
 

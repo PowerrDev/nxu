@@ -11,7 +11,7 @@
  * The suite is staged because some checks are only meaningful at a
  * particular moment: the allocator tests assert exact address reuse, so
  * they must run on a fresh heap before any driver has allocated from it,
- * and the storage tests need /disk mounted. Boot calls kernel_do_post()
+ * and the storage tests need /Volumes/mainOS mounted. Boot calls kernel_do_post()
  * once as each stage's prerequisites come up.
  */
 
@@ -31,7 +31,7 @@ typedef enum {
 	 */
 	KERNEL_POST_CORE,
 
-	/* Raw block read and the writable ext4 test. Needs /disk mounted. */
+	/* Raw block read and the writable ext4 test. Needs /Volumes/mainOS mounted. */
 	KERNEL_POST_STORAGE
 } kernel_post_stage_t;
 

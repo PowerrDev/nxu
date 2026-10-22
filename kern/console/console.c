@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/console/console.c
+ *
+ * Implements the kernel console output and input interfaces.
+ */
 #include <kern/console/console.h>
 
 #include <kern/lock.h>
@@ -27,7 +35,7 @@ static uint32_t g_kconsole_history_head;
 static uint32_t g_kconsole_history_count;
 static uint64_t g_kconsole_history_sequence;
 static bool g_kconsole_line_start = true;
-static bool g_kconsole_verbose = true;
+static bool g_kconsole_verbose;
 static bool g_kconsole_clock_started;
 static uint64_t g_kconsole_boot_ticks;
 static uint64_t g_kconsole_counter_frequency;
@@ -61,9 +69,9 @@ kconsole_register_sink(kconsole_sink_t sink, void *context, bool replay_history)
 
 		if (g_kconsole_sinks[index].sink == sink && g_kconsole_sinks[index].context == context) return false;
 	}
-
 	for (uint32_t index = 0U; index < KCONSOLE_MAX_SINKS; index++) {
 		if (g_kconsole_sinks[index].active) continue;
+
 		g_kconsole_sinks[index].sink = sink;
 		g_kconsole_sinks[index].context = context;
 		g_kconsole_sinks[index].active = true;
@@ -83,6 +91,7 @@ kconsole_unregister_sink(kconsole_sink_t sink, void *context)
 		if (!g_kconsole_sinks[index].active) continue;
 
 		if (g_kconsole_sinks[index].sink != sink || g_kconsole_sinks[index].context != context) continue;
+
 		g_kconsole_sinks[index].active = false;
 		g_kconsole_sinks[index].sink = 0;
 		g_kconsole_sinks[index].context = 0;
@@ -103,6 +112,7 @@ kconsole_emit_raw(char character)
 
 	for (uint32_t index = 0U; index < KCONSOLE_MAX_SINKS; index++) {
 		if (!g_kconsole_sinks[index].active) continue;
+
 		g_kconsole_sinks[index].sink(character, g_kconsole_sinks[index].context);
 	}
 
@@ -154,7 +164,9 @@ uint64_t
 kconsole_uptime_us(void)
 {
 	if (!g_kconsole_clock_started) return 0ULL;
+
 	if (g_kconsole_counter_frequency == 0ULL) g_kconsole_counter_frequency = timer_get_frequency();
+
 	if (g_kconsole_counter_frequency == 0ULL) return 0ULL;
 
 	uint64_t elapsed = timer_get_ticks() - g_kconsole_boot_ticks;
@@ -244,6 +256,7 @@ void
 kputhex_digit(uint8_t value)
 {
 	if (value > 15U) return;
+
 	kputc(value < 10U ? (char)('0' + value) : (char)('A' + value - 10U));
 }
 
@@ -295,7 +308,6 @@ kputu64(uint64_t value)
 		digits[length++] = (char)('0' + value % 10ULL);
 		value /= 10ULL;
 	}
-
 	while (length != 0U)
 		kputc(digits[--length]);
 }
@@ -309,6 +321,7 @@ kputi64(int64_t value)
 		kputu64(magnitude);
 		return;
 	}
+
 	kputu64((uint64_t)value);
 }
 
@@ -337,6 +350,7 @@ static int
 kprintf_signed(int64_t value)
 {
 	if (value >= 0) return kprintf_unsigned((uint64_t)value, 10U, false);
+
 	kputc('-');
 	uint64_t magnitude = (uint64_t)(-(value + 1LL)) + 1ULL;
 	return 1 + kprintf_unsigned(magnitude, 10U, false);
@@ -378,6 +392,7 @@ kvprintf(const char *format, va_list arguments)
 
 		char conversion = *format;
 		if (conversion == '\0') break;
+
 		format++;
 
 		switch (conversion) {
@@ -433,6 +448,7 @@ kvprintf(const char *format, va_list arguments)
 			written += 2;
 			break;
 		}
+
 	}
 
 	return written;
@@ -486,6 +502,7 @@ bool
 kconsole_history_read(uint64_t *cursor, char *buffer, uint64_t capacity, uint64_t *read_size)
 {
 	if (cursor == 0 || read_size == 0) return false;
+
 	if (capacity != 0ULL && buffer == 0) return false;
 
 	*read_size = 0ULL;
@@ -494,6 +511,7 @@ kconsole_history_read(uint64_t *cursor, char *buffer, uint64_t capacity, uint64_
 	uint64_t oldest = sequence > retained ? sequence - retained : 0ULL;
 
 	if (*cursor < oldest) *cursor = oldest;
+
 	if (*cursor > sequence) *cursor = sequence;
 
 	uint64_t available = sequence - *cursor;

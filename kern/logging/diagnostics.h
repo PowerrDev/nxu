@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/logging/diagnostics.h
+ *
+ * Declares the kernel logging diagnostics interfaces and data structures.
+ */
 #ifndef NXU_DIAGNOSTICS_H
 #define NXU_DIAGNOSTICS_H
 #include <kern/syscall/syscall.h>

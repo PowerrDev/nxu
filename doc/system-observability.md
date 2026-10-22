@@ -146,7 +146,7 @@ validation behavior.
 ## Terminal top
 
 Both architectures build `top` and stage it at
-`/System/Library/CoreServices/top` (under `/disk` in the mounted development image).
+`/System/Library/CoreServices/top` (under `/Volumes/mainOS` in the mounted development image).
 It samples once per second, displays per-core CPU usage/queue depth/events,
 physical memory, VirtIO totals, and processes sorted by CPU usage. Rows join
 memory data by unique ID. CPU usage counts 100% per core, so a process using

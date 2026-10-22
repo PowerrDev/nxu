@@ -104,7 +104,6 @@ post_test_vfs(void)
 	for (uint64_t index = 0ULL; index < message_size; index++) {
 		if (buffer[index] != g_vfs_test_message[index]) goto fail_close;
 	}
-
 	if (vfs_close(filedesc, descriptor) != VFS_STATUS_OK) return false;
 
 	vnode_t vnode;
@@ -189,7 +188,6 @@ post_test_vm_kern(void)
 			goto cleanup;
 		}
 	}
-
 	if (!vm_kern_allocate(KERNEL_VM_KERN_TEST_B_SIZE, VMM_PROTECTION_READ_WRITE, &allocation_b)) {
 		goto cleanup;
 	}
@@ -237,27 +235,19 @@ post_test_small_heap(void)
 	void *allocation_b = kmalloc(200U);
 	void *allocation_c = kcalloc(32U, 8U);
 
-	if (allocation_a == 0 || allocation_b == 0 || allocation_c == 0) {
-		return false;
-	}
+	if (allocation_a == 0 || allocation_b == 0 || allocation_c == 0) return false;
 
 	kverbosef("post_test_small_heap: allocation A at %p\n", allocation_a);
 	kverbosef("post_test_small_heap: allocation B at %p\n", allocation_b);
 	kverbosef("post_test_small_heap: allocation C at %p\n", allocation_c);
 
-	if (!kfree(allocation_b)) {
-		return false;
-	}
+	if (!kfree(allocation_b)) return false;
 
 	void *reused_allocation = kmalloc(128U);
 
-	if (reused_allocation == 0 || reused_allocation != allocation_b) {
-		return false;
-	}
+	if (reused_allocation == 0 || reused_allocation != allocation_b) return false;
 
-	if (!kfree(allocation_a) || !kfree(allocation_c) || !kfree(reused_allocation)) {
-		return false;
-	}
+	if (!kfree(allocation_a) || !kfree(allocation_c) || !kfree(reused_allocation)) return false;
 
 	return true;
 }
@@ -267,9 +257,7 @@ post_test_large_heap(void)
 {
 	void *large_allocation = kmalloc(KERNEL_HEAP_LARGE_TEST_SIZE);
 
-	if (large_allocation == 0 || !vm_kern_contains(large_allocation)) {
-		return false;
-	}
+	if (large_allocation == 0 || !vm_kern_contains(large_allocation)) return false;
 
 	uint8_t *large_bytes = (uint8_t *)large_allocation;
 
@@ -288,7 +276,6 @@ post_test_large_heap(void)
 			large_bytes[last_offset] = (uint8_t)(KERNEL_HEAP_LARGE_TEST_VALUE + page + 16ULL);
 		}
 	}
-
 	for (uint64_t page = 0ULL; page < page_count; page++) {
 		uint64_t first_offset = page * PMM_PAGE_SIZE;
 
@@ -303,15 +290,14 @@ post_test_large_heap(void)
 			large_bytes[last_offset] != (uint8_t)(KERNEL_HEAP_LARGE_TEST_VALUE + page + 16ULL)) {
 			return false;
 		}
+
 	}
 
 	kverbosef("post_test_large_heap: large allocation at %p\n", large_allocation);
 
 	heap_dump();
 
-	if (!kfree(large_allocation)) {
-		return false;
-	}
+	if (!kfree(large_allocation)) return false;
 
 	return !kfree(large_allocation);
 }
@@ -335,9 +321,7 @@ post_memory(void)
 {
 	kputln("post_test_vm_kern: testing virtual allocations");
 
-	if (!post_test_vm_kern()) {
-		return post_fail("post_test_vm_kern: allocation test failed");
-	}
+	if (!post_test_vm_kern()) return post_fail("post_test_vm_kern: allocation test failed");
 
 	kputln("post_test_vm_kern: allocation test passed");
 	vm_kern_dump();
@@ -368,9 +352,7 @@ post_core(void)
 {
 	/* NXPC kernel message transport, shared memory and mmap. */
 
-	if (!ipc_self_test()) {
-		return post_fail(NXPC_LOG_PREFIX "kernel transport self-test failed");
-	}
+	if (!ipc_self_test()) return post_fail(NXPC_LOG_PREFIX "kernel transport self-test failed");
 
 	if (!ipc_space_self_test()) {
 		return post_fail(NXPC_LOG_PREFIX "per-process name table self-test failed");
@@ -378,25 +360,17 @@ post_core(void)
 
 	kputln(NXPC_LOG_PREFIX "kernel transport ready");
 
-	if (!vm_shm_self_test()) {
-		return post_fail("vm_shm: self-test failed");
-	}
+	if (!vm_shm_self_test()) return post_fail("vm_shm: self-test failed");
 
-	if (!shm_registry_self_test()) {
-		return post_fail("shm_registry: self-test failed");
-	}
+	if (!shm_registry_self_test()) return post_fail("shm_registry: self-test failed");
 
 	if (!statistics_self_test()) return post_fail("statistics: self-test failed");
 
-	if (!vm_map_self_test()) {
-		return post_fail("vm_map: self-test failed");
-	}
+	if (!vm_map_self_test()) return post_fail("vm_map: self-test failed");
 
 	/* Checksums. */
 
-	if (!post_test_crc32c()) {
-		return post_fail("NXU_CRC32C_Checksum: self-test failed");
-	}
+	if (!post_test_crc32c()) return post_fail("NXU_CRC32C_Checksum: self-test failed");
 
 	kputln("NXU_CRC32C_Checksum: self-test passed");
 
@@ -444,9 +418,7 @@ post_core(void)
 		return post_fail("sched_thread_start: context-switch test thread start failed");
 	}
 
-	if (!sched_yield()) {
-		return post_fail("sched_yield: context-switch test dispatch failed");
-	}
+	if (!sched_yield()) return post_fail("sched_yield: context-switch test dispatch failed");
 
 	if (g_sched_context_test_stage != 1U || current_thread() != sched_bootstrap_thread()) {
 		return post_fail("sched_bootstrap_thread: AArch64 context-switch test failed");

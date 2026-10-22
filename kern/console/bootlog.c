@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/console/bootlog.c
+ *
+ * Records and displays kernel messages produced during boot.
+ */
 #include <kern/console/bootlog.h>
 
 #include <kern/arm64/system.h>

@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/console/ioregistry.c
+ *
+ * Maintains the kernel I/O registry used to publish device information.
+ */
 #include <kern/console/ioregistry.h>
 #include <kern/console/console.h>
 
@@ -55,6 +63,7 @@ static void
 ioreg_bootstrap(void)
 {
 	if (g_ioreg_count != 0U) return;
+
 	(void)ioreg_add_raw(IOREG_INVALID, "Root", "IORegistryEntry");
 }
 
@@ -62,6 +71,7 @@ ioreg_id_t
 ioreg_add(ioreg_id_t parent, const char *name, const char *class_name)
 {
 	if (name == 0 || class_name == 0) return IOREG_INVALID;
+
 	ioreg_bootstrap();
 	return ioreg_add_raw(parent, name, class_name);
 }

@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/console/font8x16.h
+ *
+ * Declares the bitmap data and dimensions for the kernel console font.
+ */
 #ifndef NXU_KERN_CONSOLE_FONT8X16_H
 #define NXU_KERN_CONSOLE_FONT8X16_H
 

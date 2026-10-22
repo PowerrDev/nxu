@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/console/font8x16.c
+ *
+ * Provides the bitmap data for the kernel 8 by 16 console font.
+ */
 #include <kern/console/font8x16.h>
 
 const uint8_t g_font8x16[256U * FONT8X16_HEIGHT] = {

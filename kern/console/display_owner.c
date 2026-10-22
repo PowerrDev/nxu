@@ -1,9 +1,17 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/console/display_owner.c
+ *
+ * Tracks display ownership and enforces trusted display access.
+ */
 #include <kern/console/display_owner.h>
 #include <kern/lock.h>
 #include <kern/process/signal.h>
 #include <kern/syscall/syscall_defs.h>
 #include <libk/string.h>
-#include <drivers/video/ui_service_bridge.h>
+#include <drivers/video/ui_session_manager.h>
 
 static nxu_spinlock_t g_owner_lock;
 static proc_ident_t g_owner;
@@ -20,6 +28,7 @@ display_owner_claim(proc_id_t pid)
 {
 	proc_t proc = proc_find(pid);
 	if (!proc || pid == PROC_PID_KERNEL || (proc->p_flag & PROC_FLAG_EXITING)) return false;
+
 	uint64_t irq = nxu_spin_lock_irqsave(&g_owner_lock);
 	bool allowed = g_owner.pid == PROC_PID_KERNEL || same(g_owner, proc->p_ident);
 	if (allowed) g_owner = proc->p_ident;

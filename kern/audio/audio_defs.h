@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/audio/audio_defs.h
+ *
+ * Defines the kernel audio ABI data structures and constants.
+ */
 #ifndef NXU_KERN_AUDIO_AUDIO_DEFS_H
 #define NXU_KERN_AUDIO_AUDIO_DEFS_H
 

@@ -65,9 +65,9 @@ implemented.
 Boot output comes in two tiers. `kprintf()` is the milestone log: what
 happened and whether it passed, one fact per line, prefixed with the function
 that printed it (`kern_test_live_vmm: live page mapping test passed`).
-`kverbosef()` takes the same formats and is enabled by default, including
-before boot arguments are parsed. `log.verbose=0` selects milestone output;
-`-v` explicitly enables detail. Default verbose boots also expose `-v` to
+`kverbosef()` takes the same formats and is disabled by default, including
+before boot arguments are parsed. `-v` or `log.verbose=1` explicitly enables
+detail; `log.verbose=0` selects milestone output. Verbose boots expose `-v` to
 userland services.
 
 The diagnostic thread prints actual CPU/scheduler, interrupt/fault, physical

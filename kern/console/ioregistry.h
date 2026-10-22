@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/console/ioregistry.h
+ *
+ * Declares the kernel console ioregistry interfaces and data structures.
+ */
 #ifndef NXU_KERN_CONSOLE_IOREGISTRY_H
 #define NXU_KERN_CONSOLE_IOREGISTRY_H
 
