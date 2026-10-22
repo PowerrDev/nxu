@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/boot/splash.h
+ *
+ * Declares the kernel boot splash interfaces and data structures.
+ */
 #ifndef NXU_KERN_BOOT_SPLASH_H
 #define NXU_KERN_BOOT_SPLASH_H
 

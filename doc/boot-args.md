@@ -19,11 +19,19 @@ arguments and `nvram_set()` returns `NVRAM_STATUS_READ_ONLY`.
 A future firmware-backed implementation can replace this backend without
 changing boot-argument consumers.
 
+`nzh` includes `nvram` to inspect the current `boot-args` value. An assignment
+such as `nvram boot-args="-v"` explains how to pass that value on the next QEMU
+launch; it cannot persist it from inside the guest while the firmware backend
+is read-only.
+
 ## Supported arguments
 
-- Verbose output is enabled by default. `-v` explicitly enables it and is
-  appended to default verbose boot arguments for userland services.
-- `log.verbose=0` selects quiet milestone output (unless `-v` is supplied).
+- Verbose output is disabled by default. `-v` explicitly enables it and is
+  passed through to userland services. `log.verbose=1` also enables detail;
+  `log.verbose=0` keeps milestone output only.
+- `proc.max=N` requests a process table limit, bounded by available memory and
+  the kernel's 256-process storage ceiling. The default scales with configured
+  CPUs and available memory.
 - `log.stats_ms=N` sets recurring real kernel snapshot frequency in milliseconds
   (default 1000, clamped to 250–60000; 0 disables snapshots).
 - `log.trace=0` disables individual syscall traces; interval call/error counts
@@ -44,7 +52,9 @@ changing boot-argument consumers.
   at `/Volumes/Recovery` for NSW preparation. It cannot remount a device
   already in use.
 - `dyrld.aslr=0` disables runtime framework sliding for developer tests.
-  The default is 1 and requires randomness from tepOS for dynamic launches.
+  The default is 1 and uses randomness from tepOS when an enclave mailbox is
+  available. Machines without a mailbox use fixed framework slides; if a
+  mailbox is present but tepOS is unavailable, dynamic launches fail closed.
 
 The parser also supports `name=value` tokens for later kernel tunables.
 
@@ -66,15 +76,6 @@ Normal desktop boot also sets `log.trace=0 log.stats_ms=0` to avoid continuous
 syscall traces and diagnostic snapshots feeding logd. Ordinary logs and crash
 reports remain enabled. For debugging, use
 `make run BOOT_ARGS="log.trace=1 log.stats_ms=1000"`.
-
-Run the production check against the desktop kernel:
-
-```sh
-python3 tools/check_gui_trusted.py --production --kernel BUILD/desktop/kernel.bin
-```
-
-It checks normal jobs, authentication, SAP, Dock app launches and crash reporting.
-Add `--restart` to exercise compositor recovery.
 
 The dynamic desktop reads `ui.scale=1000` as 1× and `ui.scale=2000` as 2×.
 Values from 500 through 4000 are accepted; invalid values use 1000. Scaling

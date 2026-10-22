@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/boot/nvram.c
+ *
+ * Reads and updates boot variables stored in NVRAM.
+ */
 #include <kern/boot/nvram.h>
 
 #include <string.h>
@@ -39,6 +47,7 @@ nvram_bootstrap(const dtb_t *dtb)
 		uint32_t copy_length = length;
 
 		if (copy_length != 0U && source[copy_length - 1U] == '\0') copy_length--;
+
 		if (copy_length > NVRAM_VALUE_MAX) copy_length = NVRAM_VALUE_MAX;
 
 		memcpy(g_nvram.boot_args, source, copy_length);
@@ -49,6 +58,7 @@ nvram_bootstrap(const dtb_t *dtb)
 	g_nvram.initialized = true;
 	return true;
 }
+
 #else
 bool
 nvram_bootstrap_bootargs(const char *bootargs)
@@ -67,14 +77,18 @@ nvram_bootstrap_bootargs(const char *bootargs)
 	g_nvram.initialized = true;
 	return true;
 }
+
 #endif
 
 nvram_status_t
 nvram_get(const char *name, char *value, uint32_t capacity, uint32_t *length)
 {
 	if (length != 0) *length = 0U;
+
 	if (!g_nvram.initialized || name == 0 || value == 0 || length == 0 || capacity == 0U) return NVRAM_STATUS_INVALID;
+
 	if (strcmp(name, NVRAM_BOOT_ARGS_NAME) != 0) return NVRAM_STATUS_NOT_FOUND;
+
 	if (capacity <= g_nvram.boot_args_length) return NVRAM_STATUS_NO_SPACE;
 
 	memcpy(value, g_nvram.boot_args, g_nvram.boot_args_length + 1U);
@@ -86,8 +100,11 @@ nvram_status_t
 nvram_set(const char *name, const char *value)
 {
 	if (!g_nvram.initialized || name == 0 || value == 0) return NVRAM_STATUS_INVALID;
+
 	if (strcmp(name, NVRAM_BOOT_ARGS_NAME) != 0) return NVRAM_STATUS_NOT_FOUND;
+
 	if (nvram_string_length_bounded(value, NVRAM_VALUE_MAX + 1U) > NVRAM_VALUE_MAX) return NVRAM_STATUS_NO_SPACE;
+
 	return NVRAM_STATUS_READ_ONLY;
 }
 
@@ -120,4 +137,5 @@ nvram_status_name(nvram_status_t status)
 	default:
 		return "unknown";
 	}
+
 }

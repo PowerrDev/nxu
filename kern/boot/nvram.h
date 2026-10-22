@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/boot/nvram.h
+ *
+ * Declares boot variable and NVRAM access interfaces.
+ */
 #ifndef NXU_KERN_BOOT_NVRAM_H
 #define NXU_KERN_BOOT_NVRAM_H
 

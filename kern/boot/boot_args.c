@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/boot/boot_args.c
+ *
+ * Parses and exposes boot arguments supplied by the boot environment.
+ */
 #include <kern/boot/boot_args.h>
 
 #include <kern/boot/nvram.h>
@@ -19,6 +27,7 @@ boot_arg_string_length(const char *string)
 {
 	uint32_t length = 0U;
 	if (string == 0) return 0U;
+
 	while (string[length] != '\0')
 		length++;
 	return length;
@@ -82,6 +91,7 @@ bool
 boot_args_append(const char *argument)
 {
 	if (!g_boot_args_initialized || argument == 0 || argument[0] == '\0') return false;
+
 	if (boot_arg_present(argument)) return true;
 
 	uint32_t length = boot_arg_string_length(g_boot_args);
@@ -117,10 +127,12 @@ boot_arg_value(const char *name, char *value, uint32_t capacity)
 		if (token_length > name_length && token[name_length] == '=' && memcmp(token, name, name_length) == 0) {
 			uint32_t result_length = token_length - name_length - 1U;
 			if (result_length + 1U > capacity) return false;
+
 			memcpy(value, token + name_length + 1U, result_length);
 			value[result_length] = '\0';
 			return true;
 		}
+
 	}
 
 	return false;
@@ -131,8 +143,11 @@ boot_arg_bool(const char *name, bool default_value)
 {
 	char value[8];
 	if (!boot_arg_value(name, value, sizeof(value))) return default_value;
+
 	if (strcmp(value, "1") == 0 || strcmp(value, "true") == 0 || strcmp(value, "yes") == 0) return true;
+
 	if (strcmp(value, "0") == 0 || strcmp(value, "false") == 0 || strcmp(value, "no") == 0) return false;
+
 	return default_value;
 }
 
@@ -146,6 +161,7 @@ boot_arg_uint32(const char *name, uint32_t default_value)
 	for (uint32_t index = 0U; value[index] != '\0'; index++) {
 		char character = value[index];
 		if (character < '0' || character > '9') return default_value;
+
 		result = result * 10U + (uint32_t)(character - '0');
 	}
 
@@ -155,7 +171,7 @@ boot_arg_uint32(const char *name, uint32_t default_value)
 bool
 boot_args_verbose(void)
 {
-	return boot_arg_present("-v") || boot_arg_bool("log.verbose", true);
+	return boot_arg_present("-v") || boot_arg_bool("log.verbose", false);
 }
 
 bool
@@ -183,6 +199,7 @@ boot_args_component_disabled(boot_component_t component)
 	default:
 		return false;
 	}
+
 }
 
 void

@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/boot/boot_args.h
+ *
+ * Declares boot argument parsing and lookup interfaces.
+ */
 #ifndef NXU_KERN_BOOT_BOOT_ARGS_H
 #define NXU_KERN_BOOT_BOOT_ARGS_H
 

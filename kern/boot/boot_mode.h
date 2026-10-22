@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/boot/boot_mode.h
+ *
+ * Declares the kernel boot boot mode interfaces and data structures.
+ */
 #ifndef NXU_KERN_BOOT_MODE_H
 #define NXU_KERN_BOOT_MODE_H
 

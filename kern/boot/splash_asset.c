@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/boot/splash_asset.c
+ *
+ * Provides the embedded boot splash image and its dimensions.
+ */
 #include <kern/boot/splash_asset.h>
 
 const uint32_t g_boot_splash_width = 128U;

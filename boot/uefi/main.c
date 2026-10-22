@@ -1,4 +1,13 @@
-/* NxuBoot: x64 UEFI loader for NXU's existing ELF32/Multiboot kernel. */
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File: boot/uefi/main.c
+ *
+ * NxuBoot is basically an x64 UEFI loader for NXU's existing ELF32/Multiboot kernel. It is currently
+ * only supported in the i386 architecture (with plans for ARM64 soon).
+ *
+*/
 
 #include "efi.h"
 #include <boot/handoff.h>

@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/boot/boot_chime.c
+ *
+ * Schedules and plays the boot chime after display startup.
+ */
 #include <kern/boot/boot_chime.h>
 
 #include <drivers/virtio/virtio_sound.h>
@@ -285,7 +293,6 @@ boot_chime_play(void)
 
 		frame += got;
 	}
-
 	if (ok && (status = vfs_ioctl(filedesc, descriptor, NXU_AUDIO_DRAIN, 0)) != VFS_STATUS_OK) {
 		BOOT_CHIME_LOG("drain failed: %s\n", vfs_status_name(status));
 		ok = false;

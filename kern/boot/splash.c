@@ -125,6 +125,7 @@ boot_splash_blend(uint32_t destination, uint32_t source)
 {
 	uint32_t alpha = source >> 24U;
 	if (alpha == 0U) return destination;
+
 	if (alpha == 255U) return source & 0x00FFFFFFU;
 
 	uint32_t inverse = 255U - alpha;
@@ -151,6 +152,7 @@ static bool
 boot_splash_bar_rect(uint32_t *left, uint32_t *top)
 {
 	if (g_display == 0 || left == 0 || top == 0) return false;
+
 	uint32_t scaled_height = g_boot_splash_height * g_scale;
 	uint32_t center_x = g_display->width / 2U;
 	uint32_t bar_top = g_top + scaled_height + BOOT_SPLASH_BAR_GAP;
@@ -168,9 +170,11 @@ boot_splash_status_rect(uint32_t *top)
 	uint32_t left;
 	uint32_t bar_top;
 	if (top == 0 || !boot_splash_bar_rect(&left, &bar_top)) return false;
+
 	(void)left;
 	uint32_t status_top = bar_top + BOOT_SPLASH_BAR_HEIGHT + BOOT_SPLASH_STATUS_GAP;
 	if (g_display == 0 || status_top + BOOT_SPLASH_STATUS_HEIGHT > g_display->height) return false;
+
 	*top = status_top;
 	return true;
 }
@@ -198,6 +202,7 @@ static bool
 boot_splash_paint_status(void)
 {
 	if (!g_status_active || g_display == 0) return false;
+
 	uint32_t top;
 	if (!boot_splash_status_rect(&top)) return false;
 
@@ -255,6 +260,7 @@ boot_splash_set_status(const char *status)
 	g_status_active = true;
 
 	if (!boot_splash_paint_status()) return false;
+
 	return display_present(g_display, 0U, top, g_display->width, BOOT_SPLASH_STATUS_HEIGHT);
 }
 
@@ -267,6 +273,7 @@ boot_splash_paint_bar(void)
 	uint32_t left;
 	uint32_t top;
 	if (!boot_splash_bar_rect(&left, &top)) return false;
+
 	uint32_t filled = (BOOT_SPLASH_BAR_WIDTH * g_progress) / BOOT_SPLASH_PROGRESS_MAX;
 	if (filled > BOOT_SPLASH_BAR_WIDTH) filled = BOOT_SPLASH_BAR_WIDTH;
 
@@ -296,6 +303,7 @@ boot_splash_draw_bar(void)
 	uint32_t left;
 	uint32_t top;
 	if (!boot_splash_bar_rect(&left, &top)) return false;
+
 	if (!boot_splash_paint_bar()) return false;
 
 	return display_present(g_display, left, top, BOOT_SPLASH_BAR_WIDTH, BOOT_SPLASH_BAR_HEIGHT);
@@ -318,6 +326,7 @@ boot_splash_paint_logo(void)
 		for (uint32_t source_x = 0U; source_x < g_boot_splash_width; source_x++) {
 			uint32_t source = g_boot_splash_pixels[(uint64_t)source_y * g_boot_splash_width + source_x];
 			if ((source >> 24U) == 0U) continue;
+
 			uint32_t destination_x = g_left + source_x * g_scale;
 			uint32_t destination_y = g_top + source_y * g_scale;
 
@@ -409,10 +418,12 @@ boot_splash_text_draw_char(uint32_t column, uint32_t row, char character)
 	for (uint32_t glyph_row = 0U; glyph_row < FONT8X16_HEIGHT; glyph_row++) {
 		uint8_t bits = glyph[glyph_row];
 		if (bits == 0U) continue;
+
 		uint32_t *pixels = g_display->framebuffer + (uint64_t)(start_y + glyph_row) * g_display->stride + start_x;
 
 		for (uint32_t column_bit = 0U; column_bit < FONT8X16_WIDTH; column_bit++) {
 			if ((bits & (1U << column_bit)) == 0U) continue;
+
 			pixels[column_bit] = BOOT_SPLASH_TEXT_COLOR;
 		}
 	}
@@ -429,6 +440,7 @@ boot_splash_text_render_row(uint32_t row)
 	const char *cells = g_text_cells[(g_text_top + row) % g_text_rows];
 	for (uint32_t column = 0U; column < g_text_columns; column++) {
 		if (cells[column] == '\0' || cells[column] == ' ') continue;
+
 		boot_splash_text_draw_char(column, row, cells[column]);
 	}
 }
@@ -443,6 +455,7 @@ boot_splash_text_render(void)
 {
 	for (uint32_t row = 0U; row < g_text_rows; row++) {
 		if (!g_text_all_dirty && !g_text_row_dirty[row]) continue;
+
 		boot_splash_text_render_row(row);
 		g_text_row_dirty[row] = false;
 	}
@@ -490,6 +503,7 @@ boot_splash_text_flush(void)
 		if (g_text_last_present_ticks != 0ULL && now - g_text_last_present_ticks < interval) {
 			return true;
 		}
+
 		g_text_last_present_ticks = now;
 	}
 
@@ -555,6 +569,7 @@ boot_splash_text_putc(char character, void *context)
 	}
 
 	if (g_text_cursor_x >= g_text_columns) boot_splash_text_advance_line();
+
 	if (character < 32 || character > 126) character = '?';
 
 	g_text_cells[(g_text_top + g_text_cursor_y) % g_text_rows][g_text_cursor_x] = character;
@@ -657,6 +672,7 @@ boot_splash_replay_history(display_device_t *display)
 
 			lines_since_present++;
 			if (lines_since_present < lines_per_present) continue;
+
 			lines_since_present = 0ULL;
 
 			boot_splash_text_render();
@@ -672,7 +688,6 @@ boot_splash_replay_history(display_device_t *display)
 			}
 		}
 	}
-
 	if (!animate || g_text_dirty) {
 		boot_splash_text_render();
 		(void)display_present_full(display);
@@ -736,6 +751,7 @@ boot_splash_show(display_device_t *display)
 		display->bytes_per_pixel != sizeof(uint32_t))
 		return false;
 	if (g_boot_splash_width == 0U || g_boot_splash_height == 0U || timer_get_frequency() == 0ULL) return false;
+
 	if (display->width < g_boot_splash_width || display->height < g_boot_splash_height) return false;
 
 	for (uint32_t y = 0U; y < display->height; y++) {
@@ -748,6 +764,7 @@ boot_splash_show(display_device_t *display)
 	uint32_t scale_y = display->height / g_boot_splash_height;
 	g_scale = scale_x < scale_y ? scale_x : scale_y;
 	if (g_scale == 0U) g_scale = 1U;
+
 	if (g_scale > BOOT_SPLASH_MAX_SCALE) g_scale = BOOT_SPLASH_MAX_SCALE;
 
 	uint32_t scaled_width = g_boot_splash_width * g_scale;
@@ -761,6 +778,7 @@ boot_splash_show(display_device_t *display)
 	boot_splash_text_init();
 	boot_splash_paint_logo();
 
+	if (g_text_active && !kconsole_verbose()) g_text_active = false;
 	if (g_text_active) {
 		/*
 		 * Register for live output first (no auto-replay), then walk the
@@ -780,7 +798,9 @@ boot_splash_show(display_device_t *display)
 	g_progress = 80U;
 	g_visible = true;
 	if (!boot_splash_draw_bar()) return false;
+
 	if (!display_present_full(display)) return false;
+
 	kprintf("boot_splash_show: shown %ux%u at %ux scale\n", g_boot_splash_width, g_boot_splash_height, g_scale);
 	return true;
 }
@@ -789,6 +809,7 @@ bool
 boot_splash_wait(uint64_t milliseconds, boot_splash_service_t service)
 {
 	if (!g_visible || g_display == 0) return false;
+
 	uint64_t frequency = timer_get_frequency();
 	if (frequency == 0ULL) return false;
 
@@ -804,8 +825,11 @@ boot_splash_wait(uint64_t milliseconds, boot_splash_service_t service)
 			uint32_t remaining = 820U > g_progress ? 820U - g_progress : 0U;
 			uint32_t step = remaining / 24U;
 			if (remaining != 0U) g_progress += step != 0U ? step : 1U;
+
 			if (!boot_splash_draw_bar()) return false;
+
 			if (!boot_splash_text_flush()) return false;
+
 			next_frame = now + frame_interval;
 		}
 		ml_cpu_relax();
@@ -818,8 +842,10 @@ bool
 boot_splash_finish(void)
 {
 	if (!g_visible || g_display == 0) return false;
+
 	uint64_t frequency = timer_get_frequency();
 	if (frequency == 0ULL) return false;
+
 	uint64_t frame_interval = frequency / BOOT_SPLASH_FRAME_HZ;
 	if (frame_interval == 0ULL) frame_interval = 1ULL;
 
@@ -853,6 +879,7 @@ boot_splash_finish(void)
 		if (step < BOOT_SPLASH_FINISH_MIN_STEP) step = BOOT_SPLASH_FINISH_MIN_STEP;
 		g_progress += step < remaining ? step : remaining;
 		if (!boot_splash_draw_bar()) return false;
+
 		uint64_t deadline = timer_get_ticks() + frame_interval;
 		while (timer_get_ticks() < deadline)
 			ml_cpu_relax();

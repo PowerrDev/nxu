@@ -1,4 +1,11 @@
-/* Copyright (c) 2026 NXU Project. All rights reserved. */
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        kern/boot/recovery_volume.h
+ *
+ * Declares system and recovery volume discovery and mount interfaces.
+ */
 #ifndef NXU_KERN_BOOT_RECOVERY_VOLUME_H
 #define NXU_KERN_BOOT_RECOVERY_VOLUME_H
 

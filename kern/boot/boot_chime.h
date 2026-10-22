@@ -32,8 +32,8 @@
 
 #include <stdbool.h>
 
-#define BOOT_CHIME_MP3_PATH "/disk/System/Library/Resources/Audio/Boot_Audio.mp3"
-#define BOOT_CHIME_WAV_PATH "/disk/System/Library/Resources/Audio/Boot_Audio.wav"
+#define BOOT_CHIME_MP3_PATH "/Volumes/mainOS/System/Library/Resources/Audio/Boot_Audio.mp3"
+#define BOOT_CHIME_WAV_PATH "/Volumes/mainOS/System/Library/Resources/Audio/Boot_Audio.wav"
 
 void boot_chime_arm(void);
 void boot_chime_start(void);
