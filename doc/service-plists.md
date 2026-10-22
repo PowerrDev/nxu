@@ -1,7 +1,7 @@
 # bootd service property lists
 
 NXU root services are declared as XML property lists rather than compiled into
-PID 1. `bootd` opens `/disk/System/Library/BootDaemons`, enumerates regular
+PID 1. `bootd` opens `/Volumes/mainOS/System/Library/BootDaemons`, enumerates regular
 `*.plist` entries through the VFS `readdir` interface, validates each document,
 and creates one fixed-capacity job record per unique service label.
 
@@ -47,10 +47,10 @@ without changing the plist parser or job representation.
     <string>com.nxu.logd</string>
 
     <key>Program</key>
-    <string>/disk/System/Library/CoreServices/logd</string>
+    <string>/Volumes/mainOS/System/Library/CoreServices/logd</string>
 
     <key>RecoveryProgram</key>
-    <string>/disk/System/Library/CoreServices/logd.recovery</string>
+    <string>/Volumes/mainOS/System/Library/CoreServices/logd.recovery</string>
 
     <key>RunAtLoad</key>
     <true/>

@@ -308,7 +308,7 @@ interrupts are discovered through the boot Device Tree. See
 NXU now has a filesystem-neutral VFS with per-process file descriptors,
 resident vnodes and a global mount table. `ramfs` remains the bootstrap root,
 while the development VirtIO Block disk is mounted as writable ext4 at
-`/disk`.
+`/Volumes/mainOS`.
 
 `make run` keeps a persistent 128 MiB ext4 `tools/disk.img`. A filesystem-format stamp
 recreates an older lesson image once when the required on-disk profile changes;

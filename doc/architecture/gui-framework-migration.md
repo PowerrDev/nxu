@@ -57,7 +57,7 @@ password or an operation that sets the enclave passcode.
 | kmalloc/kfree | Process-local Runtime allocator preserving Rust Layout alignment and allocation/free pairing |
 
 Implementation sources audited: platform/arm64/services/ui_service.c,
-drivers/video/ui_service_login.c, drivers/video/ui_service_bridge.[ch],
+drivers/video/ui_service_login.c, drivers/video/ui_session_manager.[ch],
 frameworks/BootDaemons.framework/windowserver_service.c, sibling
 UIService.framework/include/UIService.h and crates/ui-service-nxu/src/{bridge,
 windowserver,lib}.rs, WindowServer.framework/include/WindowServer/{WSPrivate,
@@ -250,14 +250,6 @@ adapter. The sibling sources and kernel-linked builds remain unchanged.
 ARM64 and i386 kernel builds pass. Runtime.so has no undefined imports and
 uses only loader-supported GLOB_DAT/JUMP_SLOT dynamic relocations.
 
-Run `python3 tools/check_gui_host.py` for native ownership/epoch policy and
-allocator checks with ASan/UBSan. It uses mocked process lookup and IRQ locks;
-it does not validate ARM64 scheduling, syscall copyin or boot behavior.
-`python3 tools/check_dyrld.py --cached-gui --user-cc clang` checks actual Runtime
-allocation and GUI negotiation through ARM64 syscalls on private disks alongside
-the existing dependency/update/ASLR regressions. The display service is disabled
-in this fixture so it cannot contend with the negotiation test.
-
 Run `python3 tools/build_gui_pic.py --offline` for isolated nightly PIC builds
 including core, alloc and compiler_builtins, followed by reachable ELF link
 audits. Build logs and commands are retained in the output directory. This
@@ -279,12 +271,6 @@ the tepOS UNIX mailbox socket bind. They have not been revalidated for this
 change. Artifact logs: `/private/tmp/nxu-dyrld-c6gcom6k/`.
 
 ## Isolated userland PIC build
-
-```sh
-make USER_CC=clang BUILD/userland/Runtime.so
-python3 tools/build_gui_pic.py --offline --freestanding-sysroot --output /private/tmp/nxu-gui-pic
-python3 tools/check_gui_runtime.py --build /private/tmp/nxu-gui-pic
-```
 
 The build copies sibling sources and injects the adapters under
 `frameworks/Runtime.framework/rust`. It retains commands, toolchain version,
@@ -322,11 +308,6 @@ parent observes the expected killed status. Artifacts:
 `/private/tmp/nxu-gui-runtime-k_vhqi49/`. The process-control regression passes
 after the VM change; ARM64 and i386 builds pass.
 
-`python3 tools/check_gui_elf.py <WindowServer.so>` checks the final ELF validator
-with wrong machine, excess program headers, writable text, TLS, overlapping
-LOAD pages and RELRO placed in executable text. This validation complements
-the live fault probes; it does not replace kernel validation.
-
 ## Dynamic WindowServer service gate
 
 The standalone `windowserver_service` is now a PIE executable interpreted by
@@ -347,23 +328,6 @@ position, button and modifier snapshots, preserving transitions queued between
 userspace reads. The ARM64 boot supervisor blocks after handing off to userspace,
 matching i386, so it no longer consumes kernel-task CPU by yielding forever.
 
-`tools/check_desktop_input.py` checks ordered input, scrolling and idle waits.
-The ARM64 desktop service test and i386 frame test also exercise real timed IPC,
-wakeup races, kernel-task idle accounting, window dragging and signed scroll
-routing on private QEMU disks. Recovery Terminal retains 256 output lines with
-wheel and Page Up/Page Down navigation; `tools/check_recovery_terminal.py`
-checks retention and scroll bounds.
-
-Run `python3 tools/check_gui_service.py` after building the default ARM64 kernel.
-The test creates a private disk and uses a PID 1 fixture linked against the
-production bootd manager, job policy and bootstrap registry. It checks rendered
-pixels through QEMU screenshots, relative pointer input, resize/destroy, inline
-and shared-memory rendering, malformed IPC, withdrawn SHM handles, dead service
-ports, and automatic restart after SIGABRT and SIGKILL. Successful restart and
-scanout require reclaiming the display lease. The SIGABRT report is read back
-from disk and checked for its exception type and matching image identity.
-ASLR is disabled for this fixture; the separate loader tests cover ASLR.
-
 This gate exercises the standalone compositor. The normal desktop still uses
 the kernel-linked GUI stack. The following milestone replaces UIService's
 `ui_bridge_*` imports with a desktop client adapter and removes its embedded
@@ -383,12 +347,6 @@ normal desktop migration, trusted-overlay isolation, or ASLR coverage.
 CoreGraphics.so and DesktopService.so from isolated copies of the framework
 sources. Installed libraries live under `/System/Library/Frameworks`. The
 UIService source repository and its legacy kernel build remain compatible.
-
-`python3 tools/check_gui_service.py --desktop` exercises the actual ARM64
-WindowServer and desktop processes with an ordinary app: frame submission,
-mouse and keyboard delivery, process-exit window cleanup, compositor restart,
-malformed requests and fatal-crash reports. Session tests also reject stale
-epochs, invalid generation handles and callers without display capabilities.
 
 App frames currently use bounded kernel snapshots copied into desktop memory.
 Compositor frames use size-checked SHM mappings. The host does not advertise the
@@ -435,18 +393,6 @@ reestablishes its relative-pointer baseline. Only WindowServer's display lease
 allows ordinary scanout; DesktopService's input permission grants no scanout
 permission.
 
-Run `python3 tools/check_gui_trusted.py` with the default ARM64 kernel built.
-The test uses a private disk, bootd, dynamic frameworks and a mailbox fixture
-through serial FIFOs. It checks login rejection/unlock, SAP cancellation,
-password rejection, exact-file deletion, app session/surface preservation,
-password exclusion from app input and simultaneous denial of input, host
-operations and display presentation to a display-capable probe. Screenshots
-verify the trusted panels and restored app pixels. `--unavailable` verifies
-that an unreachable enclave never opens the desktop. `--setup` exercises
-initial password setup with mismatched confirmation and then matching input.
-The fixture tests the kernel's mailbox/authentication handling; it does not
-establish real enclave persistence or boot signature enforcement.
-
 The following integration milestone adds compositor/desktop restart recovery,
 filesystem and Activity Monitor callbacks, scaling and full-resolution support.
 The authenticated compositor milestone below addresses peers and window
@@ -482,23 +428,10 @@ The desktop reads `ui.scale` in permille, from 500 through 4000, and retains
 fractional pointer movement when converting coordinates. Desktop and compositor
 surfaces support up to 3840 by 2160 pixels; the shared-memory ceiling is 64 MiB.
 
-Run `python3 tools/check_gui_service.py --desktop` to check both service restarts,
-app survival, restored pixels and input delivery. Use `--width 3840 --height 2160
---scale 2000 --timeout 240` for the full-resolution check. The fixture waits for
-an application input acknowledgment before triggering each restart.
-
 The complete 3840 by 2160, 2× integration check passed in
 `/private/tmp/nxu-gui-service-oz3tbm25/`, including restored app pixels, pointer
 and keyboard input after both service restarts, process-exit cleanup and crash
 report generation. Under emulation, use `--timeout 360` to allow slow scanout.
-
-Run `python3 tools/check_gui_trusted.py --restart` to kill the compositor during
-SAP's trusted modal. The test checks exclusive presentation and input, app
-surface recovery, password rejection and selected-file deletion. This check
-passed in `/private/tmp/nxu-gui-trusted-mzvl9ne0/`, including directory metadata,
-truncation/error handling and Activity Monitor snapshots. The mailbox fixture
-does not establish real enclave persistence or signature enforcement.
-
 
 ### Authenticated compositor registration and window ownership
 
@@ -537,26 +470,9 @@ operations require DISPLAY capability. Display-size queries remain available
 to live clients. The service reaps windows when their creating process exits;
 a new process with a reused PID cannot retain them.
 
-`python3 tools/check_compositor_policy.py` exercises the production registry and
-ownership table with reused PIDs, changed uniqueids/idversions, queued messages
-from exited senders and replacement service identities. The fixtures simulate
-PID recycling; they do not force the live kernel to exhaust its PID allocator.
-
-`python3 tools/check_gui_service.py --desktop --timeout 240` adds a real
-unprivileged peer which attempts protected-label registration, receiving on a
-send-only service port, cross-client render/resize/destroy/move and global
-pointer changes. It checks the peer's identity/capabilities, visible cleanup
-on exit, endpoint revocation, destroyed-handle rejection and stale handles
-across SIGABRT/SIGKILL compositor restarts. The full desktop test passed in
-`/private/tmp/nxu-gui-service-dbzfx7ui/`. The trusted SAP restart check passed in
-`/private/tmp/nxu-gui-trusted-i_91i04r/`. ARM64 and i386 builds and kernel IPC
-ownership/transfer/fork/revocation self-tests pass. Production startup remains
-unchanged by this milestone.
-
 The same adversarial and recovery suite passes at 3840 by 2160, 2× scale in
 `/private/tmp/nxu-gui-service-nnduqkck/`. Run it with `--width 3840 --height 2160
 --scale 2000 --timeout 360` to allow slower emulated presentation.
-
 
 ## Normal desktop activation
 
@@ -570,13 +486,6 @@ Kernel object dependencies include a compiler/flags stamp, so switching an
 existing build directory between linked and dynamic GUI configurations rebuilds
 its objects. This prevents stale legacy references from reaching the link.
 
-`tools/check_desktop_jobs.py` checks the installed job configuration against the
-production parser and job initializer. `tools/check_gui_trusted.py --production
---kernel BUILD/desktop/kernel.bin` uses the installed job set and real bootd,
-authenticates login and SAP, launches Voyager, Activity Monitor and About through
-Dock, and checks a saved crash report and visible Problem Reporter. Its restart
-variant exercises service recovery with the same installed job configuration.
-
 The isolated CoreGraphics build also supplies the original font, cursor, wallpaper
 and branding asset defaults. Those assets are Make dependencies, so changes
 rebuild the installed framework instead of silently selecting bitmap fallbacks.
@@ -584,7 +493,6 @@ rebuild the installed framework instead of silently selecting bitmap fallbacks.
 Cold framework measurements use a static 64 KiB read buffer. The loader bounds
 its measurement reply wait at 120 seconds to accommodate concurrent asset-heavy
 startup requests; it still compares the daemon digest with the mapped image.
-
 
 ### Bootstrap polling cost
 
@@ -594,17 +502,10 @@ drains after every unchanged or disabled job. This retains prompt registration
 and compositor revocation while making idle registry polling independent of the
 installed job count.
 
-`python3 tools/check_bootd_polling.py` exercises the production manager with
-mocked job/registry operations. For 32 jobs across 1,000 idle cycles, registry
-polls fall from 33,000 to 2,000. It also checks immediate compositor revocation,
-due-spawn servicing and throttled jobs. These are operation counts, not CPU
-usage or frame-rate measurements.
-
 The ARM64 production restart check passes with this manager
 (`/private/tmp/nxu-gui-trusted-1gqk377_/`), including login, SAP, app launches and
 visible crash reporting. The fixture waits for enclave health before injecting
 login input instead of assuming a fixed startup delay under emulation.
-
 
 ### Reusable frame transfer storage
 
@@ -620,20 +521,11 @@ exit. A failed/timed-out pixel exchange withdraws and unmaps the buffer, so a
 queued request cannot observe a later frame through a reused region. The kernel
 also withdraws SHM publications owned by an exiting process.
 
-`python3 tools/check_gui_transfer.py` runs the production client adapter with
-AddressSanitizer and UndefinedBehaviorSanitizer. It checks padded stride packing,
-resizing, cursor reuse, maximum 4K transfers, rejected/failed/timed-out requests
-and allocation failures. Across 1,000 same-size window updates, client SHM
-lifecycle calls fall from 4,000 to one create and one map; server-side mapping
-and pixel-copy work still occur. This is an operation-count result, not an FPS
-claim.
-
 The ARM64 desktop gate passes with reusable transfers
 (`/private/tmp/nxu-gui-service-ols_ufi4/`): scanout, pointer/keyboard input,
 resize/destroy, malformed IPC, compositor/desktop restart, app exit cleanup and
 host boundary checks. Restart input waits for the replacement desktop to report
 ready, since scanout can retain the old image during the handoff.
-
 
 ### Shared frame-copy optimization and i386
 
@@ -644,11 +536,6 @@ invalid dimensions and source-span overflow before copying; a copy fault does
 not publish the spare frame. User-memory access still validates every page and
 resolves demand-zero/COW faults. Each validated page chunk now uses the existing
 aligned word-copy routine instead of the byte loop in `vm/user_copy.c`.
-
-The native sanitizer check (`tools/check_ui_frame_copy.py`) verifies a full
-1080p packed submission, padded rows, faults and address overflow. Its packed
-frame needs one copy call instead of 1,080; this does not eliminate the page
-walks inside that call and is not a measured frame-rate claim.
 
 i386 now uses the same userland service boundary. `make run-i386-desktop` builds
 ELF32 Runtime, CoreFoundation, WindowServer, CoreGraphics and DesktopService
@@ -666,14 +553,6 @@ GNU_RELRO pages read-only. Address slides use the enclave random service and
 fail closed when that service is unavailable. The x86 relocation format uses
 implicit addends; symbol versions, TLS, text relocations and RELR remain
 unsupported, matching the current ARM64 loader's small ABI.
-
-`python3 tools/check_i386_gui_frames.py --enclave` boots a private disk under
-TCG with the mailbox fixture. It tests enclave random/measurement requests,
-trusted display and input exclusion, rejected and accepted passwords, runtime
-constructors and allocation, a faulting RELRO write, and packed/padded app
-frames with mouse, keyboard, and process-exit cleanup. The fixture checks
-architecture and memory behavior; the production enclave transport still needs
-a normal `make run-i386-desktop` boot for hardware-specific validation.
 
 Host content-scale detection also rejects NaN/out-of-range results, retaining
 the documented 2000-permille fallback when no host screen is available.

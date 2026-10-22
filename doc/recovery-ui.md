@@ -121,10 +121,3 @@ make UISERVICE_DIR=../UIService.framework apply-assets
 
 The target only copies resources; it does not make either UI foundation depend
 on the other.
-
-## Regression checks
-
-`python3 tools/check_recovery_storage.py --arch i386` (or `--arch arm64`)
-boots triageOS on private images, executes the real recovery shell and checks
-file/recursive removal, mounted-device refusal, MBR/GPT partition deletion, read-only refusal and ext4
-consistency. The i386 check also exercises Shift+R recovery selection.

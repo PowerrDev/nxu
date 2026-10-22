@@ -144,7 +144,7 @@ open-file objects and per-process descriptor tables. Filesystem implementations
 attach through vnode operation vectors.
 
 `ramfs` is the in-memory validation filesystem mounted at `/`. Writable ext4 is
-mounted at `/disk` and consumes only the block-device interface.
+mounted at `/Volumes/mainOS` and consumes only the block-device interface.
 
 The current ext4 profile validates CRC32C metadata checksums for the primary
 superblock, group descriptors, allocation bitmaps, inodes, directories and

@@ -9,7 +9,7 @@ process address space and requires it to receive PID 1.
 
 `bootd` is the root userspace service manager. PID 1 no longer contains a
 hard-coded table of `logd` and `patchd`. It opens
-`/disk/System/Library/BootDaemons`, enumerates `*.plist` definitions, validates
+`/Volumes/mainOS/System/Library/BootDaemons`, enumerates `*.plist` definitions, validates
 them through the CoreFoundation plist/service layers, and builds its job table
 from those files.
 
@@ -28,14 +28,14 @@ used. The kernel performs the same preflight for PID 1 and falls back to
 
 The kernel console retains a monotonic 32 KiB history. `logd` consumes that
 history through the `klog_read` syscall, beginning at cursor zero so early boot
-messages are replayed, and appends them to `/disk/var/log/system.log`.
+messages are replayed, and appends them to `/Volumes/mainOS/var/log/system.log`.
 
 ## patchd
 
 `patchd` periodically compares `bootd`, `logd`, and `patchd` to their staged
 recovery images. Missing or different primaries are rewritten from recovery and
 the filesystems are synchronized. Creating
-`/disk/var/db/patchd/repair-all` requests an immediate repair pass; the request
+`/Volumes/mainOS/var/db/patchd/repair-all` requests an immediate repair pass; the request
 file is removed after the pass.
 
 This is recovery-copy integrity, not a cryptographic trust chain. NXU does not
@@ -61,7 +61,7 @@ default-deny and per process, not per file. See
 Patchd also prepares NSW update/recovery packages; see [Software updates](software-update.md) for the manifest, recovery-volume layout and preparation commands.
 
 Patchd installs explicitly selected prepared NSW builds through `--install BUILD`
-or the newline-terminated `/disk/var/db/patchd/install-update` request. It queues
+or the newline-terminated `/Volumes/mainOS/var/db/patchd/install-update` request. It queues
 and reboots; the boot installer logs each changed path, journals originals on
 the recovery volume and rolls back unconfirmed boots. See
 [software-update.md](software-update.md) for the complete workflow.

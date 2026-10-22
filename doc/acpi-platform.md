@@ -34,16 +34,3 @@ AP dispatch. Do not call the AML interpreter later from arbitrary threads until
 runtime synchronization and event delivery are implemented.
 
 IORegistry remains available internally, but its automatic boot dumps are removed.
-
-After building `i386`, `nxuboot`, and `i386-userland`, run:
-
-```sh
-python3 tools/check_firmware_boot.py
-```
-
-The test uses private firmware-variable, boot and ext4 images. It covers UEFI
-XSDT discovery, BIOS RSDT discovery, ACPI absence, AML methods, absent devices,
-buffer data that resembles a device, unknown tables, SMP, recovery graphics and
-keyboard input, and refusal of an invalid ELF. Supply `--firmware`, `--vars`,
-and `--build-root` when using different build locations. On an Intel Mac,
-`--modes uefi-virtio --accel hvf --cpu host,phys-bits=32` tests HVF.

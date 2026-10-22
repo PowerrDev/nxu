@@ -39,11 +39,11 @@ kern_init_memory                     vm_kern, heap, kernel_do_post(MEMORY)
 driverkit_init                       every device driver (platform/driverkit.h)
 kern_hold_boot_splash                recovery-key window while the splash shows
 kern_init_processes                  NXPC transport, process manager
-kern_init_filesystem                 VFS, ramfs at /, the /disk mountpoint
+kern_init_filesystem                 VFS, ramfs at /, the /Volumes/mainOS mountpoint
 kern_init_scheduler                  thread subsystem, processor scheduler
 kernel_do_post(CORE)                 checksums, IPC, vm_shm/vm_map, VFS, scheduler
 boot_test_graphical                  GUI test builds only; otherwise a no-op
-kern_mount_system_volume             ext4 from disk0 at /disk
+kern_mount_system_volume             ext4 from disk0 at /Volumes/mainOS
 kernel_do_post(STORAGE)              block read, writable ext4 test, sync
 boot_test_storage                    Btrfs / journal-crash / process tests
 kern_launch_init_process             PID 1: bootd, its recovery image or triageOS
@@ -69,7 +69,7 @@ meaningful at one moment:
 | --- | --- | --- |
 | `KERNEL_POST_MEMORY` | `vm_kern_init`, `heap_init` | vm_kern arena, small and large heap. These assert exact address reuse, so they must run before any driver has allocated. |
 | `KERNEL_POST_CORE` | IPC, processes, VFS, scheduler | CRC32C, NXPC, `vm_shm`, `vm_map` (including that regions are lazy), VFS, run queue, MLFQ, the AArch64 context switch, EL0 vector classification. |
-| `KERNEL_POST_STORAGE` | `/disk` mounted | raw block read, the writable ext4 test, sync. |
+| `KERNEL_POST_STORAGE` | `/Volumes/mainOS` mounted | raw block read, the writable ext4 test, sync. |
 
 A failed stage logs which check failed and returns false; `kern_init` halts.
 The lower-half checks (identity map, live mappings, higher-half alias, TTBR0

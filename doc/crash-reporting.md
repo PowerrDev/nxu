@@ -36,7 +36,7 @@ threads reflect where each CPU stopped them, not a simultaneous machine snapshot
 
 ## Reports and symbolication
 
-Guest paths (the `/disk` mount prefix is used by syscalls):
+Guest paths (the `/Volumes/mainOS` mount prefix is used by syscalls):
 
 - System services: `/Library/Logs/DiagnosticReports/`
 - Application bundles: `/Users/Shared/Library/Logs/DiagnosticReports/`
@@ -102,7 +102,7 @@ and reports remain in the printed `/private/tmp/nxu-crashd-*` directory.
 application bundle, verifies shared-user report routing and stale-map fallback,
 and captures the Problem Reporter dialog in `screen.ppm`.
 
-For manual desktop testing, launch `/disk/System/Library/CoreServices/crashtest`
+For manual desktop testing, launch `/Volumes/mainOS/System/Library/CoreServices/crashtest`
 from a temporary bootd job with RunAtLoad=true. It deliberately faults at
 0x12345000. KeepAlive should be false to avoid a crash loop. Remove the job when
 finished. The registered `com.nxu.crashtest` job runs once only when the boot

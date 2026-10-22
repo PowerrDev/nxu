@@ -45,7 +45,7 @@ the executables are built and staged by `make userland` (see
 | `show-recents` | boolean | true | Show apps that are running but not kept, and up to 3 that ran recently, after a divider. |
 | `show-trash` | boolean | true | The Trash at the right end, after a divider. |
 
-Paths are the user's (`/Applications/...`); the Dock adds the `/disk` mount
+Paths are the user's (`/Applications/...`); the Dock adds the `/Volumes/mainOS` mount
 point itself.
 
 ## The Dock
@@ -97,7 +97,7 @@ entering the folder.
 | `nxu_ui_control(NXU_UI_CONTROL_ACTIVITY, &request)` | Activity Monitor's process table. |
 | `nxu_ui_control(NXU_UI_CONTROL_LAUNCH, path)` | Open a bundle (Voyager opening an app): the desktop hands it to the Dock. |
 
-The kernel side is `drivers/video/ui_service_bridge.c`. Each connection has a
+The kernel side is `drivers/video/ui_session_manager.c`. Each connection has a
 message queue (pointer moves coalesce, animation frames are one at a time) and
 two frame buffers: submit copies the app's frame out of its address space into
 the spare one without the lock and swaps it in under it, and the desktop copies

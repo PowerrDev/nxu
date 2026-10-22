@@ -154,7 +154,7 @@ deviates from that rule in two places; both are recorded in
 | VirtIO Block | Implemented | Synchronous queue-0 I/O through the block-device abstraction. |
 | VFS | Implemented | Mount table, vnode operations, pathname lookup, file objects, per-process descriptors. |
 | ramfs | Implemented | Heap-backed validation filesystem mounted at `/`. |
-| ext4 | Implemented foundation | Writable allocation, CRC32C metadata checksums, depth-zero extent mutation and VFS mount at `/disk`. |
+| ext4 | Implemented foundation | Writable allocation, CRC32C metadata checksums, depth-zero extent mutation and VFS mount at `/Volumes/mainOS`. |
 | JBD2 | Implemented foundation | Checksum-v3 metadata transactions, immediate checkpointing and deterministic replay test. |
 | Fault containment, signals, `fork`, `exec` | Implemented (arm64) | See [Process control](kern/process-control.md); i386 returns "not supported". |
 | Demand paging, copy-on-write | Implemented (arm64) | Anonymous memory only; see [Demand paging](vm/demand-paging.md). |

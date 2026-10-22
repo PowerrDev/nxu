@@ -94,7 +94,7 @@ inside the file, which is only true because the symbol table follows.
   vfs/vm/proc/sched for i386); `make i386-loader-check` compiles it for i386
   with `-Werror` so it stays valid. The integrator adds
   `kern/loader/elf.c` to `I386_C_SOURCES` when those exist and implements
-  `i386_init_userland` (spawn `/disk/System/Library/CoreServices/bootd`).
+  `i386_init_userland` (spawn `/Volumes/mainOS/System/Library/CoreServices/bootd`).
 * `elf_selftest.c` defines the strong `i386_init_userland_selftest` (boot with
   `test=userland`): 31 hand-built ELF32 images (one valid, the rest each broken
   in one way: class, machine, type, endianness, header/program-header sizes,
@@ -113,8 +113,8 @@ images are built separately by `makedefs/i386/frameworks.mk`. 64-bit division is
 divides 64-bit values (none does today).
 
 The plists are not duplicated: `com.nxu.logd.plist` / `com.nxu.patchd.plist`
-name `/disk/System/Library/CoreServices/<program>`, which is architecture
-neutral, and bootd discovers `/disk/System/Library/BootDaemons/*.plist`. Only
+name `/Volumes/mainOS/System/Library/CoreServices/<program>`, which is architecture
+neutral, and bootd discovers `/Volumes/mainOS/System/Library/BootDaemons/*.plist`. Only
 those two are staged for a standard userland boot. The desktop build also
 stages `dyrld`, WindowServer and desktop service plists.
 
@@ -165,11 +165,3 @@ runs constructors after binding, and seals writable GNU_RELRO pages. TLS, text
 relocations, symbol versions and RELR remain unsupported. Custom i386 signal
 handler restoration is also not implemented; default fatal signals and
 read-only page protection work.
-
-`python3 tools/check_i386_gui_frames.py --enclave` tests the live desktop and
-framework runtime on a private TCG disk. It checks mailbox random and
-measurement requests, trusted display/input exclusion before login, rejected
-and accepted credentials, runtime allocation and constructors, RELRO write
-faults, frame rendering, input and app cleanup. The fixture exercises the i386
-mailbox protocol; boot `make run-i386-desktop` to validate the production
-enclave connection.
