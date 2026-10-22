@@ -24,8 +24,8 @@
  *            --dev PATH   another device of a multi-device filesystem (repeatable; the
  *                         IMAGE argument is the first device)
  *
- * The manifest was written inside the Alpine guest by Linux's own Btrfs driver
- * (tools/btrfs/guest/manifest.py), so `check` compares this driver with Linux,
+ * The manifest was produced by Linux's own Btrfs driver, so `check` compares
+ * this driver with Linux,
  * not with itself: every path, type, mode, owner, size, link count, inode
  * number, device number, mtime, symlink target, and the crc32c and sha256 of
  * the contents of every file. It also reads each file at random offsets and

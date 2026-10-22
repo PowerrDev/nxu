@@ -67,7 +67,7 @@ The bootstrap namespace is:
 ```text
 /      -> ramfs
 /dev   -> devfs
-/disk  -> ext4 on disk0
+/Volumes/mainOS  -> ext4 on disk0
 ```
 
 The ext4 mount is attached after VirtIO Block discovery. Nested mounts are

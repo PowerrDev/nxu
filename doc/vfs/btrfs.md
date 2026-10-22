@@ -352,7 +352,7 @@ three fixture devices per boot; a spec ending in `+devN` takes N consecutive
 devices for one multi-device filesystem, so the 4-device profiles run on the
 host only). `NAME[@SUBVOLID][+verify|+noverify]` mounts, walks through the
 public VFS interface against the expected listing generated from Linux's
-manifests (`btrfs_selftest_data.h`, `tools/btrfs/gen_selftest_data.py`), checks
+manifests (`btrfs_selftest_data.h`), checks
 readdir resume, odd-offset and EOF reads, that every mutating operation
 returns `READ_ONLY` and the device write counter stays put, and unmounts (which
 also proves no vnode reference leaked). `!STATUS` requires a clean mount
@@ -388,10 +388,9 @@ damaged image fails the mount cleanly and the run exits nonzero.
 
 ## Fixtures and ground truth
 
-See `tools/btrfs/fixtures/README.md`. Images and manifests come from an official
-Alpine Linux 3.24.2 guest (btrfs-progs 6.17.1, kernel 6.18.52) run under QEMU by
-`tools/btrfs/make_fixtures.sh`, so the driver is graded against Linux, not
-against itself.
+See `tools/btrfs/fixtures/README.md`. The checked-in images and manifests are
+Linux-generated reference data, so the driver is graded against Linux rather
+than against itself.
 
 ## Write-support extension points
 

@@ -39,9 +39,7 @@ post_test_block_device(void)
 
 	memset(sector, 0, sizeof(sector));
 
-	if (!block_device_read(device, 0ULL, 1U, sector)) {
-		return false;
-	}
+	if (!block_device_read(device, 0ULL, 1U, sector)) return false;
 
 	kputs("VirtIOBlockFamily: sector 0 first bytes:");
 
@@ -72,6 +70,7 @@ post_ext4_read_exact(filedesc_t filedesc, const char *path, const char *expected
 		(void)vfs_close(filedesc, descriptor);
 		return false;
 	}
+
 	memset(buffer, 0, sizeof(buffer));
 
 	uint64_t read_size;
@@ -79,6 +78,7 @@ post_ext4_read_exact(filedesc_t filedesc, const char *path, const char *expected
 	if (vfs_close(filedesc, descriptor) != VFS_STATUS_OK) return false;
 
 	if (status != VFS_STATUS_OK || read_size != size) return false;
+
 	for (uint64_t index = 0ULL; index < size; index++) {
 		if (buffer[index] != expected[index]) return false;
 	}
@@ -98,18 +98,19 @@ post_test_ext4(void)
 {
 	proc_t kernel_proc = proc_kernel();
 	if (kernel_proc == 0) return false;
+
 	filedesc_t filedesc = &kernel_proc->p_fd;
 
-	if (!post_ext4_read_exact(filedesc, "/disk/hello.txt", g_ext4_test_message, sizeof(g_ext4_test_message) - 1ULL))
+	if (!post_ext4_read_exact(filedesc, "/Volumes/mainOS/hello.txt", g_ext4_test_message, sizeof(g_ext4_test_message) - 1ULL))
 		return false;
 
 	/* Installed System files may change between builds; only hello.txt is a fixed fixture. */
 
-	vfs_status_t status = vfs_mkdir("/disk/NXU");
+	vfs_status_t status = vfs_mkdir("/Volumes/mainOS/NXU");
 	if (status != VFS_STATUS_OK && status != VFS_STATUS_EXISTS) return false;
 
 	uint32_t descriptor;
-	status = vfs_open(filedesc, "/disk/NXU/write-test.bin",
+	status = vfs_open(filedesc, "/Volumes/mainOS/NXU/write-test.bin",
 					  VFS_OPEN_READ | VFS_OPEN_WRITE | VFS_OPEN_CREATE | VFS_OPEN_TRUNCATE, &descriptor);
 	if (status != VFS_STATUS_OK) return false;
 
@@ -122,18 +123,18 @@ post_test_ext4(void)
 		status = vfs_write(filedesc, descriptor, block, sizeof(block), &written);
 		if (status != VFS_STATUS_OK || written != sizeof(block)) goto fail_close;
 	}
-
 	if (vfs_close(filedesc, descriptor) != VFS_STATUS_OK) return false;
 
 	vnode_t vnode;
-	status = vfs_lookup("/disk/NXU/write-test.bin", &vnode);
+	status = vfs_lookup("/Volumes/mainOS/NXU/write-test.bin", &vnode);
 	if (status != VFS_STATUS_OK) return false;
+
 	status = vnode_truncate(vnode, 5000ULL);
 	if (status == VFS_STATUS_OK) status = vnode_truncate(vnode, 9000ULL);
 	vnode_rele(vnode);
 	if (status != VFS_STATUS_OK) return false;
 
-	status = vfs_open(filedesc, "/disk/NXU/write-test.bin", VFS_OPEN_READ | VFS_OPEN_WRITE, &descriptor);
+	status = vfs_open(filedesc, "/Volumes/mainOS/NXU/write-test.bin", VFS_OPEN_READ | VFS_OPEN_WRITE, &descriptor);
 	if (status != VFS_STATUS_OK) return false;
 
 	if (vfs_seek(filedesc, descriptor, 5000ULL) != VFS_STATUS_OK) goto fail_close;
@@ -146,31 +147,34 @@ post_test_ext4(void)
 	for (uint32_t index = 0U; index < sizeof(zeros); index++) {
 		if (zeros[index] != 0U) goto fail_close;
 	}
-
 	if (vfs_seek(filedesc, descriptor, 8192ULL) != VFS_STATUS_OK) goto fail_close;
 	uint64_t written;
 	status = vfs_write(filedesc, descriptor, g_ext4_tail_message, sizeof(g_ext4_tail_message) - 1ULL, &written);
 	if (status != VFS_STATUS_OK || written != sizeof(g_ext4_tail_message) - 1ULL) goto fail_close;
+
 	if (vfs_close(filedesc, descriptor) != VFS_STATUS_OK) return false;
 
-	status = vfs_open(filedesc, "/disk/NXU/delete-me.txt", VFS_OPEN_WRITE | VFS_OPEN_CREATE | VFS_OPEN_TRUNCATE,
+	status = vfs_open(filedesc, "/Volumes/mainOS/NXU/delete-me.txt", VFS_OPEN_WRITE | VFS_OPEN_CREATE | VFS_OPEN_TRUNCATE,
 					  &descriptor);
 	if (status != VFS_STATUS_OK) return false;
+
 	status = vfs_write(filedesc, descriptor, g_ext4_write_message, sizeof(g_ext4_write_message) - 1ULL, &written);
 	if (status != VFS_STATUS_OK) goto fail_close;
+
 	if (vfs_close(filedesc, descriptor) != VFS_STATUS_OK) return false;
 
-	if (vfs_unlink("/disk/NXU/delete-me.txt") != VFS_STATUS_OK) return false;
-	status = vfs_lookup("/disk/NXU/delete-me.txt", &vnode);
+	if (vfs_unlink("/Volumes/mainOS/NXU/delete-me.txt") != VFS_STATUS_OK) return false;
+
+	status = vfs_lookup("/Volumes/mainOS/NXU/delete-me.txt", &vnode);
 	if (status != VFS_STATUS_NOT_FOUND) {
 		if (status == VFS_STATUS_OK) vnode_rele(vnode);
 		return false;
 	}
 
-	status = vfs_lookup("/disk/NXU/journal-recovery.txt", &vnode);
+	status = vfs_lookup("/Volumes/mainOS/NXU/journal-recovery.txt", &vnode);
 	if (status == VFS_STATUS_OK) {
 		vnode_rele(vnode);
-		if (!post_ext4_read_exact(filedesc, "/disk/NXU/journal-recovery.txt", g_jbd2_recovery_message,
+		if (!post_ext4_read_exact(filedesc, "/Volumes/mainOS/NXU/journal-recovery.txt", g_jbd2_recovery_message,
 								  sizeof(g_jbd2_recovery_message) - 1ULL))
 			return false;
 		kputln("jbd2: committed crash-test transaction recovered");
@@ -178,21 +182,23 @@ post_test_ext4(void)
 		return false;
 	}
 
-	status = vfs_lookup("/disk/NXU/persistent.txt", &vnode);
+	status = vfs_lookup("/Volumes/mainOS/NXU/persistent.txt", &vnode);
 	if (status == VFS_STATUS_OK) {
 		vnode_rele(vnode);
-		if (!post_ext4_read_exact(filedesc, "/disk/NXU/persistent.txt", g_ext4_persist_message,
+		if (!post_ext4_read_exact(filedesc, "/Volumes/mainOS/NXU/persistent.txt", g_ext4_persist_message,
 								  sizeof(g_ext4_persist_message) - 1ULL))
 			return false;
 		kputln("IOFilesystemFamily: persistence marker recovered from previous boot");
 	} else if (status == VFS_STATUS_NOT_FOUND) {
-		status = vfs_open(filedesc, "/disk/NXU/persistent.txt", VFS_OPEN_WRITE | VFS_OPEN_CREATE, &descriptor);
+		status = vfs_open(filedesc, "/Volumes/mainOS/NXU/persistent.txt", VFS_OPEN_WRITE | VFS_OPEN_CREATE, &descriptor);
 		if (status != VFS_STATUS_OK) return false;
+
 		status =
 			vfs_write(filedesc, descriptor, g_ext4_persist_message, sizeof(g_ext4_persist_message) - 1ULL, &written);
 		if (vfs_close(filedesc, descriptor) != VFS_STATUS_OK) return false;
 
 		if (status != VFS_STATUS_OK || written != sizeof(g_ext4_persist_message) - 1ULL) return false;
+
 		kputln("IOFilesystemFamily: persistence marker created");
 		kputln("IOFilesystemFamily: reboot to verify persistence");
 	} else {

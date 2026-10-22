@@ -42,21 +42,21 @@ main(void)
 
 	triage_shell_init(&shell, capture, 0);
 	require(nxu_getpid() == 1, "recovery is PID 1");
-	require(recovery_fs_mkdir("/disk/remove") == 0, "mkdir parent");
-	require(recovery_fs_mkdir("/disk/remove/nested") == 0, "mkdir nested");
-	require(recovery_fs_write("/disk/remove/nested/file", "test", 4) == 4, "create child");
-	require(nxu_rmdir("/disk/remove") == -NXU_SYS_E_NOT_EMPTY, "reject nonempty directory");
-	require(nxu_rmdir("/disk") == -NXU_SYS_E_BUSY, "reject mount root");
-	triage_shell_execute(&shell, "rm /disk/remove");
+	require(recovery_fs_mkdir("/Volumes/mainOS/remove") == 0, "mkdir parent");
+	require(recovery_fs_mkdir("/Volumes/mainOS/remove/nested") == 0, "mkdir nested");
+	require(recovery_fs_write("/Volumes/mainOS/remove/nested/file", "test", 4) == 4, "create child");
+	require(nxu_rmdir("/Volumes/mainOS/remove") == -NXU_SYS_E_NOT_EMPTY, "reject nonempty directory");
+	require(nxu_rmdir("/Volumes/mainOS") == -NXU_SYS_E_BUSY, "reject mount root");
+	triage_shell_execute(&shell, "rm /Volumes/mainOS/remove");
 	require(nxu_streq(output, "rm: is a directory (use rm -r)"), "directory diagnostic");
-	triage_shell_execute(&shell, "rm -r /disk/remove");
+	triage_shell_execute(&shell, "rm -r /Volumes/mainOS/remove");
 
 	nxu_stat_t stat;
 
-	require(nxu_stat("/disk/remove", &stat) == -NXU_SYS_E_NOT_FOUND, "recursive removal");
-	require(recovery_fs_write("/disk/file", "test", 4) == 4, "create regular file");
-	triage_shell_execute(&shell, "rm /disk/file");
-	require(nxu_stat("/disk/file", &stat) == -NXU_SYS_E_NOT_FOUND, "regular removal");
+	require(nxu_stat("/Volumes/mainOS/remove", &stat) == -NXU_SYS_E_NOT_FOUND, "recursive removal");
+	require(recovery_fs_write("/Volumes/mainOS/file", "test", 4) == 4, "create regular file");
+	triage_shell_execute(&shell, "rm /Volumes/mainOS/file");
+	require(nxu_stat("/Volumes/mainOS/file", &stat) == -NXU_SYS_E_NOT_FOUND, "regular removal");
 	triage_shell_execute(&shell, "partition-delete disk0 0 --force");
 	require(nxu_streq(output, "partition-delete: busy"), "mounted device refused");
 	triage_shell_execute(&shell, "partition-delete disk1 0");

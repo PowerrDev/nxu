@@ -2,7 +2,7 @@
 
 ## Overview
 
-NXU mounts a writable ext4 filesystem at `/disk` through the ordinary VFS
+NXU mounts a writable ext4 filesystem at `/Volumes/mainOS` through the ordinary VFS
 mount and vnode interfaces. The filesystem consumes `block_device_t`; no ext4
 code depends on VirtIO transport details.
 
@@ -221,7 +221,7 @@ make journal-recover
 ```
 
 Recovery must replay the committed transaction. The ordinary ext4 self-test
-then reads `/disk/NXU/journal-recovery.txt` and validates its contents.
+then reads `/Volumes/mainOS/NXU/journal-recovery.txt` and validates its contents.
 
 The crash build never intentionally corrupts the journal; it models loss of
 execution between commit and checkpoint.

@@ -22,7 +22,7 @@ table (up to 8 devices, names of one path component), so a driver can register
 when it attaches, which is before the VFS exists; the vnode for a name is made the
 first time it is looked up after the mount, and stays resident.
 
-The mount happens where `/disk`'s mount point is made: `kern_init_filesystem()` on
+The mount happens where `/Volumes/mainOS`'s mount point is made: `kern_init_filesystem()` on
 arm64 and `i386_init_kernel()` on i386 register the filesystem, make `/dev` in the
 ramfs root and mount `devfs` on it.
 

@@ -5,33 +5,9 @@ truth Linux reported for them. They are what the host tests
 (`make test-btrfs-host`) and the in-kernel tests (`make test-i386-btrfs`,
 `make test-arm64-btrfs`) run the driver against.
 
-## How they are made
-
-`tools/btrfs/make_fixtures.sh` boots the official Alpine Linux netboot under
-QEMU (`qemu-system-x86_64`, hvf when available), installs btrfs-progs with
-`apk`, and runs `tools/btrfs/guest/build_fixtures.sh` in the guest:
-
-| Component | Version |
-|---|---|
-| Alpine Linux | 3.24.2 (x86_64 netboot, `vmlinuz-virt`, `initramfs-virt`, `modloop-virt`, sha256 pinned in the script) |
-| Linux kernel in the guest | 6.18.52-0-virt |
-| btrfs-progs | 6.17.1 (`mkfs.btrfs`, `btrfs`) |
-| python3 in the guest | 3.14.7 |
-
-Downloads are cached in `$HOME/.cache/nxu-btrfs-lab` (never in the repository).
-Each image is formatted with `mkfs.btrfs`, populated through the Linux driver
-(`mount -o loop`, `tools/btrfs/guest/pop.py`), checked with
-`btrfs check --readonly`, and compressed with `zstd -19`. The one exception is
-`s16k`: x86 Linux cannot mount a 16 KiB sector size, so it is populated with
-`mkfs.btrfs --rootdir`.
-
-To regenerate: `tools/btrfs/make_fixtures.sh` (about 6 minutes), or
-`--only <group>` for one of `basic tree deep subvols variants compressed compressed2 logtree multidev refusal`.
-`tools/btrfs/make_fixtures.sh --smoke` only prints what the lab has. After
-regenerating, run `python3 tools/btrfs/gen_selftest_data.py >
-vfs/btrfs/btrfs_selftest_data.h` so the in-kernel expected listings follow.
-Contents are deterministic; fsids derive from the fixture name. Inode
-timestamps are whenever the images were built.
+These are checked-in Linux-generated reference images and manifests used by
+the Btrfs host and kernel tests. They are a fixed test corpus; there is no
+in-repository fixture regeneration workflow.
 
 ## Files per fixture
 
@@ -61,7 +37,7 @@ timestamps are whenever the images were built.
 | `logtree` | an unreplayed log tree: a committed baseline, then new files and directories, an append, an overwrite inside an extent, a truncate, a chmod + xattr + utimes, a hard link, a rename, unlinks fsynced through the directory, a symlink and a punched hole, all fsynced with the commit interval at an hour and the image copied while still mounted, so the superblock points at a log tree that was never committed. `logtree.manifest` is what Linux showed after mounting (and so replaying) a copy; `logtree.base.manifest` is the committed baseline before the operations (what `ignore_log_tree` must show) |
 | `mix-random` | incompressible data written with `compress-force=zstd:3` (Btrfs keeps it as plain extents) next to compressed text |
 | `csum-xxhash`, `csum-sha256`, `csum-blake2` | `mkfs.btrfs --csum`: every tree block and data sector uses that algorithm |
-| WIP: `md-raid1`, `md-raid0`, `md-raid10`, `md-raid1c3`, `md-raid1c4` | real `mkfs.btrfs -d P -m P` over 2, 2, 4, 3 and 4 loop devices of 128 MiB (raid0 has RAID1 metadata), mounted by Linux and populated with `pop.py multi` (`small` plus files that span many 64 KiB stripes); one `NAME.manifest`, one image per device |
+| WIP: `md-raid1`, `md-raid0`, `md-raid10`, `md-raid1c3`, `md-raid1c4` | Btrfs profiles over 2, 2, 4, 3 and 4 devices (raid0 has RAID1 metadata); one `NAME.manifest`, one image per device |
 | WIP: `md-raid5`, `md-raid6` | the same over 3 and 4 devices (RAID5 data with RAID1 metadata, RAID6 data with RAID1C3 metadata) |
 | WIP: `md-single` | SINGLE data over 2 devices with DUP metadata: chunks of one profile on both devices |
 | `raid1`, `raid0`, `raid5`, `single2dev` | the FIRST device only of a 2/2/3/2-device filesystem: refused at mount as a missing device |
