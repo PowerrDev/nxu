@@ -19,6 +19,7 @@ I386_C_SOURCES += \
     kern/i386/vm_selftest.c \
     kern/i386/vmm_i386.c \
     vm/pmm.c \
+    vm/dma.c \
     vm/user_copy.c \
     vm/vm_kern.c \
     vm/vm_map.c \

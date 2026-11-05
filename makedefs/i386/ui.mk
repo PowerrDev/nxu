@@ -130,7 +130,7 @@ endif
 
 	$(I386_TEP_WRAPPER) $(I386_DESKTOP_QEMU) -M pc -smp $(I386_DESKTOP_SMP) \
 		$(I386_DESKTOP_BOOT_FLAGS) \
-		-m 512M \
+		-m 1024M \
 		-vga none \
 		-device virtio-blk-pci,drive=d0,disable-modern=on \
 		-drive if=none,format=raw,file=$(I386_DESKTOP_SYSTEM_DISK),id=d0 \

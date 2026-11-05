@@ -376,6 +376,7 @@ C_SOURCES := \
     kern/console/font8x16.c \
     kern/console/ioregistry.c \
     kern/loader/elf.c \
+    kern/loader/segment_cache.c \
     kern/irq/irq.c \
     kern/kern_init.c \
     kern/process/proc.c \
@@ -446,6 +447,7 @@ C_SOURCES := \
     vfs/vfs_file.c \
     vfs/vnode.c \
     vm/pmm.c \
+	vm/dma.c \
     vm/vmm.c \
     vm/address_space.c \
     vm/vm_shm.c \
@@ -665,8 +667,12 @@ USER_APP_dock_BUNDLE := System/Library/CoreServices/Dock.app
 USER_APP_dock_EXEC := Dock
 USER_APP_dock_ICON :=
 
-# Apps read their text face from here when they start (it is not embedded).
+# The system text faces shipped on disk. SF Pro Text (Regular / Semibold) is
+# what CoreGraphics renders UI chrome with; the Display faces stay for the
+# kernel-side boot, login and crash-reporter glyph generators.
 USER_SYSTEM_FONTS := \
+    tools/DiskRoot/System/Library/Fonts/SF-Pro-Text-Regular.ttf \
+    tools/DiskRoot/System/Library/Fonts/SF-Pro-Text-Semibold.ttf \
     tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Regular.otf \
     tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Medium.otf
 
@@ -825,8 +831,8 @@ COREGRAPHICS_PIC_DIR := $(USER_BUILD)/coregraphics-pic
 COREGRAPHICS_PIC_SOURCES := $(shell rg --files $(UISERVICE_DIR)/crates -g '*.rs' -g '*.toml')
 COREGRAPHICS_PIC_ASSETS := $(shell rg --files $(UISERVICE_DIR)/assets) \
 	tools/UI/Backgrounds/Sonoma.jpg \
-	tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Regular.otf \
-	tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Medium.otf
+	tools/DiskRoot/System/Library/Fonts/SF-Pro-Text-Regular.ttf \
+	tools/DiskRoot/System/Library/Fonts/SF-Pro-Text-Semibold.ttf
 
 $(USER_BUILD)/CoreGraphics.so: $(COREGRAPHICS_PIC_SOURCES) $(COREGRAPHICS_PIC_ASSETS) $(UISERVICE_DIR)/Cargo.lock \
 	frameworks/DesktopService.framework/lib/session.c frameworks/DesktopService.framework/lib/host.c \
@@ -1227,15 +1233,15 @@ recovery-assets:
 uiservice-build:
 
 	$(MAKE) -C $(UISERVICE_DIR) BUILD_JOBS=$(BUILD_JOBS) \
-		INTER_REGULAR="$(abspath tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Regular.otf)" \
-		INTER_SEMIBOLD="$(abspath tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Medium.otf)" \
+		INTER_REGULAR="$(abspath tools/DiskRoot/System/Library/Fonts/SF-Pro-Text-Regular.ttf)" \
+		INTER_SEMIBOLD="$(abspath tools/DiskRoot/System/Library/Fonts/SF-Pro-Text-Semibold.ttf)" \
 		BACKGROUND="$(abspath tools/UI/Backgrounds/Sonoma.jpg)" nxu
 
 uiservice-apps-build:
 
 	$(MAKE) -C $(UISERVICE_DIR) BUILD_JOBS=$(BUILD_JOBS) \
-		INTER_REGULAR="$(abspath tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Regular.otf)" \
-		INTER_SEMIBOLD="$(abspath tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Medium.otf)" nxu-apps
+		INTER_REGULAR="$(abspath tools/DiskRoot/System/Library/Fonts/SF-Pro-Text-Regular.ttf)" \
+		INTER_SEMIBOLD="$(abspath tools/DiskRoot/System/Library/Fonts/SF-Pro-Text-Semibold.ttf)" nxu-apps
 
 
 windowserver-build:
@@ -1460,6 +1466,7 @@ boot-audio:
 include makedefs/tests.mk
 
 include makedefs/i386.mk
+include makedefs/x86_64.mk
 
 
 # =============================================================================
