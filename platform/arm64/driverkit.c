@@ -183,6 +183,7 @@ driverkit_init(driverkit_config_t *config)
 	 * in the common case.
 	 */
 	driverkit_show_splash_if_needed();
+	ioreg_dump();
 
 	return true;
 }

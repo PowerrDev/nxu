@@ -19,8 +19,9 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <kern/console/ioregistry.h>
 
-#define PCI_MAX_DEVICES 48U
+#define PCI_MAX_DEVICES 256U
 #define PCI_MAX_BARS 6U
 
 #define PCI_VENDOR_INVALID 0xFFFFU
@@ -86,6 +87,7 @@ typedef struct {
 	uint8_t interrupt_pin;
 	uint8_t secondary_bus;
 	uint8_t capabilities_pointer;
+	ioreg_id_t registry_id;
 
 	pci_bar_t bars[PCI_MAX_BARS];
 } pci_device_t;

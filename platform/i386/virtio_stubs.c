@@ -28,11 +28,13 @@
 #define STUB_WEAK __attribute__((weak))
 
 STUB_WEAK bool
-virtio_mmio_probe(const platform_region_t *region, uint32_t intid, uint32_t irq_flags, virtio_mmio_device_t *device)
+virtio_mmio_probe(const platform_region_t *region, uint32_t intid, uint32_t irq_flags, bool dma_coherent,
+				  virtio_mmio_device_t *device)
 {
 	(void)region;
 	(void)intid;
 	(void)irq_flags;
+	(void)dma_coherent;
 	(void)device;
 	return false;
 }

@@ -12,6 +12,9 @@
 /* The most CPUs platform discovery will record; the kernel's own limit (NXU_MAX_CPUS) may be lower. */
 #define PLATFORM_MAX_CPUS 16U
 
+/* Maximum flattened nodes retained for the boot-time hardware tree view. */
+#define PLATFORM_MAX_DEVICE_NODES 512U
+
 /* How firmware wants PSCI calls made: which instruction traps to it. */
 typedef enum { PLATFORM_PSCI_NONE, PLATFORM_PSCI_HVC, PLATFORM_PSCI_SMC } platform_psci_method_t;
 
@@ -20,7 +23,54 @@ typedef struct {
 	uint64_t size;
 } platform_region_t;
 
+/* A compact view of one FDT node. String data points into the retained DTB. */
 typedef struct {
+	const char *name;
+	const char *compatible;
+	const char *status;
+	uint32_t parent_index;
+	uint32_t depth;
+	uint32_t compatible_length;
+	platform_region_t reg;
+	const void *reg_data;
+	uint32_t reg_length;
+	uint32_t reg_address_cells;
+	uint32_t reg_size_cells;
+	const void *interrupts;
+	uint32_t interrupts_length;
+	const void *ranges;
+	uint32_t ranges_length;
+	uint32_t ranges_child_address_cells;
+	uint32_t ranges_parent_address_cells;
+	uint32_t ranges_size_cells;
+	uint32_t phandle;
+	uint32_t interrupt_parent_phandle;
+	uint32_t interrupt_parent_index;
+	uint32_t interrupt_cells;
+	uint32_t interrupt_parent_cells;
+	bool ranges_present;
+	bool interrupt_parent_resolved;
+	bool has_reg;
+	bool dma_coherent;
+} platform_device_node_t;
+
+typedef struct {
+	/* Source blob retained for on-demand access to all node properties. */
+	const dtb_t *source_dtb;
+
+	/*
+	 * Out-of-line storage for the flattened device tree. Kept as a pointer,
+	 * not an inline array, so platform_t stays small enough to live on the
+	 * kernel boot stack: at PLATFORM_MAX_DEVICE_NODES the inline array was
+	 * ~57 KiB, which overflowed the 16 KiB boot stack the moment the x86 VM
+	 * phase zeroed its stack-local platform_t. Only the device-tree port
+	 * (arm64) populates this; it points the pointer at backing storage in
+	 * platform_discover(). On ports without a device tree it stays null and
+	 * device_node_count stays zero, so nothing dereferences it.
+	 */
+	platform_device_node_t *device_nodes;
+	uint32_t device_node_count;
+
 	platform_region_t memory_regions[PLATFORM_MAX_MEMORY_REGIONS];
 	uint32_t memory_region_count;
 
@@ -58,6 +108,7 @@ typedef struct {
 
 	uint32_t virtio_mmio_intid[PLATFORM_MAX_VIRTIO_MMIO_DEVICES];
 	uint32_t virtio_mmio_irq_flags[PLATFORM_MAX_VIRTIO_MMIO_DEVICES];
+	bool virtio_mmio_dma_coherent[PLATFORM_MAX_VIRTIO_MMIO_DEVICES];
 	uint32_t virtio_mmio_count;
 
 	/*
@@ -91,5 +142,13 @@ bool platform_bootstrap(const dtb_t *dtb);
 const platform_t *platform_get(void);
 
 void platform_dump(const platform_t *platform);
+
+/* Decode any reg entry retained for a discovered node, applying bus ranges. */
+bool platform_device_reg_get(const platform_t *platform, uint32_t node_index, uint32_t entry_index,
+							 platform_region_t *region);
+
+/* Return a raw property value for one retained node; its bytes remain in the DTB. */
+bool platform_device_property_get(const platform_t *platform, uint32_t node_index, const char *property_name,
+								  const void **value, uint32_t *length);
 
 #endif

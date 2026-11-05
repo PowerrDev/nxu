@@ -10,6 +10,8 @@
 #include <platform/i386/pci.h>
 #include <platform/i386/portio.h>
 
+#include <kern/console/ioregistry.h>
+
 #include <kern/console/console.h>
 
 #include <stdbool.h>
@@ -195,10 +197,10 @@ pci_size_bars(pci_device_t *device)
 	pci_config_write16(bus, slot, function, PCI_CONFIG_COMMAND, command);
 }
 
-static void pci_scan_bus(uint8_t bus, uint32_t depth);
+static void pci_scan_bus(uint8_t bus, uint32_t depth, ioreg_id_t parent_registry_id);
 
 static void
-pci_probe_function(uint8_t bus, uint8_t slot, uint8_t function, uint32_t depth)
+pci_probe_function(uint8_t bus, uint8_t slot, uint8_t function, uint32_t depth, ioreg_id_t parent_registry_id)
 {
 	if (g_pci_device_count >= PCI_MAX_DEVICES) return;
 
@@ -219,6 +221,7 @@ pci_probe_function(uint8_t bus, uint8_t slot, uint8_t function, uint32_t depth)
 	device->prog_if = (uint8_t)(class_word >> 8U);
 	device->subclass = (uint8_t)(class_word >> 16U);
 	device->class_code = (uint8_t)(class_word >> 24U);
+	device->registry_id = IOREG_INVALID;
 	device->header_type =
 		(uint8_t)(pci_config_read8(bus, slot, function, PCI_CONFIG_HEADER_TYPE) & PCI_HEADER_TYPE_MASK);
 
@@ -238,19 +241,21 @@ pci_probe_function(uint8_t bus, uint8_t slot, uint8_t function, uint32_t depth)
 	}
 
 	pci_size_bars(device);
+	device->registry_id = ioreg_add_pci_device(parent_registry_id, bus, slot, function, device->vendor_id,
+													 device->device_id);
 	g_pci_device_count++;
 
 	if (device->header_type == PCI_HEADER_TYPE_BRIDGE) {
 		device->secondary_bus = pci_config_read8(bus, slot, function, PCI_CONFIG_SECONDARY_BUS);
 
 		if (device->secondary_bus > bus && depth < PCI_MAX_SCAN_DEPTH) {
-			pci_scan_bus(device->secondary_bus, depth + 1U);
+			pci_scan_bus(device->secondary_bus, depth + 1U, device->registry_id);
 		}
 	}
 }
 
 static void
-pci_scan_bus(uint8_t bus, uint32_t depth)
+pci_scan_bus(uint8_t bus, uint32_t depth, ioreg_id_t parent_registry_id)
 {
 	g_pci_bus_count++;
 
@@ -261,7 +266,7 @@ pci_scan_bus(uint8_t bus, uint32_t depth)
 		uint8_t functions = (header & PCI_HEADER_MULTIFUNCTION) != 0U ? 8U : 1U;
 
 		for (uint8_t function = 0U; function < functions; function++) {
-			pci_probe_function(bus, slot, function, depth);
+			pci_probe_function(bus, slot, function, depth, parent_registry_id);
 		}
 	}
 }
@@ -279,7 +284,7 @@ pci_init(void)
 		return false;
 	}
 
-	pci_scan_bus(0U, 0U);
+	pci_scan_bus(0U, 0U, ioreg_family_platform());
 	return true;
 }
 

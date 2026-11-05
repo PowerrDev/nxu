@@ -101,6 +101,29 @@ platform_get(void)
 	return g_platform_ready ? &g_platform : 0;
 }
 
+bool
+platform_device_reg_get(const platform_t *platform, uint32_t node_index, uint32_t entry_index,
+						platform_region_t *region)
+{
+	(void)platform;
+	(void)node_index;
+	(void)entry_index;
+	(void)region;
+	return false;
+}
+
+bool
+platform_device_property_get(const platform_t *platform, uint32_t node_index, const char *property_name,
+							 const void **value, uint32_t *length)
+{
+	(void)platform;
+	(void)node_index;
+	(void)property_name;
+	(void)value;
+	(void)length;
+	return false;
+}
+
 void
 platform_dump(const platform_t *platform)
 {

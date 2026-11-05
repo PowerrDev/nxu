@@ -48,6 +48,7 @@
 #include <drivers/virtio/virtio_pci.h>
 
 #include <kern/console/console.h>
+#include <kern/console/ioregistry.h>
 #include <kern/machine/barrier.h>
 #include <kern/machine/machine_routines.h>
 #include <kern/machine/timer.h>
@@ -318,6 +319,7 @@ i386_init_drivers(const i386_boot_info_t *boot)
 	 * With it, tepOS checks bootd against its signed manifest: reported, never waited for or enforced.
 	 */
 	virtio_dump();
+	ioreg_dump();
 	block_device_dump();
 	display_dump();
 
