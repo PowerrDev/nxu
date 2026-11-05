@@ -17,6 +17,9 @@ description of the machine, and publishes the result as data.
   controller frames, the PCI ECAM window and bus range, and VirtIO-MMIO
   transports.
 - Publish them in a single machine-independent structure, `platform_t`.
+- Retain a bounded parent-linked snapshot of FDT nodes so diagnostics can show
+  the firmware hardware hierarchy, including compatible strings, status and
+  the first register range.
 - Own the early platform console, so a diagnostic can be printed before anything
   else is trusted.
 - Keep machine addresses out of the architecture and core-kernel layers.
@@ -62,6 +65,22 @@ dtb_walk()          token-by-token traversal, calling a visitor
 over it. That keeps the bounds checking, token decoding and alignment handling
 in exactly one place.
 
+`platform_dump()` prints the retained nodes in tree order. This reflects what
+firmware described; it does not imply that a driver matched, registered or
+activated a device. Those runtime states belong to a driver registry.
+Each node also retains the raw `reg` entries and interrupt specifier bytes;
+`platform_device_reg_get()` decodes any `reg` entry using the parent cell
+widths and applies ancestor `ranges` translations. Nodes retain raw `ranges`,
+phandles, and interrupt-parent relationships. `platform_device_property_get()`
+can retrieve any other property on demand from the original blob without a
+fixed per-node property limit.
+
+The runtime IORegistry is separate. PCI enumeration adds functions beneath
+their bridge nodes, and VirtIO binding updates each enumerated device to show
+whether it was matched, active, failed to attach, or disabled by policy. It is
+dumped after driver initialization. PCI enumeration currently retains up to
+256 functions; the IORegistry itself holds up to 512 entries.
+
 ## Directory layout
 
 ```text
@@ -100,10 +119,11 @@ records the intent to fix it. Both are documented in
 
 ## Lifetime and ownership
 
-`platform_discover()` fills a caller-provided `platform_t`. It allocates
-nothing, retains no pointer and has no global state. `dtb_init()` likewise fills
-a caller-provided `dtb_t` whose fields are pointers **into the blob** — so the
-blob must remain valid and mapped for as long as the `dtb_t` is used.
+`platform_discover()` fills a caller-provided `platform_t` without allocating.
+Its node strings and property views point into the DTB, and `source_dtb` points
+to the caller's `dtb_t`; both the `dtb_t` object and its blob must remain valid
+and mapped while those views are used. `dtb_init()` likewise fills a
+caller-provided `dtb_t` whose fields point into the blob.
 
 That is why `pmm_init()` permanently reserves the DTB's physical range: the
 `dtb_t` in `kern_init()` outlives every subsystem.
@@ -124,7 +144,12 @@ context by the panic path; see [UART](uart.md).
 - One machine supported: QEMU `virt`.
 - Discovery runs once, at boot. There is no hot-plug and no re-discovery.
 - No global `platform_t`; the structure lives on the boot stack.
-- No `interrupts` property parsing, so interrupt numbers are hard-coded.
+- Interrupt-parent resolution covers `interrupt-parent` and `interrupts`; other
+  interrupt encodings remain available as raw properties but are not decoded.
+- `ranges` translation handles simple address windows; specialized bus
+  encodings may remain untranslated while their raw property is retained.
+- The diagnostic hierarchy retains at most 512 nodes (`PLATFORM_MAX_DEVICE_NODES`); a
+  larger tree causes discovery to fail explicitly.
 - No `chosen`, `bootargs`, `stdout-path` or `initrd` handling.
 - No memory-reservation-block processing; the field is validated but the
   entries are never read.

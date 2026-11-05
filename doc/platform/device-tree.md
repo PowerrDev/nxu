@@ -266,7 +266,9 @@ should trigger.
 - **Read-only.** No modification, no node insertion, no blob generation.
 - **No path lookup.** There is no `dtb_find_node("/soc/uart@9000000")`; finding
   something requires a full walk with a visitor.
-- **No `phandle` resolution**, so nodes cannot be cross-referenced.
+- The parser exposes properties as raw values. Platform discovery resolves
+  `phandle` references used by `interrupt-parent`; the parser itself remains
+  format-only.
 - **No property type interpretation.** Values are handed to visitors as raw
   bytes with a length.
 - **Memory reservation block is validated but never parsed.** Its entries could

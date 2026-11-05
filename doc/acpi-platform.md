@@ -33,4 +33,7 @@ host synchronization/thread identity is scoped to the bootstrap thread before
 AP dispatch. Do not call the AML interpreter later from arbitrary threads until
 runtime synchronization and event delivery are implemented.
 
-IORegistry remains available internally, but its automatic boot dumps are removed.
+After device initialization, the kernel dumps its runtime I/O registry. PCI
+functions appear beneath their enumerated bridge hierarchy; VirtIO functions
+show whether a class driver matched, attached, failed, or was disabled by boot
+policy. This is driver state, distinct from AML `_STA` firmware presence.

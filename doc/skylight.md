@@ -15,7 +15,7 @@ It only understands graphics concepts:
 | operations | `sl_fill_rect`, `sl_copy` (surface to surface, optionally blending ARGB over), `sl_upload` (a caller's pixels into a surface) |
 | present | `sl_present`: a rectangle (or the accumulated damage) of a display's scanout surface onto the device |
 
-It knows nothing of windows, buttons, fonts, the Dock or input. WindowServer
+It knows **nothing** of windows, buttons, fonts, the Dock or input. WindowServer
 decides "Voyager is at (120, 80), Activity Monitor overlaps it, this region
 needs recomposition"; Skylight performs the graphics operations and presents
 the result; the backend decides how that reaches its device.

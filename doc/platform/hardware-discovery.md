@@ -269,6 +269,9 @@ the 16 KiB boot stack.
 
 - Silent truncation at 8 memory regions and 32 VirtIO transports.
 - Only `reg[0]` is read for every device except the GIC.
+- All raw node properties remain queryable through
+  `platform_device_property_get()`; decoded resource translation follows
+  ancestor `ranges` windows where the cell format is supported.
 - No `ranges` translation, so an address behind a bus that remaps its children's
   addresses would be recorded untranslated. QEMU `virt` places these devices
   directly on the root bus, so it does not arise today.
