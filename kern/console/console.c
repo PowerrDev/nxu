@@ -35,6 +35,7 @@ static uint32_t g_kconsole_history_head;
 static uint32_t g_kconsole_history_count;
 static uint64_t g_kconsole_history_sequence;
 static bool g_kconsole_line_start = true;
+static bool g_kconsole_timestamp_enabled = true;
 static bool g_kconsole_verbose;
 static bool g_kconsole_clock_started;
 static uint64_t g_kconsole_boot_ticks;
@@ -177,6 +178,19 @@ kconsole_uptime_us(void)
 }
 
 /*
+ * Routine:     kconsole_set_timestamp
+ * Purpose:
+ *              Control timestamp prefixes for subsequent console lines
+ *              without changing the log format used by other architectures.
+ */
+void
+kconsole_set_timestamp(bool enabled)
+{
+	NXU_RLOCK_GUARD(&g_kconsole_lock);
+	g_kconsole_timestamp_enabled = enabled;
+}
+
+/*
  * Prefix each logical kernel log line with monotonic time since the first
  * console message. Eight fractional digits match NXU's XNU-inspired boot log
  * format while still deriving directly from the architectural counter.
@@ -222,7 +236,10 @@ kputc(char character)
 	NXU_RLOCK_GUARD(&g_kconsole_lock);
 
 	if (g_kconsole_line_start && character != '\n') {
-		kconsole_emit_timestamp();
+		if (g_kconsole_timestamp_enabled) {
+			kconsole_emit_timestamp();
+		}
+
 		g_kconsole_line_start = false;
 	}
 

@@ -52,6 +52,9 @@ void kputi64(int64_t value);
  */
 uint64_t kconsole_uptime_us(void);
 
+/* Enable or disable timestamps on subsequent console lines. */
+void kconsole_set_timestamp(bool enabled);
+
 int kprintf(const char *format, ...);
 int kvprintf(const char *format, va_list arguments);
 

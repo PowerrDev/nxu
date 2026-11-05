@@ -12,10 +12,9 @@
 #include <stdint.h>
 
 /*
- * Minimal IOKit-style device tree, populated only from real attach events
- * (VirtIO device match points, subsystem bring-up) elsewhere in the kernel
- * -- never fabricated. ioreg_dump() prints it as an indented tree, the way
- * the real `ioreg` command lists the IORegistry.
+ * Runtime I/O tree. Bus enumeration records discovered devices; class drivers
+ * advance their state as they match and attach. ioreg_dump() prints the tree
+ * and those lifecycle states.
  */
 
 typedef uint32_t ioreg_id_t;
@@ -23,8 +22,24 @@ typedef uint32_t ioreg_id_t;
 #define IOREG_ROOT 0U
 #define IOREG_INVALID 0xFFFFFFFFU
 
+typedef enum {
+	IOREG_STATE_REGISTERED,
+	IOREG_STATE_DISCOVERED,
+	IOREG_STATE_MATCHED,
+	IOREG_STATE_ACTIVE,
+	IOREG_STATE_FAILED,
+	IOREG_STATE_DISABLED,
+	IOREG_STATE_UNMATCHED
+} ioreg_state_t;
+
 /* Adds a node under `parent`, returning its id (or IOREG_INVALID if full). */
 ioreg_id_t ioreg_add(ioreg_id_t parent, const char *name, const char *class_name);
+
+/* Publish enumerated PCI and VirtIO-MMIO devices and update their bind state. */
+ioreg_id_t ioreg_add_pci_device(ioreg_id_t parent, uint8_t bus, uint8_t slot, uint8_t function, uint16_t vendor,
+								uint16_t device);
+ioreg_id_t ioreg_add_virtio_mmio(uint64_t base);
+void ioreg_set_driver_state(ioreg_id_t id, ioreg_state_t state, const char *driver_name);
 
 /* Print the whole tree, root first, each child indented under its parent. */
 void ioreg_dump(void);

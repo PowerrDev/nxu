@@ -12,7 +12,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define IOREG_MAX_NODES 64U
+#define IOREG_MAX_NODES 512U
 #define IOREG_NAME_MAX 47U
 
 typedef struct {
@@ -20,6 +20,8 @@ typedef struct {
 	ioreg_id_t parent;
 	char name[IOREG_NAME_MAX + 1U];
 	char class_name[IOREG_NAME_MAX + 1U];
+	char driver_name[IOREG_NAME_MAX + 1U];
+	ioreg_state_t state;
 } ioreg_node_t;
 
 static ioreg_node_t g_ioreg_nodes[IOREG_MAX_NODES];
@@ -54,9 +56,76 @@ ioreg_add_raw(ioreg_id_t parent, const char *name, const char *class_name)
 	node->parent = parent;
 	ioreg_copy(node->name, name);
 	ioreg_copy(node->class_name, class_name);
+	node->state = IOREG_STATE_REGISTERED;
 
 	g_ioreg_count++;
 	return id;
+}
+
+static char
+ioreg_hex_digit(uint32_t value)
+{
+	return (char)(value < 10U ? '0' + value : 'a' + value - 10U);
+}
+
+static uint32_t
+ioreg_append_hex(char *buffer, uint32_t offset, uint32_t value, uint32_t digits)
+{
+	for (uint32_t shift = digits; shift > 0U; shift--) {
+		buffer[offset++] = ioreg_hex_digit((value >> ((shift - 1U) * 4U)) & 0xFU);
+	}
+	return offset;
+}
+
+ioreg_id_t
+ioreg_add_pci_device(ioreg_id_t parent, uint8_t bus, uint8_t slot, uint8_t function, uint16_t vendor,
+					 uint16_t device)
+{
+	char name[IOREG_NAME_MAX + 1U] = "pci";
+	uint32_t offset = 3U;
+	offset = ioreg_append_hex(name, offset, vendor, 4U);
+	name[offset++] = ',';
+	offset = ioreg_append_hex(name, offset, device, 4U);
+	name[offset++] = '@';
+	offset = ioreg_append_hex(name, offset, bus, 2U);
+	name[offset++] = ',';
+	offset = ioreg_append_hex(name, offset, slot, 2U);
+	name[offset++] = '.';
+	offset = ioreg_append_hex(name, offset, function, 1U);
+	name[offset] = '\0';
+
+	ioreg_id_t id = ioreg_add(parent, name, "IOPCIDevice");
+	ioreg_set_driver_state(id, IOREG_STATE_DISCOVERED, 0);
+	return id;
+}
+
+ioreg_id_t
+ioreg_add_virtio_mmio(uint64_t base)
+{
+	static const char digits[] = "0123456789abcdef";
+	char name[IOREG_NAME_MAX + 1U] = "VirtIOMMIO@";
+	uint32_t offset = 11U;
+	bool started = false;
+	for (int32_t shift = 60; shift >= 0; shift -= 4) {
+		uint32_t digit = (uint32_t)((base >> (uint32_t)shift) & 0xFU);
+		if (digit != 0U || started || shift == 0) {
+			name[offset++] = digits[digit];
+			started = true;
+		}
+	}
+	name[offset] = '\0';
+	ioreg_id_t id = ioreg_add(ioreg_family_platform(), name, "VirtIODevice");
+	ioreg_set_driver_state(id, IOREG_STATE_DISCOVERED, 0);
+	return id;
+}
+
+void
+ioreg_set_driver_state(ioreg_id_t id, ioreg_state_t state, const char *driver_name)
+{
+	if (id == IOREG_ROOT || id == IOREG_INVALID || id >= g_ioreg_count || !g_ioreg_nodes[id].used) return;
+	g_ioreg_nodes[id].state = state;
+	g_ioreg_nodes[id].driver_name[0] = '\0';
+	if (driver_name != 0) ioreg_copy(g_ioreg_nodes[id].driver_name, driver_name);
 }
 
 static void
@@ -73,6 +142,7 @@ ioreg_add(ioreg_id_t parent, const char *name, const char *class_name)
 	if (name == 0 || class_name == 0) return IOREG_INVALID;
 
 	ioreg_bootstrap();
+	if (parent != IOREG_INVALID && (parent >= g_ioreg_count || !g_ioreg_nodes[parent].used)) return IOREG_INVALID;
 	return ioreg_add_raw(parent, name, class_name);
 }
 
@@ -128,6 +198,20 @@ ioreg_dump_node(ioreg_id_t id, uint32_t depth)
 	kputs(node->name);
 	kputs("  <class ");
 	kputs(node->class_name);
+	kputs(", ");
+	switch (node->state) {
+	case IOREG_STATE_DISCOVERED: kputs("discovered"); break;
+	case IOREG_STATE_MATCHED: kputs("matched"); break;
+	case IOREG_STATE_ACTIVE: kputs("registered, matched, active"); break;
+	case IOREG_STATE_FAILED: kputs("matched, attach failed"); break;
+	case IOREG_STATE_DISABLED: kputs("matched, disabled by policy"); break;
+	case IOREG_STATE_UNMATCHED: kputs("registered, unmatched"); break;
+	default: kputs("registered"); break;
+	}
+	if (node->driver_name[0] != '\0') {
+		kputs(", driver ");
+		kputs(node->driver_name);
+	}
 	kputs(", id ");
 	kputhex32(0x10000100U + id);
 	kputln(">");
