@@ -7,9 +7,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define VFS_FD_MAX 32U
+#define VFS_FD_MAX 128U
 #define VFS_FD_FIRST_FILE 3U
-#define VFS_FILE_MAX 128U
+#define VFS_FILE_MAX 256U
 
 #define VFS_OPEN_READ (1U << 0U)
 #define VFS_OPEN_WRITE (1U << 1U)

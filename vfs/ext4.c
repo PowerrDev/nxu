@@ -1052,6 +1052,52 @@ ext4_read_inode_raw_locked(ext4_mount_data_t *data, uint32_t inode_number, uint8
 	return ext4_verify_inode_checksum(data, inode_number, raw) ? VFS_STATUS_OK : VFS_STATUS_IO_ERROR;
 }
 
+/*
+ * Routine:     ext4_check_integrity_locked
+ * Purpose:
+ *              Verify every group descriptor, initialized allocation bitmap
+ *              and allocated inode checksum before the mount becomes visible.
+ */
+static vfs_status_t
+ext4_check_integrity_locked(ext4_mount_data_t *data, uint32_t *checked_inodes)
+{
+	if (data == 0 || checked_inodes == 0) return VFS_STATUS_INVALID;
+	*checked_inodes = 0U;
+
+	for (uint32_t group = 0U; group < data->group_count; group++) {
+		ext4_group_info_t info;
+		uint8_t raw[64];
+		vfs_status_t status = ext4_read_group_locked(data, group, &info, raw);
+		if (status != VFS_STATUS_OK) return status;
+
+		if ((info.flags & EXT4_BG_BLOCK_UNINIT) == 0U) {
+			if (!ext4_read_block_locked(data, info.block_bitmap, data->block_buffer)) return VFS_STATUS_IO_ERROR;
+			if (!ext4_verify_block_bitmap_checksum(data, raw, data->block_buffer)) return VFS_STATUS_IO_ERROR;
+		}
+
+		uint64_t first_inode = (uint64_t)group * data->inodes_per_group + 1ULL;
+		if (first_inode > data->inodes_count) continue;
+		uint64_t inodes_remaining = (uint64_t)data->inodes_count + 1ULL - first_inode;
+		uint32_t inode_bits = inodes_remaining < data->inodes_per_group ? (uint32_t)inodes_remaining
+																		  : data->inodes_per_group;
+		if ((info.flags & EXT4_BG_INODE_UNINIT) != 0U) continue;
+
+		if (!ext4_read_block_locked(data, info.inode_bitmap, data->block_buffer)) return VFS_STATUS_IO_ERROR;
+		if (!ext4_verify_inode_bitmap_checksum(data, raw, data->block_buffer)) return VFS_STATUS_IO_ERROR;
+
+		for (uint32_t bit = 0U; bit < inode_bits; bit++) {
+			if (!ext4_bitmap_test(data->block_buffer, bit)) continue;
+
+			uint32_t inode_number = (uint32_t)(first_inode + bit);
+			status = ext4_read_inode_raw_locked(data, inode_number, data->inode_buffer);
+			if (status != VFS_STATUS_OK) return status;
+			(*checked_inodes)++;
+		}
+	}
+
+	return VFS_STATUS_OK;
+}
+
 static vfs_status_t
 ext4_write_inode_raw_locked(ext4_mount_data_t *data, uint32_t inode_number, uint8_t *raw)
 {
@@ -2591,9 +2637,13 @@ ext4_mount(filesystem_t filesystem, block_device_t device, mount_t mount)
 	if (device == 0 || mount == 0 || !device->registered) return VFS_STATUS_INVALID;
 
 	if (g_ext4_mount_count >= EXT4_MOUNT_MAX) return VFS_STATUS_NO_SPACE;
+	kprintf("(ext4) ext4_mount: mounting device %s at %s\n", device->name, mount->m_path);
 
 	ext4_mount_data_t *data = kcalloc(1U, sizeof(*data));
-	if (data == 0) return VFS_STATUS_NO_MEMORY;
+	if (data == 0) {
+		kprintf("(ext4) ext4_mount: mount failed with status %s\n", vfs_status_name(VFS_STATUS_NO_MEMORY));
+		return VFS_STATUS_NO_MEMORY;
+	}
 
 	data->mount = mount;
 	data->device = device;
@@ -2601,6 +2651,7 @@ ext4_mount(filesystem_t filesystem, block_device_t device, mount_t mount)
 
 	uint8_t super[EXT4_SUPERBLOCK_SIZE];
 	if (!ext4_read_bytes(data, EXT4_SUPERBLOCK_OFFSET, super, sizeof(super))) {
+		kprintf("(ext4) ext4_mount: could not read the superblock from %s\n", device->name);
 		mount->m_data = 0;
 		ext4_destroy_mount_data(data);
 		return VFS_STATUS_IO_ERROR;
@@ -2608,14 +2659,32 @@ ext4_mount(filesystem_t filesystem, block_device_t device, mount_t mount)
 
 	vfs_status_t status = ext4_parse_superblock(data, super);
 	if (status != VFS_STATUS_OK) {
+		kprintf("(ext4) ext4_mount: superblock validation failed with status %s\n", vfs_status_name(status));
 		mount->m_data = 0;
 		ext4_destroy_mount_data(data);
 		return status;
 	}
 
+	char volume_label[17];
+	memcpy(volume_label, super + 0x78U, 16U);
+	volume_label[16] = '\0';
+	for (uint32_t index = 0U; index < 16U; index++) {
+		if (volume_label[index] == '\0') break;
+		if ((uint8_t)volume_label[index] < 0x20U || (uint8_t)volume_label[index] > 0x7EU)
+			volume_label[index] = '?';
+	}
+	if (volume_label[0] == '\0') {
+		for (uint32_t index = 0U; index < 16U && device->name[index] != '\0'; index++)
+			volume_label[index] = device->name[index];
+	}
+	kprintf("(ext4) ext4_mount: mounting volume %s\n", volume_label);
+	kprintf("(ext4) ext4_mount: block size %u bytes, %llu blocks, %u groups\n", (unsigned)data->block_size,
+			(unsigned long long)data->blocks_count, (unsigned)data->group_count);
+
 	data->block_buffer = kmalloc(data->block_size);
 	data->inode_buffer = kmalloc(data->inode_size);
 	if (data->block_buffer == 0 || data->inode_buffer == 0) {
+		kprintf("(ext4) ext4_mount: metadata buffer allocation failed\n");
 		mount->m_data = 0;
 		ext4_destroy_mount_data(data);
 		return VFS_STATUS_NO_MEMORY;
@@ -2627,22 +2696,35 @@ ext4_mount(filesystem_t filesystem, block_device_t device, mount_t mount)
 	uint32_t journal_blocks;
 	status = ext4_journal_map_locked(data, &journal_map, &journal_blocks);
 	if (status == VFS_STATUS_OK) {
+		kprintf("(ext4) ext4_mount: initializing journal on %s\n", volume_label);
 		status = ext4_jbd2_status(jbd2_init(&data->journal, data->device, data->block_size, data->blocks_count,
 											journal_map, journal_blocks, data->uuid));
 	}
 
 	if (journal_map != 0) (void)kfree(journal_map);
-	if (status == VFS_STATUS_OK) status = ext4_recover_journal_locked(data);
+	if (status == VFS_STATUS_OK) {
+		kprintf("(ext4) ext4_mount: recovering journal for %s\n", volume_label);
+		status = ext4_recover_journal_locked(data);
+	}
+	uint32_t checked_inodes = 0U;
+	if (status == VFS_STATUS_OK) {
+		kprintf("(ext4) ext4_mount: checking metadata integrity for %s\n", volume_label);
+		status = ext4_check_integrity_locked(data, &checked_inodes);
+	}
 	if (status != VFS_STATUS_OK) {
+		kprintf("(ext4) ext4_mount: mount of %s failed with status %s\n", volume_label, vfs_status_name(status));
 		ext4_unlock(data);
 		mount->m_data = 0;
 		ext4_destroy_mount_data(data);
 		return status;
 	}
+	kprintf("(ext4) ext4_mount: metadata integrity passed for %u inode(s) across %u group(s)\n",
+			(unsigned)checked_inodes, (unsigned)data->group_count);
 	vnode_t root;
 	status = ext4_get_node_locked(data, EXT4_ROOT_INODE, 0, &root);
 	ext4_unlock(data);
 	if (status != VFS_STATUS_OK || root == 0 || root->v_type != VNODE_TYPE_DIRECTORY) {
+		kprintf("(ext4) ext4_mount: root directory validation failed for %s\n", volume_label);
 		mount->m_data = 0;
 		ext4_destroy_mount_data(data);
 		return status == VFS_STATUS_OK ? VFS_STATUS_IO_ERROR : status;
@@ -2651,6 +2733,7 @@ ext4_mount(filesystem_t filesystem, block_device_t device, mount_t mount)
 	mount->m_root = root;
 	data->active = true;
 	g_ext4_mounts[g_ext4_mount_count++] = data;
+	kprintf("(ext4) ext4_mount: mount-complete volume %s at %s\n", volume_label, mount->m_path);
 	return VFS_STATUS_OK;
 }
 

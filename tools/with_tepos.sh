@@ -19,6 +19,9 @@
 #
 #   TEP_DIR=<path>   the TrustedEnclaveProcessor checkout (default: next to
 #                    this repository's main checkout)
+#   TEP_BUILD_DIR    tepOS build and persistent-key directory (default:
+#                    BUILD/tepos in this repository)
+#   TEP_CCACHE_DIR   compiler cache directory (default: BUILD/tepos-ccache)
 #   TEP_AUTH_RESET=1 recovery reset: tepOS clears the passcode and its
 #                    failure count at start (fw_cfg opt/org.tepos/auth-reset),
 #                    so NXU's login screen asks for a new one. For a
@@ -35,6 +38,9 @@ MAKE_CMD=${MAKE:-make}
 
 common_dir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || common_dir="$PWD/.git"
 TEP_DIR=${TEP_DIR:-$(cd "$(dirname "$common_dir")/.." && pwd)/TrustedEnclaveProcessor}
+TEP_BUILD_DIR=${TEP_BUILD_DIR:-$PWD/BUILD/tepos}
+TEP_CCACHE_DIR=${TEP_CCACHE_DIR:-$PWD/BUILD/tepos-ccache}
+TEP_CMAKE_FLAGS='-G Ninja -DCMAKE_TOOLCHAIN_FILE=gcc.cmake -DCROSS_COMPILER_PREFIX=aarch64-elf- -DKernelPlatform=qemu-arm-virt -DKernelSel4Arch=aarch64 -DKernelArmHypervisorSupport=OFF -DKernelDebugBuild=ON -DKernelPrinting=ON -DKernelVerificationBuild=OFF'
 
 if [ ! -f "$TEP_DIR/tools/mailbox_link.py" ]; then
 	echo "with_tepos: no tepOS checkout at $TEP_DIR (set TEP_DIR); booting NXU without tepOS"
@@ -46,7 +52,8 @@ LOGS="$PWD/BUILD/tepos-run"
 mkdir -p "$LOGS"
 
 echo "with_tepos: building tepOS in $TEP_DIR"
-if ! "$MAKE_CMD" -C "$TEP_DIR" image >"$LOGS/build.log" 2>&1 </dev/null; then
+if ! CCACHE_DIR="$TEP_CCACHE_DIR" "$MAKE_CMD" -C "$TEP_DIR" "BUILD_DIR=$TEP_BUILD_DIR" \
+	"KERNEL_CMAKE_FLAGS=$TEP_CMAKE_FLAGS" image >"$LOGS/build.log" 2>&1 </dev/null; then
 	tail -15 "$LOGS/build.log"
 	echo "with_tepos: tepOS did not build (log: $LOGS/build.log); booting NXU without tepOS"
 	exec "$@"
@@ -55,7 +62,7 @@ fi
 # tepOS's own devices (virtio-rng, its key store disk and sealing key, ...), as
 # its Makefile defines them, with paths relative to $TEP_DIR. The key store is
 # tepOS's real, persistent one (build/tepos-keystore.img there).
-TEP_DEVICES=$("$MAKE_CMD" -s -C "$TEP_DIR" qemu-devices 2>/dev/null)
+TEP_DEVICES=$("$MAKE_CMD" -s -C "$TEP_DIR" "BUILD_DIR=$TEP_BUILD_DIR" qemu-devices 2>/dev/null)
 
 # Short socket paths: Unix socket paths are limited to about 100 bytes.
 SOCKS=$(mktemp -d /tmp/nxu-tep.XXXXXX) || exit 1

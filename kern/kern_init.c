@@ -975,7 +975,8 @@ kern_init(const void *dtb_address)
 	nxu_boot_log_early(dtb_address, current_el_raw, current_el);
 
 	/* Catch bootstrap faults before touching firmware-provided memory. */
-	exception_init();
+    kputln("kern_init: initializing exception vectors");
+    exception_init();
 	kputln("kern_init: early exception vectors installed");
 
 	/* Permanent Device Tree metadata. */
