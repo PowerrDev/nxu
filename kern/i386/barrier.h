@@ -14,6 +14,8 @@
 #ifndef NXU_KERN_I386_BARRIER_H
 #define NXU_KERN_I386_BARRIER_H
 
+#include <stdint.h>
+
 static inline void
 ml_dma_wmb(void)
 {
@@ -41,5 +43,10 @@ ml_cpu_relax(void)
 {
 	__asm__ volatile("pause" : : : "memory");
 }
+
+static inline uint32_t ml_dma_cache_line_size(void) { return 1U; }
+static inline void ml_dma_cache_clean(uint64_t start, uint64_t size) { (void)start; (void)size; }
+static inline void ml_dma_cache_clean_invalidate(uint64_t start, uint64_t size) { (void)start; (void)size; }
+static inline void ml_dma_cache_invalidate(uint64_t start, uint64_t size) { (void)start; (void)size; }
 
 #endif

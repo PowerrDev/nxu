@@ -21,7 +21,9 @@
 
 #if defined(__aarch64__)
 #include <kern/arm64/smp.h>
-#elif defined(__i386__) || defined(__x86_64__)
+#elif defined(__x86_64__)
+#include <kern/x86_64/smp.h>
+#elif defined(__i386__)
 #include <kern/i386/smp.h>
 #else
 #error "machine/smp.h: unsupported target architecture"
