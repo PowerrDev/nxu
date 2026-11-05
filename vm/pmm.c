@@ -232,7 +232,7 @@ pmm_reserve_range(uint64_t start, uint64_t size)
 	}
 }
 
-#if !defined(__i386__)
+#if defined(__aarch64__)
 
 static bool
 pmm_find_bitmap_location(uint64_t kernel_end, uint64_t bitmap_storage_bytes, const dtb_t *dtb, uint64_t *bitmap_address)
@@ -369,11 +369,11 @@ pmm_init(const platform_t *platform, const dtb_t *dtb)
 	return true;
 }
 
-#else /* __i386__ */
+#elif defined(__i386__) || defined(__x86_64__)
 
 /*
  * x86 has no device tree. The platform hands over RAM as a sorted list of
- * regions (kern/i386/memory_map.h), the kernel is a known physical range,
+ * regions, the kernel is a known physical range,
  * and everything else that must survive (the bootloader's information
  * structure and command line) is registered with pmm_reserve_boot_range()
  * before pmm_init(). All of physical memory is reachable through the
@@ -412,34 +412,51 @@ pmm_reserve_boot_range(uint64_t base, uint64_t size)
  * `bytes` fit without touching a registered boot range.
  */
 static bool
-pmm_find_free_gap(uint64_t start, uint64_t bytes, uint64_t *address)
+pmm_find_free_gap(const platform_t *platform, uint64_t start, uint64_t bytes, uint64_t *address)
 {
-	uint64_t candidate;
-
-	if (!pmm_align_up(start, PMM_PAGE_SIZE, &candidate)) {
+	if (platform == 0 || address == 0 || bytes == 0ULL) {
 		return false;
 	}
 
-	for (uint32_t pass = 0U; pass <= PMM_BOOT_RANGE_MAX; pass++) {
-		bool moved = false;
+	for (uint32_t region_index = 0U; region_index < platform->memory_region_count; region_index++) {
+		const platform_region_t *region = &platform->memory_regions[region_index];
+		uint64_t region_end;
 
-		for (uint32_t index = 0U; index < g_pmm_boot_range_count; index++) {
-			uint64_t range_end = g_pmm_boot_ranges[index].base + g_pmm_boot_ranges[index].size;
-
-			if (!pmm_ranges_overlap(candidate, candidate + bytes, g_pmm_boot_ranges[index].base, range_end)) {
-				continue;
-			}
-
-			if (!pmm_align_up(range_end, PMM_PAGE_SIZE, &candidate)) {
-				return false;
-			}
-
-			moved = true;
+		if (region->size == 0ULL || !pmm_add(region->base, region->size, &region_end)) {
+			continue;
 		}
 
-		if (!moved) {
-			*address = candidate;
-			return true;
+		uint64_t candidate = start > region->base ? start : region->base;
+
+		if (!pmm_align_up(candidate, PMM_PAGE_SIZE, &candidate)) {
+			return false;
+		}
+
+		for (uint32_t pass = 0U; pass <= PMM_BOOT_RANGE_MAX; pass++) {
+			bool moved = false;
+
+			if (candidate > UINT64_MAX - bytes || candidate + bytes > region_end) {
+				break;
+			}
+
+			for (uint32_t index = 0U; index < g_pmm_boot_range_count; index++) {
+				uint64_t range_end = g_pmm_boot_ranges[index].base + g_pmm_boot_ranges[index].size;
+
+				if (!pmm_ranges_overlap(candidate, candidate + bytes, g_pmm_boot_ranges[index].base, range_end)) {
+					continue;
+				}
+
+				if (!pmm_align_up(range_end, PMM_PAGE_SIZE, &candidate)) {
+					return false;
+				}
+
+				moved = true;
+			}
+
+			if (!moved) {
+				*address = candidate;
+				return true;
+			}
 		}
 	}
 
@@ -509,7 +526,7 @@ pmm_init(const platform_t *platform, const dtb_t *dtb)
 
 	uint64_t bitmap_address;
 
-	if (!pmm_find_free_gap(kernel_end, g_pmm.bitmap_storage_bytes, &bitmap_address)) {
+	if (!pmm_find_free_gap(platform, kernel_end, g_pmm.bitmap_storage_bytes, &bitmap_address)) {
 		return false;
 	}
 
@@ -562,7 +579,9 @@ pmm_init(const platform_t *platform, const dtb_t *dtb)
 	return true;
 }
 
-#endif /* __i386__ */
+#else
+#error "vm/pmm.c: unsupported target architecture"
+#endif
 
 bool
 pmm_allocate_page(uint64_t *physical_address)
@@ -619,14 +638,25 @@ pmm_allocate_page(uint64_t *physical_address)
 bool
 pmm_allocate_contiguous_pages(uint64_t page_count, uint64_t *physical_address)
 {
+	return pmm_allocate_contiguous_pages_below(page_count, UINT64_MAX, physical_address);
+}
+
+bool
+pmm_allocate_contiguous_pages_below(uint64_t page_count, uint64_t max_address, uint64_t *physical_address)
+{
 	NXU_RLOCK_GUARD(&g_pmm_lock);
 
 	if (!g_pmm.initialized || physical_address == 0 || page_count == 0ULL || page_count > g_pmm.free_page_count ||
-		page_count > g_pmm.page_count) {
+		page_count > g_pmm.page_count || page_count > UINT64_MAX / PMM_PAGE_SIZE || max_address < g_pmm.memory_base) {
 		return false;
 	}
+	uint64_t address_delta = max_address - g_pmm.memory_base;
+	uint64_t address_page_limit = address_delta / PMM_PAGE_SIZE;
+	if ((address_delta % PMM_PAGE_SIZE) == PMM_PAGE_SIZE - 1ULL) address_page_limit++;
+	if (address_page_limit > g_pmm.page_count) address_page_limit = g_pmm.page_count;
+	if (page_count > address_page_limit) return false;
 
-	for (uint64_t start = 0ULL; start + page_count <= g_pmm.page_count; start++) {
+	for (uint64_t start = 0ULL; start <= address_page_limit - page_count; start++) {
 		bool available = true;
 
 		for (uint64_t offset = 0ULL; offset < page_count; offset++) {
@@ -660,7 +690,6 @@ pmm_allocate_contiguous_pages(uint64_t page_count, uint64_t *physical_address)
 			return false;
 		}
 
-		if (page_count > UINT64_MAX / PMM_PAGE_SIZE) return false;
 		memset(pointer, 0, page_count * PMM_PAGE_SIZE);
 		*physical_address = address;
 		return true;
@@ -852,17 +881,17 @@ pmm_get_used_page_count(void)
 void
 pmm_dump(void)
 {
-	kprintf("pmm: total pages: %llu\n", (unsigned long long)g_pmm.page_count);
-	kprintf("pmm: used pages: %llu\n", (unsigned long long)g_pmm.used_page_count);
-	kprintf("pmm: free pages: %llu\n", (unsigned long long)g_pmm.free_page_count);
+	kprintf("pmm_dump: total pages: %llu\n", (unsigned long long)g_pmm.page_count);
+	kprintf("pmm_dump: used pages: %llu\n", (unsigned long long)g_pmm.used_page_count);
+	kprintf("pmm_dump: free pages: %llu\n", (unsigned long long)g_pmm.free_page_count);
 
 	if (!kconsole_verbose()) return;
 
-	kprintf("pmm: RAM range: 0x%llx-0x%llx\n", (unsigned long long)g_pmm.memory_base,
+	kprintf("pmm_dump: RAM range: 0x%llx-0x%llx\n", (unsigned long long)g_pmm.memory_base,
 			(unsigned long long)g_pmm.memory_end);
-	kprintf("pmm: page size: %llu bytes\n", (unsigned long long)PMM_PAGE_SIZE);
-	kprintf("pmm: bitmap: %p\n", (void *)g_pmm.bitmap);
-	kprintf("pmm: bitmap logical size: %llu bytes\n", (unsigned long long)g_pmm.bitmap_bytes);
-	kprintf("pmm: bitmap reserved size: %llu bytes\n", (unsigned long long)g_pmm.bitmap_storage_bytes);
-	kprintf("pmm: kernel: %p-%p\n", (void *)__kernel_start, (void *)__kernel_end);
+	kprintf("pmm_dump: page size: %llu bytes\n", (unsigned long long)PMM_PAGE_SIZE);
+	kprintf("pmm_dump: bitmap: %p\n", (void *)g_pmm.bitmap);
+	kprintf("pmm_dump: bitmap logical size: %llu bytes\n", (unsigned long long)g_pmm.bitmap_bytes);
+	kprintf("pmm_dump: bitmap reserved size: %llu bytes\n", (unsigned long long)g_pmm.bitmap_storage_bytes);
+	kprintf("pmm_dump: kernel: %p-%p\n", (void *)__kernel_start, (void *)__kernel_end);
 }
