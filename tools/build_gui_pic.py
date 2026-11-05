@@ -308,8 +308,8 @@ def main():
             if name == 'CoreGraphics':
                 assets = sources / 'UIService.framework/assets'
                 defaults = {
-                    'INTER_REGULAR': str(ROOT / 'tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Regular.otf'),
-                    'INTER_SEMIBOLD': str(ROOT / 'tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Medium.otf'),
+                    'INTER_REGULAR': str(ROOT / 'tools/DiskRoot/System/Library/Fonts/SF-Pro-Text-Regular.ttf'),
+                    'INTER_SEMIBOLD': str(ROOT / 'tools/DiskRoot/System/Library/Fonts/SF-Pro-Text-Semibold.ttf'),
                     'BOREL_REGULAR': 'fonts/Borel-Regular.ttf',
                     'BACKGROUND': str(ROOT / 'tools/UI/Backgrounds/Sonoma.jpg'),
                     'MENUBAR_LOGO': 'Branding/logo.png',

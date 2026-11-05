@@ -30,8 +30,8 @@ I386_GUI_BUILD_TOOLS := tools/build_gui_pic.py tools/audit_gui_frameworks.py too
 	frameworks/Runtime.framework/rust/allocator.rs frameworks/Runtime.framework/rust/panic.rs
 
 COREGRAPHICS_PIC_ASSETS += tools/UI/Backgrounds/Sonoma.jpg \
-	tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Regular.otf \
-	tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Medium.otf
+	tools/DiskRoot/System/Library/Fonts/SF-Pro-Text-Regular.ttf \
+	tools/DiskRoot/System/Library/Fonts/SF-Pro-Text-Semibold.ttf
 
 $(I386_USER_BUILD)/WindowServer.so: $(WINDOWSERVER_PIC_SOURCES) $(I386_GUI_BUILD_TOOLS) \
 	frameworks/WindowServer.framework/exports.map $(I386_USER_BUILD)/Runtime.so

@@ -32,8 +32,8 @@ I386_USER_APPKIT_OBJECTS := \
 uiservice-apps-i386-build:
 
 	$(MAKE) -C $(UISERVICE_DIR) BUILD_JOBS=$(BUILD_JOBS) \
-		INTER_REGULAR="$(abspath tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Regular.otf)" \
-		INTER_SEMIBOLD="$(abspath tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Medium.otf)" nxu-apps-i386
+		INTER_REGULAR="$(abspath tools/DiskRoot/System/Library/Fonts/SF-Pro-Text-Regular.ttf)" \
+		INTER_SEMIBOLD="$(abspath tools/DiskRoot/System/Library/Fonts/SF-Pro-Text-Semibold.ttf)" nxu-apps-i386
 
 $(UISERVICE_I386_APPS_DIR)/lib%.a: | uiservice-apps-i386-build ;
 
