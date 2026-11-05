@@ -30,6 +30,7 @@ I386_C_SOURCES += \
     kern/boot/nvram.c \
     kern/console/display_owner.c \
     kern/loader/elf.c \
+    kern/loader/segment_cache.c \
     kern/tests/ipc_process_test.c \
     kern/tests/ipc_test.c \
     kern/tests/socket_process_test.c \

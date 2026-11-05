@@ -9,6 +9,7 @@
 #include <kern/console/display_owner.h>
 #include <kern/loader/elf.h>
 #include <kern/loader/elf_format.h>
+#include <kern/loader/segment_cache.h>
 #include <kern/machine/cache.h>
 #include <kern/ipc/ipc_init.h>
 #include <kern/ipc/ipc_port.h>
@@ -184,6 +185,117 @@ loader_copy_segment(vnode_t vnode, vm_address_space_t *map, const loader_segment
 			cache_sync_instruction_range(kernel_address, PMM_PAGE_SIZE);
 		}
 	}
+
+	return LOADER_STATUS_OK;
+}
+
+/*
+ * loader_place_segment
+ *
+ * Map one PT_LOAD segment into `map`. A writable segment (which the dynamic
+ * linker relocates in place) is mapped privately and read into fresh
+ * per-process frames, exactly as before this cache. A read-only or executable
+ * segment is immutable and position independent, so it goes through the shared
+ * segment cache: the first loader fills the frames from the file, every later
+ * loader maps the very same physical frames. Either way the running image
+ * `identity` is fed the segment's file bytes, so the image id is byte for byte
+ * what a purely private load produced.
+ *
+ * `path` names the file for the cache key; `file_identity` (the file's size)
+ * guards against a file replaced on disk between loads. `segment` carries its
+ * final virtual address, with any ASLR bias already applied.
+ */
+static loader_status_t
+loader_place_segment(vnode_t vnode, const char *path, uint64_t file_identity, vm_address_space_t *map,
+					 const loader_segment_t *segment, sha256_context_t *identity)
+{
+	vm_user_protection_t protection;
+	if (!loader_segment_protection(segment, &protection)) return LOADER_STATUS_BAD_FORMAT;
+
+	/* Writable segments stay private: each process relocates its own copy. */
+	if ((segment->flags & ELF_PF_W) != 0U) {
+		loader_status_t status = loader_map_segment(map, segment);
+		if (status == LOADER_STATUS_OK) status = loader_copy_segment(vnode, map, segment, identity);
+		return status;
+	}
+
+	uint64_t page_start = segment->virtual_address & ~(PMM_PAGE_SIZE - 1ULL);
+	uint64_t segment_end;
+	if (loader_add_overflow(segment->virtual_address, segment->memory_size, &segment_end))
+		return LOADER_STATUS_BAD_FORMAT;
+	uint64_t page_end;
+	if (!loader_align_up(segment_end, PMM_PAGE_SIZE, &page_end)) return LOADER_STATUS_BAD_FORMAT;
+	uint64_t page_count = (page_end - page_start) / PMM_PAGE_SIZE;
+
+	loader_segment_key_t key = {0};
+	key.file_offset = segment->offset;
+	key.file_size = segment->file_size;
+	key.memory_size = segment->memory_size;
+	key.file_identity = file_identity;
+	key.flags = segment->flags;
+	for (uint32_t index = 0U; path != 0 && path[index] != 0 && index + 1U < sizeof(key.path); index++)
+		key.path[index] = path[index];
+
+	loader_segment_cache_entry_t *entry = 0;
+	loader_segment_cache_result_t result = loader_segment_cache_acquire(&key, page_count, &entry);
+
+	/* Not cacheable right now (table full, a concurrent build, or no memory):
+	 * fall back to the private mapping the loader used before this cache. */
+	if (result == LOADER_SEGMENT_CACHE_SKIP) {
+		loader_status_t status = loader_map_segment(map, segment);
+		if (status == LOADER_STATUS_OK) status = loader_copy_segment(vnode, map, segment, identity);
+		return status;
+	}
+
+	/* The file's bytes sit at the segment's own intra-page offset in the first
+	 * frame (the loader guarantees the file offset and virtual address share
+	 * those low bits), then run page by page. */
+	uint64_t intra = segment->virtual_address & (PMM_PAGE_SIZE - 1ULL);
+
+	if (result == LOADER_SEGMENT_CACHE_MISS) {
+		uint64_t copied = 0ULL;
+		while (copied < segment->file_size) {
+			uint64_t page_index = (intra + copied) / PMM_PAGE_SIZE;
+			uint64_t page_offset = (intra + copied) & (PMM_PAGE_SIZE - 1ULL);
+			uint64_t chunk = PMM_PAGE_SIZE - page_offset;
+			if (chunk > segment->file_size - copied) chunk = segment->file_size - copied;
+
+			uint64_t kernel_address = loader_segment_cache_page(entry, page_index);
+			if (kernel_address == 0ULL) {
+				loader_segment_cache_abandon(entry);
+				return LOADER_STATUS_PROCESS_ERROR;
+			}
+
+			loader_status_t status =
+				loader_vnode_read_exact(vnode, segment->offset + copied, (void *)(kernel_address + page_offset), chunk);
+			if (status != LOADER_STATUS_OK) {
+				loader_segment_cache_abandon(entry);
+				return status;
+			}
+
+			copied += chunk;
+		}
+
+		loader_segment_cache_commit(entry);
+	}
+
+	/* Hashing out of the frames gives the same bytes whether they were just
+	 * read (miss) or already resident (hit), so the image id never changes. */
+	uint64_t hashed = 0ULL;
+	while (hashed < segment->file_size) {
+		uint64_t page_index = (intra + hashed) / PMM_PAGE_SIZE;
+		uint64_t page_offset = (intra + hashed) & (PMM_PAGE_SIZE - 1ULL);
+		uint64_t chunk = PMM_PAGE_SIZE - page_offset;
+		if (chunk > segment->file_size - hashed) chunk = segment->file_size - hashed;
+
+		uint64_t kernel_address = loader_segment_cache_page(entry, page_index);
+		if (kernel_address == 0ULL) return LOADER_STATUS_PROCESS_ERROR;
+
+		sha256_update(identity, (const void *)(kernel_address + page_offset), chunk);
+		hashed += chunk;
+	}
+
+	if (!loader_segment_cache_map(entry, map, page_start, protection)) return LOADER_STATUS_PROCESS_ERROR;
 
 	return LOADER_STATUS_OK;
 }
@@ -489,12 +601,7 @@ loader_spawn_internal(proc_t parent, const char *path, const char *name, uint32_
 	for (uint32_t index = 0U; status == LOADER_STATUS_OK && index < header.program_header_count; index++) {
 		if (programs[index].type != ELF_PT_LOAD) continue;
 
-		status = loader_map_segment(map, &programs[index]);
-	}
-	for (uint32_t index = 0U; status == LOADER_STATUS_OK && index < header.program_header_count; index++) {
-		if (programs[index].type != ELF_PT_LOAD) continue;
-
-		status = loader_copy_segment(vnode, map, &programs[index], &identity);
+		status = loader_place_segment(vnode, path, vnode->v_size, map, &programs[index], &identity);
 	}
 	if (status == LOADER_STATUS_OK) status = loader_map_stack(map);
 
@@ -1054,8 +1161,7 @@ loader_dyrld_map(proc_t proc, nxu_dyrld_image_t *image)
 		if (segment.type != ELF_PT_LOAD || segment.memory_size == 0) continue;
 
 		segment.virtual_address += result.bias;
-		status = loader_map_segment(map, &segment);
-		if (status == LOADER_STATUS_OK) status = loader_copy_segment(vnode, map, &segment, &identity);
+		status = loader_place_segment(vnode, result.path, vnode->v_size, map, &segment, &identity);
 	}
 	vnode_rele(vnode);
 	if (status != LOADER_STATUS_OK) {
