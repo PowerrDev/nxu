@@ -216,7 +216,7 @@ virtio_legacy_queue_init(virtio_device_t *device, uint16_t queue_index, uint16_t
 	if (device_size == 0U) return false;
 	if (inl(virtio_legacy_port(device, VIRTIO_LEGACY_QUEUE_PFN)) != 0U) return false;
 
-	return virtqueue_init_legacy(queue, device_size);
+	return virtqueue_init_legacy(queue, &device->dma, device_size);
 }
 
 static bool
@@ -231,6 +231,7 @@ virtio_legacy_setup_queue(virtio_device_t *device, uint16_t queue_index, virtque
 	uint64_t frame = virtqueue_desc_physical(queue) >> VIRTIO_LEGACY_PAGE_SHIFT;
 
 	if (frame == 0ULL || frame > 0xFFFFFFFFULL) return false;
+	if (!virtqueue_prepare_device(queue)) return false;
 
 	ml_dma_mb();
 	outl(virtio_legacy_port(device, VIRTIO_LEGACY_QUEUE_PFN), (uint32_t)frame);
@@ -478,7 +479,7 @@ virtio_modern_queue_init(virtio_device_t *device, uint16_t queue_index, uint16_t
 
 	if (maximum == 0U || size > maximum) return false;
 
-	return virtqueue_init(queue, size);
+	return virtqueue_init(queue, &device->dma, size);
 }
 
 static void
@@ -500,6 +501,7 @@ virtio_modern_setup_queue(virtio_device_t *device, uint16_t queue_index, virtque
 
 	if (maximum == 0U || queue->size > maximum) return false;
 	if (virtio_modern_read16(device, VIRTIO_COMMON_QUEUE_ENABLE) != 0U) return false;
+	if (!virtqueue_prepare_device(queue)) return false;
 
 	virtio_modern_write16(device, VIRTIO_COMMON_QUEUE_SIZE, queue->size);
 	virtio_modern_write64(device, VIRTIO_COMMON_QUEUE_DESC, virtqueue_desc_physical(queue));
@@ -716,6 +718,8 @@ virtio_pci_probe(const pci_device_t *pci, virtio_device_t *device)
 
 	probe.device_id = type;
 	probe.vendor_id = pci->vendor_id;
+	probe.registry_id = pci->registry_id;
+	probe.dma = (dma_device_t){.coherent = true, .address_mask = UINT64_MAX};
 	probe.intid = pci->interrupt_line;
 	probe.irq_flags = 0U;
 	probe.pci.bus = pci->bus;

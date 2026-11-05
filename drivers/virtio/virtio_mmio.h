@@ -32,7 +32,7 @@ extern const virtio_transport_ops_t virtio_mmio_ops;
  *
  * Returns true for a live modern VirtIO-MMIO device.
  */
-bool virtio_mmio_probe(const platform_region_t *region, uint32_t intid, uint32_t irq_flags,
+bool virtio_mmio_probe(const platform_region_t *region, uint32_t intid, uint32_t irq_flags, bool dma_coherent,
 					   virtio_mmio_device_t *device);
 
 /*

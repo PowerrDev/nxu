@@ -4,7 +4,9 @@
 #include <drivers/virtio/virtio_features.h>
 #include <drivers/virtio/virtqueue.h>
 #include <kern/irq/irq.h>
+#include <kern/console/ioregistry.h>
 #include <platform/platform.h>
+#include <vm/dma.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -108,6 +110,8 @@ typedef struct virtio_device {
 	uint32_t irq_flags;
 	uint32_t device_id;
 	uint32_t vendor_id;
+	ioreg_id_t registry_id;
+	dma_device_t dma;
 	uint64_t device_features;
 	uint64_t driver_features;
 	bool initialized;

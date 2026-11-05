@@ -4,6 +4,7 @@
 #include <kern/machine/barrier.h>
 #include <kern/machine/machine_routines.h>
 #include <kern/machine/timer.h>
+#include <vm/dma.h>
 #include <vm/pmm.h>
 #include <vm/vmm.h>
 
@@ -22,20 +23,11 @@ static uint32_t g_virtio_snd_device_count;
 /* ---- DMA memory -------------------------------------------------------- */
 
 bool
-virtio_snd_allocate_page(virtio_snd_page_t *page)
+virtio_snd_allocate_page(const dma_device_t *dma, virtio_snd_page_t *page)
 {
-	uint64_t physical;
-	uint64_t higher_half;
-
-	if (!pmm_allocate_page(&physical)) return false;
-
-	if (!vmm_physical_to_higher_half(physical, &higher_half)) {
-		(void)pmm_free_page(physical);
-		return false;
-	}
-
-	page->physical = physical;
-	page->virtual_address = (uint8_t *)higher_half;
+	void *virtual_address;
+	if (!dma_page_alloc(dma, &page->physical, &virtual_address)) return false;
+	page->virtual_address = virtual_address;
 	memset(page->virtual_address, 0, PMM_PAGE_SIZE);
 	return true;
 }
@@ -551,7 +543,8 @@ virtio_snd_probe_streams(virtio_snd_device_t *device)
 static bool
 virtio_snd_bring_up(virtio_snd_device_t *device)
 {
-	if (!virtio_snd_allocate_page(&device->control_page) || !virtio_snd_allocate_page(&device->event_page)) {
+	if (!virtio_snd_allocate_page(&device->transport.dma, &device->control_page) ||
+		!virtio_snd_allocate_page(&device->transport.dma, &device->event_page)) {
 		VIRTIO_SND_LOG("no memory for the control and event buffers\n");
 		return false;
 	}

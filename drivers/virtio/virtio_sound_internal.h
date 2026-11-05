@@ -175,7 +175,7 @@ typedef struct virtio_snd_device {
 } virtio_snd_device_t;
 
 /* DMA pages (virtio_sound.c). */
-bool virtio_snd_allocate_page(virtio_snd_page_t *page);
+bool virtio_snd_allocate_page(const dma_device_t *dma, virtio_snd_page_t *page);
 void virtio_snd_free_page(virtio_snd_page_t *page);
 
 /*

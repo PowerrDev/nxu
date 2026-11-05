@@ -7,6 +7,7 @@
 #include <skylight/skylight.h>
 #include <kern/machine/machine_routines.h>
 #include <kern/sched_prism/sched.h>
+#include <vm/dma.h>
 #include <vm/pmm.h>
 #include <vm/vmm.h>
 
@@ -187,18 +188,11 @@ virtio_gpu_unlock(virtio_gpu_device_t *device)
 }
 
 static bool
-virtio_gpu_allocate_page(uint64_t *physical, uint8_t **virtual_address)
+virtio_gpu_allocate_page(const dma_device_t *dma, uint64_t *physical, uint8_t **virtual_address)
 {
-	if (!pmm_allocate_page(physical)) return false;
-
-	uint64_t higher_half;
-	if (!vmm_physical_to_higher_half(*physical, &higher_half)) {
-		(void)pmm_free_page(*physical);
-		*physical = 0ULL;
-		return false;
-	}
-
-	*virtual_address = (uint8_t *)higher_half;
+	void *page;
+	if (!dma_page_alloc(dma, physical, &page)) return false;
+	*virtual_address = page;
 	memset(*virtual_address, 0, PMM_PAGE_SIZE);
 	return true;
 }
@@ -523,20 +517,13 @@ virtio_gpu_allocate_framebuffer(virtio_gpu_device_t *device)
 	uint64_t bytes = pixels * VIRTIO_GPU_BYTES_PER_PIXEL;
 	if (bytes == 0ULL || bytes > VIRTIO_GPU_MAX_FRAMEBUFFER_BYTES) return false;
 
-	uint64_t pages = (bytes + PMM_PAGE_SIZE - 1ULL) / PMM_PAGE_SIZE;
-	uint64_t physical;
-	if (!pmm_allocate_contiguous_pages(pages, &physical)) return false;
+	dma_buffer_t framebuffer;
+	if (!dma_buffer_alloc(&device->transport.dma, bytes, &framebuffer)) return false;
 
-	uint64_t higher_half;
-	if (!vmm_physical_to_higher_half(physical, &higher_half)) {
-		(void)pmm_free_contiguous_pages(physical, pages);
-		return false;
-	}
-
-	device->framebuffer_physical = physical;
-	device->framebuffer_pages = pages;
+	device->framebuffer_physical = framebuffer.physical_address;
+	device->framebuffer_pages = framebuffer.page_count;
 	device->framebuffer_bytes = bytes;
-	device->framebuffer = (uint32_t *)higher_half;
+	device->framebuffer = (uint32_t *)framebuffer.virtual_address;
 	return true;
 }
 
@@ -573,7 +560,7 @@ virtio_gpu_attach(const virtio_device_t *transport)
 	if (!virtio_device_setup_queue(&device->transport, VIRTIO_GPU_CONTROLQ, &device->controlq)) goto fail;
 
 	failure_stage = "control request page allocation";
-	if (!virtio_gpu_allocate_page(&device->control_physical, &device->control)) goto fail;
+	if (!virtio_gpu_allocate_page(&device->transport.dma, &device->control_physical, &device->control)) goto fail;
 	failure_stage = "DRIVER_OK transition";
 	if (!virtio_device_finish(&device->transport)) goto fail;
 

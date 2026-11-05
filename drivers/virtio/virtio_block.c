@@ -5,6 +5,7 @@
 #include <drivers/block/block_device.h>
 #include <kern/machine/barrier.h>
 #include <platform/uart.h>
+#include <vm/dma.h>
 #include <vm/pmm.h>
 #include <vm/vmm.h>
 
@@ -76,23 +77,11 @@ virtio_block_unlock(virtio_block_device_t *device)
  * alias to the driver.
  */
 static bool
-virtio_block_allocate_page(uint64_t *physical, uint8_t **virtual_address)
+virtio_block_allocate_page(const dma_device_t *dma, uint64_t *physical, uint8_t **virtual_address)
 {
-	if (!pmm_allocate_page(physical)) {
-		return false;
-	}
-
-	uint64_t higher_half;
-
-	if (!vmm_physical_to_higher_half(*physical, &higher_half)) {
-		(void)pmm_free_page(*physical);
-
-		*physical = 0ULL;
-
-		return false;
-	}
-
-	*virtual_address = (uint8_t *)higher_half;
+	void *page;
+	if (!dma_page_alloc(dma, physical, &page)) return false;
+	*virtual_address = page;
 
 	memset(*virtual_address, 0, PMM_PAGE_SIZE);
 
@@ -483,6 +472,7 @@ virtio_block_attach(const virtio_device_t *transport)
 	}
 
 	virtio_block_device_t *device = &g_virtio_block_devices[g_virtio_block_device_count];
+	const char *failure_stage = "transport feature negotiation";
 
 	memset(device, 0, sizeof(*device));
 
@@ -494,11 +484,16 @@ virtio_block_attach(const virtio_device_t *transport)
 	if (!virtio_device_begin(&device->transport, accepted_features)) {
 		goto fail;
 	}
+	kverbosef("VirtIOBlockFamily: offered features 0x%llx, accepted 0x%llx, DMA mask 0x%llx\n",
+			  (unsigned long long)device->transport.device_features,
+			  (unsigned long long)device->transport.driver_features,
+			  (unsigned long long)device->transport.dma.address_mask);
 
 	device->read_only = (device->transport.driver_features & (1ULL << VIRTIO_BLK_F_RO)) != 0ULL;
 
 	device->flush_supported = (device->transport.driver_features & (1ULL << VIRTIO_BLK_F_FLUSH)) != 0ULL;
 
+	failure_stage = "request queue allocation";
 	if (!virtio_device_queue_init(&device->transport, VIRTIO_BLK_REQUESTQ, VIRTIO_BLOCK_QUEUE_SIZE,
 								  &device->requestq)) {
 		goto fail;
@@ -509,13 +504,15 @@ virtio_block_attach(const virtio_device_t *transport)
 	 */
 	*device->requestq.available_flags = VIRTQ_AVAIL_F_NO_INTERRUPT;
 
+	failure_stage = "request queue setup";
 	if (!virtio_device_setup_queue(&device->transport, VIRTIO_BLK_REQUESTQ, &device->requestq)) {
 		goto fail;
 	}
 
 	uint8_t *control;
 
-	if (!virtio_block_allocate_page(&device->control_physical, &control)) {
+	failure_stage = "request control page allocation";
+	if (!virtio_block_allocate_page(&device->transport.dma, &device->control_physical, &control)) {
 		goto fail;
 	}
 
@@ -523,10 +520,12 @@ virtio_block_attach(const virtio_device_t *transport)
 
 	device->status = (volatile uint8_t *)(control + sizeof(*device->header));
 
-	if (!virtio_block_allocate_page(&device->bounce_physical, &device->bounce)) {
+	failure_stage = "request bounce page allocation";
+	if (!virtio_block_allocate_page(&device->transport.dma, &device->bounce_physical, &device->bounce)) {
 		goto fail;
 	}
 
+	failure_stage = "capacity discovery";
 	uint64_t capacity = virtio_device_config_read64(&device->transport, VIRTIO_BLK_CONFIG_CAPACITY);
 
 	if (capacity == 0ULL) {
@@ -558,6 +557,7 @@ virtio_block_attach(const virtio_device_t *transport)
 
 	device->block_storage.driver_data = device;
 
+	failure_stage = "DRIVER_OK transition";
 	if (!virtio_device_finish(&device->transport)) {
 		goto fail;
 	}
@@ -581,12 +581,14 @@ virtio_block_attach(const virtio_device_t *transport)
 
 fail_after_finish:
 	device->attached = false;
+	kprintf("VirtIOBlockFamily: attach failed during block-device registration\n");
 
 	virtio_block_cleanup(device);
 
 	return false;
 
 fail:
+	kprintf("VirtIOBlockFamily: attach failed during %s\n", failure_stage);
 	virtio_block_cleanup(device);
 
 	return false;

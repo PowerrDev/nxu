@@ -350,7 +350,7 @@ virtio_snd_slots_allocate(virtio_snd_device_t *device)
 	for (uint32_t index = 0U; index < VIRTIO_SND_TX_SLOTS; index++) {
 		virtio_snd_slot_t *slot = &playback->slots[index];
 
-		if (!virtio_snd_allocate_page(&slot->page)) {
+		if (!virtio_snd_allocate_page(&device->transport.dma, &slot->page)) {
 			virtio_snd_slots_free(device);
 			return VIRTIO_SND_E_NO_MEMORY;
 		}

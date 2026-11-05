@@ -9,6 +9,7 @@
 #include <kern/irq/irq.h>
 #include <kern/sched_prism/sched.h>
 #include <platform/uart.h>
+#include <vm/dma.h>
 #include <vm/pmm.h>
 #include <vm/vmm.h>
 
@@ -145,15 +146,8 @@ virtio_input_read_name(virtio_input_device_t *device)
 static bool
 virtio_input_allocate_buffers(virtio_input_device_t *device)
 {
-	if (!pmm_allocate_page(&device->event_buffer_physical)) return false;
-
-	uint64_t virtual_address;
-	if (!vmm_physical_to_higher_half(device->event_buffer_physical, &virtual_address)) {
-		(void)pmm_free_page(device->event_buffer_physical);
-		device->event_buffer_physical = 0ULL;
-		return false;
-	}
-
+	void *virtual_address;
+	if (!dma_page_alloc(&device->transport.dma, &device->event_buffer_physical, &virtual_address)) return false;
 	device->event_buffers = (volatile virtio_input_event_t *)virtual_address;
 	memset((void *)device->event_buffers, 0, PMM_PAGE_SIZE);
 	return true;
@@ -306,42 +300,53 @@ virtio_input_attach(const virtio_device_t *transport)
 	}
 
 	virtio_input_device_t *device = &g_virtio_input_devices[g_virtio_input_device_count];
+	const char *failure_stage = "transport feature negotiation";
 	memset(device, 0, sizeof(*device));
 	device->transport = *transport;
 
 	if (!virtio_device_begin(&device->transport, 0ULL)) goto fail;
 
+	failure_stage = "device classification";
 	virtio_input_read_name(device);
 	device->device_class = virtio_input_classify(&device->transport);
 	if (device->device_class == INPUT_DEVICE_UNKNOWN) goto fail;
 
 	device->input_device_id = g_next_input_device_id++;
 
+	failure_stage = "event queue allocation";
 	if (!virtio_device_queue_init(&device->transport, VIRTIO_INPUT_EVENTQ, VIRTIO_INPUT_EVENT_QUEUE_SIZE,
 								  &device->eventq))
 		goto fail;
+	failure_stage = "status queue allocation";
 	if (!virtio_device_queue_init(&device->transport, VIRTIO_INPUT_STATUSQ, VIRTIO_INPUT_STATUS_QUEUE_SIZE,
 								  &device->statusq))
 		goto fail;
+	failure_stage = "event buffer allocation";
 	if (!virtio_input_allocate_buffers(device)) goto fail;
+	failure_stage = "event queue population";
 	if (!virtio_input_populate_eventq(device)) goto fail;
 
+	failure_stage = "event queue setup";
 	if (!virtio_device_setup_queue(&device->transport, VIRTIO_INPUT_EVENTQ, &device->eventq)) {
 		goto fail;
 	}
 
+	failure_stage = "status queue setup";
 	if (!virtio_device_setup_queue(&device->transport, VIRTIO_INPUT_STATUSQ, &device->statusq)) {
 		goto fail;
 	}
 
+	failure_stage = "DRIVER_OK transition";
 	if (!virtio_device_finish(&device->transport)) goto fail;
 
+	failure_stage = "input subsystem registration";
 	if (device->device_class == INPUT_DEVICE_KEYBOARD) {
 		if (!keyboard_attach(device->input_device_id)) goto fail;
 	} else if (device->device_class == INPUT_DEVICE_MOUSE) {
 		if (!mouse_attach(device->input_device_id)) goto fail;
 	}
 
+	failure_stage = "interrupt registration";
 	if (!virtio_device_irq_attach(&device->transport, virtio_input_irq, device)) goto fail;
 
 	device->attached = true;
@@ -363,6 +368,7 @@ virtio_input_attach(const virtio_device_t *transport)
 	return true;
 
 fail:
+	kprintf("VirtIOInputFamily: attach failed during %s\n", failure_stage);
 	virtio_device_fail(&device->transport);
 	virtio_input_cleanup(device);
 	return false;

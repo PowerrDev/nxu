@@ -1,4 +1,5 @@
 #include <kern/console/console.h>
+#include <kern/console/ioregistry.h>
 #include <drivers/virtio/virtio.h>
 
 #include <drivers/virtio/virtio_block.h>
@@ -50,70 +51,109 @@ virtio_bind_device(const virtio_device_t *device, const virtio_probe_policy_t *p
 	if (device == 0 || policy == 0) return false;
 
 	g_virtio_device_count++;
+	const char *driver_name = "VirtIOUnknownDriver";
+	switch (device->device_id) {
+	case VIRTIO_DEVICE_ID_NET: driver_name = "VirtIONetworkDriver"; break;
+	case VIRTIO_DEVICE_ID_GPU: driver_name = "VirtIOGPUDriver"; break;
+	case VIRTIO_DEVICE_ID_BLOCK: driver_name = "VirtIOBlockDriver"; break;
+	case VIRTIO_DEVICE_ID_INPUT: driver_name = "VirtIOInputDriver"; break;
+	case VIRTIO_DEVICE_ID_SOUND: driver_name = "VirtIOSoundDriver"; break;
+	default: break;
+	}
+	kverbosef("VirtIOFamily: %s via %s at 0x%llx, DMA %s, address mask 0x%llx\n", driver_name,
+			  device->ops != 0 && device->ops->name != 0 ? device->ops->name : "unknown transport",
+			  (unsigned long long)device->region.base, device->dma.coherent ? "coherent" : "noncoherent",
+			  (unsigned long long)device->dma.address_mask);
+	ioreg_set_driver_state(device->registry_id, IOREG_STATE_MATCHED, driver_name);
 
 	if (device->device_id == VIRTIO_DEVICE_ID_NET) {
 		if (policy->network) {
 			if (virtio_net_attach(device)) {
 				g_virtio_network_count++;
+				ioreg_set_driver_state(device->registry_id, IOREG_STATE_ACTIVE, driver_name);
 			} else {
 				kputln("VirtIOFamily: network device failed to attach");
+				ioreg_set_driver_state(device->registry_id, IOREG_STATE_FAILED, driver_name);
 			}
+		} else {
+			ioreg_set_driver_state(device->registry_id, IOREG_STATE_DISABLED, driver_name);
 		}
 
 		return true;
 	}
 
 	if (device->device_id == VIRTIO_DEVICE_ID_GPU) {
-		if (!policy->gpu) return true;
+		if (!policy->gpu) {
+			ioreg_set_driver_state(device->registry_id, IOREG_STATE_DISABLED, driver_name);
+			return true;
+		}
 
 		if (!virtio_gpu_attach(device)) {
 			kprintf("VirtIOFamily: GPU at 0x%llx failed to attach\n", (unsigned long long)device->region.base);
+			ioreg_set_driver_state(device->registry_id, IOREG_STATE_FAILED, driver_name);
 			return true;
 		}
 
 		g_virtio_gpu_count++;
+		ioreg_set_driver_state(device->registry_id, IOREG_STATE_ACTIVE, driver_name);
 		if (policy->on_gpu_ready != 0) policy->on_gpu_ready();
 		return true;
 	}
 
 	if (device->device_id == VIRTIO_DEVICE_ID_BLOCK) {
-		if (!policy->block) return true;
+		if (!policy->block) {
+			ioreg_set_driver_state(device->registry_id, IOREG_STATE_DISABLED, driver_name);
+			return true;
+		}
 
 		if (!virtio_block_attach(device)) {
 			kprintf("VirtIOFamily: block device at 0x%llx failed to attach\n", (unsigned long long)device->region.base);
+			ioreg_set_driver_state(device->registry_id, IOREG_STATE_FAILED, driver_name);
 			return false;
 		}
 
 		g_virtio_block_count++;
+		ioreg_set_driver_state(device->registry_id, IOREG_STATE_ACTIVE, driver_name);
 		return true;
 	}
 
 	if (device->device_id == VIRTIO_DEVICE_ID_INPUT) {
-		if (!policy->input) return true;
+		if (!policy->input) {
+			ioreg_set_driver_state(device->registry_id, IOREG_STATE_DISABLED, driver_name);
+			return true;
+		}
 
 		if (!virtio_input_attach(device)) {
 			kprintf("VirtIOFamily: input device at 0x%llx failed to attach\n", (unsigned long long)device->region.base);
+			ioreg_set_driver_state(device->registry_id, IOREG_STATE_FAILED, driver_name);
 			return false;
 		}
 
 		g_virtio_input_count++;
+		ioreg_set_driver_state(device->registry_id, IOREG_STATE_ACTIVE, driver_name);
 		return true;
 	}
 
 	if (device->device_id == VIRTIO_DEVICE_ID_SOUND) {
-		if (!policy->sound) return true;
+		if (!policy->sound) {
+			ioreg_set_driver_state(device->registry_id, IOREG_STATE_DISABLED, driver_name);
+			return true;
+		}
 
 		if (!virtio_snd_attach(device)) {
 			kprintf("VirtIOFamily: sound device at 0x%llx failed to attach\n", (unsigned long long)device->region.base);
+			ioreg_set_driver_state(device->registry_id, IOREG_STATE_FAILED, driver_name);
 			return true;
 		}
 
 		g_virtio_sound_count++;
+		ioreg_set_driver_state(device->registry_id, IOREG_STATE_ACTIVE, driver_name);
 		return true;
 	}
 
 	kprintf("VirtIOFamily: unclaimed device ID %u at 0x%llx\n", device->device_id,
 			(unsigned long long)device->region.base);
+	ioreg_set_driver_state(device->registry_id, IOREG_STATE_UNMATCHED, 0);
 	return true;
 }
 
@@ -132,7 +172,8 @@ virtio_init(const platform_t *platform, const virtio_probe_policy_t *policy)
 		virtio_mmio_device_t device;
 
 		if (!virtio_mmio_probe(&platform->virtio_mmio[index], platform->virtio_mmio_intid[index],
-							   platform->virtio_mmio_irq_flags[index], &device)) {
+							   platform->virtio_mmio_irq_flags[index],
+							   platform->virtio_mmio_dma_coherent[index], &device)) {
 			kverbosef("VirtIOFamily: MMIO slot %u base=%llx has no supported active device\n", index,
 					  (unsigned long long)platform->virtio_mmio[index].base);
 			continue;
@@ -140,6 +181,7 @@ virtio_init(const platform_t *platform, const virtio_probe_policy_t *policy)
 		kverbosef("VirtIOFamily: MMIO slot %u base=%llx IRQ=%u discovered device=%u\n", index,
 				  (unsigned long long)platform->virtio_mmio[index].base, platform->virtio_mmio_intid[index],
 				  device.device_id);
+		device.registry_id = ioreg_add_virtio_mmio(device.region.base);
 
 		if (!virtio_bind_device(&device, policy)) return false;
 	}

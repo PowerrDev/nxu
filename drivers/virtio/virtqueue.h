@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <kern/syscall/statistics.h>
+#include <vm/dma.h>
 #include <stdint.h>
 
 #define VIRTQUEUE_MAX_SIZE 128U
@@ -33,6 +34,15 @@ typedef struct {
 	uint64_t storage_physical;
 	void *storage_virtual;
 	uint32_t storage_pages;
+	uint64_t storage_size;
+	uint64_t descriptors_size;
+	uint64_t available_offset;
+	uint64_t available_size;
+	uint64_t used_offset;
+	uint64_t used_size;
+	dma_device_t dma;
+	dma_mapping_t storage_mapping;
+	dma_mapping_t payload_mappings[VIRTQUEUE_MAX_SIZE];
 
 	virtq_desc_t *descriptors;
 	volatile uint16_t *available_flags;
@@ -65,7 +75,8 @@ typedef struct {
  *
  * Returns true when the queue is ready for transport publication.
  */
-bool virtqueue_init(virtqueue_t *queue, uint16_t size);
+bool virtqueue_init(virtqueue_t *queue, const dma_device_t *dma, uint16_t size);
+bool virtqueue_prepare_device(virtqueue_t *queue);
 
 void virtqueue_statistics(nxu_stats_virtio_t *out);
 
@@ -83,7 +94,7 @@ void virtqueue_statistics(nxu_stats_virtio_t *out);
  * more), recorded in storage_pages. Returns true when the queue is ready for
  * transport publication.
  */
-bool virtqueue_init_legacy(virtqueue_t *queue, uint16_t size);
+bool virtqueue_init_legacy(virtqueue_t *queue, const dma_device_t *dma, uint16_t size);
 
 /*
  * virtqueue_destroy:

@@ -10,6 +10,7 @@
 #include <kern/lock.h>
 #include <kern/machine/barrier.h>
 #include <kern/net/netif.h>
+#include <vm/dma.h>
 #include <vm/pmm.h>
 #include <vm/vmm.h>
 #include <string.h>
@@ -45,21 +46,11 @@ static virtio_net_device_t g_devices[NETIF_MAX - 1];
 static uint32_t g_device_count;
 
 static bool
-virtio_net_allocate(virtio_net_buffer_t *buffer)
+virtio_net_allocate(const dma_device_t *dma, virtio_net_buffer_t *buffer)
 {
-	if (!pmm_allocate_page(&buffer->physical)) {
-		return false;
-	}
-
-	uint64_t address;
-
-	if (!vmm_physical_to_higher_half(buffer->physical, &address)) {
-		(void)pmm_free_page(buffer->physical);
-		buffer->physical = 0;
-		return false;
-	}
-
-	buffer->bytes = (void *)(uintptr_t)address;
+	void *page;
+	if (!dma_page_alloc(dma, &buffer->physical, &page)) return false;
+	buffer->bytes = page;
 	memset(buffer->bytes, 0, PMM_PAGE_SIZE);
 	return true;
 }
@@ -263,6 +254,7 @@ virtio_net_attach(const virtio_device_t *transport)
 	}
 
 	virtio_net_device_t *device = &g_devices[g_device_count];
+	const char *failure_stage = "transport feature negotiation";
 	memset(device, 0, sizeof(*device));
 	device->transport = *transport;
 
@@ -270,9 +262,14 @@ virtio_net_attach(const virtio_device_t *transport)
 		!(device->transport.driver_features & VIRTIO_NET_F_MAC)) {
 		goto fail;
 	}
+	kverbosef("VirtIONetFamily: offered features 0x%llx, accepted 0x%llx, DMA mask 0x%llx\n",
+			  (unsigned long long)device->transport.device_features,
+			  (unsigned long long)device->transport.driver_features,
+			  (unsigned long long)device->transport.dma.address_mask);
 
 	device->header_length = (device->transport.driver_features & (1ULL << 32)) ? 12 : 10;
 
+	failure_stage = "queue allocation";
 	if (!virtio_device_queue_init(&device->transport, 0, VIRTIO_NET_QUEUE_SIZE, &device->receive) ||
 		!virtio_device_queue_init(&device->transport, 1, VIRTIO_NET_QUEUE_SIZE, &device->transmit)) {
 		goto fail;
@@ -283,18 +280,22 @@ virtio_net_attach(const virtio_device_t *transport)
 	*device->transmit.available_flags = 1;
 
 	for (uint32_t slot = 0; slot < VIRTIO_NET_SLOTS; slot++) {
-		if (!virtio_net_allocate(&device->rx[slot]) || !virtio_net_allocate(&device->tx[slot]) ||
+		failure_stage = "DMA buffer allocation or receive queue population";
+		if (!virtio_net_allocate(&device->transport.dma, &device->rx[slot]) ||
+			!virtio_net_allocate(&device->transport.dma, &device->tx[slot]) ||
 			!virtio_net_describe(device, &device->receive, &device->rx[slot], VIRTIO_NET_FRAME_MAX, true)) {
 			goto fail;
 		}
 	}
 
+	failure_stage = "queue setup or DRIVER_OK transition";
 	if (!virtio_device_setup_queue(&device->transport, 0, &device->receive) ||
 		!virtio_device_setup_queue(&device->transport, 1, &device->transmit) ||
 		!virtio_device_finish(&device->transport)) {
 		goto fail;
 	}
 
+	failure_stage = "MAC address validation";
 	uint8_t mac[6];
 
 	for (uint32_t byte = 0; byte < 6; byte++) {
@@ -305,6 +306,7 @@ virtio_net_attach(const virtio_device_t *transport)
 		goto fail;
 	}
 
+	failure_stage = "network interface registration";
 	device->interface = netif_register(mac, device, virtio_net_transmit, virtio_net_poll);
 
 	if (device->interface == 0) {
@@ -320,6 +322,7 @@ virtio_net_attach(const virtio_device_t *transport)
 	return true;
 
 fail:
+	kprintf("VirtIONetFamily: attach failed during %s\n", failure_stage);
 	virtio_device_fail(&device->transport);
 
 	if (virtio_device_reset(&device->transport)) {

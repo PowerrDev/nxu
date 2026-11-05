@@ -141,7 +141,8 @@ virtio_mmio_write_address(virtio_mmio_device_t *device, uint32_t low_offset, uin
  * Empty MMIO frames and legacy transports are ignored.
  */
 bool
-virtio_mmio_probe(const platform_region_t *region, uint32_t intid, uint32_t irq_flags, virtio_mmio_device_t *device)
+virtio_mmio_probe(const platform_region_t *region, uint32_t intid, uint32_t irq_flags, bool dma_coherent,
+				  virtio_mmio_device_t *device)
 {
 	if (region == 0 || device == 0 || region->size < 0x200ULL) return false;
 
@@ -162,6 +163,7 @@ virtio_mmio_probe(const platform_region_t *region, uint32_t intid, uint32_t irq_
 	probe.mmio_base = virtual_address;
 	probe.intid = intid;
 	probe.irq_flags = irq_flags;
+	probe.dma = (dma_device_t){.coherent = dma_coherent, .address_mask = UINT64_MAX};
 
 	uint32_t magic = virtio_mmio_read32(&probe, VIRTIO_MMIO_MAGIC_VALUE_OFFSET);
 
@@ -315,6 +317,7 @@ virtio_mmio_setup_queue(virtio_mmio_device_t *device, uint16_t queue_index, virt
 	uint32_t maximum = virtio_mmio_read32(device, VIRTIO_MMIO_QUEUE_NUM_MAX_OFFSET);
 
 	if (maximum == 0U || queue->size > maximum) return false;
+	if (!virtqueue_prepare_device(queue)) return false;
 
 	virtio_mmio_write32(device, VIRTIO_MMIO_QUEUE_NUM_OFFSET, queue->size);
 
@@ -513,7 +516,7 @@ virtio_mmio_queue_init(virtio_device_t *device, uint16_t queue_index, uint16_t s
 	(void)device;
 	(void)queue_index;
 
-	return virtqueue_init(queue, size);
+	return virtqueue_init(queue, &device->dma, size);
 }
 
 /*
