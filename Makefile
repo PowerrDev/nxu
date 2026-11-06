@@ -450,6 +450,7 @@ C_SOURCES := \
 	vm/dma.c \
     vm/vmm.c \
     vm/address_space.c \
+    kern/vm/arch/arm64/pmap.c \
     vm/vm_shm.c \
     vm/vm_map.c \
     vm/vm_fault.c \

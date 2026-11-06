@@ -4,6 +4,7 @@
 #include <kern/cpuset.h>
 #include <kern/lock.h>
 #include <kern/vm/machine/pmap_types.h>
+#include <kern/vm/vm_types.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -59,23 +60,25 @@ typedef struct vm_address_space {
 	uint64_t mmap_next_va;
 } vm_address_space_t;
 
-typedef enum {
-	VM_USER_PROTECTION_READ_WRITE,
-	VM_USER_PROTECTION_READ_ONLY,
-	VM_USER_PROTECTION_READ_EXECUTE
-} vm_user_protection_t;
+/*
+ * Phase 0 compatibility aliases. The user-protection enum has been unified
+ * into vm_prot_t (kern/vm/vm_types.h); these aliases keep the many existing
+ * callers (loader, syscall, tests, vm_fault, vm_map, vm_shm, ...) compiling
+ * unchanged. The vmm.* higher-half code keeps its own vmm_protection_t and is
+ * untouched (out of Phase 0 scope). Removing these aliases is future work.
+ */
+typedef vm_prot_t vm_user_protection_t;
+#define VM_USER_PROTECTION_READ_WRITE VM_PROT_RW
+#define VM_USER_PROTECTION_READ_ONLY VM_PROT_RO
+#define VM_USER_PROTECTION_READ_EXECUTE VM_PROT_RX
 
 /*
- * cow is set for a page shared copy-on-write. Its hardware permission is
- * read-only, so protection reads VM_USER_PROTECTION_READ_ONLY -- code that
- * writes through physical_address must therefore refuse it (or break the
- * sharing first with vm_address_space_cow_break), never write blindly.
+ * vm_user_page_mapping_t now lives in kern/vm/vm_types.h (so kern/vm/pmap.h can
+ * use it without depending on this header). cow is set for a page shared
+ * copy-on-write: its hardware permission is read-only, so protection reads
+ * VM_PROT_RO -- code that writes through physical_address must refuse it (or
+ * break the sharing first with vm_address_space_cow_break), never write blindly.
  */
-typedef struct {
-	uint64_t physical_address;
-	vm_user_protection_t protection;
-	bool cow;
-} vm_user_page_mapping_t;
 
 typedef struct {
 	uint64_t code_physical;

@@ -150,6 +150,17 @@ typedef struct {
  */
 bool pmap_enumerate(const pmap_t *pmap, pmap_leaf_t *out, uint64_t cap, uint64_t *count);
 
+/*
+ * Teardown: unmap every present user leaf and report each one's physical page
+ * to `free_page` (the core's pmm free), then invalidate in bulk. Returns the
+ * number of pages released. The core owns the frees (via the callback); the
+ * backend owns the table walk and the single bulk TLB flush, which is why this
+ * is one backend call rather than a per-page loop (it preserves the one-flush
+ * teardown the pre-split code did). Leaves the translation tables in place for
+ * a subsequent pmap_destroy.
+ */
+uint64_t pmap_release_user_pages(pmap_t *pmap, void (*free_page)(uint64_t physical_address));
+
 /* ---- accessors the core exposes but does not interpret ------------------- */
 
 uint64_t pmap_root_physical(const pmap_t *pmap); /* e.g. debug / IPI payloads */
