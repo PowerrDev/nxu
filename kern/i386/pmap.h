@@ -47,6 +47,12 @@
 
 /* Bits 9..11 are ignored by the MMU. */
 #define PTE_SOFTWARE_EXEC 0x200U
+/*
+ * A page shared copy-on-write between address spaces: hardware-read-only (no
+ * PTE_WRITE), with the first write fault giving the writer a private copy
+ * (vm_address_space_cow_break). The counterpart of arm64's VMM_DESC_SW_COW.
+ */
+#define PTE_SOFTWARE_COW 0x400U
 
 #define PTE_FRAME 0xFFFFF000ULL
 #define PTE_NX (1ULL << 63U)

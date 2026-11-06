@@ -11,16 +11,18 @@
 # rest of vm/ is shared with arm64 as is.
 
 I386_C_SOURCES += \
-    kern/i386/address_space_i386.c \
+    kern/vm/arch/i386/pmap.c \
     kern/i386/memory_map.c \
     kern/i386/pmap.c \
     kern/i386/vm_fault.c \
     kern/i386/vm_init.c \
     kern/i386/vm_selftest.c \
     kern/i386/vmm_i386.c \
+    vm/address_space.c \
     vm/pmm.c \
     vm/dma.c \
     vm/user_copy.c \
+    vm/vm_fault.c \
     vm/vm_kern.c \
     vm/vm_map.c \
     vm/vm_shm.c \

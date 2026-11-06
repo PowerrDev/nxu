@@ -13,6 +13,8 @@
 #include <kern/i386/trap.h>
 
 #include <kern/console/console.h>
+#include <vm/address_space.h>
+#include <vm/vm_fault.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -78,11 +80,25 @@ vm_fault_describe_tables(uint32_t address)
 			(entry & PTE_USER) != 0U ? "user" : "supervisor");
 }
 
-__attribute__((weak)) bool
+/*
+ * Hand the fault to the architecture-neutral resolver (vm/vm_fault.c): it
+ * breaks a copy-on-write page on write, and otherwise decides whether the
+ * access was legitimate. A genuine bad access returns false and the trap layer
+ * takes over (killing a user task, panicking on a kernel fault), exactly as
+ * before this port had a resolver.
+ */
+bool
 i386_vm_fault_resolve(x86_saved_state_t *state)
 {
-	(void)state;
-	return false;
+	vm_address_space_t *space = (vm_address_space_t *)vm_address_space_current();
+
+	if (space == 0) return false;
+
+	vm_fault_access_t access = (state->err & PF_WRITE)   ? VM_FAULT_WRITE
+							  : (state->err & PF_FETCH) ? VM_FAULT_EXECUTE
+														: VM_FAULT_READ;
+
+	return vm_fault_user(space, state->cr2, access);
 }
 
 bool

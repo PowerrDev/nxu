@@ -26,7 +26,6 @@
 
 #include <vm/address_space.h>
 #include <kern/vm/pmap.h>
-#include <vm/vmm_internal.h> /* g_vmm + vmm_disable_ttbr0: boot identity-map teardown only */
 
 #include <kern/console/console.h>
 #include <kern/ipi.h>
@@ -46,12 +45,21 @@
 
 static bool vm_address_in_shm_window(uint64_t address);
 
+/*
+ * Early boot runs before the scheduler registers the boot CPU (the i386 VM
+ * self-test activates a space then), so current_processor() can be null and
+ * there is no per-CPU active_space to record in. This global stands in until a
+ * processor exists. On ports whose first activation happens after processor
+ * registration (arm64) it stays null and is never consulted.
+ */
+static vm_address_space_t *g_boot_active_space;
+
 static vm_address_space_t *
 vm_cpu_space(void)
 {
 	processor_t processor = current_processor();
 
-	return processor == 0 ? 0 : processor->active_space;
+	return processor != 0 ? processor->active_space : g_boot_active_space;
 }
 
 static bool
@@ -113,6 +121,30 @@ vm_address_space_activate(vm_address_space_t *space)
 
 	uint64_t irq_state = ml_irq_save();
 	processor_t cpu = current_processor();
+
+	if (cpu == 0) {
+		/*
+		 * Early boot, before the scheduler registers this CPU: track the active
+		 * space in the global and load the root, with no per-CPU membership set
+		 * (nothing can migrate or run concurrently yet).
+		 */
+		bool ok = true;
+
+		if (g_boot_active_space != space) {
+			if (g_boot_active_space != 0) __atomic_store_n(&g_boot_active_space->active, false, __ATOMIC_RELEASE);
+
+			ok = pmap_activate(&space->pmap);
+
+			if (ok) {
+				__atomic_store_n(&space->active, true, __ATOMIC_RELEASE);
+				g_boot_active_space = space;
+			}
+		}
+
+		ml_irq_restore(irq_state);
+		return ok;
+	}
+
 	vm_address_space_t *previous = cpu->active_space;
 
 	if (previous == space) {
@@ -142,29 +174,23 @@ vm_address_space_activate(vm_address_space_t *space)
 bool
 vm_address_space_deactivate(void)
 {
-	if (!g_vmm.enabled || !g_vmm.kernel_pointers_rebased) return false;
-
 	uint64_t irq_state = ml_irq_save();
 	processor_t cpu = current_processor();
-	vm_address_space_t *previous = cpu->active_space;
 
-	if (previous == 0) {
-		/*
-		 * Nothing loaded. The boot CPU's boot-time identity map is torn down
-		 * once, here or in kern_init. This is a kernel/boot (higher-half) path
-		 * concern, out of the user-pmap scope, so it stays a direct VMM call.
-		 */
-		bool ok = true;
-
-		if (cpu->cpu_id == 0U && !g_vmm.ttbr0_disabled) ok = vmm_disable_ttbr0();
-
-		ml_irq_restore(irq_state);
-		return ok;
-	}
-
+	/* Return this CPU to the kernel-only translation regime (backend). The
+	 * boot-time identity map, where a port has one, is torn down by the boot
+	 * sequence (kern_init), not here. */
 	(void)pmap_deactivate();
-	cpu->active_space = 0;
-	vm_space_leave(previous, cpu);
+
+	if (cpu != 0) {
+		vm_address_space_t *previous = cpu->active_space;
+
+		cpu->active_space = 0;
+		if (previous != 0) vm_space_leave(previous, cpu);
+	} else if (g_boot_active_space != 0) {
+		__atomic_store_n(&g_boot_active_space->active, false, __ATOMIC_RELEASE);
+		g_boot_active_space = 0;
+	}
 
 	ml_irq_restore(irq_state);
 	return true;
@@ -193,13 +219,18 @@ vm_address_space_quiesce(vm_address_space_t *space)
 
 	processor_t self = current_processor();
 
-	if (self->active_space == space) (void)vm_address_space_deactivate();
+	/* Leave the space if this CPU has it loaded. vm_cpu_space() handles the
+	 * early-boot case where no processor is registered yet (self == 0). */
+	if (vm_cpu_space() == space) (void)vm_address_space_deactivate();
 
 	uint64_t deadline = timer_get_microseconds() + 2000000ULL;
 	uint64_t next_kick = 0ULL;
 
 	for (;;) {
-		__asm__ volatile("dsb ish" ::: "memory");
+		/* Full barrier before sampling the set (pairs with the release store a
+		 * CPU does when it joins): portable so the shared core builds on every
+		 * arch -- the compiler emits dmb ish on arm64, mfence on x86. */
+		__atomic_thread_fence(__ATOMIC_SEQ_CST);
 
 		if (cpuset_empty(&space->active_cpus)) return true;
 
@@ -207,7 +238,9 @@ vm_address_space_quiesce(vm_address_space_t *space)
 
 		if (now > deadline) return false;
 
-		if (now >= next_kick) {
+		/* self == 0 only in early boot, before any processor is registered and
+		 * before any other CPU is running: there is no one to kick. */
+		if (now >= next_kick && self != 0) {
 			next_kick = now + 500ULL;
 
 			for (uint32_t cpu = 0U; cpu < NXU_MAX_CPUS; cpu++) {
