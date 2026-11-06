@@ -1288,7 +1288,7 @@ proc_memory_snapshot(nxu_stats_process_memory_t *out, uint32_t capacity)
 		uint64_t irq = nxu_spin_lock_irqsave(&map->lock);
 		info->resident_pages = map->resident_pages;
 		info->shared_pages = map->shared_pages;
-		info->page_table_pages = map->table_count;
+		info->page_table_pages = map->pmap.table_count;
 		for (vm_map_entry_t entry = map->mmap_entries; entry != 0; entry = entry->next)
 			info->anon_reserved_pages += (entry->end_va - entry->start_va) / PMM_PAGE_SIZE;
 		nxu_spin_unlock_irqrestore(&map->lock, irq);

@@ -36,7 +36,9 @@ task_reset(task_t task)
 						  .flags = TASK_FLAG_NONE,
 						  .active = false,
 						  .halting = false,
-						  .map = {.root = 0, .root_physical = 0ULL, .table_count = 0ULL, .active = false},
+						  /* pmap and all other fields zero-initialize; the opaque
+						   * pmap_t is left to the backend's pmap_create(). */
+						  .map = {.active = false},
 						  .shm_next_va = 0ULL,
 						  .threads = 0,
 						  .thread_count = 0U,

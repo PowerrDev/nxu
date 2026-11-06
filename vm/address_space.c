@@ -172,14 +172,14 @@ bool
 vm_address_space_create(vm_address_space_t *space)
 {
 	if (space == 0 || !g_vmm.enabled || !g_vmm.higher_half_enabled || !g_vmm.higher_half_direct_map_enabled ||
-		!g_vmm.kernel_pointers_rebased || space->root != 0 || space->root_physical != 0ULL ||
-		space->table_count != 0ULL || space->active) {
+		!g_vmm.kernel_pointers_rebased || space->pmap.root != 0 || space->pmap.root_physical != 0ULL ||
+		space->pmap.table_count != 0ULL || space->active) {
 		return false;
 	}
 
 	memset(space, 0, sizeof(*space));
 
-	if (!vmm_allocate_table(&space->root, &space->root_physical, &space->table_count)) {
+	if (!vmm_allocate_table(&space->pmap.root, &space->pmap.root_physical, &space->pmap.table_count)) {
 		memset(space, 0, sizeof(*space));
 		return false;
 	}
@@ -231,7 +231,7 @@ vm_ttbr0_disable_local(void)
 bool
 vm_address_space_activate(vm_address_space_t *space)
 {
-	if (space == 0 || space->root == 0 || space->root_physical == 0ULL || space->table_count == 0ULL ||
+	if (space == 0 || space->pmap.root == 0 || space->pmap.root_physical == 0ULL || space->pmap.table_count == 0ULL ||
 		!g_vmm.enabled || !g_vmm.kernel_pointers_rebased) {
 		return false;
 	}
@@ -250,7 +250,7 @@ vm_address_space_activate(vm_address_space_t *space)
 	__asm__ volatile("dsb ish" ::: "memory");
 
 	uint64_t tcr = vmm_read_tcr() & ~VMM_TCR_EPD0;
-	uint64_t ttbr0 = space->root_physical & VMM_DESC_ADDRESS_MASK;
+	uint64_t ttbr0 = space->pmap.root_physical & VMM_DESC_ADDRESS_MASK;
 
 	/*
 	 * Install the new root, allow TTBR0 walks, and remove translations of the
@@ -327,7 +327,7 @@ vm_address_space_deactivate(void)
 bool
 vm_address_space_quiesce(vm_address_space_t *space)
 {
-	if (space == 0 || space->root == 0) return false;
+	if (space == 0 || space->pmap.root == 0) return false;
 
 	processor_t self = current_processor();
 
@@ -371,7 +371,7 @@ vm_space_install_locked(vm_address_space_t *space, uint64_t virtual_address, uin
 {
 	uint64_t *entry;
 
-	if (!vmm_root_get_l3_entry(space->root, virtual_address, true, &space->table_count, &entry)) {
+	if (!vmm_root_get_l3_entry(space->pmap.root, virtual_address, true, &space->pmap.table_count, &entry)) {
 		return false;
 	}
 
@@ -388,7 +388,7 @@ bool
 vm_address_space_map_page_locked(vm_address_space_t *space, uint64_t virtual_address, uint64_t physical_address,
 								 vm_user_protection_t protection)
 {
-	if (space == 0 || space->root == 0 || virtual_address < VM_USER_NULL_GUARD_SIZE ||
+	if (space == 0 || space->pmap.root == 0 || virtual_address < VM_USER_NULL_GUARD_SIZE ||
 		!vmm_lower_page_valid(virtual_address) || !vmm_physical_page_valid(physical_address)) {
 		return false;
 	}
@@ -404,7 +404,7 @@ bool
 vm_address_space_map_page(vm_address_space_t *space, uint64_t virtual_address, uint64_t physical_address,
 						  vm_user_protection_t protection)
 {
-	if (space == 0 || space->root == 0 || virtual_address < VM_USER_NULL_GUARD_SIZE ||
+	if (space == 0 || space->pmap.root == 0 || virtual_address < VM_USER_NULL_GUARD_SIZE ||
 		!vmm_lower_page_valid(virtual_address) || !vmm_physical_page_valid(physical_address)) {
 		return false;
 	}
@@ -427,21 +427,21 @@ vm_address_space_map_page(vm_address_space_t *space, uint64_t virtual_address, u
 bool
 vm_address_space_unmap_page(vm_address_space_t *space, uint64_t virtual_address)
 {
-	if (space == 0 || space->root == 0 || virtual_address < VM_USER_NULL_GUARD_SIZE ||
+	if (space == 0 || space->pmap.root == 0 || virtual_address < VM_USER_NULL_GUARD_SIZE ||
 		!vmm_lower_page_valid(virtual_address)) {
 		return false;
 	}
 
 	nxu_spin_lock(&space->lock);
 
-	uint64_t table_count = space->table_count;
+	uint64_t table_count = space->pmap.table_count;
 
 	uint64_t *entry;
 
 	/* create=false: this only ever clears an existing leaf entry, never
 	 * allocates intermediate tables, so table_count is never modified here
 	 * -- see vm_address_space_query_page for the same read-only usage. */
-	if (!vmm_root_get_l3_entry(space->root, virtual_address, false, &table_count, &entry)) {
+	if (!vmm_root_get_l3_entry(space->pmap.root, virtual_address, false, &table_count, &entry)) {
 		nxu_spin_unlock(&space->lock);
 		return false;
 	}
@@ -474,10 +474,10 @@ vm_address_space_unmap_page(vm_address_space_t *space, uint64_t virtual_address)
 bool
 vm_address_space_restrict_page(vm_address_space_t *space, uint64_t address)
 {
-	if (!space || !space->root || address < VM_USER_NULL_GUARD_SIZE || !vmm_lower_page_valid(address)) return false;
+	if (!space || !space->pmap.root || address < VM_USER_NULL_GUARD_SIZE || !vmm_lower_page_valid(address)) return false;
 	nxu_spin_lock(&space->lock);
-	uint64_t tables = space->table_count, *entry;
-	bool ok = vmm_root_get_l3_entry(space->root, address, false, &tables, &entry);
+	uint64_t tables = space->pmap.table_count, *entry;
+	bool ok = vmm_root_get_l3_entry(space->pmap.root, address, false, &tables, &entry);
 	vm_user_protection_t protection;
 	if (!ok || (*entry & VMM_DESC_TYPE_MASK) != VMM_DESC_TABLE_PAGE ||
 		!vm_user_descriptor_protection(*entry, &protection) || protection == VM_USER_PROTECTION_READ_EXECUTE) {
@@ -494,7 +494,7 @@ vm_address_space_restrict_page(vm_address_space_t *space, uint64_t address)
 bool
 vm_address_space_query_page(const vm_address_space_t *space, uint64_t virtual_address, vm_user_page_mapping_t *mapping)
 {
-	if (space == 0 || space->root == 0 || mapping == 0 || !vmm_lower_page_valid(virtual_address)) {
+	if (space == 0 || space->pmap.root == 0 || mapping == 0 || !vmm_lower_page_valid(virtual_address)) {
 		return false;
 	}
 
@@ -506,10 +506,10 @@ vm_address_space_query_page(const vm_address_space_t *space, uint64_t virtual_ad
 
 	nxu_spin_lock(lock);
 
-	uint64_t table_count = space->table_count;
+	uint64_t table_count = space->pmap.table_count;
 	uint64_t *entry;
 
-	if (!vmm_root_get_l3_entry(space->root, virtual_address, false, &table_count, &entry)) {
+	if (!vmm_root_get_l3_entry(space->pmap.root, virtual_address, false, &table_count, &entry)) {
 		nxu_spin_unlock(lock);
 		return false;
 	}
@@ -555,13 +555,13 @@ vm_address_space_is_active(const vm_address_space_t *space)
 uint64_t
 vm_address_space_root_physical(const vm_address_space_t *space)
 {
-	return space == 0 ? 0ULL : space->root_physical;
+	return space == 0 ? 0ULL : space->pmap.root_physical;
 }
 
 uint64_t
 vm_address_space_table_count(const vm_address_space_t *space)
 {
-	return space == 0 ? 0ULL : space->table_count;
+	return space == 0 ? 0ULL : space->pmap.table_count;
 }
 
 /*
@@ -617,7 +617,7 @@ vm_address_space_flush_if_active(const vm_address_space_t *space)
 bool
 vm_address_space_cow_break(vm_address_space_t *space, uint64_t virtual_address)
 {
-	if (space == 0 || space->root == 0 || virtual_address < VM_USER_NULL_GUARD_SIZE ||
+	if (space == 0 || space->pmap.root == 0 || virtual_address < VM_USER_NULL_GUARD_SIZE ||
 		!vmm_lower_page_valid(virtual_address)) {
 		return false;
 	}
@@ -627,10 +627,10 @@ vm_address_space_cow_break(vm_address_space_t *space, uint64_t virtual_address)
 	for (uint32_t attempt = 0U; attempt < 8U; attempt++) {
 		nxu_spin_lock(&space->lock);
 
-		uint64_t table_count = space->table_count;
+		uint64_t table_count = space->pmap.table_count;
 		uint64_t *entry;
 
-		if (!vmm_root_get_l3_entry(space->root, page_va, false, &table_count, &entry)) {
+		if (!vmm_root_get_l3_entry(space->pmap.root, page_va, false, &table_count, &entry)) {
 			nxu_spin_unlock(&space->lock);
 			return false;
 		}
@@ -681,9 +681,9 @@ vm_address_space_cow_break(vm_address_space_t *space, uint64_t virtual_address)
 
 		nxu_spin_lock(&space->lock);
 
-		table_count = space->table_count;
+		table_count = space->pmap.table_count;
 
-		if (!vmm_root_get_l3_entry(space->root, page_va, false, &table_count, &entry) || *entry != descriptor) {
+		if (!vmm_root_get_l3_entry(space->pmap.root, page_va, false, &table_count, &entry) || *entry != descriptor) {
 			/* The page changed while it was being copied: throw the copy away and look again. */
 			nxu_spin_unlock(&space->lock);
 			(void)pmm_free_page(new_physical);
@@ -707,7 +707,7 @@ vm_address_space_cow_break(vm_address_space_t *space, uint64_t virtual_address)
 uint64_t
 vm_address_space_release_pages(vm_address_space_t *space)
 {
-	if (space == 0 || space->root == 0) return 0ULL;
+	if (space == 0 || space->pmap.root == 0) return 0ULL;
 
 	uint64_t released = 0ULL;
 
@@ -715,7 +715,7 @@ vm_address_space_release_pages(vm_address_space_t *space)
 
 	for (uint32_t l1 = 0U; l1 < VM_TABLE_ENTRIES; l1++) {
 		uint64_t *level2;
-		if (!vm_table_from_descriptor(space->root[l1], &level2)) continue;
+		if (!vm_table_from_descriptor(space->pmap.root[l1], &level2)) continue;
 
 		for (uint32_t l2 = 0U; l2 < VM_TABLE_ENTRIES; l2++) {
 			uint64_t *level3;
@@ -743,7 +743,7 @@ vm_address_space_release_pages(vm_address_space_t *space)
 bool
 vm_address_space_destroy(vm_address_space_t *space)
 {
-	if (space == 0 || space->root == 0) return false;
+	if (space == 0 || space->pmap.root == 0) return false;
 
 	/*
 	 * Never free tables a CPU can still walk: this CPU leaves the space, and
@@ -758,7 +758,7 @@ vm_address_space_destroy(vm_address_space_t *space)
 
 	for (uint32_t l1 = 0U; l1 < VM_TABLE_ENTRIES; l1++) {
 		uint64_t *level2;
-		if (!vm_table_from_descriptor(space->root[l1], &level2)) continue;
+		if (!vm_table_from_descriptor(space->pmap.root[l1], &level2)) continue;
 
 		for (uint32_t l2 = 0U; l2 < VM_TABLE_ENTRIES; l2++) {
 			if ((level2[l2] & VMM_DESC_TYPE_MASK) != VMM_DESC_TABLE_PAGE) continue;
@@ -766,10 +766,10 @@ vm_address_space_destroy(vm_address_space_t *space)
 			(void)pmm_free_page(level2[l2] & VMM_DESC_ADDRESS_MASK);
 		}
 
-		(void)pmm_free_page(space->root[l1] & VMM_DESC_ADDRESS_MASK);
+		(void)pmm_free_page(space->pmap.root[l1] & VMM_DESC_ADDRESS_MASK);
 	}
 
-	(void)pmm_free_page(space->root_physical);
+	(void)pmm_free_page(space->pmap.root_physical);
 
 	memset(space, 0, sizeof(*space));
 
@@ -779,7 +779,7 @@ vm_address_space_destroy(vm_address_space_t *space)
 bool
 vm_address_space_fork(vm_address_space_t *parent, vm_address_space_t *child)
 {
-	if (parent == 0 || child == 0 || parent->root == 0) return false;
+	if (parent == 0 || child == 0 || parent->pmap.root == 0) return false;
 	if (!vm_address_space_create(child)) return false;
 
 	bool ok = true;
@@ -789,7 +789,7 @@ vm_address_space_fork(vm_address_space_t *parent, vm_address_space_t *child)
 
 	for (uint32_t l1 = 0U; ok && l1 < VM_TABLE_ENTRIES; l1++) {
 		uint64_t *level2;
-		if (!vm_table_from_descriptor(parent->root[l1], &level2)) continue;
+		if (!vm_table_from_descriptor(parent->pmap.root[l1], &level2)) continue;
 
 		for (uint32_t l2 = 0U; ok && l2 < VM_TABLE_ENTRIES; l2++) {
 			uint64_t *level3;
@@ -819,7 +819,7 @@ vm_address_space_fork(vm_address_space_t *parent, vm_address_space_t *child)
 
 				uint64_t *entry;
 
-				if (!vmm_root_get_l3_entry(child->root, virtual_address, true, &child->table_count, &entry)) {
+				if (!vmm_root_get_l3_entry(child->pmap.root, virtual_address, true, &child->pmap.table_count, &entry)) {
 					(void)pmm_free_page(physical);
 					ok = false;
 					break;

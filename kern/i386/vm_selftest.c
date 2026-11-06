@@ -705,8 +705,8 @@ vm_test_address_spaces(void)
 
 	/* Kernel half identical to the master, user half empty. */
 	const pmap_entry_t *master = pmap_kernel_directory();
-	const pmap_entry_t *directory_a = (const pmap_entry_t *)space_a.root;
-	const pmap_entry_t *directory_b = (const pmap_entry_t *)space_b.root;
+	const pmap_entry_t *directory_a = (const pmap_entry_t *)space_a.pmap.root;
+	const pmap_entry_t *directory_b = (const pmap_entry_t *)space_b.pmap.root;
 
 	for (uint32_t index = 0U; index < PMAP_KERNEL_FIRST_PDE; index++)
 		VM_CHECK(directory_a[index] == 0U && directory_b[index] == 0U);
@@ -770,7 +770,7 @@ vm_test_address_spaces(void)
 	VM_CHECK(vm_address_space_activate(&space_a));
 	VM_CHECK(vm_address_space_is_active(&space_a) && !vm_address_space_is_active(&space_b));
 	VM_CHECK(vm_address_space_current() == &space_a);
-	VM_CHECK(pmap_current_directory_physical() == (uint32_t)space_a.root_physical);
+	VM_CHECK(pmap_current_directory_physical() == (uint32_t)space_a.pmap.root_physical);
 	VM_CHECK(vm_address_space_activate(&space_a));
 	VM_CHECK(vm_address_space_translate_read(&space_a, VM_USER_A + 0x123ULL, &translated) &&
 			 translated == page_a + 0x123ULL);
@@ -784,7 +784,7 @@ vm_test_address_spaces(void)
 
 	VM_CHECK(vm_address_space_activate(&space_b));
 	VM_CHECK(vm_address_space_is_active(&space_b) && !vm_address_space_is_active(&space_a));
-	VM_CHECK(pmap_current_directory_physical() == (uint32_t)space_b.root_physical);
+	VM_CHECK(pmap_current_directory_physical() == (uint32_t)space_b.pmap.root_physical);
 	VM_CHECK(vm_probe_read(VM_USER_A, &value) && value == 0U);
 	VM_CHECK(vm_probe_write(VM_USER_A, 0xBBBB0002U));
 	VM_CHECK(vm_word((uintptr_t)shared)[3] == 0x5A5EDU + 3U * 0x9E3779B1U);
@@ -908,7 +908,7 @@ vm_test_address_spaces(void)
 	VM_CHECK(released == 4ULL);
 	VM_CHECK(!vm_address_space_query_page(&space_a, VM_USER_A, &mapping));
 	VM_CHECK(vm_address_space_destroy(&space_a));
-	VM_CHECK(space_a.root == 0 && space_a.root_physical == 0ULL);
+	VM_CHECK(space_a.pmap.root == 0 && space_a.pmap.root_physical == 0ULL);
 
 	VM_CHECK(vm_address_space_activate(&space_b));
 	VM_CHECK(vm_address_space_destroy(&space_b));

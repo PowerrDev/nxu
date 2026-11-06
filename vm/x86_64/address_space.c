@@ -117,19 +117,19 @@ vm_address_space_current(void)
 bool
 vm_address_space_create(vm_address_space_t *space)
 {
-	if (space == 0 || !g_x86_vmm.enabled || space->root != 0 || space->root_physical != 0ULL ||
-		space->table_count != 0ULL || space->active) {
+	if (space == 0 || !g_x86_vmm.enabled || space->pmap.root != 0 || space->pmap.root_physical != 0ULL ||
+		space->pmap.table_count != 0ULL || space->active) {
 		return false;
 	}
 
 	memset(space, 0, sizeof(*space));
-	if (!x86_vmm_allocate_table(&space->root, &space->root_physical, &space->table_count)) {
+	if (!x86_vmm_allocate_table(&space->pmap.root, &space->pmap.root_physical, &space->pmap.table_count)) {
 		memset(space, 0, sizeof(*space));
 		return false;
 	}
 
 	for (uint32_t index = 256U; index < X86_USER_TABLE_ENTRIES; index++) {
-		space->root[index] = g_x86_vmm.root[index];
+		space->pmap.root[index] = g_x86_vmm.root[index];
 	}
 
 	return true;
@@ -144,7 +144,7 @@ vm_address_space_create(vm_address_space_t *space)
 bool
 vm_address_space_activate(vm_address_space_t *space)
 {
-	if (space == 0 || space->root == 0 || space->root_physical == 0ULL || space->table_count == 0ULL ||
+	if (space == 0 || space->pmap.root == 0 || space->pmap.root_physical == 0ULL || space->pmap.table_count == 0ULL ||
 		!g_x86_vmm.enabled) {
 		return false;
 	}
@@ -159,7 +159,7 @@ vm_address_space_activate(vm_address_space_t *space)
 
 	cpuset_add_atomic(&space->active_cpus, machine_cpu_id());
 	__atomic_store_n(&space->active, true, __ATOMIC_RELEASE);
-	__asm__ volatile("mov %0, %%cr3" : : "r"((uintptr_t)space->root_physical) : "memory");
+	__asm__ volatile("mov %0, %%cr3" : : "r"((uintptr_t)space->pmap.root_physical) : "memory");
 	g_x86_current_space = space;
 
 	if (previous != 0) {
@@ -207,7 +207,7 @@ vm_address_space_deactivate(void)
 bool
 vm_address_space_quiesce(vm_address_space_t *space)
 {
-	if (space == 0 || space->root == 0) {
+	if (space == 0 || space->pmap.root == 0) {
 		return false;
 	}
 
@@ -229,13 +229,13 @@ vm_address_space_map_page_locked(vm_address_space_t *space, uint64_t virtual_add
 								 vm_user_protection_t protection)
 {
 	uint64_t descriptor;
-	if (space == 0 || space->root == 0 || !x86_vm_page_valid(virtual_address) ||
+	if (space == 0 || space->pmap.root == 0 || !x86_vm_page_valid(virtual_address) ||
 		!x86_vmm_make_user_descriptor(physical_address, protection, false, &descriptor)) {
 		return false;
 	}
 
 	uint64_t *entry;
-	if (!x86_vmm_root_get_l3_entry(space->root, virtual_address, true, true, &space->table_count, &entry) ||
+	if (!x86_vmm_root_get_l3_entry(space->pmap.root, virtual_address, true, true, &space->pmap.table_count, &entry) ||
 		(*entry & X86_PTE_PRESENT) != 0ULL) {
 		return false;
 	}
@@ -263,7 +263,7 @@ bool
 vm_address_space_map_page(vm_address_space_t *space, uint64_t virtual_address, uint64_t physical_address,
 						  vm_user_protection_t protection)
 {
-	if (space == 0 || space->root == 0 || !x86_vm_page_valid(virtual_address)) {
+	if (space == 0 || space->pmap.root == 0 || !x86_vm_page_valid(virtual_address)) {
 		return false;
 	}
 
@@ -283,13 +283,13 @@ vm_address_space_map_page(vm_address_space_t *space, uint64_t virtual_address, u
 bool
 vm_address_space_unmap_page(vm_address_space_t *space, uint64_t virtual_address)
 {
-	if (space == 0 || space->root == 0 || !x86_vm_page_valid(virtual_address)) {
+	if (space == 0 || space->pmap.root == 0 || !x86_vm_page_valid(virtual_address)) {
 		return false;
 	}
 
 	nxu_spin_lock(&space->lock);
 	uint64_t *entry;
-	if (!x86_vmm_root_get_l3_entry(space->root, virtual_address, false, true, &space->table_count, &entry) ||
+	if (!x86_vmm_root_get_l3_entry(space->pmap.root, virtual_address, false, true, &space->pmap.table_count, &entry) ||
 		(*entry & X86_PTE_PRESENT) == 0ULL) {
 		nxu_spin_unlock(&space->lock);
 		return false;
@@ -319,13 +319,13 @@ vm_address_space_unmap_page(vm_address_space_t *space, uint64_t virtual_address)
 bool
 vm_address_space_restrict_page(vm_address_space_t *space, uint64_t address)
 {
-	if (space == 0 || space->root == 0 || !x86_vm_page_valid(address)) {
+	if (space == 0 || space->pmap.root == 0 || !x86_vm_page_valid(address)) {
 		return false;
 	}
 
 	nxu_spin_lock(&space->lock);
 	uint64_t *entry;
-	bool valid = x86_vmm_root_get_l3_entry(space->root, address, false, true, &space->table_count, &entry) &&
+	bool valid = x86_vmm_root_get_l3_entry(space->pmap.root, address, false, true, &space->pmap.table_count, &entry) &&
 		(*entry & X86_PTE_PRESENT) != 0ULL && (!g_x86_vmm.nx_enabled || (*entry & X86_PTE_NX) != 0ULL);
 
 	if (valid) {
@@ -350,7 +350,7 @@ bool
 vm_address_space_query_page(const vm_address_space_t *space, uint64_t virtual_address,
 							vm_user_page_mapping_t *mapping)
 {
-	if (space == 0 || space->root == 0 || mapping == 0 || virtual_address < X86_USER_NULL_GUARD_SIZE ||
+	if (space == 0 || space->pmap.root == 0 || mapping == 0 || virtual_address < X86_USER_NULL_GUARD_SIZE ||
 		virtual_address >= VM_MAX_USER_ADDRESS) {
 		return false;
 	}
@@ -358,8 +358,8 @@ vm_address_space_query_page(const vm_address_space_t *space, uint64_t virtual_ad
 	nxu_spinlock_t *lock = (nxu_spinlock_t *)&space->lock;
 	nxu_spin_lock(lock);
 	uint64_t *entry;
-	uint64_t table_count = space->table_count;
-	if (!x86_vmm_root_get_l3_entry(space->root, virtual_address, false, true, &table_count, &entry) ||
+	uint64_t table_count = space->pmap.table_count;
+	if (!x86_vmm_root_get_l3_entry(space->pmap.root, virtual_address, false, true, &table_count, &entry) ||
 		(*entry & X86_PTE_PRESENT) == 0ULL) {
 		nxu_spin_unlock(lock);
 		return false;
@@ -428,7 +428,7 @@ vm_address_space_is_active(const vm_address_space_t *space)
 uint64_t
 vm_address_space_root_physical(const vm_address_space_t *space)
 {
-	return space == 0 ? 0ULL : space->root_physical;
+	return space == 0 ? 0ULL : space->pmap.root_physical;
 }
 
 /*
@@ -440,7 +440,7 @@ vm_address_space_root_physical(const vm_address_space_t *space)
 uint64_t
 vm_address_space_table_count(const vm_address_space_t *space)
 {
-	return space == 0 ? 0ULL : space->table_count;
+	return space == 0 ? 0ULL : space->pmap.table_count;
 }
 
 /*
@@ -489,7 +489,7 @@ x86_vm_release_table_pages(vm_address_space_t *space, uint64_t *table, uint32_t 
 uint64_t
 vm_address_space_release_pages(vm_address_space_t *space)
 {
-	if (space == 0 || space->root == 0) {
+	if (space == 0 || space->pmap.root == 0) {
 		return 0ULL;
 	}
 
@@ -497,7 +497,7 @@ vm_address_space_release_pages(vm_address_space_t *space)
 	uint64_t released = 0ULL;
 	for (uint32_t index = 0U; index < 256U; index++) {
 		uint64_t *level3;
-		if (x86_vm_table_at_entry(space->root[index], &level3)) {
+		if (x86_vm_table_at_entry(space->pmap.root[index], &level3)) {
 			released += x86_vm_release_table_pages(space, level3, 3U);
 		}
 	}
@@ -505,7 +505,7 @@ vm_address_space_release_pages(vm_address_space_t *space)
 	space->resident_pages = 0ULL;
 	space->shared_pages = 0ULL;
 	if (g_x86_current_space == space) {
-		uintptr_t root = (uintptr_t)space->root_physical;
+		uintptr_t root = (uintptr_t)space->pmap.root_physical;
 		__asm__ volatile("mov %0, %%cr3" : : "r"(root) : "memory");
 	}
 
@@ -548,13 +548,13 @@ x86_vm_free_table_tree(uint64_t *table, uint32_t level)
 bool
 vm_address_space_destroy(vm_address_space_t *space)
 {
-	if (space == 0 || space->root == 0 || space->resident_pages != 0ULL ||
+	if (space == 0 || space->pmap.root == 0 || space->resident_pages != 0ULL ||
 		!vm_address_space_quiesce(space)) {
 		return false;
 	}
 
 	for (uint32_t index = 0U; index < 256U; index++) {
-		uint64_t descriptor = space->root[index];
+		uint64_t descriptor = space->pmap.root[index];
 		if ((descriptor & X86_PTE_PRESENT) == 0ULL) {
 			continue;
 		}
@@ -567,7 +567,7 @@ vm_address_space_destroy(vm_address_space_t *space)
 		(void)pmm_free_page(descriptor & X86_PTE_ADDRESS);
 	}
 
-	(void)pmm_free_page(space->root_physical);
+	(void)pmm_free_page(space->pmap.root_physical);
 	memset(space, 0, sizeof(*space));
 
 	return true;
@@ -617,7 +617,7 @@ x86_vm_copy_user_tables(vm_address_space_t *parent, vm_address_space_t *child, u
 		}
 
 		uint64_t *child_entry;
-		if (!x86_vmm_root_get_l3_entry(child->root, address, true, true, &child->table_count, &child_entry) ||
+		if (!x86_vmm_root_get_l3_entry(child->pmap.root, address, true, true, &child->pmap.table_count, &child_entry) ||
 			(*child_entry & X86_PTE_PRESENT) != 0ULL || !pmm_page_retain(descriptor & X86_PTE_ADDRESS)) {
 			return false;
 		}
@@ -646,7 +646,7 @@ x86_vm_copy_user_tables(vm_address_space_t *parent, vm_address_space_t *child, u
 bool
 vm_address_space_fork(vm_address_space_t *parent, vm_address_space_t *child)
 {
-	if (parent == 0 || child == 0 || parent->root == 0 || !vm_address_space_create(child)) {
+	if (parent == 0 || child == 0 || parent->pmap.root == 0 || !vm_address_space_create(child)) {
 		return false;
 	}
 
@@ -654,7 +654,7 @@ vm_address_space_fork(vm_address_space_t *parent, vm_address_space_t *child)
 	bool copied = true;
 	for (uint32_t index = 0U; copied && index < 256U; index++) {
 		uint64_t *level3;
-		if (!x86_vm_table_at_entry(parent->root[index], &level3)) {
+		if (!x86_vm_table_at_entry(parent->pmap.root[index], &level3)) {
 			continue;
 		}
 
@@ -662,7 +662,7 @@ vm_address_space_fork(vm_address_space_t *parent, vm_address_space_t *child)
 	}
 
 	if (g_x86_current_space == parent) {
-		uintptr_t root = (uintptr_t)parent->root_physical;
+		uintptr_t root = (uintptr_t)parent->pmap.root_physical;
 		__asm__ volatile("mov %0, %%cr3" : : "r"(root) : "memory");
 	}
 
@@ -686,7 +686,7 @@ vm_address_space_fork(vm_address_space_t *parent, vm_address_space_t *child)
 bool
 vm_address_space_cow_break(vm_address_space_t *space, uint64_t virtual_address)
 {
-	if (space == 0 || space->root == 0 || !x86_vm_page_valid(virtual_address)) {
+	if (space == 0 || space->pmap.root == 0 || !x86_vm_page_valid(virtual_address)) {
 		return false;
 	}
 
@@ -694,7 +694,7 @@ vm_address_space_cow_break(vm_address_space_t *space, uint64_t virtual_address)
 for (uint32_t attempt = 0U; attempt < 8U; attempt++) {
 		nxu_spin_lock(&space->lock);
 		uint64_t *entry;
-		if (!x86_vmm_root_get_l3_entry(space->root, page, false, true, &space->table_count, &entry) ||
+		if (!x86_vmm_root_get_l3_entry(space->pmap.root, page, false, true, &space->pmap.table_count, &entry) ||
 			(*entry & X86_PTE_PRESENT) == 0ULL) {
 			nxu_spin_unlock(&space->lock);
 			return false;
@@ -731,7 +731,7 @@ for (uint32_t attempt = 0U; attempt < 8U; attempt++) {
 		memcpy((void *)(uintptr_t)new_alias, (const void *)(uintptr_t)old_alias, X86_VM_PAGE_SIZE);
 
 		nxu_spin_lock(&space->lock);
-		if (!x86_vmm_root_get_l3_entry(space->root, page, false, true, &space->table_count, &entry) || *entry != original) {
+		if (!x86_vmm_root_get_l3_entry(space->pmap.root, page, false, true, &space->pmap.table_count, &entry) || *entry != original) {
 			nxu_spin_unlock(&space->lock);
 			(void)pmm_free_page(new_physical);
 			continue;

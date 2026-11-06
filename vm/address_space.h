@@ -3,6 +3,7 @@
 
 #include <kern/cpuset.h>
 #include <kern/lock.h>
+#include <kern/vm/machine/pmap_types.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -10,10 +11,11 @@
 struct vm_map_entry;
 
 /*
- * One lower-half stage-1 address space owned by TTBR0_EL1.
+ * One user (lower-half) address space.
  *
- * The root pointer is a TTBR1 direct-map pointer used by the kernel.
- * root_physical is the address written to TTBR0_EL1.
+ * The architecture-specific translation state lives in `pmap`, an opaque
+ * per-arch handle (see kern/vm/pmap.h); neutral code never inspects its
+ * fields. Everything else below is architecture-neutral bookkeeping.
  *
  * lock guards page-table mutation (map/unmap/query) below, needed once a
  * task can have more than one thread touching its own address space
@@ -29,11 +31,12 @@ struct vm_map_entry;
  * list, unlike vm/vm_shm.h's opaque per-caller bump cursor.
  */
 typedef struct vm_address_space {
-	uint64_t *root;
-	uint64_t root_physical;
+	/* Opaque architecture-specific translation state: the translation root,
+	 * its physical form, and the count of tables this space owns. Only files
+	 * under kern/vm/arch/<arch>/ may name its fields (practical opacity; see
+	 * doc/vm/unified-pmap.md). */
+	pmap_t pmap;
 
-	/* Translation tables this space owns; only ever changed under `lock`. */
-	uint64_t table_count;
 	/* Present user leaf mappings, maintained under lock (aliases count). */
 	uint64_t resident_pages;
 	uint64_t shared_pages;
