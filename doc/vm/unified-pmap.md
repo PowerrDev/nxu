@@ -889,6 +889,60 @@ work order.
 
 ---
 
+## As-built notes (Phase 0, arm64)
+
+Phase 0 is implemented, built and booted. Where the implementation refined the
+plan above, the reality is recorded here so this document stays the record:
+
+- **Backend location.** The arm64 backend is `kern/vm/arch/arm64/pmap.c`,
+  implementing `kern/vm/pmap.h`. It reuses the shared low-level arm64 table
+  helpers in `vm/vmm_internal.h` (`vmm_root_get_l3_entry`, `vmm_allocate_table`,
+  `vmm_invalidate_page`, ...) rather than copying them, since those are also
+  used by the out-of-scope kernel higher-half path. `vm/vmm_tables.c` therefore
+  did **not** move; only the user address-space logic did.
+- **`pmap_release_user_pages` was added to the contract.** Teardown
+  (`vm_address_space_release_pages`) must free core-owned user pages *and*
+  preserve the pre-split single bulk TLB flush. A per-leaf `pmap_remove` loop
+  would have done one broadcast invalidation per page. The backend call takes
+  the core's free function as a callback: the core owns the frees, the backend
+  owns the walk and the one bulk flush. (Fork's parent downgrade, by contrast,
+  does use per-page `pmap_replace`; that per-page-vs-bulk invalidation delta is
+  the already-listed deferred "batched invalidation" optimisation.)
+- **Compatibility aliases live in `vm/address_space.h`, not `vm_types.h`.**
+  `vm_types.h` holds only the canonical `vm_prot_t`/`vm_user_page_mapping_t`;
+  `address_space.h` adds `typedef vm_prot_t vm_user_protection_t;` and the
+  `VM_USER_PROTECTION_*` defines. This keeps `vmm.h`'s separate
+  `vmm_protection_t` untouched (Requirement 6) while the many user-path callers
+  compile unchanged. Removal stays assigned to the higher-half facade phase.
+- **One residual arch touchpoint in neutral code.** `vm_address_space_deactivate`
+  still references `g_vmm.ttbr0_disabled` / `vmm_disable_ttbr0()` for the
+  boot-CPU identity-map teardown. That is a kernel/boot (higher-half) concern,
+  explicitly out of Phase 0 scope; it names no `pmap_t` field, so the opacity
+  guard still holds. It moves with the higher-half facade.
+- **Field-access guard must cover dot forms too.** The struct split's
+  mechanical rename initially missed two non-arrow sites — a dot-designated
+  initializer (`kern/process/task.c`: `.map = {.root = 0, ...}`) and dot-member
+  accesses in a test (`kern/i386/vm_selftest.c`: `space_a.root_physical`). An
+  arrow-only (`->field`) grep did not see them; the full build did. The
+  symbol-location guard greps `\.root`, `\.root_physical`, `\.table_count` and
+  `->pmap\.`, which covers both forms.
+- **Opacity-guard note.** The arch-token guard finds `TTBR0`/`EL0` only in
+  *doc comments* of the shared headers / neutral file, not in code. Those
+  comments were reworded to neutral terms where they described the neutral API.
+
+### Verification performed
+
+- arm64 kernel builds clean (`-Werror`) and links.
+- arm64 boots under QEMU to userspace: `kern_init: root userspace services
+  active`, and `bootd` (PID 1) forks and starts `logd`, `patchd`,
+  `problemreporter`, `windowserver` and the dock — exercising the two-phase
+  fork and COW-on-first-write live.
+- POST self-tests pass unchanged: `vm_map` (region split/shrink/remove, exact
+  page-count deltas), `vm_shm` (page shared R/W across two address spaces),
+  `ipc_space` (port transferred across spaces), `post_test_vm_kern`.
+- i386 and x86_64 kernels still build and link (mechanical field rename only;
+  their backends remain at their current paths pending Phases 1-2).
+
 ## Resolved decisions (approved)
 
 All six prior open questions are now settled and baked into the contract above:

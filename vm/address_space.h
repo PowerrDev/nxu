@@ -42,17 +42,17 @@ typedef struct vm_address_space {
 	uint64_t resident_pages;
 	uint64_t shared_pages;
 
-	/* True while at least one CPU runs with this space in TTBR0. */
+	/* True while at least one CPU has this space loaded as its translation root. */
 	bool active;
 
 	/*
-	 * The CPUs whose TTBR0 points at this space: added (release, with a full
-	 * barrier) before a CPU installs the space and removed after it has
-	 * installed another one (or disabled TTBR0) and flushed its own TLB. So a
-	 * CPU that could still walk these tables is always in the set, and
-	 * vm_address_space_destroy() waits for the set to empty before it frees a
-	 * page table. Page invalidations do not consult it: they are
-	 * inner-shareable and reach every CPU (see vm/address_space.c).
+	 * The CPUs that currently have this space loaded as their translation root:
+	 * added (release, with a full barrier) before a CPU installs the space and
+	 * removed after it has installed another one (or dropped it) and flushed its
+	 * own TLB. So a CPU that could still walk these tables is always in the set,
+	 * and vm_address_space_destroy() waits for the set to empty before it frees a
+	 * page table. How page invalidations reach other CPUs is the backend's
+	 * business (see kern/vm/pmap.h and the backend).
 	 */
 	nxu_cpuset_t active_cpus;
 	nxu_spinlock_t lock;
@@ -89,22 +89,22 @@ typedef struct {
 /* Allocate an empty L1 translation-table root. */
 bool vm_address_space_create(vm_address_space_t *space);
 
-/* Install the address space in TTBR0_EL1 and enable TTBR0 walks. */
+/* Load the address space as this CPU's user translation root. */
 bool vm_address_space_activate(vm_address_space_t *space);
 
 /*
- * Disable TTBR0 and return the CPU to a kernel-only translation regime.
- * Any previously active userspace object remains allocated but is marked
- * inactive until selected again by the scheduler.
+ * Unload the user translation root and return the CPU to a kernel-only
+ * translation regime. Any previously active userspace object remains allocated
+ * but is marked inactive until selected again by the scheduler.
  */
 bool vm_address_space_deactivate(void);
 
-/* Map one Normal-memory page with EL0 permissions. */
+/* Map one normal-memory page with user permissions. */
 bool vm_address_space_map_page(vm_address_space_t *space, uint64_t virtual_address, uint64_t physical_address,
 							   vm_user_protection_t protection);
 
 /*
- * Remove one EL0 page mapping without freeing the underlying physical page
+ * Remove one user page mapping without freeing the underlying physical page
  * (see vm/pmm.h's pmm_page_retain/pmm_free_page for that) -- the counterpart
  * vm_address_space_map_page never had, needed so memory mapped into more
  * than one address space (vm/vm_shm.h) can be unmapped from just one of
@@ -112,15 +112,15 @@ bool vm_address_space_map_page(vm_address_space_t *space, uint64_t virtual_addre
  */
 bool vm_address_space_unmap_page(vm_address_space_t *space, uint64_t virtual_address);
 
-/* ARM64 loader finalization: remove write/COW permission from an existing
+/* Loader finalization: remove write/COW permission from an existing
  * non-executable page. Never grants permission or changes page ownership. */
 bool vm_address_space_restrict_page(vm_address_space_t *space, uint64_t address);
 
-/* Inspect one existing EL0 page mapping. */
+/* Inspect one existing user page mapping. */
 bool vm_address_space_query_page(const vm_address_space_t *space, uint64_t virtual_address,
 								 vm_user_page_mapping_t *mapping);
 
-/* Test an active address-space translation as an EL0 read or write. */
+/* Test an active address-space translation as a user read or write. */
 bool vm_address_space_translate_read(const vm_address_space_t *space, uint64_t virtual_address,
 									 uint64_t *physical_address);
 
@@ -182,8 +182,9 @@ bool vm_address_space_destroy(vm_address_space_t *space);
 /*
  * vm_address_space_quiesce
  *
- * Wait until no CPU has the space loaded in TTBR0 (this CPU leaves it if it
- * has). Call it after every thread of the space has been terminated and before
+ * Wait until no CPU has the space loaded as its translation root (this CPU
+ * leaves it if it has). Call it after every thread of the space has been
+ * terminated and before
  * pages or tables are freed; vm_address_space_destroy() calls it too. Returns
  * false if a CPU still has it after about two seconds, in which case nothing
  * may be freed.
