@@ -1,0 +1,47 @@
+# =============================================================================
+# MakeInc.arch -- per-architecture toolchain and flag table
+# =============================================================================
+#
+# The single source of truth for architecture-specific settings, faithfully
+# extracted from the historical per-architecture build rules (the top Makefile
+# for aarch64, makedefs/i386.mk, makedefs/x86_64.mk). Settings are published as
+# ARCH_<KEY>_<arch> variables so a caller selects them with $(ARCH_<KEY>_$(a)).
+#
+# What is architecture-specific and lives here: the target triple, the
+# machine/ABI compiler flags, the linker script, the ld emulation and the
+# historical output subdirectory. What is NOT here: the freestanding/warning/
+# dependency flags (architecture-independent) and the -O/-g axis (per
+# KERNEL_CONFIGS, see MakeInc.config).
+
+# Target triple ---------------------------------------------------------------
+ARCH_TRIPLE_aarch64 := aarch64-none-elf
+ARCH_TRIPLE_i386    := i386-none-elf
+ARCH_TRIPLE_x86_64  := x86_64-none-elf
+
+# Machine / ABI compiler flags ------------------------------------------------
+ARCH_CFLAGS_aarch64 := -mgeneral-regs-only
+ARCH_CFLAGS_i386    := -march=i686 -mgeneral-regs-only
+ARCH_CFLAGS_x86_64  := -mno-red-zone -mgeneral-regs-only
+
+# Assembler-only flags beyond the triple --------------------------------------
+ARCH_ASFLAGS_aarch64 :=
+ARCH_ASFLAGS_i386    :=
+ARCH_ASFLAGS_x86_64  := -mno-red-zone
+
+# Linker script ---------------------------------------------------------------
+ARCH_LINKER_SCRIPT_aarch64 := makedefs/linker.ld
+ARCH_LINKER_SCRIPT_i386    := makedefs/linker-i386.ld
+ARCH_LINKER_SCRIPT_x86_64  := makedefs/linker-x86_64.ld
+
+# ld -m emulation (aarch64 relies on the linker default; the x86 ports pin it) -
+ARCH_LD_EMULATION_aarch64 :=
+ARCH_LD_EMULATION_i386    := elf_i386
+ARCH_LD_EMULATION_x86_64  := elf_x86_64
+
+# Historical build-output subdirectory ----------------------------------------
+# Back-compat: the default aarch64 build lives in BUILD/default (CONFIG=default),
+# not BUILD/aarch64. The arch/config matrix layout is introduced later without
+# disturbing these.
+ARCH_BUILDDIR_aarch64 := default
+ARCH_BUILDDIR_i386    := i386
+ARCH_BUILDDIR_x86_64  := x86_64
