@@ -859,8 +859,8 @@ are acknowledged.
 
 ## Phase 1 (i386) and Phase 2 (x86_64) — sketch
 
-Documented here only to show the contract generalizes; not part of this
-work order.
+Both phases are now implemented; see the as-built notes below for what the
+reality refined. This sketch is kept as the original plan of record.
 
 - **Phase 1 — i386.** Add `vm/arch/i386/{pmap_types.h,pmap.c}` from the
   existing bodies of `kern/i386/{pmap.c, vmm_i386.c, address_space_i386.c}`
@@ -984,6 +984,79 @@ deleted and the PAE page-table logic lives in `vm/arch/i386/pmap.c`.
 - arm64 rebuilt, boots to userspace and passes `vm_map` / `vm_shm` /
   `ipc_space` after every shared-layer change (the neutral reconciliation and
   the `quiesce` fix are behaviour-identical there).
+
+## Subsystem relocation (kern/vm → vm)
+
+The contract and backends were first created under `kern/vm/`; they were later
+moved wholesale to the top-level `vm/` tree so the entire VM subsystem — neutral
+core, contract and per-arch backends — lives under one directory:
+
+    vm/pmap.h                vm/vm_types.h            vm/machine/pmap_types.h
+    vm/arch/<arch>/pmap.c    vm/arch/<arch>/pmap_types.h
+
+Pure relocation: every `#include`, build manifest and doc reference was
+rewritten `kern/vm/ → vm/`; the tree resolves through the existing `-I.` include
+path. arm64 stayed byte-identical and i386 kept passing, confirming no behaviour
+change.
+
+## As-built notes (Phase 2, x86_64)
+
+Phase 2 is implemented, built and linked. x86_64 now rides the shared neutral
+`vm/address_space.c`; its forked upper layer `vm/x86_64/address_space.c` is
+**deleted** and the four-level (PML4) page-table logic lives in
+`vm/arch/x86_64/pmap.c`.
+
+- **Backend location and reuse.** The x86_64 backend is `vm/arch/x86_64/pmap.c`,
+  implementing `vm/pmap.h` against the existing `x86_vmm_*` helpers in
+  `vm/x86_64/vmm_internal.h` (`x86_vmm_root_get_l3_entry`, `x86_vmm_allocate_table`,
+  `x86_vmm_make_user_descriptor`, `x86_vmm_table_from_physical`, `g_x86_vmm`). As
+  on arm64, the low-level table helpers and the kernel higher-half/direct-map
+  code in `vm/x86_64/vmm.c` did **not** move; only the user address-space logic
+  did. `pmap_copy_page` uses the permanent x86-64 direct map
+  (`vmm_physical_to_higher_half`); `pmap_release_user_pages` does one bulk flush
+  by reloading CR3.
+- **No per-pmap NX/PCID state.** `pmap_t` stays `{root, root_physical,
+  table_count}` — identical to arm64/i386. NX is a mode-wide property
+  (`g_x86_vmm.nx_enabled`) and the kernel-half PML4 branches come from
+  `g_x86_vmm.root`, so nothing arch-specific beyond those three fields is needed.
+  `pmap_query`/`pmap_enumerate` report a COW page as hardware read-only with a
+  separate `cow` flag (matching i386), not as the old x86_64 "cow ⇒ read-write"
+  quirk, so the shared fork/`cow_break` policy drives it.
+- **Scheduler seam `vm/vm_cpu.h`.** The shared core previously `#include`d
+  `<kern/sched_prism/processor.h>` directly for `current_processor()` and a
+  processor's `active_space`/`cpu_id`. That header embeds `run_queue_t`/`thread_t`
+  by value and its x86_64 thread/GDT backing is an explicit `#error`
+  ("not implemented yet"), so the core could not compile for x86_64 at all. The
+  core now reaches those four operations through `vm/vm_cpu.h`: on the
+  scheduler-bearing ports (arm64, i386) they are inline accessors straight onto
+  `struct processor`, so the generated code — and the arm64 `kernel.bin` — is
+  **byte-identical**; on x86_64 (no scheduler yet) `vm_current_cpu()` is a
+  constant null, so the core runs entirely on its `g_boot_active_space` path and
+  the per-CPU accessors are inline no-ops. This decouples the VM core from the
+  scheduler's concrete layout — a port may now run the shared VM core before, or
+  without, sched_prism.
+- **Two single-CPU providers the nascent port lacked.** The shared core also
+  references `timer_get_microseconds()` (added to `kern/x86_64/timer.c`, built on
+  the existing TSC `timer_get_ticks`/`timer_get_frequency`; returns 0 until the
+  TSC is calibrated, which is safe because quiesce returns on the empty CPU set
+  first) and `machine_ipi_raise()` (new `kern/x86_64/smp.c`, a no-op on this
+  one-CPU port — the only caller skips the calling CPU, and there is no other).
+  Both must be implemented for real when x86_64 gains the APIC and the scheduler.
+- **x86_64 TLB is local-only** (`invlpg`, or a CR3 reload for teardown), which is
+  globally coherent on one CPU; the `active` cpuset is accepted but not yet used,
+  matching i386. Cross-CPU shootdown is a later improvement.
+
+### Verification performed (Phase 2)
+
+- x86_64 builds and links against the shared core + new backend (`-Werror`);
+  the forked `vm/x86_64/address_space.c` is gone. (This port has no QEMU boot
+  path yet — the UEFI loader toolchain is not wired — so build+link is the
+  oracle, as for the earlier x86_64 milestones.)
+- arm64 rebuilt **byte-identical** (`kernel.bin` 2740224 bytes) after the seam
+  refactor — the inline accessors compile to the same code as the former direct
+  field access, so ARM64 is unchanged in both meaning and bits.
+- i386 rebuilt against the reworked core and `make test-i386-vm` still passes all
+  11 cases.
 
 ## Resolved decisions (approved)
 

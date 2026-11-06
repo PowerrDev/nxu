@@ -36,10 +36,12 @@ X86_64_C_SOURCES := \
 	kern/x86_64/idt.c \
 	kern/x86_64/trap.c \
 	kern/x86_64/timer.c \
+	kern/x86_64/smp.c \
 	vm/x86_64/bootstrap.c \
 	vm/x86_64/vm_init.c \
 	vm/x86_64/vmm.c \
-	vm/x86_64/address_space.c \
+	vm/address_space.c \
+	vm/arch/x86_64/pmap.c \
 	vm/pmm.c \
 	vm/dma.c \
 	vm/vm_kern.c \

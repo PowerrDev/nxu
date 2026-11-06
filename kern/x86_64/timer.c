@@ -38,3 +38,32 @@ timer_get_ticks(void)
 
 	return ((uint64_t)high << 32U) | low;
 }
+
+/*
+ * Routine:     timer_ticks_to_microseconds
+ * Purpose:
+ *              Convert a TSC reading (or difference) to microseconds, or 0
+ *              while the TSC frequency is unknown on this early port.
+ */
+uint64_t
+timer_ticks_to_microseconds(uint64_t ticks)
+{
+	uint64_t frequency = timer_get_frequency();
+
+	if (frequency == 0ULL) return 0ULL;
+
+	return ticks / frequency * 1000000ULL + ticks % frequency * 1000000ULL / frequency;
+}
+
+/*
+ * Routine:     timer_get_microseconds
+ * Purpose:
+ *              Report microseconds since the TSC started, or 0 until the TSC
+ *              is calibrated. Machine-independent code (e.g. the VM core's
+ *              address-space quiesce) uses this for timeouts.
+ */
+uint64_t
+timer_get_microseconds(void)
+{
+	return timer_ticks_to_microseconds(timer_get_ticks());
+}

@@ -36,8 +36,8 @@
 #include <kern/machine/timer.h>
 #include <kern/machine/vm_param.h>
 #include <kern/memory/heap.h>
-#include <kern/sched_prism/processor.h>
 #include <vm/pmm.h>
+#include <vm/vm_cpu.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -57,9 +57,9 @@ static vm_address_space_t *g_boot_active_space;
 static vm_address_space_t *
 vm_cpu_space(void)
 {
-	processor_t processor = current_processor();
+	processor_t processor = vm_current_cpu();
 
-	return processor != 0 ? processor->active_space : g_boot_active_space;
+	return processor != 0 ? vm_cpu_active_space(processor) : g_boot_active_space;
 }
 
 static bool
@@ -99,7 +99,7 @@ vm_address_space_create(vm_address_space_t *space)
 static void
 vm_space_leave(vm_address_space_t *space, processor_t cpu)
 {
-	cpuset_remove_atomic(&space->active_cpus, cpu->cpu_id);
+	cpuset_remove_atomic(&space->active_cpus, vm_cpu_id(cpu));
 	__atomic_store_n(&space->active, !cpuset_empty(&space->active_cpus), __ATOMIC_RELEASE);
 }
 
@@ -120,7 +120,7 @@ vm_address_space_activate(vm_address_space_t *space)
 	}
 
 	uint64_t irq_state = ml_irq_save();
-	processor_t cpu = current_processor();
+	processor_t cpu = vm_current_cpu();
 
 	if (cpu == 0) {
 		/*
@@ -145,25 +145,25 @@ vm_address_space_activate(vm_address_space_t *space)
 		return ok;
 	}
 
-	vm_address_space_t *previous = cpu->active_space;
+	vm_address_space_t *previous = vm_cpu_active_space(cpu);
 
 	if (previous == space) {
 		ml_irq_restore(irq_state);
 		return true;
 	}
 
-	cpuset_add_atomic(&space->active_cpus, cpu->cpu_id);
+	cpuset_add_atomic(&space->active_cpus, vm_cpu_id(cpu));
 	__atomic_store_n(&space->active, true, __ATOMIC_RELEASE);
 
 	if (!pmap_activate(&space->pmap)) {
 		/* Precondition failed (VMM not ready): undo the membership join. */
-		cpuset_remove_atomic(&space->active_cpus, cpu->cpu_id);
+		cpuset_remove_atomic(&space->active_cpus, vm_cpu_id(cpu));
 		__atomic_store_n(&space->active, !cpuset_empty(&space->active_cpus), __ATOMIC_RELEASE);
 		ml_irq_restore(irq_state);
 		return false;
 	}
 
-	cpu->active_space = space;
+	vm_cpu_set_active_space(cpu, space);
 
 	if (previous != 0) vm_space_leave(previous, cpu);
 
@@ -175,7 +175,7 @@ bool
 vm_address_space_deactivate(void)
 {
 	uint64_t irq_state = ml_irq_save();
-	processor_t cpu = current_processor();
+	processor_t cpu = vm_current_cpu();
 
 	/* Return this CPU to the kernel-only translation regime (backend). The
 	 * boot-time identity map, where a port has one, is torn down by the boot
@@ -183,9 +183,9 @@ vm_address_space_deactivate(void)
 	(void)pmap_deactivate();
 
 	if (cpu != 0) {
-		vm_address_space_t *previous = cpu->active_space;
+		vm_address_space_t *previous = vm_cpu_active_space(cpu);
 
-		cpu->active_space = 0;
+		vm_cpu_set_active_space(cpu, 0);
 		if (previous != 0) vm_space_leave(previous, cpu);
 	} else if (g_boot_active_space != 0) {
 		__atomic_store_n(&g_boot_active_space->active, false, __ATOMIC_RELEASE);
@@ -217,7 +217,7 @@ vm_address_space_quiesce(vm_address_space_t *space)
 {
 	if (space == 0 || pmap_root_physical(&space->pmap) == 0ULL) return false;
 
-	processor_t self = current_processor();
+	processor_t self = vm_current_cpu();
 
 	/* Leave the space if this CPU has it loaded. vm_cpu_space() handles the
 	 * early-boot case where no processor is registered yet (self == 0). */
@@ -244,7 +244,7 @@ vm_address_space_quiesce(vm_address_space_t *space)
 			next_kick = now + 500ULL;
 
 			for (uint32_t cpu = 0U; cpu < NXU_MAX_CPUS; cpu++) {
-				if (cpu != self->cpu_id && cpuset_contains_atomic(&space->active_cpus, cpu)) {
+				if (cpu != vm_cpu_id(self) && cpuset_contains_atomic(&space->active_cpus, cpu)) {
 					ipi_send(cpu, IPI_RESCHEDULE);
 				}
 			}

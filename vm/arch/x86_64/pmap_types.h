@@ -7,11 +7,11 @@
  * x86_64 definition of the opaque pmap_t. Included only via
  * <vm/machine/pmap_types.h>.
  *
- * Phase 0 shim: this mirrors the three legacy fields the x86_64 code already
- * carried on vm_address_space_t, so the x86_64 target keeps compiling after
- * the shared struct is split. The x86_64 backend phase (Phase 2) folds in the
- * state currently held in x86_vmm_state_t (NX/PCID/table bits). Only
- * translation units under vm/arch/x86_64/ may name these fields.
+ * The four-level PML4 translation root, its physical form (loaded into CR3),
+ * and the count of tables the space owns. NX/PCID and the shared kernel-half
+ * branches are mode-wide state held in x86_vmm_state_t (g_x86_vmm), not
+ * per-pmap, so nothing more is needed here. Only translation units under
+ * vm/arch/x86_64/ may name these fields.
  */
 #ifndef NXU_KERN_VM_ARCH_X86_64_PMAP_TYPES_H
 #define NXU_KERN_VM_ARCH_X86_64_PMAP_TYPES_H
