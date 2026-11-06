@@ -46,7 +46,7 @@ The seam the new design formalizes therefore **already exists** as the
          pmm · vm_map · vm_fault · address-space bookkeeping
          physical ownership · refcounts · COW policy · regions
                              |
-                      kern/vm/pmap.h          (the contract)
+                      vm/pmap.h          (the contract)
                              |
          +-------------------+-------------------+
          |                   |                   |
@@ -61,23 +61,23 @@ already calls its backend `pmap`, and a neutral `vm_map.c` already exists.
 
 ### File layout (per instruction)
 
-- `kern/vm/pmap.h` — architecture-neutral `pmap` interface. **The only header
+- `vm/pmap.h` — architecture-neutral `pmap` interface. **The only header
   neutral code includes to touch a translation.**
-- `kern/vm/vm_types.h` — neutral VM types (`vm_prot_t`,
+- `vm/vm_types.h` — neutral VM types (`vm_prot_t`,
   `vm_user_page_mapping_t`) the contract needs without depending on
   `address_space.h`.
-- `kern/vm/machine/pmap_types.h` — compile-time arch dispatch to the opaque
+- `vm/machine/pmap_types.h` — compile-time arch dispatch to the opaque
   `pmap_t` definition (clone of the existing `kern/machine/vm_param.h`
   pattern).
-- `kern/vm/arch/arm64/` — reference backend (`pmap.c`, `pmap_types.h`),
+- `vm/arch/arm64/` — reference backend (`pmap.c`, `pmap_types.h`),
   populated from today's `vm/address_space.c` + `vm/vmm*.c` arch halves.
-- `kern/vm/arch/i386/` — future i386 backend (Phase 1).
-- `kern/vm/arch/x86_64/` — future x86_64 backend (Phase 2).
+- `vm/arch/i386/` — future i386 backend (Phase 1).
+- `vm/arch/x86_64/` — future x86_64 backend (Phase 2).
 
 The architecture-neutral core (`pmm.c`, `vm_map.c`, `vm_fault.c`,
 `address_space.c`) **stays at its present top-level `vm/` location for Phase 0**
 (approved Decision 1); relocating it would be unrelated churn that Requirement 7
-forbids. A later consolidation of the core under `kern/vm/` is possible but is
+forbids. A later consolidation of the core under `vm/` is possible but is
 explicitly not part of this work.
 
 ## Ownership boundaries (normative)
@@ -108,12 +108,12 @@ formats, descriptors, roots, activation, TLB).
 `pmap_t` is **opaque to all neutral code** (Requirement 4). Neutral code may
 hold a `pmap_t` (embedded in `vm_address_space_t`), pass its address to
 `pmap_*` functions, and nothing else. It may never read or write a field, and
-no `pmap_t` field name may appear outside `kern/vm/arch/<arch>/`.
+no `pmap_t` field name may appear outside `vm/arch/<arch>/`.
 
 ### Practical vs. strict opacity (clarification)
 
 Because `pmap_t` is embedded **by value** in `vm_address_space_t`, the neutral
-header `vm/address_space.h` must `#include <kern/vm/machine/pmap_types.h>` so
+header `vm/address_space.h` must `#include <vm/machine/pmap_types.h>` so
 the compiler knows the struct's size and alignment. This means the concrete
 layout is *visible* to neutral translation units at the C level — this is
 **practical opacity enforced by discipline and CI, not strict C-level
@@ -122,7 +122,7 @@ address space, a cost we reject for a per-task object).
 
 The discipline is absolute and simple to state:
 
-- **Only files under `kern/vm/arch/<arch>/` may name a `pmap_t` field.**
+- **Only files under `vm/arch/<arch>/` may name a `pmap_t` field.**
 - **Neutral code never touches `space->pmap` internals.** It treats
   `&space->pmap` purely as a handle to hand to `pmap_*`. The tokens
   `space->pmap.` (field access) and `.root`/`.root_physical`/`.table_count`
@@ -134,24 +134,24 @@ The alternative — a truly opaque pointer `pmap_t *pmap` with backend-side
 allocation — remains available if a future arch needs a `pmap_t` too large to
 embed comfortably; it is not adopted now.
 
-`kern/vm/pmap.h` forward-declares nothing architecture-specific. The concrete
-layout is supplied only through `kern/vm/machine/pmap_types.h`:
+`vm/pmap.h` forward-declares nothing architecture-specific. The concrete
+layout is supplied only through `vm/machine/pmap_types.h`:
 
 ```c
-/* kern/vm/machine/pmap_types.h */
+/* vm/machine/pmap_types.h */
 #if   defined(__aarch64__)
-#include <kern/vm/arch/arm64/pmap_types.h>
+#include <vm/arch/arm64/pmap_types.h>
 #elif defined(__i386__)
-#include <kern/vm/arch/i386/pmap_types.h>
+#include <vm/arch/i386/pmap_types.h>
 #elif defined(__x86_64__)
-#include <kern/vm/arch/x86_64/pmap_types.h>
+#include <vm/arch/x86_64/pmap_types.h>
 #else
-#error "kern/vm/machine/pmap_types.h: unsupported target architecture"
+#error "vm/machine/pmap_types.h: unsupported target architecture"
 #endif
 ```
 
 ```c
-/* kern/vm/arch/arm64/pmap_types.h — reference backend */
+/* vm/arch/arm64/pmap_types.h — reference backend */
 typedef struct pmap {
     uint64_t *root;           /* TTBR1 direct-map pointer to the L1 root table */
     uint64_t  root_physical;  /* value written to TTBR0_EL1 */
@@ -166,21 +166,21 @@ contained — no neutral code allocates a bare `pmap_t` or assumes its size.
 
 Requirement **5** is enforced structurally: `TTBR`, `CR3`, `ASID`, `PCID`,
 `EL0/EL1` and descriptor bit layouts appear **only** under
-`kern/vm/arch/<arch>/`. `kern/vm/pmap.h` and the neutral core must grep clean of
+`vm/arch/<arch>/`. `vm/pmap.h` and the neutral core must grep clean of
 all of them. A CI guard (see Validation) makes this mechanical.
 
-## Neutral VM types header: `kern/vm/vm_types.h`
+## Neutral VM types header: `vm/vm_types.h`
 
 All types the contract needs that are **not** architecture-specific live in one
-genuinely neutral header, `kern/vm/vm_types.h`. This is what lets `pmap.h`
+genuinely neutral header, `vm/vm_types.h`. This is what lets `pmap.h`
 depend only on neutral types — crucially, **`pmap.h` does not include
 `address_space.h`** (correction: the contract must not depend on the
 address-space struct). The dependency direction is one-way:
 
 ```
-kern/vm/vm_types.h   (vm_prot_t, vm_user_page_mapping_t)  ← no VM deps
+vm/vm_types.h   (vm_prot_t, vm_user_page_mapping_t)  ← no VM deps
         ↑                         ↑
-kern/vm/pmap.h            vm/address_space.h
+vm/pmap.h            vm/address_space.h
 (+ pmap_types.h, cpuset)  (+ pmap_types.h embeds pmap_t)
 ```
 
@@ -215,11 +215,11 @@ higher-half / direct-map facade migration**, which is the phase that rewrites
 therefore forbidden here. The aliases are tracked as a known, time-boxed debt
 owned by that later phase.
 
-## The backend contract: `kern/vm/pmap.h`
+## The backend contract: `vm/pmap.h`
 
 ```c
-#include <kern/vm/machine/pmap_types.h>   /* opaque pmap_t */
-#include <kern/vm/vm_types.h>             /* vm_prot_t, vm_user_page_mapping_t */
+#include <vm/machine/pmap_types.h>   /* opaque pmap_t */
+#include <vm/vm_types.h>             /* vm_prot_t, vm_user_page_mapping_t */
 #include <kern/cpuset.h>
 /* NB: pmap.h does NOT include address_space.h — the contract is independent
  * of the address-space struct. */
@@ -550,7 +550,7 @@ leaves room for but Phase 0 does not implement.
 
 Partition of the 30 functions currently in `vm/address_space.c`. "Core" stays
 in the neutral `address_space.c`; "Backend" moves to
-`kern/vm/arch/arm64/pmap.c`; "Split" keeps neutral policy in `address_space.c`
+`vm/arch/arm64/pmap.c`; "Split" keeps neutral policy in `address_space.c`
 and delegates the descriptor/TLB step to a `pmap_*` call.
 
 | Current symbol (`vm/address_space.c`) | Disposition | Lands as |
@@ -575,7 +575,7 @@ and delegates the descriptor/TLB step to a `pmap_*` call.
 | `vm_address_space_root_physical`, `..._table_count` | Core | wrap `pmap_root_physical`/`pmap_table_count` |
 
 The arm64 page-table internals currently spread across `vm/vmm_tables.c`
-(table walk/allocate, descriptor helpers) move into `kern/vm/arch/arm64/`
+(table walk/allocate, descriptor helpers) move into `vm/arch/arm64/`
 alongside `pmap.c` as backend-private translation units. `vm/vmm.c`,
 `vm/vmm_ttbr1.c` (kernel higher-half / direct map) are **out of scope for Phase
 0** (Requirement 6) and stay where they are, still arm64-only.
@@ -590,12 +590,12 @@ throughout (Requirement 7); Phase 0 is a pure refactor.
    touched. Kernel higher-half/direct-map (`vmm.c`, `vmm_ttbr1.c`) is untouched
    (Requirement 6).
 
-1. **Add `kern/vm/vm_types.h`** (`vm_prot_t`, `vm_user_page_mapping_t`) plus the
+1. **Add `vm/vm_types.h`** (`vm_prot_t`, `vm_user_page_mapping_t`) plus the
    temporary compatibility aliases to the two old enum names (Decision 6).
    Pure addition → green.
 
-2. **Add the contract headers**: `kern/vm/pmap.h`,
-   `kern/vm/machine/pmap_types.h`, `kern/vm/arch/arm64/pmap_types.h`. `pmap.h`
+2. **Add the contract headers**: `vm/pmap.h`,
+   `vm/machine/pmap_types.h`, `vm/arch/arm64/pmap_types.h`. `pmap.h`
    includes `vm_types.h` and `pmap_types.h` only — **not** `address_space.h`.
    Unused by anyone yet → green.
 
@@ -607,7 +607,7 @@ throughout (Requirement 7); Phase 0 is a pure refactor.
    those references all move into the backend in step 4, after which the
    opacity guard must pass. Zero behavior change → green.
 
-4. **Create `kern/vm/arch/arm64/pmap.c`** and move the "Backend" functions and
+4. **Create `vm/arch/arm64/pmap.c`** and move the "Backend" functions and
    the descriptor/table internals (from `vm/vmm_tables.c`) into it, taking every
    `space->pmap.<field>` reference with them; wire it into the build (add the
    new source, drop the moved code from `vm/address_space.c`). After this step
@@ -625,9 +625,9 @@ throughout (Requirement 7); Phase 0 is a pure refactor.
 ### Build wiring
 
 In the arm64 `C_SOURCES`, `vm/address_space.c` stays (now neutral) and
-`kern/vm/arch/arm64/pmap.c` is added; the arm64 table internals move with it.
+`vm/arch/arm64/pmap.c` is added; the arm64 table internals move with it.
 `vm/vmm.c`, `vmm_ttbr1.c`, `vmm_tables.c` stay listed (the last loses only the
-functions that moved). Add `-Ikern/vm` to the include path if not already
+functions that moved). The tree resolves through the existing `-I.` (repo root) include path; no new `-I` is needed
 covered by the existing `-I` roots. The resulting object set is behaviorally
 identical.
 
@@ -656,11 +656,11 @@ identical.
   baseline (no leaked or double-freed retains, including on the failing leaf).
 - **Opacity guard (CI grep)**: assert that `TTBR`, `CR3`, `ASID`, `PCID`,
   `S1E1`, `EL0`, `EL1`, and backend PTE-bit macros do **not** appear in
-  `kern/vm/pmap.h`, `kern/vm/vm_types.h`, `vm/vm_map.c`, `vm/vm_fault.c`,
+  `vm/pmap.h`, `vm/vm_types.h`, `vm/vm_map.c`, `vm/vm_fault.c`,
   `vm/address_space.c`, or `vm/address_space.h`. This mechanizes Requirements 4
   and 5.
 - **Symbol-location guard**: assert the tokens `.root`, `.root_physical`,
-  `.table_count` and `space->pmap.` do not appear outside `kern/vm/arch/`,
+  `.table_count` and `space->pmap.` do not appear outside `vm/arch/`,
   mechanizing practical opacity (no `pmap_t` field named by neutral code).
 
 ## Risks
@@ -862,7 +862,7 @@ are acknowledged.
 Documented here only to show the contract generalizes; not part of this
 work order.
 
-- **Phase 1 — i386.** Add `kern/vm/arch/i386/{pmap_types.h,pmap.c}` from the
+- **Phase 1 — i386.** Add `vm/arch/i386/{pmap_types.h,pmap.c}` from the
   existing bodies of `kern/i386/{pmap.c, vmm_i386.c, address_space_i386.c}`
   (which already provide ~19 of the needed functions). **Delete**
   `kern/i386/vm_fault.c` and the mapping logic in `vm_init.c`; i386 switches to
@@ -873,7 +873,7 @@ work order.
 - **Phase 2 — x86_64.** `vm/x86_64/` is already a separate backend; rename its
   entry points to `pmap_*`, move its `x86_vmm_state_t` fields (already
   `root`/`root_physical`/`nx_enabled`/table counts — ~90 % of `pmap_t`) into
-  `kern/vm/arch/x86_64/pmap_types.h`, and **delete its forked upper layer** so
+  `vm/arch/x86_64/pmap_types.h`, and **delete its forked upper layer** so
   it too rides the shared `vm_fault.c`/`vm_map.c`. Its `X86_PTE_*` formats and
   `invlpg`/IPI shootdown stay backend-private.
 
@@ -894,8 +894,8 @@ work order.
 Phase 0 is implemented, built and booted. Where the implementation refined the
 plan above, the reality is recorded here so this document stays the record:
 
-- **Backend location.** The arm64 backend is `kern/vm/arch/arm64/pmap.c`,
-  implementing `kern/vm/pmap.h`. It reuses the shared low-level arm64 table
+- **Backend location.** The arm64 backend is `vm/arch/arm64/pmap.c`,
+  implementing `vm/pmap.h`. It reuses the shared low-level arm64 table
   helpers in `vm/vmm_internal.h` (`vmm_root_get_l3_entry`, `vmm_allocate_table`,
   `vmm_invalidate_page`, ...) rather than copying them, since those are also
   used by the out-of-scope kernel higher-half path. `vm/vmm_tables.c` therefore
@@ -947,7 +947,7 @@ plan above, the reality is recorded here so this document stays the record:
 
 Phase 1 is implemented, built and tested. i386 now rides the shared neutral
 `vm/address_space.c` + `vm/vm_fault.c`; `kern/i386/address_space_i386.c` is
-deleted and the PAE page-table logic lives in `kern/vm/arch/i386/pmap.c`.
+deleted and the PAE page-table logic lives in `vm/arch/i386/pmap.c`.
 
 - **i386 gained fork and COW.** They were stubs returning false before. The
   backend adds `PTE_SOFTWARE_COW` (free PTE bit 10), and `pmap_enter` (cow),
@@ -991,7 +991,7 @@ All six prior open questions are now settled and baked into the contract above:
 
 1. **Neutral-core location** — option **(a)**: the neutral core stays at
    top-level `vm/` for Phase 0; only `pmap.h`, `pmap_types.h` and the backends
-   live under `kern/vm/`. No subsystem relocation.
+   live under `vm/`. No subsystem relocation.
 2. **Backend arguments** — `pmap_t *` + explicit `const nxu_cpuset_t *active`.
    The owning `vm_address_space_t` is never passed into a backend op.
 3. **Fork** — **two-phase enumerate/apply** (`pmap_enumerate` + neutral apply),

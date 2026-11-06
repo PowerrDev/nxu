@@ -2,10 +2,10 @@
  * Copyright (c) 2026 NXU Project. All rights reserved.
  */
 /*
- * File:        kern/vm/arch/arm64/pmap.c
+ * File:        vm/arch/arm64/pmap.c
  *
  * arm64 pmap backend: the architecture-specific half of the user address
- * space, implementing the kern/vm/pmap.h contract against AArch64 stage-1
+ * space, implementing the vm/pmap.h contract against AArch64 stage-1
  * translation tables. All page-table formats, descriptor manipulation, the
  * TTBR0 root, activation and TLB invalidation live here; the neutral layer
  * (vm/address_space.c) owns physical-page ownership, reference counting, COW
@@ -18,7 +18,7 @@
  * remain out of scope for the Phase 0 unification; see doc/vm/unified-pmap.md.
  */
 
-#include <kern/vm/pmap.h>
+#include <vm/pmap.h>
 
 #include <vm/vmm_internal.h>
 #include <vm/pmm.h>

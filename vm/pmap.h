@@ -2,11 +2,11 @@
  * Copyright (c) 2026 NXU Project. All rights reserved.
  */
 /*
- * File:        kern/vm/pmap.h
+ * File:        vm/pmap.h
  *
  * The architecture-neutral pmap backend contract: the ONLY header the neutral
  * VM core includes to touch a translation. Each architecture implements these
- * functions under kern/vm/arch/<arch>/pmap.c against its own (opaque) pmap_t.
+ * functions under vm/arch/<arch>/pmap.c against its own (opaque) pmap_t.
  *
  * Ownership boundary (see doc/vm/unified-pmap.md):
  *   - The core owns physical-page ownership, reference counting, COW policy and
@@ -15,16 +15,16 @@
  *   - The backend owns page-table formats, descriptor manipulation, the
  *     translation root, activation, and TLB invalidation.
  *
- * This header depends only on neutral types (<kern/vm/vm_types.h>) and the
- * opaque pmap_t (<kern/vm/machine/pmap_types.h>). It deliberately does NOT
+ * This header depends only on neutral types (<vm/vm_types.h>) and the
+ * opaque pmap_t (<vm/machine/pmap_types.h>). It deliberately does NOT
  * include <vm/address_space.h>: the contract is independent of the
  * address-space struct.
  */
 #ifndef NXU_KERN_VM_PMAP_H
 #define NXU_KERN_VM_PMAP_H
 
-#include <kern/vm/machine/pmap_types.h> /* opaque pmap_t */
-#include <kern/vm/vm_types.h>           /* vm_prot_t, vm_user_page_mapping_t */
+#include <vm/machine/pmap_types.h> /* opaque pmap_t */
+#include <vm/vm_types.h>           /* vm_prot_t, vm_user_page_mapping_t */
 #include <kern/cpuset.h>                /* nxu_cpuset_t */
 
 #include <stdbool.h>

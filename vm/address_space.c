@@ -6,7 +6,7 @@
  *
  * Architecture-neutral user address space: ownership, reference counting, COW
  * policy and bookkeeping. Every translation-table operation is delegated to
- * the per-arch pmap backend (kern/vm/pmap.h); this file never touches a
+ * the per-arch pmap backend (vm/pmap.h); this file never touches a
  * page-table format or a pmap_t field.
  *
  * Which space a CPU runs with is that CPU's own state (struct processor's
@@ -25,7 +25,7 @@
  */
 
 #include <vm/address_space.h>
-#include <kern/vm/pmap.h>
+#include <vm/pmap.h>
 
 #include <kern/console/console.h>
 #include <kern/ipi.h>

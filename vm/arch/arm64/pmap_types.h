@@ -2,12 +2,12 @@
  * Copyright (c) 2026 NXU Project. All rights reserved.
  */
 /*
- * File:        kern/vm/arch/arm64/pmap_types.h
+ * File:        vm/arch/arm64/pmap_types.h
  *
  * arm64 definition of the opaque pmap_t. Included only via
- * <kern/vm/machine/pmap_types.h>; neutral code never includes it directly.
+ * <vm/machine/pmap_types.h>; neutral code never includes it directly.
  *
- * Only translation units under kern/vm/arch/arm64/ may name these fields.
+ * Only translation units under vm/arch/arm64/ may name these fields.
  * Neutral code treats pmap_t as opaque (practical, discipline-and-CI-enforced
  * opacity, since pmap_t is embedded by value in vm_address_space_t). See the
  * "opaque pmap_t rule" in doc/vm/unified-pmap.md.

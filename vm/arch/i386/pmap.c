@@ -2,10 +2,10 @@
  * Copyright (c) 2026 NXU Project. All rights reserved.
  */
 /*
- * File:        kern/vm/arch/i386/pmap.c
+ * File:        vm/arch/i386/pmap.c
  *
  * i386 (PAE) pmap backend: the architecture-specific half of the user address
- * space, implementing the kern/vm/pmap.h contract against the 32-bit PAE
+ * space, implementing the vm/pmap.h contract against the 32-bit PAE
  * translation tables managed by kern/i386/pmap.c. The neutral layer
  * (vm/address_space.c) owns ownership, reference counting, COW policy and
  * bookkeeping and reaches translations only through this contract.
@@ -22,7 +22,7 @@
  * improvement; the `active` set is accepted but not yet used.
  */
 
-#include <kern/vm/pmap.h>
+#include <vm/pmap.h>
 
 #include <kern/i386/pmap.h>
 #include <kern/machine/vm_param.h>

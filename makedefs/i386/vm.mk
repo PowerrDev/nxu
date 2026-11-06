@@ -11,7 +11,7 @@
 # rest of vm/ is shared with arm64 as is.
 
 I386_C_SOURCES += \
-    kern/vm/arch/i386/pmap.c \
+    vm/arch/i386/pmap.c \
     kern/i386/memory_map.c \
     kern/i386/pmap.c \
     kern/i386/vm_fault.c \

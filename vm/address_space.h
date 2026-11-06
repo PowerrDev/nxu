@@ -3,8 +3,8 @@
 
 #include <kern/cpuset.h>
 #include <kern/lock.h>
-#include <kern/vm/machine/pmap_types.h>
-#include <kern/vm/vm_types.h>
+#include <vm/machine/pmap_types.h>
+#include <vm/vm_types.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -15,7 +15,7 @@ struct vm_map_entry;
  * One user (lower-half) address space.
  *
  * The architecture-specific translation state lives in `pmap`, an opaque
- * per-arch handle (see kern/vm/pmap.h); neutral code never inspects its
+ * per-arch handle (see vm/pmap.h); neutral code never inspects its
  * fields. Everything else below is architecture-neutral bookkeeping.
  *
  * lock guards page-table mutation (map/unmap/query) below, needed once a
@@ -34,7 +34,7 @@ struct vm_map_entry;
 typedef struct vm_address_space {
 	/* Opaque architecture-specific translation state: the translation root,
 	 * its physical form, and the count of tables this space owns. Only files
-	 * under kern/vm/arch/<arch>/ may name its fields (practical opacity; see
+	 * under vm/arch/<arch>/ may name its fields (practical opacity; see
 	 * doc/vm/unified-pmap.md). */
 	pmap_t pmap;
 
@@ -52,7 +52,7 @@ typedef struct vm_address_space {
 	 * own TLB. So a CPU that could still walk these tables is always in the set,
 	 * and vm_address_space_destroy() waits for the set to empty before it frees a
 	 * page table. How page invalidations reach other CPUs is the backend's
-	 * business (see kern/vm/pmap.h and the backend).
+	 * business (see vm/pmap.h and the backend).
 	 */
 	nxu_cpuset_t active_cpus;
 	nxu_spinlock_t lock;
@@ -62,7 +62,7 @@ typedef struct vm_address_space {
 
 /*
  * Phase 0 compatibility aliases. The user-protection enum has been unified
- * into vm_prot_t (kern/vm/vm_types.h); these aliases keep the many existing
+ * into vm_prot_t (vm/vm_types.h); these aliases keep the many existing
  * callers (loader, syscall, tests, vm_fault, vm_map, vm_shm, ...) compiling
  * unchanged. The vmm.* higher-half code keeps its own vmm_protection_t and is
  * untouched (out of Phase 0 scope). Removing these aliases is future work.
@@ -73,7 +73,7 @@ typedef vm_prot_t vm_user_protection_t;
 #define VM_USER_PROTECTION_READ_EXECUTE VM_PROT_RX
 
 /*
- * vm_user_page_mapping_t now lives in kern/vm/vm_types.h (so kern/vm/pmap.h can
+ * vm_user_page_mapping_t now lives in vm/vm_types.h (so vm/pmap.h can
  * use it without depending on this header). cow is set for a page shared
  * copy-on-write: its hardware permission is read-only, so protection reads
  * VM_PROT_RO -- code that writes through physical_address must refuse it (or

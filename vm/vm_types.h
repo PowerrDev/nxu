@@ -2,12 +2,12 @@
  * Copyright (c) 2026 NXU Project. All rights reserved.
  */
 /*
- * File:        kern/vm/vm_types.h
+ * File:        vm/vm_types.h
  *
  * Neutral VM types shared by the architecture-neutral VM core and the pmap
- * backend contract (<kern/vm/pmap.h>). Deliberately free of any architecture
+ * backend contract (<vm/pmap.h>). Deliberately free of any architecture
  * concept (no TTBR/CR3/ASID/PCID/EL or descriptor formats) so that
- * <kern/vm/pmap.h> can use these types without depending on
+ * <vm/pmap.h> can use these types without depending on
  * <vm/address_space.h>.
  *
  * See doc/vm/unified-pmap.md.
@@ -37,7 +37,7 @@ typedef enum {
  * permission is read-only and `protection` reads VM_PROT_RO; a writer must
  * break the sharing before writing through `physical_address`.
  *
- * Moved here out of vm/address_space.h so that <kern/vm/pmap.h> can return it
+ * Moved here out of vm/address_space.h so that <vm/pmap.h> can return it
  * without depending on the address-space struct.
  */
 typedef struct {
