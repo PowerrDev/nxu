@@ -11,32 +11,19 @@
 # arch-neutral enough to share one source list. Only the parts that already
 # have an x86 implementation are listed here.
 
-I386_BUILD := $(BUILD_ROOT)/i386
+I386_BUILD := $(OBJROOT)/$(ARCH_BUILDDIR_i386)
 
 I386_KERNEL := $(I386_BUILD)/kernel.elf
 
-I386_CC := clang
+# Toolchain and flags now come from the shared infrastructure (MakeInc.arch +
+# MakeInc.rules): one definition of the freestanding/warning/dependency flags,
+# the i386 triple/ABI, and the active kernel configuration. I386_CC stays only
+# for this port's own asset rules below.
+I386_CC := $(CC)
 
-I386_CFLAGS := \
-    --target=i386-none-elf \
-    -march=i686 \
-    -ffreestanding \
-    -fno-stack-protector \
-    -fno-pic \
-    -fno-omit-frame-pointer \
-    -g \
-    -mgeneral-regs-only \
-    -Wall \
-    -Wextra \
-    -Werror \
-    -O2 \
-    -MMD \
-    -MP \
-    -I. \
-    -Ilibk \
-    $(EXTRA_CFLAGS)
+I386_CFLAGS := $(call nxu_arch_cflags,i386)
 
-I386_ASFLAGS := --target=i386-none-elf
+I386_ASFLAGS := $(call nxu_arch_asflags,i386)
 
 I386_C_SOURCES := \
     kern/i386/gdt.c \
@@ -82,31 +69,8 @@ I386_QEMU_AUDIO ?= -audiodev coreaudio,id=snd0 -device virtio-sound-pci,audiodev
 -include $(I386_OBJECTS:%.o=%.d)
 
 
-.PHONY: i386-flags-force
-i386-flags-force:
-
-$(I386_BUILD)/compiler-flags: i386-flags-force
-	@mkdir -p $(dir $@)
-	@printf '%s\n' '$(I386_CC) $(I386_CFLAGS)' > $@.tmp
-	@cmp -s $@.tmp $@ || cp $@.tmp $@
-	@rm -f $@.tmp
-
-$(I386_BUILD)/%.o: %.c $(I386_BUILD)/compiler-flags
-
-	@mkdir -p $(dir $@)
-
-	$(QUIET_PRINT) "CC" "$<"
-
-	$(Q)$(I386_CC) $(I386_CFLAGS) -c $< -o $@
-
-
-$(I386_BUILD)/%.o: %.S
-
-	@mkdir -p $(dir $@)
-
-	$(QUIET_PRINT) "AS" "$<"
-
-	$(Q)$(I386_CC) $(I386_ASFLAGS) -c $< -o $@
+# Shared flags-stamp, object and link rules (makedefs/MakeInc.rules).
+$(eval $(call NXU_ARCH_RULES,i386,I386))
 
 $(I386_BUILD)/login_wallpaper.qoi: tools/UI/Backgrounds/Sonoma.jpg tools/make_login_wallpaper.py $(FONT_PYTHON)
 	$(Q)$(FONT_PYTHON) tools/make_login_wallpaper.py --source $< --output $@
@@ -114,15 +78,6 @@ $(I386_BUILD)/login_wallpaper.qoi: tools/UI/Backgrounds/Sonoma.jpg tools/make_lo
 $(I386_BUILD)/drivers/video/login_wallpaper_asset.o: drivers/video/login_wallpaper_asset.S $(I386_BUILD)/login_wallpaper.qoi
 	@mkdir -p $(dir $@)
 	$(Q)$(I386_CC) $(I386_ASFLAGS) '-DNXU_LOGIN_WALLPAPER_QOI="$(I386_BUILD)/login_wallpaper.qoi"' -c $< -o $@
-
-
-$(I386_KERNEL): $(I386_OBJECTS) $(I386_EXTRA_LIBS) makedefs/linker-i386.ld
-
-	@mkdir -p $(dir $@)
-
-	$(QUIET_PRINT) "LD" "$@"
-
-	$(Q)$(LD) -m elf_i386 -z max-page-size=4096 --build-id=none -nostdlib -T makedefs/linker-i386.ld $(I386_OBJECTS) $(I386_EXTRA_LIBS) -o $@
 
 
 i386: $(I386_KERNEL)

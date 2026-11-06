@@ -11,6 +11,7 @@ USER_BUILD := $(BUILD_ROOT)/userland
 # defaults and do not change how the ports currently build. See makedefs/.
 include makedefs/MakeInc.config
 include makedefs/MakeInc.arch
+include makedefs/MakeInc.rules
 
 # Font rasterization needs Pillow. Keep that host-only dependency isolated
 # from the system Python used by the rest of the build.

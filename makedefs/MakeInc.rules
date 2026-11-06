@@ -1,0 +1,75 @@
+# =============================================================================
+# MakeInc.rules -- shared kernel compile / assemble / link rules
+# =============================================================================
+#
+# One parameterized set of rules, instantiated per architecture, so a port no
+# longer re-declares its own copy of the %.o/%.S/link/flags-stamp recipes. The
+# architecture settings come from MakeInc.arch; the configuration flags from
+# MakeInc.config; the toolchain ($(CC)/$(LD)) and $(Q)/$(QUIET_PRINT) from the
+# top Makefile (all defined before a port calls the template below).
+#
+# A port sets <ARCH>_BUILD, <ARCH>_CFLAGS, <ARCH>_ASFLAGS, <ARCH>_OBJECTS,
+# <ARCH>_KERNEL and (optionally) <ARCH>_EXTRA_LIBS -- using the helpers here for
+# the flags -- then instantiates the rules with
+#
+#     $(eval $(call NXU_ARCH_RULES,<arch>))
+#
+# where <arch> is a name in SUPPORTED_ARCHS and <ARCH> is its upper-cased form.
+
+# Architecture- and configuration-independent compiler flags (the freestanding,
+# warning and dependency-tracking flags every NXU kernel object is built with).
+COMMON_CFLAGS := \
+    -ffreestanding \
+    -fno-stack-protector \
+    -fno-pic \
+    -fno-omit-frame-pointer \
+    -Wall \
+    -Wextra \
+    -Werror \
+    -MMD \
+    -MP \
+    -I. \
+    -Ilibk
+
+# The active kernel configuration (first of KERNEL_CONFIGS; a single config is
+# the common case). Its -O/-g flags come from MakeInc.config.
+KERNEL_CONFIG ?= $(firstword $(KERNEL_CONFIGS))
+
+# $(call nxu_arch_cflags,<arch>) / nxu_arch_asflags -- the full flag line for an
+# architecture: triple + common + configuration + machine/ABI.
+nxu_arch_cflags = --target=$(ARCH_TRIPLE_$(1)) $(COMMON_CFLAGS) $(CONFIG_CFLAGS_$(KERNEL_CONFIG)) $(ARCH_CFLAGS_$(1)) $(EXTRA_CFLAGS)
+nxu_arch_asflags = --target=$(ARCH_TRIPLE_$(1)) $(ARCH_ASFLAGS_$(1))
+
+.PHONY: FORCE
+FORCE:
+
+# NXU_ARCH_RULES(<arch>) -- the per-architecture flags stamp, object rules and
+# kernel link rule. Double-dollar escapes defer expansion to eval time, where
+# $(1) is the architecture name and $$(<ARCH>_*) are the port's variables.
+define NXU_ARCH_RULES
+
+# Rebuild objects when the compiler or its flags change (timestamps alone miss
+# a flag-only change).
+$$($(2)_BUILD)/compiler-flags: FORCE
+	@mkdir -p $$(dir $$@)
+	@printf '%s\n' '$$(CC) $$($(2)_CFLAGS)' > $$@.tmp
+	@cmp -s $$@.tmp $$@ || cp $$@.tmp $$@
+	@rm -f $$@.tmp
+
+$$($(2)_BUILD)/%.o: %.c $$($(2)_BUILD)/compiler-flags
+	@mkdir -p $$(dir $$@)
+	$$(QUIET_PRINT) "CC" "$$<"
+	$$(Q)$$(CC) $$($(2)_CFLAGS) -c $$< -o $$@
+
+$$($(2)_BUILD)/%.o: %.S $$($(2)_BUILD)/compiler-flags
+	@mkdir -p $$(dir $$@)
+	$$(QUIET_PRINT) "AS" "$$<"
+	$$(Q)$$(CC) $$($(2)_ASFLAGS) -c $$< -o $$@
+
+$$($(2)_KERNEL): $$($(2)_OBJECTS) $$($(2)_EXTRA_LIBS) $$(ARCH_LINKER_SCRIPT_$(1))
+	@mkdir -p $$(dir $$@)
+	$$(QUIET_PRINT) "LD" "$$@"
+	$$(Q)$$(LD) -m $$(ARCH_LD_EMULATION_$(1)) -z max-page-size=4096 --build-id=none \
+		-nostdlib -T $$(ARCH_LINKER_SCRIPT_$(1)) $$($(2)_OBJECTS) $$($(2)_EXTRA_LIBS) -o $$@
+
+endef

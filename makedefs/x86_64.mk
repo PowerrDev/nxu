@@ -5,29 +5,15 @@
 #
 # Build and run the first native x86-64 kernel entry milestone.
 
-X86_64_BUILD := $(BUILD_ROOT)/x86_64
+X86_64_BUILD := $(OBJROOT)/$(ARCH_BUILDDIR_x86_64)
 X86_64_KERNEL := $(X86_64_BUILD)/kernel.elf
-X86_64_CC := clang
 
-X86_64_CFLAGS := \
-	--target=x86_64-none-elf \
-	-ffreestanding \
-	-fno-stack-protector \
-	-fno-pic \
-	-fno-omit-frame-pointer \
-	-mno-red-zone \
-	-mgeneral-regs-only \
-	-Wall \
-	-Wextra \
-	-Werror \
-	-O2 \
-	-MMD \
-	-MP \
-	-I. \
-	-Ilibk \
-	$(EXTRA_CFLAGS)
-
-X86_64_ASFLAGS := --target=x86_64-none-elf -mno-red-zone
+# Toolchain and flags come from the shared infrastructure (MakeInc.arch +
+# MakeInc.rules). Note: unifying on the DEVELOPMENT configuration adds -g to the
+# x86_64 kernel ELF (it previously built without debug symbols); this affects
+# only the ELF's debug sections, not the loaded image or ABI.
+X86_64_CFLAGS := $(call nxu_arch_cflags,x86_64)
+X86_64_ASFLAGS := $(call nxu_arch_asflags,x86_64)
 
 X86_64_C_SOURCES := \
 	kern/x86_64/boot.c \
@@ -66,26 +52,8 @@ X86_64_OBJECTS := \
 
 -include $(X86_64_OBJECTS:%.o=%.d)
 
-$(X86_64_BUILD)/compiler-flags:
-	@mkdir -p $(dir $@)
-	@printf '%s\n' '$(X86_64_CC) $(X86_64_CFLAGS)' > $@.tmp
-	@cmp -s $@.tmp $@ || cp $@.tmp $@
-	@rm -f $@.tmp
-
-$(X86_64_BUILD)/%.o: %.c $(X86_64_BUILD)/compiler-flags
-	@mkdir -p $(dir $@)
-	$(QUIET_PRINT) "CC" "$<"
-	$(Q)$(X86_64_CC) $(X86_64_CFLAGS) -c $< -o $@
-
-$(X86_64_BUILD)/%.o: %.S
-	@mkdir -p $(dir $@)
-	$(QUIET_PRINT) "AS" "$<"
-	$(Q)$(X86_64_CC) $(X86_64_ASFLAGS) -c $< -o $@
-
-$(X86_64_KERNEL): $(X86_64_OBJECTS) makedefs/linker-x86_64.ld
-	@mkdir -p $(dir $@)
-	$(QUIET_PRINT) "LD" "$@"
-	$(Q)$(LD) -m elf_x86_64 -z max-page-size=4096 --build-id=none -nostdlib -T makedefs/linker-x86_64.ld $(X86_64_OBJECTS) -o $@
+# Shared flags-stamp, object and link rules (makedefs/MakeInc.rules).
+$(eval $(call NXU_ARCH_RULES,x86_64,X86_64))
 
 x86_64: $(X86_64_KERNEL)
 
