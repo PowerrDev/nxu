@@ -943,6 +943,48 @@ plan above, the reality is recorded here so this document stays the record:
 - i386 and x86_64 kernels still build and link (mechanical field rename only;
   their backends remain at their current paths pending Phases 1-2).
 
+## As-built notes (Phase 1, i386)
+
+Phase 1 is implemented, built and tested. i386 now rides the shared neutral
+`vm/address_space.c` + `vm/vm_fault.c`; `kern/i386/address_space_i386.c` is
+deleted and the PAE page-table logic lives in `kern/vm/arch/i386/pmap.c`.
+
+- **i386 gained fork and COW.** They were stubs returning false before. The
+  backend adds `PTE_SOFTWARE_COW` (free PTE bit 10), and `pmap_enter` (cow),
+  `pmap_replace`, `pmap_copy_page` and `pmap_enumerate` let the shared
+  two-phase fork and `cow_break` work. `kern/i386/vm_fault.c` (the arch trap
+  handler — *not* deleted; the doc's earlier "delete vm_fault.c" was wrong)
+  now routes faults to the shared `vm_fault_user`, so a COW write-fault
+  resolves and a genuine bad access still returns false and is handled as
+  before.
+- **The neutral layer became genuinely arch-neutral** to build for i386. Three
+  arm64-isms were removed from `vm/address_space.c`: the `g_vmm` /
+  `vmm_disable_ttbr0` boot touchpoint in `deactivate` (the boot identity map is
+  torn down by `kern_init`, not here — confirmed it calls `vmm_disable_ttbr0`
+  directly), an inline `dsb ish` in `quiesce` (now a portable
+  `__atomic_thread_fence(SEQ_CST)` — `dmb ish` on arm64, `mfence` on x86), and
+  the include of `vm/vmm_internal.h`.
+- **Pre-scheduler boot (`current_processor() == 0`).** i386 runs its VM
+  self-test before the scheduler registers the boot CPU, so the neutral
+  `activate`/`deactivate`/`quiesce`/`vm_cpu_space` now handle a null processor
+  via a `g_boot_active_space` fallback (mirroring i386's old code). This is a
+  generic early-boot accommodation; arm64 never hits it (its self-test runs
+  after registration) so its behaviour is unchanged. A missed guard here
+  (`self->active_space` / `self->cpu_id` in `quiesce`) caused a null-deref panic
+  on the first i386 test run; `make test-i386-vm` caught it immediately.
+- **i386 TLB is still local-only** (`invlpg`, no cross-CPU shootdown), matching
+  the port's prior behaviour; the `active` cpuset is accepted but not yet used.
+  SMP shootdown on i386 is a later improvement.
+
+### Verification performed (Phase 1)
+
+- i386 builds and links against the shared core; `make test-i386-vm` passes all
+  11 cases, including `fault-write-ro`, `fault-user-ro`, `fault-unmapped`,
+  `fault-null` and the rest, which exercise the new shared resolver.
+- arm64 rebuilt, boots to userspace and passes `vm_map` / `vm_shm` /
+  `ipc_space` after every shared-layer change (the neutral reconciliation and
+  the `quiesce` fix are behaviour-identical there).
+
 ## Resolved decisions (approved)
 
 All six prior open questions are now settled and baked into the contract above:
