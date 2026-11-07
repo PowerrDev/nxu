@@ -73,6 +73,15 @@
  */
 #define T_IPI_TICK 0xF2U
 
+/*
+ * Cross-CPU TLB shootdown (kern/i386/smp.c's smp_tlb_shootdown()). Unlike arm64,
+ * whose inner-shareable TLBI broadcasts in hardware, x86 must interrupt every
+ * CPU that has the mutated address space loaded and have it invalidate locally.
+ * An acknowledged vector dispatched to smp_tlb_shootdown_handle(), not through
+ * smp_handle_ipi.
+ */
+#define T_IPI_SHOOTDOWN 0xF3U
+
 #define T_LAPIC_SPURIOUS 0xFFU
 
 /* Vectors with a stub in i386_isr_table: exceptions plus the 16 IRQs. */
@@ -142,6 +151,7 @@ void i386_isr_syscall(void);
 void i386_isr_ipi_reschedule(void);
 void i386_isr_ipi_cpu_stop(void);
 void i386_isr_ipi_tick(void);
+void i386_isr_ipi_shootdown(void);
 void i386_isr_lapic_spurious(void);
 
 /* Common C entry point for every stub. */

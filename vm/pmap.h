@@ -157,9 +157,12 @@ bool pmap_enumerate(const pmap_t *pmap, pmap_leaf_t *out, uint64_t cap, uint64_t
  * backend owns the table walk and the single bulk TLB flush, which is why this
  * is one backend call rather than a per-page loop (it preserves the one-flush
  * teardown the pre-split code did). Leaves the translation tables in place for
- * a subsequent pmap_destroy.
+ * a subsequent pmap_destroy. `active` is the core-owned set of CPUs that may
+ * have the space loaded, so a backend using cross-CPU shootdown can issue a
+ * single bulk invalidation to them rather than one per page.
  */
-uint64_t pmap_release_user_pages(pmap_t *pmap, void (*free_page)(uint64_t physical_address));
+uint64_t pmap_release_user_pages(pmap_t *pmap, void (*free_page)(uint64_t physical_address),
+								 const nxu_cpuset_t *active);
 
 /* ---- accessors the core exposes but does not interpret ------------------- */
 

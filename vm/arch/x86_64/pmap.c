@@ -443,8 +443,12 @@ pmap_release_table(uint64_t *table, uint32_t level, void (*free_page)(uint64_t))
 }
 
 uint64_t
-pmap_release_user_pages(pmap_t *pmap, void (*free_page)(uint64_t physical_address))
+pmap_release_user_pages(pmap_t *pmap, void (*free_page)(uint64_t physical_address), const nxu_cpuset_t *active)
 {
+	/* Single-CPU port: the CR3-reload bulk flush below is globally coherent.
+	 * Cross-CPU shootdown to `active` arrives with the APIC/scheduler. */
+	(void)active;
+
 	if (pmap == 0 || pmap->root == 0 || free_page == 0) return 0ULL;
 
 	uint64_t released = 0ULL;

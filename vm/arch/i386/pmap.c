@@ -25,6 +25,7 @@
 #include <vm/pmap.h>
 
 #include <kern/i386/pmap.h>
+#include <kern/i386/smp.h>
 #include <kern/machine/vm_param.h>
 #include <vm/pmm.h>
 
@@ -99,6 +100,23 @@ static pmap_entry_t *
 pmap_root_directory(const pmap_t *pmap)
 {
 	return (pmap_entry_t *)pmap->root;
+}
+
+/* ------------------------------------------------------------------------- */
+/* TLB maintenance.                                                          */
+/* ------------------------------------------------------------------------- */
+/*
+ * Every mutator invalidates the changed page on THIS CPU (pmap_invalidate_page)
+ * and, when `pmap` may also be loaded on another CPU, shoots that CPU down so no
+ * stale translation outlives the call (the vm/pmap.h "coherent on return"
+ * contract). smp_tlb_shootdown is a no-op on a single-CPU system or an empty
+ * target set, so the single-CPU cost is unchanged.
+ */
+static void
+pmap_shootdown_page(const pmap_t *pmap, uint32_t va, const nxu_cpuset_t *active)
+{
+	pmap_invalidate_page(va);
+	smp_tlb_shootdown(active, (uint32_t)pmap->root_physical, &va, 1U);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -213,8 +231,6 @@ pmap_enter(pmap_t *pmap, uint64_t va, uint64_t pa, vm_prot_t prot, bool cow, con
 bool
 pmap_remove(pmap_t *pmap, uint64_t va, const nxu_cpuset_t *active)
 {
-	(void)active;
-
 	if (pmap == 0 || pmap->root == 0 || !pmap_user_va_valid(va)) return false;
 
 	pmap_entry_t *entry;
@@ -225,7 +241,7 @@ pmap_remove(pmap_t *pmap, uint64_t va, const nxu_cpuset_t *active)
 	}
 
 	pmap_entry_store(entry, 0ULL);
-	pmap_invalidate_page((uint32_t)va);
+	pmap_shootdown_page(pmap, (uint32_t)va, active);
 
 	return true;
 }
@@ -233,8 +249,6 @@ pmap_remove(pmap_t *pmap, uint64_t va, const nxu_cpuset_t *active)
 bool
 pmap_protect(pmap_t *pmap, uint64_t va, vm_prot_t prot, const nxu_cpuset_t *active)
 {
-	(void)active;
-
 	/* Phase 0/1 narrowing: make a writable or read-only page read-only and drop
 	 * any COW sharing; never widen and never touch an executable page. */
 	if (pmap == 0 || pmap->root == 0 || prot != VM_PROT_RO || !pmap_user_va_valid(va)) return false;
@@ -248,7 +262,7 @@ pmap_protect(pmap_t *pmap, uint64_t va, vm_prot_t prot, const nxu_cpuset_t *acti
 	}
 
 	pmap_entry_store(entry, pmap_entry_load(entry) & ~((pmap_entry_t)PTE_WRITE | (pmap_entry_t)PTE_SOFTWARE_COW));
-	pmap_invalidate_page((uint32_t)va);
+	pmap_shootdown_page(pmap, (uint32_t)va, active);
 
 	return true;
 }
@@ -256,8 +270,6 @@ pmap_protect(pmap_t *pmap, uint64_t va, vm_prot_t prot, const nxu_cpuset_t *acti
 bool
 pmap_replace(pmap_t *pmap, uint64_t va, uint64_t new_pa, vm_prot_t prot, bool cow, const nxu_cpuset_t *active)
 {
-	(void)active;
-
 	pmap_entry_t flags;
 
 	if (pmap == 0 || pmap->root == 0 || !pmap_user_va_valid(va) || !pmap_user_pa_valid(new_pa) ||
@@ -273,7 +285,7 @@ pmap_replace(pmap_t *pmap, uint64_t va, uint64_t new_pa, vm_prot_t prot, bool co
 	}
 
 	pmap_entry_store(entry, ((pmap_entry_t)new_pa & PTE_FRAME) | flags);
-	pmap_invalidate_page((uint32_t)va);
+	pmap_shootdown_page(pmap, (uint32_t)va, active);
 
 	return true;
 }
@@ -378,7 +390,7 @@ pmap_enumerate(const pmap_t *pmap, pmap_leaf_t *out, uint64_t cap, uint64_t *cou
 }
 
 uint64_t
-pmap_release_user_pages(pmap_t *pmap, void (*free_page)(uint64_t physical_address))
+pmap_release_user_pages(pmap_t *pmap, void (*free_page)(uint64_t physical_address), const nxu_cpuset_t *active)
 {
 	if (pmap == 0 || pmap->root == 0 || free_page == 0) return 0ULL;
 
@@ -399,8 +411,11 @@ pmap_release_user_pages(pmap_t *pmap, void (*free_page)(uint64_t physical_addres
 		}
 	}
 
-	/* One bulk flush for the whole space (teardown). */
+	/* One bulk flush for the whole space (teardown): local CR3 reload, then a
+	 * single whole-space shootdown to any other CPU still holding the space --
+	 * one IPI round, not one per released page. */
 	pmap_flush_tlb();
+	smp_tlb_shootdown(active, (uint32_t)pmap->root_physical, 0, 0U);
 
 	return released;
 }

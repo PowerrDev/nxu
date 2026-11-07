@@ -466,7 +466,7 @@ vm_address_space_release_pages(vm_address_space_t *space)
 
 	nxu_spin_lock(&space->lock);
 
-	uint64_t released = pmap_release_user_pages(&space->pmap, vm_pmm_free_page);
+	uint64_t released = pmap_release_user_pages(&space->pmap, vm_pmm_free_page, &space->active_cpus);
 
 	space->resident_pages = 0ULL;
 	space->shared_pages = 0ULL;

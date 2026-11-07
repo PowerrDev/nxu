@@ -370,7 +370,7 @@ i386_trap_handler(x86_saved_state_t *state)
 	if (vector == T_PAGE_FAULT) statistics_note_page_fault(x86_saved_state_is_user(state));
 
 	if ((vector >= T_IRQ_BASE && vector < T_IRQ_BASE + T_IRQ_COUNT) || vector == T_IPI_RESCHEDULE ||
-		vector == T_IPI_CPU_STOP || vector == T_IPI_TICK)
+		vector == T_IPI_CPU_STOP || vector == T_IPI_TICK || vector == T_IPI_SHOOTDOWN)
 		statistics_note_interrupt();
 
 	if (vector == T_BREAKPOINT && !x86_saved_state_is_user(state)) {
@@ -388,7 +388,8 @@ i386_trap_handler(x86_saved_state_t *state)
 		return;
 	}
 
-	if (vector == T_IPI_RESCHEDULE || vector == T_IPI_CPU_STOP || vector == T_IPI_TICK || vector == T_LAPIC_SPURIOUS) {
+	if (vector == T_IPI_RESCHEDULE || vector == T_IPI_CPU_STOP || vector == T_IPI_TICK ||
+		vector == T_IPI_SHOOTDOWN || vector == T_LAPIC_SPURIOUS) {
 		/* The spurious vector is architecturally not acknowledged; i386_trap_ipi knows not to EOI it (see smp.c). */
 		i386_trap_ipi(state);
 		i386_trap_exit(state);

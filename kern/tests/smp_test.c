@@ -270,7 +270,9 @@ static struct {
 	volatile uint32_t violations;
 	volatile uint64_t progress[SMP_TEST_MAX_THREADS];
 	volatile uint32_t in_body[SMP_TEST_MAX_THREADS];
-	volatile uint64_t cpu_hits[NXU_MAX_CPUS];
+	/* 8-byte aligned so the RELAXED 64-bit atomic below is a single access on
+	 * i386 too (the i386 ABI aligns uint64_t in a struct to 4 bytes otherwise). */
+	volatile uint64_t cpu_hits[NXU_MAX_CPUS] __attribute__((aligned(8)));
 } g_mlfq;
 
 static void
@@ -1494,21 +1496,14 @@ typedef struct {
 	bool (*run)(void);
 } smp_test_case_t;
 
-bool
-smp_test_run(void)
+static bool
+run_cases(const smp_test_case_t *cases, uint32_t count)
 {
-	static const smp_test_case_t cases[] = {
-		{"cpus", test_cpus_online},	 {"pinned", test_pinned_per_cpu}, {"mlfq", test_mlfq_concurrent},
-		{"wakeups", test_ping_pong}, {"seqwait", test_seq_wait},	  {"ipi", test_ipi},
-		{"affinity", test_affinity}, {"balance", test_balance},		  {"stress", test_stress},
-		{"memory", test_memory},	 {"usertlb", test_user_tlb},	  {"vmrace", test_fault_vs_unmap},
-		{"cowrace", test_cow_race}};
-
 	g_ncpu = smp_online_count();
 
 	kprintf("smp_test: %u CPUs online\n", g_ncpu);
 
-	for (uint32_t index = 0U; index < sizeof(cases) / sizeof(cases[0]); index++) {
+	for (uint32_t index = 0U; index < count; index++) {
 		kprintf("smp_test: %s: running\n", cases[index].name);
 
 		if (!cases[index].run()) return false;
@@ -1530,4 +1525,50 @@ smp_test_run(void)
 	}
 
 	return true;
+}
+
+bool
+smp_test_run(void)
+{
+	static const smp_test_case_t cases[] = {
+		{"cpus", test_cpus_online},	 {"pinned", test_pinned_per_cpu}, {"mlfq", test_mlfq_concurrent},
+		{"wakeups", test_ping_pong}, {"seqwait", test_seq_wait},	  {"ipi", test_ipi},
+		{"affinity", test_affinity}, {"balance", test_balance},		  {"stress", test_stress},
+		{"memory", test_memory},	 {"usertlb", test_user_tlb},	  {"vmrace", test_fault_vs_unmap},
+		{"cowrace", test_cow_race}};
+
+	return run_cases(cases, sizeof(cases) / sizeof(cases[0]));
+}
+
+/*
+ * The cross-CPU USER address-space VM subset: TLB shootdown under a reader's
+ * cached translation (usertlb), a fault racing an munmap (vmrace), and a
+ * concurrent COW break (cowrace). These exercise the vm/pmap.h backend's
+ * cross-CPU invalidation and assume neither a per-CPU timer nor full
+ * scheduler-placement parity, so a port still bringing those up -- i386, whose
+ * secondaries tick off a PIT broadcast -- runs them to validate its user pmap
+ * TLB shootdown without the scheduler/timer cases that target arm64's model.
+ *
+ * `memory` (the kernel-arena vm_kern map/unmap coherence test) is deliberately
+ * NOT here: the kernel higher-half map's mutators run under the recursive
+ * interrupt-masked vm_kern rlock, so cross-CPU shootdown there cannot rely on a
+ * waiting CPU taking the IPI; it needs the invalidation moved outside that lock.
+ * It stays in the full suite (arm64, whose broadcast TLBI covers it) until i386
+ * grows that kernel-map shootdown.
+ */
+bool
+smp_test_run_vm(void)
+{
+	static const smp_test_case_t cases[] = {
+		{"usertlb", test_user_tlb}, {"vmrace", test_fault_vs_unmap}, {"cowrace", test_cow_race}};
+
+	/* Every case here pins work to a second CPU; with one online there is no
+	 * cross-CPU translation to make stale, so the shootdown is trivially correct
+	 * and the suite has nothing to exercise. */
+	if (smp_online_count() < 2U) {
+		kprintf("smp_test: %u CPU online; cross-CPU VM tests need two, skipping\n", smp_online_count());
+		return true;
+	}
+
+	return run_cases(cases, sizeof(cases) / sizeof(cases[0]));
 }

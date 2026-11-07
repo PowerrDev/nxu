@@ -480,8 +480,12 @@ pmap_enumerate(const pmap_t *pmap, pmap_leaf_t *out, uint64_t cap, uint64_t *cou
 }
 
 uint64_t
-pmap_release_user_pages(pmap_t *pmap, void (*free_page)(uint64_t physical_address))
+pmap_release_user_pages(pmap_t *pmap, void (*free_page)(uint64_t physical_address), const nxu_cpuset_t *active)
 {
+	/* Inner-shareable TLBI below broadcasts in hardware, so the active set is
+	 * accepted but needs no explicit targeting. */
+	(void)active;
+
 	if (pmap == 0 || pmap->root == 0 || free_page == 0) return 0ULL;
 
 	uint64_t released = 0ULL;

@@ -17,6 +17,8 @@
 #ifndef NXU_KERN_I386_SMP_H
 #define NXU_KERN_I386_SMP_H
 
+#include <kern/cpuset.h>
+
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -82,6 +84,21 @@ void machine_ipi_raise_others(uint32_t vector);
  * or T_IPI_CPU_STOP), on the CPU it was sent to. Interrupt context.
  */
 void smp_handle_ipi(uint32_t vector);
+
+/*
+ * smp_tlb_shootdown
+ *
+ * Cross-CPU TLB invalidation for the i386 pmap backend. Invalidate `count`
+ * pages (`vas`, page-aligned) -- or the whole address space when vas==0 /
+ * count==0 or the list overflows -- on every CPU in `active` other than the
+ * caller, for the space whose CR3 (PTE_FRAME bits) is `directory_physical`.
+ * Returns only once every target has acknowledged its local invalidation, so
+ * the mutation is globally coherent on return. Must be called with interrupts
+ * enabled (the VM paths hold only the plain space->lock); a no-op on a
+ * single-CPU system. smp_tlb_shootdown_handle() is its interrupt-context peer.
+ */
+void smp_tlb_shootdown(const nxu_cpuset_t *active, uint32_t directory_physical, const uint32_t *vas, uint32_t count);
+void smp_tlb_shootdown_handle(void);
 
 /*
  * smp_boot_secondaries

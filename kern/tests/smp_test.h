@@ -17,4 +17,11 @@
 
 bool smp_test_run(void);
 
+/*
+ * The cross-CPU VM subset only (shared-page coherence, TLB shootdown, fault vs.
+ * munmap, COW race): for a port whose timer/scheduler model does not yet match
+ * the full suite's assumptions but whose pmap TLB shootdown is to be validated.
+ */
+bool smp_test_run_vm(void);
+
 #endif

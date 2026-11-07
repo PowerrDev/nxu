@@ -78,6 +78,8 @@ i386_idt_init(void)
 	i386_idt_set_gate(T_IPI_CPU_STOP, (uint32_t)(uintptr_t)i386_isr_ipi_cpu_stop, GDT_KERNEL_CODE_SEL,
 					  IDT_GATE_INTERRUPT);
 	i386_idt_set_gate(T_IPI_TICK, (uint32_t)(uintptr_t)i386_isr_ipi_tick, GDT_KERNEL_CODE_SEL, IDT_GATE_INTERRUPT);
+	i386_idt_set_gate(T_IPI_SHOOTDOWN, (uint32_t)(uintptr_t)i386_isr_ipi_shootdown, GDT_KERNEL_CODE_SEL,
+					  IDT_GATE_INTERRUPT);
 	i386_idt_set_gate(T_LAPIC_SPURIOUS, (uint32_t)(uintptr_t)i386_isr_lapic_spurious, GDT_KERNEL_CODE_SEL,
 					  IDT_GATE_INTERRUPT);
 
