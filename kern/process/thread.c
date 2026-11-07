@@ -845,7 +845,7 @@ thread_stack_alloc(thread_t thread)
 
 	void *stack = 0;
 
-	if (!vm_kern_allocate((size_t)THREAD_KERNEL_STACK_SIZE, VMM_PROTECTION_READ_WRITE, &stack)) {
+	if (!vm_kern_allocate((size_t)THREAD_KERNEL_STACK_SIZE, VM_KMAP_PROT_READ_WRITE, &stack)) {
 		return false;
 	}
 

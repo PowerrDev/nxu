@@ -151,7 +151,7 @@ post_test_vm_kern(void)
 	bool passed = false;
 	bool cleanup_passed = true;
 
-	if (!vm_kern_allocate(KERNEL_VM_KERN_TEST_A_SIZE, VMM_PROTECTION_READ_WRITE, &allocation_a)) {
+	if (!vm_kern_allocate(KERNEL_VM_KERN_TEST_A_SIZE, VM_KMAP_PROT_READ_WRITE, &allocation_a)) {
 		goto cleanup;
 	}
 
@@ -188,7 +188,7 @@ post_test_vm_kern(void)
 			goto cleanup;
 		}
 	}
-	if (!vm_kern_allocate(KERNEL_VM_KERN_TEST_B_SIZE, VMM_PROTECTION_READ_WRITE, &allocation_b)) {
+	if (!vm_kern_allocate(KERNEL_VM_KERN_TEST_B_SIZE, VM_KMAP_PROT_READ_WRITE, &allocation_b)) {
 		goto cleanup;
 	}
 
@@ -200,7 +200,7 @@ post_test_vm_kern(void)
 
 	allocation_a_active = false;
 
-	if (!vm_kern_allocate(KERNEL_VM_KERN_TEST_A_SIZE, VMM_PROTECTION_READ_WRITE, &reused_allocation)) {
+	if (!vm_kern_allocate(KERNEL_VM_KERN_TEST_A_SIZE, VM_KMAP_PROT_READ_WRITE, &reused_allocation)) {
 		goto cleanup;
 	}
 

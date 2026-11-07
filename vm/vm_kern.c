@@ -2,7 +2,7 @@
 #include <kern/lock.h>
 #include <vm/vm_kern.h>
 #include <vm/pmm.h>
-#include <vm/vmm.h>
+#include <vm/vm_kmap.h>
 
 #include <platform/uart.h>
 
@@ -225,7 +225,7 @@ vm_kern_rollback_mappings(uint64_t start_page, uint64_t mapped_pages)
 
 		uint64_t physical_address;
 
-		if (!vmm_unmap_page(virtual_address, &physical_address)) {
+		if (!vm_kmap_unmap_page(virtual_address, &physical_address)) {
 			return false;
 		}
 
@@ -240,7 +240,7 @@ vm_kern_rollback_mappings(uint64_t start_page, uint64_t mapped_pages)
 bool
 vm_kern_init(void)
 {
-	if (g_vm_kern.initialized || !vmm_is_enabled()) {
+	if (g_vm_kern.initialized || !vm_kmap_enabled()) {
 		return false;
 	}
 
@@ -252,7 +252,7 @@ vm_kern_init(void)
 }
 
 bool
-vm_kern_allocate(size_t size, vmm_protection_t protection, void **address)
+vm_kern_allocate(size_t size, vm_kmap_prot_t protection, void **address)
 {
 	NXU_RLOCK_GUARD(&g_vm_kern_lock);
 
@@ -310,8 +310,8 @@ vm_kern_allocate(size_t size, vmm_protection_t protection, void **address)
 
 		uint64_t virtual_address = vm_kern_page_address(start_page + index);
 
-		if (!vmm_map_page(virtual_address, physical_address, VMM_MEMORY_NORMAL, protection)) {
-			kputln("vm_kern_allocate: vmm_map_page failed");
+		if (!vm_kmap_map_page(virtual_address, physical_address, VM_KMAP_MEM_NORMAL, protection)) {
+			kputln("vm_kern_allocate: vm_kmap_map_page failed");
 			(void)pmm_free_page(physical_address);
 
 			if (vm_kern_rollback_mappings(start_page, mapped_pages)) {
@@ -369,13 +369,13 @@ vm_kern_free(void *address, size_t size)
 	 * Validate every mapping before changing any page table.
 	 */
 	for (uint64_t index = 0ULL; index < page_count; index++) {
-		vmm_page_mapping_t mapping;
+		vm_kmap_mapping_t mapping;
 
-		if (!vmm_query_page(virtual_address + index * PMM_PAGE_SIZE, &mapping)) {
+		if (!vm_kmap_query_page(virtual_address + index * PMM_PAGE_SIZE, &mapping)) {
 			return false;
 		}
 
-		if (mapping.memory_type != VMM_MEMORY_NORMAL) {
+		if (mapping.memory_type != VM_KMAP_MEM_NORMAL) {
 			return false;
 		}
 	}
@@ -385,7 +385,7 @@ vm_kern_free(void *address, size_t size)
 
 		uint64_t physical_address;
 
-		if (!vmm_unmap_page(page_address, &physical_address)) {
+		if (!vm_kmap_unmap_page(page_address, &physical_address)) {
 			return false;
 		}
 

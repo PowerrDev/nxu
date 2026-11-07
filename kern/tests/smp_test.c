@@ -948,7 +948,7 @@ memory_worker(void *argument)
 
 		void *region;
 
-		if (!vm_kern_allocate(3U * 4096U, VMM_PROTECTION_READ_WRITE, &region)) {
+		if (!vm_kern_allocate(3U * 4096U, VM_KMAP_PROT_READ_WRITE, &region)) {
 			__atomic_add_fetch(&g_mem.errors, 1U, __ATOMIC_ACQ_REL);
 			(void)kfree(block);
 			continue;
@@ -1016,7 +1016,7 @@ tlb_writer(void *argument)
 	for (uint32_t round = 1U; round <= TLB_ROUNDS; round++) {
 		void *region;
 
-		if (!vm_kern_allocate(4096U, VMM_PROTECTION_READ_WRITE, &region)) {
+		if (!vm_kern_allocate(4096U, VM_KMAP_PROT_READ_WRITE, &region)) {
 			__atomic_add_fetch(&g_tlb.mismatches, 1U, __ATOMIC_ACQ_REL);
 			break;
 		}

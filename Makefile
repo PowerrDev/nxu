@@ -458,6 +458,7 @@ C_SOURCES := \
     vm/vmm_ttbr1.c \
     vm/vmm_debug.c \
     vm/vm_kern.c \
+    vm/vm_kmap.c \
     vm/user_copy.c \
     platform/arm64/driverkit.c \
     platform/arm64/dtb.c \

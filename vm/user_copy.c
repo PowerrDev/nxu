@@ -3,7 +3,7 @@
 #include <vm/address_space.h>
 #include <vm/pmm.h>
 #include <vm/vm_fault.h>
-#include <vm/vmm.h>
+#include <vm/vm_kmap.h>
 
 #include <stdint.h>
 #include <libk/memops.h>
@@ -78,7 +78,7 @@ vm_copy_from_user(void *destination, uint64_t user_address, uint64_t size)
 
 		uint64_t kernel_address;
 
-		if (!vmm_physical_to_higher_half(mapping.physical_address, &kernel_address)) {
+		if (!vm_kmap_phys_to_direct(mapping.physical_address, &kernel_address)) {
 			return false;
 		}
 
@@ -138,7 +138,7 @@ vm_copy_to_user(uint64_t user_address, const void *source, uint64_t size)
 
 		uint64_t kernel_address;
 
-		if (!vmm_physical_to_higher_half(mapping.physical_address, &kernel_address)) {
+		if (!vm_kmap_phys_to_direct(mapping.physical_address, &kernel_address)) {
 			return false;
 		}
 

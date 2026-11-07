@@ -5,10 +5,12 @@
 #   make test-i386-vm   boot the kernel under QEMU and run the VM self-tests
 #                       plus the deliberate-fault cases (tools/test_i386_vm.sh)
 #
-# The arm64-only page-table code (vm/vmm*.c, vm/address_space.c) is not built
-# here: kern/i386/{pmap,vmm_i386,address_space_i386}.c implement the same
-# vm/vmm.h and vm/address_space.h interfaces for the x86 paging format. The
-# rest of vm/ is shared with arm64 as is.
+# The arm64 page-table code (vm/vmm*.c) is not built here: i386's VMM backend is
+# kern/i386/{pmap,vmm_i386}.c plus the unified-core backend vm/arch/i386/pmap.c,
+# which implement vm/vmm.h and vm/pmap.h for the x86 paging format. The rest of
+# vm/ — the neutral core (vm/address_space.c, vm_fault.c, vm_map.c, vm_shm.c,
+# pmm.c, vm_kern.c, vm_kmap.c, user_copy.c, dma.c) — is the same source shared
+# with arm64 and x86_64.
 
 I386_C_SOURCES += \
     vm/arch/i386/pmap.c \
@@ -24,6 +26,7 @@ I386_C_SOURCES += \
     vm/user_copy.c \
     vm/vm_fault.c \
     vm/vm_kern.c \
+    vm/vm_kmap.c \
     vm/vm_map.c \
     vm/vm_shm.c \
     kern/memory/heap.c \

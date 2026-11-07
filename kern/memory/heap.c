@@ -429,7 +429,7 @@ heap_allocate_large(size_t size)
 
 	void *address;
 
-	if (!vm_kern_allocate(size, VMM_PROTECTION_READ_WRITE, &address)) return 0;
+	if (!vm_kern_allocate(size, VM_KMAP_PROT_READ_WRITE, &address)) return 0;
 
 	record->address = address;
 	record->requested_size = size;

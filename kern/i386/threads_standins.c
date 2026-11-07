@@ -100,7 +100,7 @@ static uint8_t g_standin_stacks[STANDIN_STACK_COUNT][THREAD_KERNEL_STACK_SIZE] _
 static bool g_standin_stack_used[STANDIN_STACK_COUNT];
 
 STANDIN bool
-vm_kern_allocate(size_t size, vmm_protection_t protection, void **address)
+vm_kern_allocate(size_t size, vm_kmap_prot_t protection, void **address)
 {
 	(void)protection;
 

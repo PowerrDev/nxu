@@ -315,7 +315,7 @@ smp_start_cpu(uint32_t cpu_id, uint8_t apic_id_value)
 
 	void *stack;
 
-	if (!vm_kern_allocate(SMP_STACK_SIZE, VMM_PROTECTION_READ_WRITE, &stack)) {
+	if (!vm_kern_allocate(SMP_STACK_SIZE, VM_KMAP_PROT_READ_WRITE, &stack)) {
 		kprintf("SMP: no memory for the CPU%u boot stack\n", cpu_id);
 		return false;
 	}

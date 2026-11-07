@@ -1,7 +1,8 @@
 #include <kern/console/console.h>
 #include <kern/lock.h>
+#include <kern/machine/vm_param.h>
 #include <vm/pmm.h>
-#include <vm/vmm.h>
+#include <vm/vm_kmap.h>
 #include <platform/uart.h>
 
 #include <stdbool.h>
@@ -69,7 +70,7 @@ pmm_shared_alloc(uint64_t physical_address)
 static bool
 pmm_kernel_symbol_physical(const void *symbol, uint64_t *physical_address)
 {
-	return vmm_kernel_address_to_physical((uint64_t)symbol, physical_address);
+	return vm_kmap_address_to_phys((uint64_t)symbol, physical_address);
 }
 
 static bool
@@ -86,7 +87,7 @@ pmm_pointer_from_physical(uint64_t physical_address, void **pointer)
 
 	uint64_t virtual_address;
 
-	if (!vmm_physical_to_higher_half(physical_address, &virtual_address)) {
+	if (!vm_kmap_phys_to_direct(physical_address, &virtual_address)) {
 		return false;
 	}
 
@@ -536,7 +537,7 @@ pmm_init(const platform_t *platform, const dtb_t *dtb)
 
 	uint64_t bitmap_virtual;
 
-	if (!vmm_physical_to_higher_half(bitmap_address, &bitmap_virtual)) {
+	if (!vm_kmap_phys_to_direct(bitmap_address, &bitmap_virtual)) {
 		return false;
 	}
 
@@ -836,13 +837,13 @@ pmm_free_page(uint64_t physical_address)
 bool
 pmm_enter_higher_half(void)
 {
-	if (!g_pmm.initialized || g_pmm.higher_half || !vmm_higher_half_direct_map_enabled()) {
+	if (!g_pmm.initialized || g_pmm.higher_half || !vm_kmap_direct_map_enabled()) {
 		return false;
 	}
 
 	uint64_t bitmap_virtual;
 
-	if (!vmm_physical_to_higher_half((uint64_t)g_pmm.bitmap, &bitmap_virtual)) {
+	if (!vm_kmap_phys_to_direct((uint64_t)g_pmm.bitmap, &bitmap_virtual)) {
 		return false;
 	}
 

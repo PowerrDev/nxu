@@ -2,7 +2,7 @@
 
 #include <kern/machine/barrier.h>
 #include <vm/pmm.h>
-#include <vm/vmm.h>
+#include <vm/vm_kmap.h>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -24,7 +24,7 @@ dma_cache_line_size(void)
 bool
 dma_buffer_alloc(const dma_device_t *device, uint64_t size, dma_buffer_t *buffer)
 {
-	if (device == 0 || buffer == 0 || size == 0ULL || !vmm_higher_half_direct_map_enabled()) return false;
+	if (device == 0 || buffer == 0 || size == 0ULL || !vm_kmap_direct_map_enabled()) return false;
 	if (size > UINT64_MAX - (PMM_PAGE_SIZE - 1ULL)) return false;
 	uint64_t pages = (size + PMM_PAGE_SIZE - 1ULL) / PMM_PAGE_SIZE;
 	if (pages > UINT32_MAX || pages > UINT64_MAX / PMM_PAGE_SIZE) return false;
@@ -38,7 +38,7 @@ dma_buffer_alloc(const dma_device_t *device, uint64_t size, dma_buffer_t *buffer
 		return false;
 	}
 	uint64_t virtual_address;
-	if (!vmm_physical_to_higher_half(physical_address, &virtual_address)) {
+	if (!vm_kmap_phys_to_direct(physical_address, &virtual_address)) {
 		(void)pmm_free_contiguous_pages(physical_address, pages);
 		return false;
 	}
@@ -77,7 +77,7 @@ dma_map_single(const dma_device_t *device, const void *virtual_address, uint64_t
 {
 	if (device == 0 || virtual_address == 0 || device_address == 0 || size == 0ULL) return false;
 	uint64_t physical_address;
-	if (!vmm_higher_half_to_physical((uint64_t)(uintptr_t)virtual_address, &physical_address) ||
+	if (!vm_kmap_direct_to_phys((uint64_t)(uintptr_t)virtual_address, &physical_address) ||
 		!dma_address_range_valid(physical_address, size, device->address_mask)) return false;
 	*device_address = physical_address;
 	return true;
@@ -92,7 +92,7 @@ dma_map_buffer(const dma_device_t *device, void *virtual_address, uint64_t size,
 	*mapping = (dma_mapping_t){0};
 
 	uint64_t physical_address;
-	if (!vmm_higher_half_to_physical((uint64_t)(uintptr_t)virtual_address, &physical_address) ||
+	if (!vm_kmap_direct_to_phys((uint64_t)(uintptr_t)virtual_address, &physical_address) ||
 		size - 1ULL > UINT64_MAX - physical_address) return false;
 	void *original_virtual_address = virtual_address;
 	uint64_t original_physical_address = physical_address;
@@ -194,7 +194,7 @@ dma_sync_for_device(const dma_device_t *device, const void *address, uint64_t si
 {
 	uint64_t physical_address;
 	if (device == 0 || address == 0 || size == 0ULL || direction > DMA_BIDIRECTIONAL ||
-		!vmm_higher_half_to_physical((uint64_t)(uintptr_t)address, &physical_address) ||
+		!vm_kmap_direct_to_phys((uint64_t)(uintptr_t)address, &physical_address) ||
 		size - 1ULL > UINT64_MAX - physical_address) return false;
 	if (device->coherent) {
 		ml_dma_wmb();
@@ -212,7 +212,7 @@ dma_sync_for_cpu(const dma_device_t *device, const void *address, uint64_t size,
 {
 	uint64_t physical_address;
 	if (device == 0 || address == 0 || size == 0ULL || direction > DMA_BIDIRECTIONAL ||
-		!vmm_higher_half_to_physical((uint64_t)(uintptr_t)address, &physical_address) ||
+		!vm_kmap_direct_to_phys((uint64_t)(uintptr_t)address, &physical_address) ||
 		size - 1ULL > UINT64_MAX - physical_address) return false;
 	if (device->coherent) {
 		ml_dma_rmb();

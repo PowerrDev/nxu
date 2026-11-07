@@ -452,7 +452,7 @@ vm_test_vm_kern(void)
 	VM_CHECK(vm_kern_get_total_pages() == VM_KERN_SIZE / PMM_PAGE_SIZE);
 
 	/* One page: in the arena, zeroed, writable, physically backed. */
-	VM_CHECK(vm_kern_allocate(1U, VMM_PROTECTION_READ_WRITE, &one));
+	VM_CHECK(vm_kern_allocate(1U, VM_KMAP_PROT_READ_WRITE, &one));
 	VM_CHECK(vm_kern_contains(one));
 	VM_CHECK(((uintptr_t)one & PMAP_PAGE_MASK) == 0U);
 	VM_CHECK(vm_all_zero((uintptr_t)one, 1024U));
@@ -473,21 +473,21 @@ vm_test_vm_kern(void)
 	VM_CHECK(vm_word(alias)[5] == 0x0111U + 5U * 0x9E3779B1U);
 
 	/* Sixteen pages: virtually contiguous, each page independent. */
-	VM_CHECK(vm_kern_allocate(16U * PMM_PAGE_SIZE, VMM_PROTECTION_READ_WRITE, &many));
+	VM_CHECK(vm_kern_allocate(16U * PMM_PAGE_SIZE, VM_KMAP_PROT_READ_WRITE, &many));
 	VM_CHECK(vm_kern_get_allocation_count() == allocations_before + 2ULL);
 	VM_CHECK(vm_fill_and_verify((uintptr_t)many, 16U * 1024U, 0x0222U));
 
 	/* Rounded up to whole pages; a wrong size does not free it. */
 	void *odd;
 
-	VM_CHECK(vm_kern_allocate(PMM_PAGE_SIZE + 1U, VMM_PROTECTION_READ_WRITE, &odd));
+	VM_CHECK(vm_kern_allocate(PMM_PAGE_SIZE + 1U, VM_KMAP_PROT_READ_WRITE, &odd));
 	VM_CHECK(vm_kern_get_used_pages() == arena_used_before + 1ULL + 16ULL + 2ULL);
 	VM_CHECK(!vm_kern_free(odd, PMM_PAGE_SIZE));
 	VM_CHECK(!vm_kern_free((uint8_t *)odd + 1, PMM_PAGE_SIZE + 1U));
 	VM_CHECK(vm_kern_free(odd, PMM_PAGE_SIZE + 1U));
 
 	/* 5 MiB: crosses page-table (4 MiB) boundaries inside the arena. */
-	VM_CHECK(vm_kern_allocate(5U * 1024U * 1024U, VMM_PROTECTION_READ_WRITE, &big));
+	VM_CHECK(vm_kern_allocate(5U * 1024U * 1024U, VM_KMAP_PROT_READ_WRITE, &big));
 
 	for (uint32_t page = 0U; page < 1280U; page += 7U) {
 		volatile uint32_t *word = vm_word((uintptr_t)big + page * PMM_PAGE_SIZE);
@@ -506,7 +506,7 @@ vm_test_vm_kern(void)
 	/* Read-only arena memory: readable, refuses stores. */
 	void *readonly;
 
-	VM_CHECK(vm_kern_allocate(PMM_PAGE_SIZE, VMM_PROTECTION_READ_ONLY, &readonly));
+	VM_CHECK(vm_kern_allocate(PMM_PAGE_SIZE, VM_KMAP_PROT_READ_ONLY, &readonly));
 	VM_CHECK(vmm_query_page((uintptr_t)readonly, &mapping) && mapping.protection == VMM_PROTECTION_READ_ONLY);
 	VM_CHECK(vm_all_zero((uintptr_t)readonly, 1024U));
 	VM_CHECK(!vm_probe_write((uint32_t)(uintptr_t)readonly, 1U));
@@ -517,7 +517,7 @@ vm_test_vm_kern(void)
 	/* Read-execute is read-only in hardware but remembered as such. */
 	void *executable;
 
-	VM_CHECK(vm_kern_allocate(PMM_PAGE_SIZE, VMM_PROTECTION_READ_EXECUTE, &executable));
+	VM_CHECK(vm_kern_allocate(PMM_PAGE_SIZE, VM_KMAP_PROT_READ_EXECUTE, &executable));
 	VM_CHECK(vmm_query_page((uintptr_t)executable, &mapping) && mapping.protection == VMM_PROTECTION_READ_EXECUTE);
 	VM_CHECK(!vm_probe_write((uint32_t)(uintptr_t)executable, 1U));
 	VM_CHECK(vm_kern_free(executable, PMM_PAGE_SIZE));
@@ -525,8 +525,8 @@ vm_test_vm_kern(void)
 	/* The arena's own bookkeeping refuses nonsense. */
 	void *none;
 
-	VM_CHECK(!vm_kern_allocate(0U, VMM_PROTECTION_READ_WRITE, &none));
-	VM_CHECK(!vm_kern_allocate((size_t)VM_KERN_SIZE + 1U, VMM_PROTECTION_READ_WRITE, &none));
+	VM_CHECK(!vm_kern_allocate(0U, VM_KMAP_PROT_READ_WRITE, &none));
+	VM_CHECK(!vm_kern_allocate((size_t)VM_KERN_SIZE + 1U, VM_KMAP_PROT_READ_WRITE, &none));
 	VM_CHECK(!vm_kern_free(0, PMM_PAGE_SIZE));
 	VM_CHECK(!vm_kern_free((void *)(uintptr_t)VM_KERN_BASE, PMM_PAGE_SIZE * 4096U));
 	VM_CHECK(!vm_kern_contains((void *)0xC0100000U));
@@ -759,7 +759,7 @@ vm_test_address_spaces(void)
 	/* A kernel page allocated *after* both spaces exist is visible in both: shared kernel half. */
 	void *shared;
 
-	VM_CHECK(vm_kern_allocate(PMM_PAGE_SIZE, VMM_PROTECTION_READ_WRITE, &shared));
+	VM_CHECK(vm_kern_allocate(PMM_PAGE_SIZE, VM_KMAP_PROT_READ_WRITE, &shared));
 	VM_CHECK(vm_fill_and_verify((uintptr_t)shared, 1024U, 0x5A5EDU));
 
 	/* Inactive spaces are not translated. */
@@ -1076,14 +1076,14 @@ vm_selftest_deliberate_fault(const char *name)
 
 	if (strcmp(name, "execute-data") == 0) {
 		void *page;
-		if (!vm_kern_allocate(PMM_PAGE_SIZE, VMM_PROTECTION_READ_WRITE, &page)) return;
+		if (!vm_kern_allocate(PMM_PAGE_SIZE, VM_KMAP_PROT_READ_WRITE, &page)) return;
 
 		*(volatile uint8_t *)page = 0xC3;
 		((void (*)(void))page)();
 	} else if (strcmp(name, "write-ro") == 0) {
 		void *page;
 
-		if (!vm_kern_allocate(PMM_PAGE_SIZE, VMM_PROTECTION_READ_ONLY, &page)) return;
+		if (!vm_kern_allocate(PMM_PAGE_SIZE, VM_KMAP_PROT_READ_ONLY, &page)) return;
 
 		*(volatile uint32_t *)page = 1U;
 	} else if (strcmp(name, "write-text") == 0) {

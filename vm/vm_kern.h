@@ -1,7 +1,7 @@
 #ifndef NXU_VM_KERN_H
 #define NXU_VM_KERN_H
 
-#include <vm/vmm.h>
+#include <vm/vm_kmap.h>
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -26,7 +26,7 @@ bool vm_kern_init(void);
  * The returned address is aligned to PMM_PAGE_SIZE. The requested
  * size is rounded upward to a complete number of pages.
  */
-bool vm_kern_allocate(size_t size, vmm_protection_t protection, void **address);
+bool vm_kern_allocate(size_t size, vm_kmap_prot_t protection, void **address);
 
 /*
  * Release a range previously returned by vm_kern_allocate().

@@ -879,10 +879,14 @@ reality refined. This sketch is kept as the original plan of record.
 
 ## Deferred (explicitly out of scope)
 
-- **Kernel higher-half / direct-map facade.** `vm/vmm.h`'s TTBR1 API versus
+- **Kernel higher-half / direct-map facade.** ~~`vm/vmm.h`'s TTBR1 API versus
   x86's top-of-CR3 direct map needs a neutral `vm_kern`-level facade. Hardest,
   riskiest piece; a phase of its own, after all three user-path backends
-  conform (Requirement 6 keeps it out of Phase 0).
+  conform (Requirement 6 keeps it out of Phase 0).~~ **Done as Phase 3** —
+  `vm/vm_kmap.h`; see *As-built notes (Phase 3, kernel-map facade)*. It proved
+  far smaller than feared: only four neutral files leaked, and every port
+  already implemented the operations, so it reduced to a neutral facade over an
+  already-shared surface rather than a cross-arch rewrite.
 - **`vm_object` layer.** Does not exist yet (mappings are anonymous zero-fill +
   COW + shm). Add only when file-backed/named memory is wanted; the unification
   does not require it.
@@ -1057,6 +1061,83 @@ Phase 2 is implemented, built and linked. x86_64 now rides the shared neutral
   field access, so ARM64 is unchanged in both meaning and bits.
 - i386 rebuilt against the reworked core and `make test-i386-vm` still passes all
   11 cases.
+
+## Phase 3 (kernel-map facade) — plan
+
+Phases 0-2 put all three user-path backends on the shared core, leaving one arch
+fork in the *kernel* map: the neutral core reached the per-port VMM (`vm/vmm.h`)
+directly, and that contract is named after arm64 hardware
+(`vmm_physical_to_higher_half`, `vmm_disable_ttbr0`, TTBR0/TTBR1 roots). x86_64
+and i386 already implement those arm64-named entry points, so the kernel map was
+functionally unified but nominally arm64-shaped.
+
+Phase 3 interposes a neutral facade, `vm/vm_kmap.h`, between the shared core and
+the port VMM. Recon showed the leak is small and well-bounded: only four neutral
+files `#include <vm/vmm.h>` — `vm/pmm.c`, `vm/dma.c`, `vm/user_copy.c`,
+`vm/vm_kern.c` (+ `vm/vm_kern.h`); every other neutral file already routes
+through `vm/pmap.h`. The leaked surface is exactly:
+
+- PA<->kernel-VA direct-map conversion (`vmm_physical_to_higher_half`,
+  `vmm_higher_half_to_physical`, `vmm_kernel_address_to_physical`,
+  `vmm_higher_half_direct_map_enabled`);
+- kernel-page map/unmap/query + enable gate (`vmm_map_page`, `vmm_unmap_page`,
+  `vmm_query_page`, `vmm_is_enabled`);
+- the protection / memory-type / mapping types those use.
+
+MMIO mapping is the one genuinely divergent kernel-map area across the ports
+(i386 has a runtime `pmap_map_mmio` allocator; arm64 maps MMIO once at boot into
+the TTBR1 direct map; x86_64 maps it through the generic window) — but no neutral
+file calls it, so it stays out of the facade, in arch/driver code.
+
+## As-built notes (Phase 3, kernel-map facade)
+
+Implemented, built on all three arches, and tested. The neutral core no longer
+references the arm64-named VMM; `vm/vm_kmap.c` is the single neutral translation
+unit that includes `<vm/vmm.h>`.
+
+- **Facade contract `vm/vm_kmap.h`.** Neutral names for the whole leaked set:
+  `vm_kmap_phys_to_direct` / `vm_kmap_direct_to_phys` / `vm_kmap_address_to_phys`
+  / `vm_kmap_direct_map_enabled` (direct map), `vm_kmap_map_page` /
+  `vm_kmap_unmap_page` / `vm_kmap_query_page` / `vm_kmap_enabled` (kernel pages),
+  plus neutral `vm_kmap_prot_t` / `vm_kmap_mem_t` / `vm_kmap_mapping_t`. The
+  header depends on nothing architecture-specific (stdint/stdbool only).
+- **Facade shim `vm/vm_kmap.c`.** Forwards each call to the port's existing
+  `vmm_*`. The neutral enums are laid out to match the VMM's, so the forward is a
+  cast, guarded by `_Static_assert`s on every enumerator so a future reorder of
+  either enum fails the build rather than silently mistranslating. Pure
+  forwarding: no port's VMM, boot path, or generated code changed, so arm64
+  behaviour is identical.
+- **Four files migrated.** `vm/pmm.c`, `vm/dma.c`, `vm/user_copy.c`,
+  `vm/vm_kern.c`/`.h` now include `<vm/vm_kmap.h>` instead of `<vm/vmm.h>` and
+  call the neutral names. `vm_kern_allocate`'s public protection parameter became
+  `vm_kmap_prot_t`.
+- **Caller protection constants.** Clang's `-Wimplicit-enum-enum-cast` treats an
+  enumerator as its enum type, so the `vm_kern_allocate` callers passing
+  `VMM_PROTECTION_*` moved to `VM_KMAP_PROT_*`. Only the `vm_kern_allocate`
+  argument changed; sites that query the arch VMM directly and compare against
+  `VMM_PROTECTION_*` (the arm64 `post.c` mapping check, the i386 `vm_selftest.c`
+  direct-VMM cases) keep the VMM constant — those tests exercise the backend, not
+  the facade.
+- **One lost transitive include restored.** `vm/pmm.c` used `VM_DIRECT_MAP_SIZE`
+  via `vmm.h` -> `kern/machine/vm_param.h`; it now includes the layout header
+  directly, the correct dependency regardless.
+- **Build wiring.** `vm/vm_kmap.c` added to all three source lists (`Makefile`
+  arm64, `makedefs/x86_64.mk`, `makedefs/i386/vm.mk`).
+
+### Verification performed (Phase 3)
+
+- i386 builds clean (`-Werror`) and `make test-i386-vm` passes all 11 cases,
+  exercising the migrated direct-map conversions and kernel-arena
+  map/unmap/query at runtime.
+- x86_64 builds and links clean (`-Werror`); build+link is its oracle (no QEMU
+  boot path yet).
+- arm64 builds clean (`-Werror`) and boots to userspace under QEMU:
+  `post_test_vm_kern` (the kernel-arena allocate/map/unmap/query test, now
+  running through the facade), `vm_map`, `vm_shm` and `ipc_space` self-tests all
+  pass, and `bootd` starts as PID 1 (`kern_init: root userspace services
+  active`) — exercising the two-phase fork and COW live.
+- Isolation check: `vm/vm_kmap.c` is the only neutral translation unit that
+  includes `<vm/vmm.h>`, and no neutral core file calls `vmm_*`.
 
 ## Resolved decisions (approved)
 

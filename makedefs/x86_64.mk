@@ -45,6 +45,7 @@ X86_64_C_SOURCES := \
 	vm/pmm.c \
 	vm/dma.c \
 	vm/vm_kern.c \
+	vm/vm_kmap.c \
 	vm/vm_map.c \
 	vm/vm_fault.c \
 	vm/vm_shm.c \
