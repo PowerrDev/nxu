@@ -6,8 +6,11 @@
  *
  * Loads and validates ELF images for kernel and user processes.
  */
+#include <kern/console/console.h>
 #include <kern/console/display_owner.h>
 #include <kern/loader/elf.h>
+#include <kern/process/proc.h>
+#include <kern/security/ucred.h>
 #include <kern/loader/elf_format.h>
 #include <kern/loader/segment_cache.h>
 #include <kern/machine/cache.h>
@@ -509,6 +512,27 @@ loader_spawn_internal(proc_t parent, const char *path, const char *name, uint32_
 		return LOADER_STATUS_BAD_FORMAT;
 	}
 
+	/*
+	 * setuid/setgid-exec: capture the executable's owner and mode now, while
+	 * the vnode is in hand. If the file has S_ISUID (or S_ISGID) set, the new
+	 * process's effective and saved IDs become the file's, applied after it is
+	 * created below. This is the mechanism a sudo-style helper relies on.
+	 */
+	bool setuid_exec = false, setgid_exec = false;
+	nxu_uid_t setuid_uid = 0U;
+	nxu_gid_t setgid_gid = 0U;
+	vnode_attr_t exec_attr;
+	if (vnode_getattr(vnode, &exec_attr) == VFS_STATUS_OK) {
+		if ((exec_attr.va_mode & NXU_S_ISUID) != 0U) {
+			setuid_exec = true;
+			setuid_uid = exec_attr.va_uid;
+		}
+		if ((exec_attr.va_mode & NXU_S_ISGID) != 0U) {
+			setgid_exec = true;
+			setgid_gid = exec_attr.va_gid;
+		}
+	}
+
 	loader_header_t header;
 #if LOADER_ELF_WIDEN
 	loader_disk_header_t disk_header;
@@ -591,6 +615,30 @@ loader_spawn_internal(proc_t parent, const char *path, const char *name, uint32_
 	}
 
 	if (caps != LOADER_CAPS_DEFAULT) proc_set_caps(proc, caps);
+
+	/*
+	 * Apply setuid/setgid-exec: the new process's effective and saved IDs
+	 * become the executable's owner; the real ID stays inherited from the
+	 * parent. An effective UID of 0 is bridged to every capability, so a
+	 * setuid-root binary runs fully privileged.
+	 */
+	if (setuid_exec || setgid_exec) {
+		struct ucred *child_cred = proc_ucred(proc);
+		if (child_cred != 0) {
+			nxu_uid_t before = child_cred->cr_uid;
+			if (setuid_exec) {
+				child_cred->cr_uid = setuid_uid;
+				child_cred->cr_svuid = setuid_uid;
+			}
+			if (setgid_exec) {
+				child_cred->cr_gid = setgid_gid;
+				child_cred->cr_svgid = setgid_gid;
+			}
+			if (setuid_exec && before != setuid_uid)
+				kprintf("loader: setuid-exec %s: euid %u -> %u\n", path, (unsigned)before, (unsigned)setuid_uid);
+		}
+	}
+
 	loader_handoff_bootstrap_port(proc);
 
 	sha256_context_t identity;
