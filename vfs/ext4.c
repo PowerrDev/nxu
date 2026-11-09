@@ -169,6 +169,7 @@ static vfs_status_t ext4_write(vnode_t vnode, uint64_t offset, const void *buffe
 							   uint64_t *written_size);
 static vfs_status_t ext4_truncate(vnode_t vnode, uint64_t size);
 static vfs_status_t ext4_getattr(vnode_t vnode, vnode_attr_t *attr);
+static vfs_status_t ext4_setattr(vnode_t vnode, const vnode_attr_t *attr, uint32_t which);
 
 static const filesystem_operations_t g_ext4_filesystem_operations = {
 	.mount = ext4_mount, .sync = ext4_sync, .unmount = ext4_unmount, .space_info = ext4_space_info};
@@ -183,7 +184,8 @@ static const vnode_operations_t g_ext4_vnode_operations = {.lookup = ext4_lookup
 														   .read = ext4_read,
 														   .write = ext4_write,
 														   .truncate = ext4_truncate,
-														   .getattr = ext4_getattr};
+														   .getattr = ext4_getattr,
+														   .setattr = ext4_setattr};
 
 static struct vfs_filesystem g_ext4_filesystem = {.fs_name = "ext4", .fs_ops = &g_ext4_filesystem_operations};
 
@@ -2374,6 +2376,37 @@ ext4_getattr(vnode_t vnode, vnode_attr_t *attr)
 						   .va_nlink = inode->links_count,
 						   .va_size = inode->size};
 	return VFS_STATUS_OK;
+}
+
+/*
+ * ext4_setattr: change the permission bits (the file-type bits are preserved)
+ * and/or owner uid/gid named by `which`, then journal the inode. Permission to
+ * do so is enforced one level up, in the chmod/chown syscalls.
+ */
+static vfs_status_t
+ext4_setattr(vnode_t vnode, const vnode_attr_t *attr, uint32_t which)
+{
+	ext4_mount_data_t *data = ext4_data(vnode);
+	ext4_node_t *node = ext4_node(vnode);
+	if (data == 0 || node == 0 || attr == 0) return VFS_STATUS_INVALID;
+
+	ext4_lock(data);
+	ext4_inode_t original = node->inode;
+	if ((which & VNODE_ATTR_MODE) != 0U)
+		node->inode.mode = (uint16_t)((node->inode.mode & EXT4_MODE_TYPE_MASK) | (attr->va_mode & 0x0FFFU));
+	if ((which & VNODE_ATTR_UID) != 0U) node->inode.uid = attr->va_uid;
+	if ((which & VNODE_ATTR_GID) != 0U) node->inode.gid = attr->va_gid;
+
+	vfs_status_t status = ext4_transaction_begin_locked(data);
+	if (status == VFS_STATUS_OK) status = ext4_store_inode_locked(data, &node->inode);
+	if (status == VFS_STATUS_OK)
+		status = ext4_transaction_commit_locked(data);
+	else
+		ext4_transaction_abort_locked(data);
+
+	if (status != VFS_STATUS_OK) node->inode = original;
+	ext4_unlock(data);
+	return status;
 }
 
 static vfs_status_t

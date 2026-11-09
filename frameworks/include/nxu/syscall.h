@@ -248,6 +248,14 @@ int64_t nxu_setgid(uint32_t gid);
 int64_t nxu_setegid(uint32_t gid);
 int64_t nxu_getgroups(uint32_t size, uint32_t *list);
 int64_t nxu_setgroups(uint32_t count, const uint32_t *list);
+
+/*
+ * Change a file's permission bits (chmod) or owner/group (chown). chown takes
+ * NXU_ID_UNCHANGED for a uid or gid to leave unchanged. Both return 0 or a
+ * negative error (-NXU_SYS_E_DENIED when the caller lacks privilege).
+ */
+int64_t nxu_chmod(const char *path, uint32_t mode);
+int64_t nxu_chown(const char *path, uint32_t uid, uint32_t gid);
 int64_t nxu_kill(uint64_t pid, uint32_t signal);
 int64_t nxu_sigaction(uint32_t signal, const nxu_sigaction_t *action, nxu_sigaction_t *old_action);
 int64_t nxu_sigprocmask(uint32_t how, uint32_t set);

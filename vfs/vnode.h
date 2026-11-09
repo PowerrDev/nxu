@@ -77,6 +77,16 @@ typedef struct {
 	uint32_t va_ctime_nsec;
 } vnode_attr_t;
 
+/*
+ * Which fields setattr should change. The caller sets the permission bits in
+ * va_mode / the ids in va_uid / va_gid and names them here; everything else in
+ * the attr is ignored. va_mode carries only the permission + setuid/setgid/
+ * sticky bits for VNODE_ATTR_MODE (the file-type bits are not changed).
+ */
+#define VNODE_ATTR_MODE (1U << 0U)
+#define VNODE_ATTR_UID (1U << 1U)
+#define VNODE_ATTR_GID (1U << 2U)
+
 typedef struct {
 	vfs_status_t (*lookup)(vnode_t directory, const char *name, vnode_t *result);
 	vfs_status_t (*create)(vnode_t directory, const char *name, vnode_type_t type, vnode_t *result);
@@ -89,6 +99,7 @@ typedef struct {
 
 	/* Optional: filesystems that do not provide them answer NOT_SUPPORTED. */
 	vfs_status_t (*getattr)(vnode_t vnode, vnode_attr_t *attr);
+	vfs_status_t (*setattr)(vnode_t vnode, const vnode_attr_t *attr, uint32_t which);
 	vfs_status_t (*readlink)(vnode_t vnode, char *buffer, uint64_t capacity, uint64_t *length);
 
 	/*
@@ -157,6 +168,7 @@ vfs_status_t vnode_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t s
 vfs_status_t vnode_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint64_t *written_size);
 vfs_status_t vnode_truncate(vnode_t vnode, uint64_t size);
 vfs_status_t vnode_getattr(vnode_t vnode, vnode_attr_t *attr);
+vfs_status_t vnode_setattr(vnode_t vnode, const vnode_attr_t *attr, uint32_t which);
 vfs_status_t vnode_readlink(vnode_t vnode, char *buffer, uint64_t capacity, uint64_t *length);
 vfs_status_t vnode_open(vnode_t vnode, uint32_t flags);
 void vnode_close(vnode_t vnode, uint32_t flags);

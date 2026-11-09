@@ -110,6 +110,9 @@
 #define NXU_SYS_SETEGID 96ULL
 #define NXU_SYS_GETGROUPS 97ULL
 #define NXU_SYS_SETGROUPS 98ULL
+/* File ownership and mode (kern/security/ucred.h enforcement in the handlers). */
+#define NXU_SYS_CHMOD 99ULL
+#define NXU_SYS_CHOWN 100ULL
 #include <kern/syscall/net_defs.h>
 #include <kern/syscall/dyrld_defs.h>
 #include <kern/syscall/crash_defs.h>
@@ -405,6 +408,9 @@ typedef struct {
 #define NXU_S_IRWXU 0000700U
 #define NXU_S_IRWXG 0000070U
 #define NXU_S_IRWXO 0000007U
+
+/* chown: pass for a uid or gid to leave it unchanged. */
+#define NXU_ID_UNCHANGED 0xFFFFFFFFU
 
 #include <kern/syscall/ui_session_defs.h>
 
