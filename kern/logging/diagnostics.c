@@ -22,6 +22,7 @@ static const char *const g_names[CALL_COUNT] = {
 	[NXU_SYS_NETWORK] = "network",
 	[NXU_SYS_DUP2] = "dup2",
 	[NXU_SYS_READ_POLL] = "read_poll",
+	[NXU_SYS_PANIC] = "panic",
 	[NXU_SYS_GETUID] = "getuid",
 	[NXU_SYS_GETEUID] = "geteuid",
 	[NXU_SYS_GETGID] = "getgid",

@@ -68,9 +68,9 @@ type_name(uint32_t type)
 }
 
 int
-main(int argc, char **argv)
+main(uint64_t argc, const char *const *argv)
 {
-	if (argc < 2) {
+	if (argc < 2U) {
 		say("usage: stat <path>\n");
 		return 2;
 	}

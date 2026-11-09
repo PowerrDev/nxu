@@ -74,17 +74,17 @@ about_sevos_process_test(void)
 	}
 
 	loader_status_t status_windowserver =
-		loader_spawn_caps(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/windowserver_service",
-						  "windowserver_service", NXU_CAP_DISPLAY, &proc_windowserver);
+		loader_spawn_caps(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/WindowServer",
+						  "WindowServer", NXU_CAP_DISPLAY, &proc_windowserver);
 	if (status_windowserver != LOADER_STATUS_OK) {
-		kputs("about_sevos_process_test: spawning windowserver_service failed: ");
+		kputs("about_sevos_process_test: spawning WindowServer failed: ");
 		kputln(loader_status_name(status_windowserver));
 		return false;
 	}
 
 	for (uint32_t spin = 0U; spin < ABOUT_SEVOS_PROCESS_TEST_SERVICE_WAIT_ITERATIONS; spin++) {
 		if (!sched_yield()) {
-			kputln("about_sevos_process_test: scheduler dispatch failed while waiting for windowserver_service");
+			kputln("about_sevos_process_test: scheduler dispatch failed while waiting for WindowServer");
 			return false;
 		}
 

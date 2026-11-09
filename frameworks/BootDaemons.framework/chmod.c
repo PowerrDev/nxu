@@ -35,9 +35,9 @@ parse_octal(const char *text, int *ok)
 }
 
 int
-main(int argc, char **argv)
+main(uint64_t argc, const char *const *argv)
 {
-	if (argc < 3) {
+	if (argc < 3U) {
 		say("usage: chmod <octal-mode> <path>\n");
 		return 2;
 	}

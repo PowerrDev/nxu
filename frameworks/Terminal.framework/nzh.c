@@ -22,6 +22,10 @@ static int64_t g_streams[NZH_CHILD_MAX];
 #endif
 
 static char g_directory[256] = "/Volumes/mainOS";
+/* Optional prompt identity, read once from /etc/username and /etc/hostname.
+ * Empty when unset, in which case the prompt is just "<dir> %". */
+static char g_user[64];
+static char g_host[64];
 static volatile uint32_t g_children[NZH_CHILD_MAX];
 static volatile bool g_interrupted;
 
@@ -272,6 +276,108 @@ nzh_cat(const char *name)
 	(void)nxu_close(descriptor);
 }
 
+/*
+ * Unified system log, macOS style. The kernel retains every console line --
+ * kprintf/kverbosef milestones, syscall and scheduler diagnostics, and the
+ * stdout/stderr of every daemon and GUI app that is not redirected elsewhere --
+ * in a console history ring. logd drains that ring into system.log, so the file
+ * is the complete record since boot and the ring is the live tail.
+ */
+#define NZH_SYSTEM_LOG "/Volumes/mainOS/var/log/system.log"
+#define NZH_LOG_STREAM_POLL_US 50000ULL
+
+/* Drain the live kernel console ring from its oldest retained byte to the end. */
+static void
+nzh_log_dump_ring(void)
+{
+	uint64_t cursor = 0ULL;
+	char buffer[512];
+	int64_t count;
+
+	while ((count = nxu_klog_read(&cursor, buffer, sizeof(buffer))) > 0) {
+		(void)nxu_write(1, buffer, (uint64_t)count);
+	}
+}
+
+/* `log show`: the whole unified log since boot. */
+static void
+nzh_log_show(void)
+{
+	/*
+	 * Prefer the persisted log drained by logd: it reaches back past whatever
+	 * tail still fits in the kernel ring. Fall back to the live ring when logd
+	 * is disabled (-no-logd / safe mode) and the file is missing or empty.
+	 */
+	int64_t descriptor = nxu_open(NZH_SYSTEM_LOG, NXU_O_READ);
+
+	if (descriptor >= 0) {
+		char buffer[512];
+		int64_t count;
+		int64_t total = 0;
+
+		while ((count = nxu_read(descriptor, buffer, sizeof(buffer))) > 0) {
+			(void)nxu_write(1, buffer, (uint64_t)count);
+			total += count;
+		}
+
+		(void)nxu_close(descriptor);
+
+		if (total > 0) {
+			return;
+		}
+	}
+
+	nzh_log_dump_ring();
+}
+
+/* `log stream`: follow new unified-log output until Ctrl-C. */
+static void
+nzh_log_stream(void)
+{
+	/*
+	 * Snap the cursor to the current end so only fresh activity is shown; the
+	 * kernel clamps an out-of-range cursor down to the live sequence number.
+	 */
+	uint64_t cursor = UINT64_MAX;
+	char buffer[512];
+
+	g_interrupted = false;
+	netutil_write("log: streaming unified log -- press Ctrl-C to stop\n");
+
+	while (!g_interrupted) {
+		int64_t count = nxu_klog_read(&cursor, buffer, sizeof(buffer));
+
+		if (count < 0) {
+			netutil_write("log: kernel log read failed\n");
+			return;
+		}
+
+		if (count == 0) {
+			(void)nxu_sleep_us(NZH_LOG_STREAM_POLL_US);
+			continue;
+		}
+
+		(void)nxu_write(1, buffer, (uint64_t)count);
+	}
+}
+
+static void
+nzh_log(uint32_t count, const char *const *arguments)
+{
+	const char *subcommand = count > 1 ? arguments[1] : "";
+
+	if (nxu_streq(subcommand, "show")) {
+		nzh_log_show();
+	} else if (nxu_streq(subcommand, "stream")) {
+		nzh_log_stream();
+	} else {
+		netutil_write(
+			"usage: log show | log stream\n"
+			"  show    print the unified system log (kernel, daemons, apps) since boot\n"
+			"  stream  follow new unified-log output live until Ctrl-C\n");
+	}
+}
+
 static void
 nzh_remove(uint32_t count, const char *const *arguments)
 {
@@ -440,8 +546,9 @@ nzh_execute(uint32_t count, const char *const *arguments)
 
 	if (nxu_streq(command, "help")) {
 		netutil_write(
-			"nzh: help commands echo pwd cd ls cat rm clear nvram forkbomb exit\n"
+			"nzh: help commands echo pwd cd ls cat rm clear nvram log forkbomb exit\n"
 			"NVRAM: nvram [boot-args|boot-args=VALUE] (QEMU firmware boot-args are read-only)\n"
+			"Logs: log show (unified system log since boot), log stream (follow live, Ctrl-C to stop)\n"
 			"Files: rm [-f] [-d] [--] path ...; -d removes empty directories\n"
 			"Stress: forkbomb [workers 1-100] [seconds 1-100] (bounded process/CPU load)\n"
 			"Network: ping [-4|-6] [-c count] address; ifconfig\n"
@@ -485,6 +592,8 @@ nzh_execute(uint32_t count, const char *const *arguments)
 		nzh_forkbomb(count, arguments);
 	} else if (nxu_streq(command, "nvram")) {
 		nzh_nvram(count, arguments);
+	} else if (nxu_streq(command, "log")) {
+		nzh_log(count, arguments);
 	} else if (nxu_streq(command, "commands")) {
 		nzh_list("/Volumes/mainOS/System/Library/CoreServices");
 	} else if (nxu_streq(command, "ipctest") || nxu_streq(command, "sockettest")) {
@@ -517,6 +626,59 @@ nzh_execute(uint32_t count, const char *const *arguments)
 	return true;
 }
 
+/* Read the first whitespace-delimited token of `path` into `buffer` (empty on
+ * any failure). Used for the optional /etc/username and /etc/hostname. */
+static void
+nzh_read_config(const char *path, char *buffer, uint32_t capacity)
+{
+	buffer[0] = 0;
+
+	int64_t descriptor = nxu_open(path, NXU_O_READ);
+	if (descriptor < 0) {
+		return;
+	}
+
+	char raw[64];
+	int64_t count = nxu_read(descriptor, raw, sizeof(raw));
+	(void)nxu_close(descriptor);
+
+	if (count <= 0) {
+		return;
+	}
+
+	uint32_t length = 0;
+	for (int64_t index = 0; index < count && length + 1 < capacity; index++) {
+		char character = raw[index];
+		if (character == '\n' || character == '\r' || character == ' ' || character == '\t' || character == 0) {
+			break;
+		}
+		buffer[length++] = character;
+	}
+	buffer[length] = 0;
+}
+
+/* "user@host dir %" when an identity is set, otherwise "dir %". `dir` is the
+ * last component of the current directory. */
+static void
+nzh_write_prompt(void)
+{
+	const char *dir = g_directory;
+	for (const char *cursor = g_directory; *cursor != 0; cursor++) {
+		if (*cursor == '/' && *(cursor + 1) != 0) {
+			dir = cursor + 1;
+		}
+	}
+
+	if (g_user[0] != 0 && g_host[0] != 0) {
+		netutil_write(g_user);
+		netutil_write("@");
+		netutil_write(g_host);
+		netutil_write(" ");
+	}
+	netutil_write(dir);
+	netutil_write(" % ");
+}
+
 #if defined(__i386__)
 int
 main(uint64_t argc, const char *const *argv)
@@ -533,10 +695,12 @@ main(void)
 #endif
 	(void)nxu_signal(NXU_SIGINT, nzh_signal);
 	(void)nxu_signal(NXU_SIGTERM, nzh_signal);
+	nzh_read_config("/Volumes/mainOS/etc/username", g_user, sizeof(g_user));
+	nzh_read_config("/Volumes/mainOS/etc/hostname", g_host, sizeof(g_host));
 	netutil_write("NXU shell (nzh) - type help\n");
 
 	for (;;) {
-		netutil_write("nxu% ");
+		nzh_write_prompt();
 		char line[NZH_LINE_MAX];
 		uint32_t length = 0;
 		bool overflow = false;

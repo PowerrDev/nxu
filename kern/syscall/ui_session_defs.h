@@ -177,6 +177,7 @@ typedef struct {
 #define NXU_UI_CONTROL_ACTIVATE 2U /* argument: a pid; show and focus that app's window */
 #define NXU_UI_CONTROL_ACTIVITY 3U /* argument: nxu_ui_activity_request_t * (Activity Monitor) */
 #define NXU_UI_CONTROL_LAUNCH 4U   /* argument: a NUL-terminated bundle path; the Dock opens it */
+#define NXU_UI_CONTROL_KILL 5U     /* argument: a pid; terminate it with SIGKILL (never the kernel task) */
 
 typedef struct {
 	uint32_t scale_permille; /* physical pixels per point, x1000 */

@@ -75,6 +75,7 @@ x86_vm_initialize(const struct nxu_boot_x86_64 *boot)
 		kprintf("x86_vm_initialize: VMM root initialization failed\n");
 		return false;
 	}
+    
 	vmm_dump();
 	vmm_dump_higher_half();
 

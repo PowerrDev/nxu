@@ -231,8 +231,8 @@ desktop_test(void)
 
 	service_config_t config = {0};
 	memcpy(config.label, "com.nxu.desktop", sizeof("com.nxu.desktop"));
-	memcpy(config.program, "/Volumes/mainOS/System/Library/CoreServices/desktop_service",
-		   sizeof("/Volumes/mainOS/System/Library/CoreServices/desktop_service"));
+	memcpy(config.program, "/Volumes/mainOS/System/Library/CoreServices/desktopd",
+		   sizeof("/Volumes/mainOS/System/Library/CoreServices/desktopd"));
 	config.keep_alive = true;
 	config.allow_display = true;
 

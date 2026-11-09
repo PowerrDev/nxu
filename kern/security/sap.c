@@ -30,6 +30,20 @@
 #include <drivers/tep/tep_crypto.h>
 #include <reporter_fonts.h>
 
+/* Apple-style alert palette (0x00RRGGBB for text, 0xAARRGGBB for fills). A
+ * neutral light material with a clear label hierarchy and a single tinted
+ * default button — no cool blue cast on the surfaces themselves. */
+#define SAP_LABEL_PRIMARY   0x1d1d1fU /* titles, cancel label */
+#define SAP_LABEL_SECONDARY 0x6e6e73U /* informative body text */
+#define SAP_LABEL_TERTIARY  0x86868bU /* the anchored path */
+#define SAP_LABEL_ERROR     0xd70015U /* auth-failure message */
+#define SAP_LABEL_ONTINT    0xffffffU /* text on the default button */
+#define SAP_MATERIAL        0xfff5f5f7U
+#define SAP_HAIRLINE        0xffd2d2d7U
+#define SAP_FIELD_FILL      0xffffffffU
+#define SAP_BUTTON_PLAIN    0xffffffffU
+#define SAP_BUTTON_DEFAULT  0xff0a84ffU /* system blue */
+
 #endif
 
 static nxu_spinlock_t g_lock;
@@ -118,7 +132,7 @@ wipe(void *memory, uint32_t length)
 
 static void
 text(display_device_t *display, int32_t x, int32_t y, const char *string, const reporter_font_t *font, int32_t right,
-	 int32_t bottom)
+	 int32_t bottom, uint32_t rgb)
 {
 	int32_t start = x;
 
@@ -145,7 +159,8 @@ text(display_device_t *display, int32_t x, int32_t y, const char *string, const 
 				uint32_t old = display->framebuffer[py * display->stride + px], color = 0xff000000;
 
 				for (uint32_t shift = 0; shift < 24; shift += 8) {
-					color |= (((old >> shift & 255) * (255 - alpha) + 32 * alpha + 127) / 255) << shift;
+					uint32_t target = (rgb >> shift) & 255U;
+					color |= (((old >> shift & 255) * (255 - alpha) + target * alpha + 127) / 255) << shift;
 				}
 
 				display->framebuffer[py * display->stride + px] = color;
@@ -293,41 +308,44 @@ prompt(const char *path, bool recursive)
 		
 		/* A bright translucent panel over the dimmed desktop gives the prompt
 		 * the soft, frosted surface without compromising trusted scanout. */
-		blurred_panel(d, saved, panel_x, panel_y, panel_w, panel_h, 24U * scale / 256U);
-		
-		rounded(d, panel_x, panel_y, panel_w, panel_h, 24U * scale / 256U, 0xfff5f8ff, 112);
-		rounded(d, panel_x + 1, panel_y + 1, panel_w - 2, 1, 1, 0xffffffff, 210);
+		blurred_panel(d, saved, panel_x, panel_y, panel_w, panel_h, 16U * scale / 256U);
+
+		rounded(d, panel_x, panel_y, panel_w, panel_h, 16U * scale / 256U, SAP_MATERIAL, 236);
+		rounded(d, panel_x + 1, panel_y + 1, panel_w - 2, 1, 1, 0xffffffff, 140);
 		
 		if (progress == 256U) {
 		
-		text(d, x + 28, y + 18, "Secure Anchor Protocol", &semibold, x + 532, y + 52);
+		text(d, x + 28, y + 18, "Secure Anchor Protocol", &semibold, x + 532, y + 52, SAP_LABEL_PRIMARY);
 		text(d, x + 28, y + 56,
 			 recursive ? "Delete this folder and everything inside it? This could break\nyour system."
 					   : "Deleting this file could break your entire system and make it\nunusable. Are you sure?",
-			 &regular, x + 532, y + 112);
-		
-		text(d, x + 28, y + 112, path + 5, &regular, x + 532, y + 171); /* Hide the VFS mount prefix. */
+			 &regular, x + 532, y + 112, SAP_LABEL_SECONDARY);
+
+		text(d, x + 28, y + 112, path + 5, &regular, x + 532, y + 171, SAP_LABEL_TERTIARY); /* Hide the VFS mount prefix. */
 
 		if (stage) {
-			text(d, x + 28, y + 174, "Password:", &regular, x + 110, y + 208);
-			rounded(d, x + 116, y + 173, 416, 32, 9, 0xffdce8f8, 180);
-			rounded(d, x + 118, y + 175, 412, 28, 8, 0xfffbfdff, 220);
+			text(d, x + 28, y + 174, "Password:", &regular, x + 110, y + 208, SAP_LABEL_SECONDARY);
+			rounded(d, x + 116, y + 173, 416, 32, 7, SAP_HAIRLINE, 255);
+			rounded(d, x + 117, y + 174, 414, 30, 6, SAP_FIELD_FILL, 255);
 
 			char masked[65];
 			memset(masked, '*', length);
 			masked[length] = 0;
 
-			text(d, x + 124, y + 177, masked, &regular, x + 524, y + 208);
+			text(d, x + 124, y + 177, masked, &regular, x + 524, y + 208, SAP_LABEL_PRIMARY);
 			wipe(masked, sizeof(masked));
 		}
 
-		text(d, x + 28, y + 211, message, &regular, x + 532, y + 244);
+		text(d, x + 28, y + 211, message, &regular, x + 532, y + 244, SAP_LABEL_ERROR);
 
-		rounded(d, x + 316, y + 252, 96, 34, 12, 0xffe2e8f1, 220);
-		rounded(d, x + 428, y + 252, 104, 34, 12, 0xff0878f9, 255);
+		/* Cancel: white with a hairline border. Default: system-blue fill. The
+		 * bounding boxes match the hit-test rectangles below exactly. */
+		rounded(d, x + 316, y + 252, 96, 34, 7, SAP_HAIRLINE, 255);
+		rounded(d, x + 317, y + 253, 94, 32, 6, SAP_BUTTON_PLAIN, 255);
+		rounded(d, x + 428, y + 252, 104, 34, 7, SAP_BUTTON_DEFAULT, 255);
 
-		text(d, x + 338, y + 258, "Cancel", &regular, x + 408, y + 290);
-		text(d, x + 443, y + 258, stage ? "Delete" : "Continue", &regular, x + 530, y + 290);
+		text(d, x + 338, y + 258, "Cancel", &regular, x + 408, y + 290, SAP_LABEL_PRIMARY);
+		text(d, x + 443, y + 258, stage ? "Delete" : "Continue", &regular, x + 530, y + 290, SAP_LABEL_ONTINT);
 		}
 
 		/* SAP owns input and scanout, but uses mainOS's shared arrow. */

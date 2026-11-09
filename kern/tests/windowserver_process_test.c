@@ -8,7 +8,7 @@
  * process (frameworks/BootDaemons.framework/windowserver_service.c), and a
  * throwaway client (wstest_client.c) that creates a window, renders a small
  * solid-color rectangle into it, and presents -- purely over NXPC, proving
- * WindowServer works as a real, separate OS process. windowserver_service
+ * WindowServer works as a real, separate OS process. WindowServer
  * itself is left running afterward (it is a long-lived service, like
  * bootd); only wstest_client is expected to exit. The actual visual proof
  * (the rectangle landing on screen) is checked from outside the kernel via
@@ -73,16 +73,16 @@ windowserver_process_test(void)
 	}
 
 	loader_status_t status_windowserver =
-		loader_spawn_caps(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/windowserver_service",
-						  "windowserver_service", NXU_CAP_DISPLAY, &proc_windowserver);
+		loader_spawn_caps(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/WindowServer",
+						  "WindowServer", NXU_CAP_DISPLAY, &proc_windowserver);
 	if (status_windowserver != LOADER_STATUS_OK) {
-		kputs("windowserver_process_test: spawning windowserver_service failed: ");
+		kputs("windowserver_process_test: spawning WindowServer failed: ");
 		kputln(loader_status_name(status_windowserver));
 		return false;
 	}
 
 	/*
-	 * windowserver_service registers itself with the bootstrap registry
+	 * WindowServer registers itself with the bootstrap registry
 	 * only after claiming the display and initializing the compositor;
 	 * give it real scheduler turns to get there before wstest_client
 	 * starts looking it up (bootstrap_client_lookup already retries on
@@ -91,7 +91,7 @@ windowserver_process_test(void)
 	 */
 	for (uint32_t spin = 0U; spin < WINDOWSERVER_PROCESS_TEST_SERVICE_WAIT_ITERATIONS; spin++) {
 		if (!sched_yield()) {
-			kputln("windowserver_process_test: scheduler dispatch failed while waiting for windowserver_service");
+			kputln("windowserver_process_test: scheduler dispatch failed while waiting for WindowServer");
 			return false;
 		}
 

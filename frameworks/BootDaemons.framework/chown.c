@@ -45,9 +45,9 @@ parse_id(const char **cursor, int *ok)
 }
 
 int
-main(int argc, char **argv)
+main(uint64_t argc, const char *const *argv)
 {
-	if (argc < 3) {
+	if (argc < 3U) {
 		say("usage: chown <uid[:gid]> <path>\n");
 		return 2;
 	}

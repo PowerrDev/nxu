@@ -131,8 +131,8 @@ def main():
     if options.terminal:
         targets += [
             "terminal",
-            "windowserver_service",
-            "desktop_service",
+            "WindowServer",
+            "desktopd",
             "dyrld",
             "dyrld-runtime",
         ]
