@@ -85,6 +85,8 @@
 typedef struct {
 	uint32_t number;
 	uint16_t mode;
+	uint32_t uid;
+	uint32_t gid;
 	uint32_t flags;
 	uint64_t size;
 	uint32_t generation;
@@ -166,6 +168,7 @@ static vfs_status_t ext4_read(vnode_t vnode, uint64_t offset, void *buffer, uint
 static vfs_status_t ext4_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size,
 							   uint64_t *written_size);
 static vfs_status_t ext4_truncate(vnode_t vnode, uint64_t size);
+static vfs_status_t ext4_getattr(vnode_t vnode, vnode_attr_t *attr);
 
 static const filesystem_operations_t g_ext4_filesystem_operations = {
 	.mount = ext4_mount, .sync = ext4_sync, .unmount = ext4_unmount, .space_info = ext4_space_info};
@@ -179,7 +182,8 @@ static const vnode_operations_t g_ext4_vnode_operations = {.lookup = ext4_lookup
 														   .readdir = ext4_readdir,
 														   .read = ext4_read,
 														   .write = ext4_write,
-														   .truncate = ext4_truncate};
+														   .truncate = ext4_truncate,
+														   .getattr = ext4_getattr};
 
 static struct vfs_filesystem g_ext4_filesystem = {.fs_name = "ext4", .fs_ops = &g_ext4_filesystem_operations};
 
@@ -1207,6 +1211,10 @@ ext4_load_inode_locked(ext4_mount_data_t *data, uint32_t inode_number, ext4_inod
 	if (status != VFS_STATUS_OK) return status;
 	const uint8_t *raw = data->inode_buffer;
 	uint16_t mode = ext4_le16(raw + 0x00U);
+	/* Owner: low 16 bits in the base inode (i_uid/i_gid), high 16 bits in the
+	 * Linux osd2 area (l_i_uid_high/l_i_gid_high). */
+	uint32_t uid = (uint32_t)ext4_le16(raw + 0x02U) | ((uint32_t)ext4_le16(raw + 0x78U) << 16U);
+	uint32_t gid = (uint32_t)ext4_le16(raw + 0x18U) | ((uint32_t)ext4_le16(raw + 0x7AU) << 16U);
 	uint16_t links_count = ext4_le16(raw + 0x1AU);
 	uint32_t flags = ext4_le32(raw + 0x20U);
 	uint64_t blocks_512 = ext4_le32(raw + 0x1CU) | ((uint64_t)ext4_le16(raw + 0x74U) << 32U);
@@ -1219,6 +1227,8 @@ ext4_load_inode_locked(ext4_mount_data_t *data, uint32_t inode_number, ext4_inod
 	memset(inode, 0, sizeof(*inode));
 	inode->number = inode_number;
 	inode->mode = mode;
+	inode->uid = uid;
+	inode->gid = gid;
 	inode->flags = flags;
 	inode->size = size;
 	inode->generation = ext4_le32(raw + 0x64U);
@@ -1243,6 +1253,10 @@ ext4_store_inode_locked(ext4_mount_data_t *data, const ext4_inode_t *inode)
 	if (status != VFS_STATUS_OK) return status;
 
 	ext4_set_le16(data->inode_buffer + 0x00U, inode->mode);
+	ext4_set_le16(data->inode_buffer + 0x02U, (uint16_t)inode->uid);
+	ext4_set_le16(data->inode_buffer + 0x18U, (uint16_t)inode->gid);
+	ext4_set_le16(data->inode_buffer + 0x78U, (uint16_t)(inode->uid >> 16U));
+	ext4_set_le16(data->inode_buffer + 0x7AU, (uint16_t)(inode->gid >> 16U));
 	ext4_set_le32(data->inode_buffer + 0x04U, (uint32_t)inode->size);
 	ext4_set_le16(data->inode_buffer + 0x1AU, inode->links_count);
 	ext4_set_le32(data->inode_buffer + 0x1CU, (uint32_t)inode->blocks_512);
@@ -2343,6 +2357,23 @@ static vfs_status_t
 ext4_unlink(vnode_t directory, const char *name)
 {
 	return ext4_unlink_held(directory, name, 0);
+}
+
+static vfs_status_t
+ext4_getattr(vnode_t vnode, vnode_attr_t *attr)
+{
+	ext4_node_t *node = ext4_node(vnode);
+	if (node == 0 || attr == 0) return VFS_STATUS_INVALID;
+
+	const ext4_inode_t *inode = &node->inode;
+	*attr = (vnode_attr_t){.va_inode = inode->number,
+						   .va_type = vnode->v_type,
+						   .va_mode = inode->mode,
+						   .va_uid = inode->uid,
+						   .va_gid = inode->gid,
+						   .va_nlink = inode->links_count,
+						   .va_size = inode->size};
+	return VFS_STATUS_OK;
 }
 
 static vfs_status_t

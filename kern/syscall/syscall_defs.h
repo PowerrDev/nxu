@@ -381,8 +381,30 @@ typedef struct {
 	uint64_t inode;
 	uint64_t size;
 	uint32_t type;
+	uint32_t mode; /* POSIX type + permission bits (NXU_S_*). */
+	uint32_t uid;
+	uint32_t gid;
+	uint32_t nlink;
 	uint32_t reserved;
 } nxu_stat_t;
+
+/*
+ * File mode bits (mirror the POSIX/Unix values, so an on-disk ext4/btrfs mode
+ * maps straight through). The type bits occupy NXU_S_IFMT; the low 12 bits are
+ * the rwx permissions for owner/group/other plus setuid/setgid/sticky.
+ */
+#define NXU_S_IFMT 0170000U
+#define NXU_S_IFREG 0100000U
+#define NXU_S_IFDIR 0040000U
+#define NXU_S_IFCHR 0020000U
+#define NXU_S_IFBLK 0060000U
+#define NXU_S_IFLNK 0120000U
+#define NXU_S_ISUID 0004000U
+#define NXU_S_ISGID 0002000U
+#define NXU_S_ISVTX 0001000U
+#define NXU_S_IRWXU 0000700U
+#define NXU_S_IRWXG 0000070U
+#define NXU_S_IRWXO 0000007U
 
 #include <kern/syscall/ui_session_defs.h>
 

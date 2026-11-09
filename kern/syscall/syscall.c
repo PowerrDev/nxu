@@ -862,6 +862,39 @@ syscall_stat(uint64_t user_path, uint64_t user_stat)
 	if (vnode->v_type == VNODE_TYPE_CHARACTER) stat.type = NXU_STAT_TYPE_CHARACTER;
 
 	if (vnode->v_type == VNODE_TYPE_BLOCK) stat.type = NXU_STAT_TYPE_BLOCK;
+
+	/* Ownership and mode come from the filesystem when it reports them. A
+	 * filesystem without getattr (ramfs, devfs) falls back to root ownership
+	 * and a mode synthesized from the vnode type, so stat always answers. */
+	vnode_attr_t attr;
+	if (vnode_getattr(vnode, &attr) == VFS_STATUS_OK) {
+		stat.mode = attr.va_mode;
+		stat.uid = attr.va_uid;
+		stat.gid = attr.va_gid;
+		stat.nlink = attr.va_nlink;
+		if (attr.va_size != 0ULL) stat.size = attr.va_size;
+	} else {
+		stat.uid = NXU_UID_ROOT;
+		stat.gid = NXU_GID_WHEEL;
+		stat.nlink = 1U;
+		switch (vnode->v_type) {
+		case VNODE_TYPE_REGULAR:
+			stat.mode = NXU_S_IFREG | 0644U;
+			break;
+		case VNODE_TYPE_DIRECTORY:
+			stat.mode = NXU_S_IFDIR | 0755U;
+			break;
+		case VNODE_TYPE_CHARACTER:
+			stat.mode = NXU_S_IFCHR | 0666U;
+			break;
+		case VNODE_TYPE_BLOCK:
+			stat.mode = NXU_S_IFBLK | 0660U;
+			break;
+		default:
+			stat.mode = 0U;
+			break;
+		}
+	}
 	vnode_rele(vnode);
 
 	if (!vm_copy_to_user(user_stat, &stat, sizeof(stat))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
