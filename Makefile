@@ -541,9 +541,9 @@ USER_C_SOURCES := \
     frameworks/BootDaemons.framework/privtest.c \
     frameworks/BootDaemons.framework/whoami.c \
     frameworks/BootDaemons.framework/id.c \
-    frameworks/BootDaemons.framework/statcmd.c \
-    frameworks/BootDaemons.framework/chmodcmd.c \
-    frameworks/BootDaemons.framework/chowncmd.c \
+    frameworks/BootDaemons.framework/stat.c \
+    frameworks/BootDaemons.framework/chmod.c \
+    frameworks/BootDaemons.framework/chown.c \
     frameworks/BootDaemons.framework/playsound.c \
     libk/wav.c \
     frameworks/BootDaemons.framework/sockettest_server.c \
@@ -1026,21 +1026,21 @@ $(USER_BUILD)/id: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.fr
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 
-$(USER_BUILD)/stat: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/statcmd.o
+$(USER_BUILD)/stat: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/stat.o
 
 	$(QUIET_PRINT) "LD" "$@"
 
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 
-$(USER_BUILD)/chmod: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/chmodcmd.o
+$(USER_BUILD)/chmod: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/chmod.o
 
 	$(QUIET_PRINT) "LD" "$@"
 
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 
-$(USER_BUILD)/chown: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/chowncmd.o
+$(USER_BUILD)/chown: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/chown.o
 
 	$(QUIET_PRINT) "LD" "$@"
 
