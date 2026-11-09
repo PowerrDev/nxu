@@ -3,10 +3,15 @@
  */
 /*
  * credtest -- demonstrate Phase 3 permission enforcement. The shell runs as
- * root, and root bypasses file-mode checks, so this tool tightens a test file
- * to owner-only (0600), forks, drops the child to a non-root UID, and shows the
- * child being denied read access by the mode bits. The root parent restores the
- * original mode afterwards. See doc/architecture/unix-security.md.
+ * root, and root bypasses every check, so this tool drops itself to a non-root
+ * UID (root -> 1000 is always allowed) and then shows the kernel refusing
+ * privileged operations on a root-owned file: a non-owner may not chmod it, a
+ * non-root process may not chown it, while an ordinary world-readable open
+ * still succeeds. Nothing is modified -- the denied operations change nothing.
+ * See doc/architecture/unix-security.md.
+ *
+ * i386 has no fork (MACHINE_USER_CONTEXT 0), so this runs in a single process;
+ * dropping privilege is one-way, which is fine because the tool only reads.
  */
 #include <nxu/syscall.h>
 
@@ -41,6 +46,17 @@ say_u32(uint32_t value)
 	say(&digits[index]);
 }
 
+/* Report an operation that is expected to be refused. */
+static void
+report(const char *what, int64_t result)
+{
+	say(what);
+	if (result < 0)
+		say(" -> DENIED  <- enforcement works\n");
+	else
+		say(" -> ALLOWED (unexpected!)\n");
+}
+
 int
 main(void)
 {
@@ -53,43 +69,31 @@ main(void)
 		say("credtest: cannot stat " CREDTEST_PATH "\n");
 		return 1;
 	}
-	uint32_t saved_mode = st.mode & 0x0FFFU;
+	say("credtest: " CREDTEST_PATH " is owned by uid ");
+	say_u32(st.uid);
+	say("\n");
 
-	if (nxu_chmod(CREDTEST_PATH, 0600U) < 0) {
-		say("credtest: chmod 0600 failed (are we root?)\n");
+	if (nxu_setuid(CREDTEST_UID) < 0) {
+		say("credtest: setuid failed\n");
 		return 1;
 	}
-	say("credtest: tightened " CREDTEST_PATH " to 0600 (owner root rw)\n");
+	say("credtest: dropped to uid ");
+	say_u32((uint32_t)nxu_geteuid());
+	say("\n");
 
-	int64_t child = nxu_fork();
-	if (child < 0) {
-		say("credtest: fork failed\n");
-		(void)nxu_chmod(CREDTEST_PATH, saved_mode);
-		return 1;
+	/* Now non-root. These touch a root-owned file and must be refused. */
+	report("  chmod 0600 (not the owner)", nxu_chmod(CREDTEST_PATH, 0600U));
+	report("  chown to self (not root)   ", nxu_chown(CREDTEST_PATH, CREDTEST_UID, NXU_ID_UNCHANGED));
+
+	/* A plain read of a world-readable file still works. */
+	int64_t fd = nxu_open(CREDTEST_PATH, NXU_O_READ);
+	if (fd >= 0) {
+		say("  read world-readable file   -> ALLOWED (correct)\n");
+		(void)nxu_close((uint64_t)fd);
+	} else {
+		say("  read world-readable file   -> DENIED (unexpected!)\n");
 	}
 
-	if (child == 0) {
-		if (nxu_setuid(CREDTEST_UID) < 0) {
-			say("  child: setuid failed\n");
-			return 1;
-		}
-		say("  child: dropped to uid ");
-		say_u32((uint32_t)nxu_geteuid());
-		say("\n");
-
-		int64_t fd = nxu_open(CREDTEST_PATH, NXU_O_READ);
-		if (fd < 0) {
-			say("  child: open for read -> DENIED  <- enforcement works\n");
-		} else {
-			say("  child: open for read -> ALLOWED (unexpected!)\n");
-			(void)nxu_close((uint64_t)fd);
-		}
-		return 0;
-	}
-
-	uint64_t status = 0ULL;
-	(void)nxu_waitpid((uint64_t)child, &status);
-	(void)nxu_chmod(CREDTEST_PATH, saved_mode);
-	say("credtest: restored original mode, done\n");
+	say("credtest: done (nothing was modified)\n");
 	return 0;
 }
