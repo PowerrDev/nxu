@@ -10,6 +10,8 @@
 #include <kern/logging/diagnostics.h>
 #include <kern/syscall/syscall.h>
 
+#include <kern/machine/cpu.h>
+#include <kern/machine/smp.h>
 #include <kern/machine/system.h>
 #include <kern/machine/timer.h>
 #include <kern/boot/boot_args.h>
@@ -1165,6 +1167,72 @@ syscall_system_reset(void)
 	return syscall_error(SYSCALL_ERROR_IO);
 }
 
+/*
+ * syscall_panic
+ *
+ * Deliberately panic the kernel at a userland program's request (the `kpanic`
+ * debug tool). This NEVER returns. It is intentionally NOT capability-gated:
+ * the authorisation is the password prompt in the kpanic program itself, so
+ * the tool works from an ordinary Terminal process (which holds no privileged
+ * capability). It is a debug/test facility -- a deliberate self-inflicted
+ * crash, like Linux's sysrq-trigger -- and must not be shipped in a build that
+ * lets untrusted code run. Prints a banner, stops the other CPUs, and parks
+ * this one forever.
+ */
+/* Best-effort kernel backtrace from the current frame. The build keeps frame
+ * pointers (-fno-omit-frame-pointer), so each frame is {saved_fp, return_addr}
+ * and this layout reads correctly on both arm64 (fp,lr) and i386 (ebp,ret). The
+ * monotonic/alignment checks keep the panic dump itself from faulting. */
+static void
+syscall_panic_backtrace(void)
+{
+	uintptr_t fp = (uintptr_t)__builtin_frame_address(0);
+	uintptr_t previous = 0U;
+
+	kprintf("backtrace   :");
+	for (uint32_t depth = 0U; depth < 24U; depth++) {
+		if (fp == 0U || (fp & (sizeof(uintptr_t) - 1U)) != 0U || fp <= previous) {
+			break;
+		}
+
+		const uintptr_t *frame = (const uintptr_t *)fp;
+		uintptr_t return_address = frame[1];
+
+		if (return_address == 0U) {
+			break;
+		}
+		kprintf(" %p", (void *)return_address);
+
+		previous = fp;
+		fp = frame[0];
+	}
+	kprintf("\n");
+}
+
+static syscall_result_t
+syscall_panic(void)
+{
+	proc_t proc = current_proc();
+
+	kprintf("\n");
+	kprintf("==================== KERNEL PANIC ====================\n");
+	kprintf("reason      : user-requested panic (kpanic debug tool)\n");
+	kprintf("process     : pid %u (%s)\n", proc != 0 ? proc->p_ident.pid : 0U,
+			proc != 0 ? proc->p_comm : "<none>");
+	kprintf("cpu         : %u of %u\n", current_processor()->cpu_id, processor_count());
+	kprintf("uptime      : %llu us\n", (unsigned long long)timer_get_microseconds());
+	syscall_panic_backtrace();
+	kprintf("-----------------------------------------------------\n");
+	kprintf("Stopping all other CPUs; this one halts. Reset required.\n");
+	kprintf("=====================================================\n");
+
+	smp_stop_other_cpus();
+
+	for (;;) {
+		cpu_wait_for_event();
+	}
+}
+
 static syscall_result_t
 syscall_gui_host(uint64_t user_record, uint64_t capacity)
 {
@@ -1304,13 +1372,14 @@ syscall_unlink(uint64_t user_path)
 	if (!sap_canonical_path(path, canonical)) return syscall_error(SYSCALL_ERROR_DENIED);
 
 	vfs_status_t status;
-	if (sap_protected_path(canonical))
+	if (sap_protected_path(canonical) || !syscall_has_caps(NXU_CAP_FS_WRITE))
+		/* A protected path, or a caller without the write capability, is sent to
+		 * the SAP authorisation prompt rather than denied outright: the user can
+		 * approve the delete. (sap_submit is the authorisation, so it needs no
+		 * capability of its own.) */
 		status = sap_delete(current_proc(), canonical);
-	else {
-		if (!syscall_has_caps(NXU_CAP_FS_WRITE)) return syscall_error(SYSCALL_ERROR_DENIED);
-
+	else
 		status = vfs_unlink(canonical);
-	}
 	return status == VFS_STATUS_OK ? syscall_return(0) : syscall_error(syscall_vfs_error(status));
 }
 
@@ -2345,6 +2414,8 @@ syscall_dispatch_inner(const syscall_request_t *request)
 		return syscall_recovery_input(request->arguments[0]);
 	case SYSCALL_SYSTEM_RESET:
 		return syscall_system_reset();
+	case SYSCALL_PANIC:
+		return syscall_panic();
 	case SYSCALL_SEEK:
 		return syscall_seek(request->arguments[0], request->arguments[1]);
 	case SYSCALL_STAT:

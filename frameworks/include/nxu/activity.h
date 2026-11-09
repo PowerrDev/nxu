@@ -33,6 +33,9 @@ typedef struct {
 	uint32_t last_cpu;
 	uint32_t name_length;
 	char name[NXU_ACTIVITY_NAME_MAX + 1U];
+	/* Resident physical memory of the process's address space, in bytes
+	 * (resident_pages * page_size). Shared/COW pages count in each sharer. */
+	uint64_t resident_bytes;
 } nxu_ui_process_info_t;
 
 typedef struct {
@@ -57,7 +60,7 @@ typedef struct {
 	nxu_ui_cpu_info_t cpus[NXU_ACTIVITY_CPU_MAX];
 } nxu_ui_activity_t;
 
-_Static_assert(sizeof(nxu_ui_process_info_t) == 80, "activity process ABI");
+_Static_assert(sizeof(nxu_ui_process_info_t) == 88, "activity process ABI");
 _Static_assert(sizeof(nxu_ui_activity_t) == 312, "activity system ABI");
 
 #endif

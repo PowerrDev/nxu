@@ -10,12 +10,7 @@
 
 #include <skylight/skylight.h>
 
-#include <kern/console/console.h>
-#include <kern/lock.h>
-#include <kern/memory/heap.h>
-#include <kern/sched_prism/sched.h>
-
-#include <string.h>
+#include <skylight/skylight_port.h>
 
 #define SL_DEVICE_MAX 4U
 #define SL_DISPLAY_MAX 4U
@@ -38,7 +33,7 @@ struct sl_surface {
 	bool owned;
 	/* Being presented: its pixels are the device's source right now. */
 	volatile uint32_t busy;
-	nxu_spinlock_t lock;
+	sl_lock_t lock;
 	sl_rect_t damage;
 };
 
@@ -52,7 +47,7 @@ struct sl_display {
 
 static sl_device_t g_sl_devices[SL_DEVICE_MAX];
 static sl_display_t g_sl_displays[SL_DISPLAY_MAX];
-static nxu_spinlock_t g_sl_lock = NXU_SPINLOCK_INIT;
+static sl_lock_t g_sl_lock = SL_LOCK_INIT;
 
 /* --- Rectangles ----------------------------------------------------------- */
 
@@ -105,20 +100,20 @@ sl_device_register(const char *name, const sl_backend_ops_t *ops, void *context,
 
 	sl_device_t *device = 0;
 
-	nxu_spin_lock(&g_sl_lock);
+	sl_lock(&g_sl_lock);
 	for (uint32_t index = 0U; index < SL_DEVICE_MAX; index++) {
 		if (g_sl_devices[index].used) continue;
 		device = &g_sl_devices[index];
 		*device = (sl_device_t){.ops = ops, .context = context, .used = true};
-		size_t length = strlen(name);
+		size_t length = SL_STRLEN(name);
 		if (length >= SL_NAME_MAX) length = SL_NAME_MAX - 1U;
 		memcpy(device->name, name, length);
 		break;
 	}
-	nxu_spin_unlock(&g_sl_lock);
+	sl_unlock(&g_sl_lock);
 
 	if (device == 0) return false;
-	kprintf("sl_device_register: %s\n", device->name);
+	SL_LOG("sl_device_register: %s\n", device->name);
 	*device_out = device;
 	return true;
 }
@@ -131,7 +126,7 @@ sl_display_register(sl_device_t *device, uint32_t index, uint32_t *pixels, uint3
 
 	sl_display_t *display = 0;
 
-	nxu_spin_lock(&g_sl_lock);
+	sl_lock(&g_sl_lock);
 	for (uint32_t slot = 0U; slot < SL_DISPLAY_MAX; slot++) {
 		if (g_sl_displays[slot].used) continue;
 		display = &g_sl_displays[slot];
@@ -143,14 +138,14 @@ sl_display_register(sl_device_t *device, uint32_t index, uint32_t *pixels, uint3
 											  .stride = stride,
 											  .format = SL_FORMAT_XRGB8888,
 											  .owned = false,
-											  .lock = NXU_SPINLOCK_INIT},
+											  .lock = SL_LOCK_INIT},
 								  .used = true};
 		break;
 	}
-	nxu_spin_unlock(&g_sl_lock);
+	sl_unlock(&g_sl_lock);
 
 	if (display == 0) return false;
-	kprintf("sl_display_register: %s scanout %u, %ux%u\n", device->name, index, width, height);
+	SL_LOG("sl_display_register: %s scanout %u, %ux%u\n", device->name, index, width, height);
 	*display_out = display;
 	return true;
 }
@@ -211,12 +206,12 @@ sl_surface_create(uint32_t width, uint32_t height, sl_format_t format, sl_surfac
 	if (width == 0U || height == 0U || width > 16384U || height > 16384U || surface_out == 0) return false;
 	if (format != SL_FORMAT_XRGB8888 && format != SL_FORMAT_ARGB8888) return false;
 
-	sl_surface_t *surface = kmalloc(sizeof(*surface));
-	uint32_t *pixels = kcalloc((size_t)width * height, sizeof(uint32_t));
+	sl_surface_t *surface = SL_ALLOC(sizeof(*surface));
+	uint32_t *pixels = SL_ZALLOC((size_t)width * height, sizeof(uint32_t));
 
 	if (surface == 0 || pixels == 0) {
-		if (surface != 0) (void)kfree(surface);
-		if (pixels != 0) (void)kfree(pixels);
+		if (surface != 0) SL_FREE(surface);
+		if (pixels != 0) SL_FREE(pixels);
 		return false;
 	}
 
@@ -226,7 +221,7 @@ sl_surface_create(uint32_t width, uint32_t height, sl_format_t format, sl_surfac
 							  .stride = width,
 							  .format = format,
 							  .owned = true,
-							  .lock = NXU_SPINLOCK_INIT};
+							  .lock = SL_LOCK_INIT};
 	*surface_out = surface;
 	return true;
 }
@@ -237,9 +232,9 @@ sl_surface_destroy(sl_surface_t *surface)
 	if (surface == 0 || !surface->owned) return;
 
 	while (__atomic_load_n(&surface->busy, __ATOMIC_ACQUIRE) != 0U)
-		(void)sched_yield();
-	(void)kfree(surface->pixels);
-	(void)kfree(surface);
+		(void)SL_YIELD();
+	SL_FREE(surface->pixels);
+	SL_FREE(surface);
 }
 
 uint32_t
@@ -267,7 +262,7 @@ sl_surface_map(sl_surface_t *surface, uint32_t *stride_out)
 
 	/* Never hand out pixels the device is copying from. */
 	while (__atomic_load_n(&surface->busy, __ATOMIC_ACQUIRE) != 0U) {
-		if (!sched_yield()) __asm__ volatile("" ::: "memory");
+		if (!SL_YIELD()) __asm__ volatile("" ::: "memory");
 	}
 
 	if (stride_out != 0) *stride_out = surface->stride;
@@ -288,9 +283,9 @@ sl_damage(sl_surface_t *surface, sl_rect_t rect)
 	sl_rect_t area = sl_rect_intersection(rect, sl_surface_bounds(surface));
 	if (sl_rect_empty(area)) return;
 
-	nxu_spin_lock(&surface->lock);
+	sl_lock(&surface->lock);
 	surface->damage = sl_rect_union(surface->damage, area);
-	nxu_spin_unlock(&surface->lock);
+	sl_unlock(&surface->lock);
 }
 
 sl_rect_t
@@ -298,10 +293,10 @@ sl_take_damage(sl_surface_t *surface)
 {
 	if (surface == 0) return (sl_rect_t){0};
 
-	nxu_spin_lock(&surface->lock);
+	sl_lock(&surface->lock);
 	sl_rect_t damage = surface->damage;
 	surface->damage = (sl_rect_t){0};
-	nxu_spin_unlock(&surface->lock);
+	sl_unlock(&surface->lock);
 	return damage;
 }
 
@@ -411,7 +406,7 @@ sl_dump(void)
 	for (uint32_t slot = 0U; slot < SL_DISPLAY_MAX; slot++) {
 		const sl_display_t *display = &g_sl_displays[slot];
 		if (!display->used) continue;
-		kprintf("sl_dump: %s scanout %u %ux%u, %llu present(s)\n", display->device->name, display->index,
+		SL_LOG("sl_dump: %s scanout %u %ux%u, %llu present(s)\n", display->device->name, display->index,
 				display->surface.width, display->surface.height, (unsigned long long)display->presents);
 	}
 }

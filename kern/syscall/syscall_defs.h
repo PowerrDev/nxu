@@ -97,6 +97,7 @@
 #define NXU_SYS_NETWORK 85ULL
 #define NXU_SYS_DUP2 86ULL
 #define NXU_SYS_READ_POLL 87ULL
+#define NXU_SYS_PANIC 88ULL /* debug: deliberately panic the kernel (kpanic) */
 #include <kern/syscall/net_defs.h>
 #include <kern/syscall/dyrld_defs.h>
 #include <kern/syscall/crash_defs.h>

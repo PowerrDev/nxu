@@ -102,7 +102,7 @@ format_name(uint32_t format)
 }
 
 static int
-playsound(int argc, char **argv)
+playsound(int argc, const char *const *argv)
 {
 	if (argc > 2 || (argc == 2 && (argv == 0 || argv[1] == 0))) return fail(1, "usage: playsound [file.wav]", 0);
 
@@ -239,18 +239,20 @@ playsound(int argc, char **argv)
 }
 
 /*
- * The i386 loader starts a process with no arguments on its stack (see
- * frameworks/crt0_i386.S), so main() takes none there and reads nothing.
+ * The i386 crt0 is built with NXU_SPAWN_IO_ENTRY (see makedefs/i386/userland.mk
+ * and frameworks/crt0_i386.S): it bootstraps argv over the spawn-IO socket and
+ * passes (argc, argv) to main, exactly as the shell's nzh does. So the i386 main
+ * takes them too and plays the file named on the command line.
  */
 #if defined(__i386__)
 int
-main(void)
+main(uint64_t argc, const char *const *argv)
 {
-	return playsound(0, 0);
+	return playsound((int)argc, argv);
 }
 #else
 int
-main(int argc, char **argv)
+main(int argc, const char *const *argv)
 {
 	return playsound(argc, argv);
 }

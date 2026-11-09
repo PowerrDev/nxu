@@ -59,12 +59,12 @@ $(I386_FRAMEWORK_PIC)/frameworks/BootDaemons.framework/desktop_service.o: framew
 I386_DYNAMIC_LDFLAGS := -m elf_i386 -pie --no-undefined --hash-style=sysv -z max-page-size=4096 -z relro -z now \
 	--dynamic-linker /System/Library/CoreServices/dyrld-runtime
 
-$(I386_USER_BUILD)/desktop_service: $(I386_FRAMEWORK_PIC)/frameworks/crt0_i386.o \
+$(I386_USER_BUILD)/desktopd: $(I386_FRAMEWORK_PIC)/frameworks/crt0_i386.o \
 	$(I386_FRAMEWORK_PIC)/frameworks/BootDaemons.framework/desktop_service.o \
 	$(I386_USER_BUILD)/DesktopService.so $(I386_USER_BUILD)/CoreGraphics.so $(I386_USER_BUILD)/Runtime.so
 	$(Q)$(LD) $(I386_DYNAMIC_LDFLAGS) $^ -o $@
 
-$(I386_USER_BUILD)/windowserver_service: $(I386_FRAMEWORK_PIC)/frameworks/crt0_i386.o \
+$(I386_USER_BUILD)/WindowServer: $(I386_FRAMEWORK_PIC)/frameworks/crt0_i386.o \
 	$(I386_FRAMEWORK_PIC)/frameworks/BootDaemons.framework/windowserver_service.o \
 	$(I386_USER_BUILD)/WindowServer.so $(I386_USER_BUILD)/CoreFoundation.so $(I386_USER_BUILD)/Runtime.so
 	$(Q)$(LD) $(I386_DYNAMIC_LDFLAGS) $^ -o $@
@@ -78,7 +78,7 @@ $(I386_USER_BUILD)/dyrld-runtime: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BOOTST
 	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
 
 I386_GUI_LIBRARIES = $(addprefix $(I386_USER_BUILD)/,Runtime.so CoreFoundation.so WindowServer.so CoreGraphics.so DesktopService.so)
-I386_GUI_SERVICES = $(addprefix $(I386_USER_BUILD)/,dyrld dyrld-runtime windowserver_service desktop_service)
+I386_GUI_SERVICES = $(addprefix $(I386_USER_BUILD)/,dyrld dyrld-runtime WindowServer desktopd)
 
 .PHONY: i386-frameworks
 i386-frameworks: $(I386_GUI_LIBRARIES) $(I386_GUI_SERVICES)

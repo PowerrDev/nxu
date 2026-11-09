@@ -504,6 +504,7 @@ USER_C_SOURCES := \
     frameworks/Terminal.framework/netutil.c \
     frameworks/Terminal.framework/ping.c \
     frameworks/Terminal.framework/ifconfig.c \
+    frameworks/Terminal.framework/kpanic.c \
     frameworks/lib/syscall.c \
     frameworks/lib/string.c \
     frameworks/lib/thread.c \
@@ -606,6 +607,7 @@ USER_DAEMONS := \
     $(USER_BUILD)/nzh \
     $(USER_BUILD)/terminal \
     $(USER_BUILD)/terminaltest \
+    $(USER_BUILD)/kpanic \
     $(USER_BUILD)/faulttest \
     $(USER_BUILD)/proctest \
     $(USER_BUILD)/execchild \
@@ -613,8 +615,8 @@ USER_DAEMONS := \
     $(USER_BUILD)/playsound \
     $(USER_BUILD)/sockettest_server \
     $(USER_BUILD)/sockettest_client \
-    $(USER_BUILD)/windowserver_service \
-    $(USER_BUILD)/desktop_service \
+    $(USER_BUILD)/WindowServer \
+    $(USER_BUILD)/desktopd \
     $(USER_BUILD)/CoreGraphics.so \
     $(USER_BUILD)/DesktopService.so \
     $(USER_BUILD)/wstest_client \
@@ -783,7 +785,7 @@ $(USER_BUILD)/%.o: %.S
 # Userland binaries
 # =============================================================================
 
-$(USER_BUILD)/ping $(USER_BUILD)/ifconfig $(USER_BUILD)/terminaltest: $(USER_BUILD)/%: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/Terminal.framework/%.o $(USER_BUILD)/frameworks/Terminal.framework/netutil.o
+$(USER_BUILD)/ping $(USER_BUILD)/ifconfig $(USER_BUILD)/terminaltest $(USER_BUILD)/kpanic: $(USER_BUILD)/%: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/Terminal.framework/%.o $(USER_BUILD)/frameworks/Terminal.framework/netutil.o
 	$(QUIET_PRINT) "LD" "$@"
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
@@ -791,7 +793,7 @@ $(USER_BUILD)/nzh: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/Terminal.fram
 	$(QUIET_PRINT) "LD" "$@"
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
-$(USER_BUILD)/terminal: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/Terminal.framework/terminal.o $(USER_BUILD)/kern/console/font8x16.o
+$(USER_BUILD)/terminal: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/Terminal.framework/terminal.o
 	$(QUIET_PRINT) "LD" "$@"
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
@@ -856,7 +858,7 @@ $(DYRLD_PIC)/frameworks/BootDaemons.framework/desktop_service.o: frameworks/Boot
 	$(Q)$(USER_CC) $(DYRLD_FRAMEWORK_FLAGS) -I"$(COREGRAPHICS_PIC_DIR)/include" \
 		-c frameworks/BootDaemons.framework/desktop_service.c -o $@
 
-$(USER_BUILD)/desktop_service: $(DYRLD_PIC)/frameworks/crt0.o \
+$(USER_BUILD)/desktopd: $(DYRLD_PIC)/frameworks/crt0.o \
 	$(DYRLD_PIC)/frameworks/BootDaemons.framework/desktop_service.o \
 	$(USER_BUILD)/DesktopService.so $(USER_BUILD)/CoreGraphics.so $(USER_BUILD)/Runtime.so
 	$(Q)$(USER_LD) -pie --no-undefined --hash-style=sysv -z max-page-size=4096 -z relro -z now \
@@ -891,6 +893,15 @@ kern/boot/status_font.h: tools/generate_boot_status_font.py tools/generate_recov
 drivers/video/login_font.h: tools/generate_login_font.py tools/generate_recovery_fonts.py $(FONT_PYTHON) \
 	tools/DiskRoot/System/Library/Fonts/SF-Pro-Display-Medium.otf
 	$(Q)$(FONT_PYTHON) tools/generate_login_font.py
+
+# SF Mono baked into a C glyph atlas for the Terminal app.
+$(USER_BUILD)/terminal_font.h: tools/generate_terminal_font.py tools/generate_recovery_fonts.py $(FONT_PYTHON) \
+	tools/DiskRoot/System/Library/Fonts/Mono/SFMono-Regular.otf
+	@mkdir -p $(dir $@)
+	$(Q)$(FONT_PYTHON) tools/generate_terminal_font.py $@
+
+$(USER_BUILD)/frameworks/Terminal.framework/terminal.o: $(USER_BUILD)/terminal_font.h
+$(USER_BUILD)/frameworks/Terminal.framework/terminal.o: USER_CFLAGS += -I$(USER_BUILD)
 
 $(BUILD)/drivers/video/keystore_manager.o: $(USER_BUILD)/reporter_fonts.h
 $(BUILD)/drivers/video/keystore_manager.o: CFLAGS += -I$(USER_BUILD)
@@ -1016,7 +1027,7 @@ $(USER_BUILD)/sockettest_client: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 
-$(USER_BUILD)/windowserver_service: $(DYRLD_PIC)/frameworks/crt0.o \
+$(USER_BUILD)/WindowServer: $(DYRLD_PIC)/frameworks/crt0.o \
 	$(DYRLD_PIC)/frameworks/BootDaemons.framework/windowserver_service.o $(USER_BUILD)/WindowServer.so \
 	$(USER_BUILD)/CoreFoundation.so $(USER_BUILD)/Runtime.so
 
@@ -1097,7 +1108,7 @@ $(USER_STAGE_STAMP): frameworks/Terminal.framework/Info.plist tools/UI/Icons/Ter
 
 	$(Q)cp $(USER_BUILD)/smptest $(DISK_ROOT)/System/Library/CoreServices/smptest
 	$(Q)cp $(USER_BUILD)/top $(DISK_ROOT)/System/Library/CoreServices/top
-	$(Q)cp $(USER_BUILD)/ping $(USER_BUILD)/ifconfig $(USER_BUILD)/nzh $(USER_BUILD)/terminaltest $(DISK_ROOT)/System/Library/CoreServices/
+	$(Q)cp $(USER_BUILD)/ping $(USER_BUILD)/ifconfig $(USER_BUILD)/nzh $(USER_BUILD)/terminaltest $(USER_BUILD)/kpanic $(DISK_ROOT)/System/Library/CoreServices/
 	$(Q)mkdir -p "$(DISK_ROOT)/Applications/Terminal.app/Contents/SevOS"
 	$(Q)cp $(USER_BUILD)/terminal "$(DISK_ROOT)/Applications/Terminal.app/Contents/SevOS/Terminal"
 	$(Q)cp frameworks/Terminal.framework/Info.plist "$(DISK_ROOT)/Applications/Terminal.app/Contents/Info.plist"
@@ -1118,8 +1129,8 @@ $(USER_STAGE_STAMP): frameworks/Terminal.framework/Info.plist tools/UI/Icons/Ter
 
 	$(Q)cp $(USER_BUILD)/sockettest_client $(DISK_ROOT)/System/Library/CoreServices/sockettest_client
 
-	$(Q)cp $(USER_BUILD)/windowserver_service $(DISK_ROOT)/System/Library/CoreServices/windowserver_service
-	$(Q)cp $(USER_BUILD)/desktop_service $(DISK_ROOT)/System/Library/CoreServices/desktop_service
+	$(Q)cp $(USER_BUILD)/WindowServer $(DISK_ROOT)/System/Library/CoreServices/WindowServer
+	$(Q)cp $(USER_BUILD)/desktopd $(DISK_ROOT)/System/Library/CoreServices/desktopd
 	$(Q)mkdir -p $(DISK_ROOT)/System/Library/Frameworks/DesktopService.framework/Headers
 	$(Q)cp "$(COREGRAPHICS_PIC_DIR)/include/DesktopService.h" \
 		$(DISK_ROOT)/System/Library/Frameworks/DesktopService.framework/Headers/DesktopService.h
@@ -1492,7 +1503,7 @@ clean:
 	rm -f $(DISK_ROOT)/System/Library/Frameworks/Runtime.framework/Runtime.so \
 		$(DISK_ROOT)/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation.so
 	rm -f $(DISK_ROOT)/System/Library/Frameworks/WindowServer.framework/WindowServer.so
-	rm -f $(DISK_ROOT)/System/Library/CoreServices/desktop_service
+	rm -f $(DISK_ROOT)/System/Library/CoreServices/desktopd
 	rm -rf $(DISK_ROOT)/System/Library/Frameworks/CoreGraphics.framework \
 		$(DISK_ROOT)/System/Library/Frameworks/DesktopService.framework
 

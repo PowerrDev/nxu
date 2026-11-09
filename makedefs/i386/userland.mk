@@ -105,7 +105,8 @@ I386_USER_PROGRAMS := \
     nzh \
     ping \
     ifconfig \
-    terminaltest
+    terminaltest \
+    kpanic
 
 I386_USER_BINARIES := $(addprefix $(I386_USER_BUILD)/,$(I386_USER_PROGRAMS))
 
@@ -228,7 +229,7 @@ $(I386_USER_BUILD)/ipctest_a $(I386_USER_BUILD)/ipctest_b: $(I386_USER_BUILD)/%:
 
 	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
 
-$(I386_USER_BUILD)/ping $(I386_USER_BUILD)/ifconfig $(I386_USER_BUILD)/terminaltest: $(I386_USER_BUILD)/%: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/frameworks/Terminal.framework/%.o $(I386_USER_BUILD)/frameworks/Terminal.framework/netutil.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
+$(I386_USER_BUILD)/ping $(I386_USER_BUILD)/ifconfig $(I386_USER_BUILD)/terminaltest $(I386_USER_BUILD)/kpanic: $(I386_USER_BUILD)/%: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/frameworks/Terminal.framework/%.o $(I386_USER_BUILD)/frameworks/Terminal.framework/netutil.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
 	$(QUIET_PRINT) "LD" "$@"
 	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
 
@@ -236,7 +237,15 @@ $(I386_USER_BUILD)/nzh: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/framework
 	$(QUIET_PRINT) "LD" "$@"
 	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
 
-$(I386_USER_BUILD)/terminal: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/frameworks/Terminal.framework/terminal.o $(I386_USER_BUILD)/kern/console/font8x16.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
+$(I386_USER_BUILD)/terminal_font.h: tools/generate_terminal_font.py tools/generate_recovery_fonts.py $(FONT_PYTHON) \
+    tools/DiskRoot/System/Library/Fonts/Mono/SFMono-Regular.otf
+	@mkdir -p $(dir $@)
+	$(Q)$(FONT_PYTHON) tools/generate_terminal_font.py $@
+
+$(I386_USER_BUILD)/frameworks/Terminal.framework/terminal.o: $(I386_USER_BUILD)/terminal_font.h
+$(I386_USER_BUILD)/frameworks/Terminal.framework/terminal.o: I386_USER_CFLAGS += -I$(I386_USER_BUILD)
+
+$(I386_USER_BUILD)/terminal: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/frameworks/Terminal.framework/terminal.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
 	$(QUIET_PRINT) "LD" "$@"
 	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
 
@@ -288,7 +297,7 @@ $(I386_USER_STAMP): $(I386_USER_BINARIES) $(I386_USER_PLISTS) $(I386_DISK_STATIC
 
 	$(Q)cp $(I386_USER_BUILD)/ipctest_a $(I386_USER_BUILD)/ipctest_b $(I386_USER_BUILD)/threadtest $(I386_USER_BUILD)/top $(I386_USER_BUILD)/sockettest_server $(I386_USER_BUILD)/sockettest_client $(I386_USER_BUILD)/playsound $(I386_DISKROOT)/System/Library/CoreServices/
 
-	$(Q)cp $(I386_USER_BUILD)/nzh $(I386_USER_BUILD)/ping $(I386_USER_BUILD)/ifconfig $(I386_USER_BUILD)/terminaltest $(I386_DISKROOT)/System/Library/CoreServices/
+	$(Q)cp $(I386_USER_BUILD)/nzh $(I386_USER_BUILD)/ping $(I386_USER_BUILD)/ifconfig $(I386_USER_BUILD)/terminaltest $(I386_USER_BUILD)/kpanic $(I386_DISKROOT)/System/Library/CoreServices/
 
 	$(Q)cp $(I386_USER_PLISTS) $(I386_DISKROOT)/System/Library/BootDaemons/
 

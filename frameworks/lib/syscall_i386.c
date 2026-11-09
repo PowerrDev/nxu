@@ -438,6 +438,12 @@ nxu_system_reset(void)
 }
 
 int64_t
+nxu_panic(void)
+{
+	return nxu_syscall0(NXU_SYS_PANIC);
+}
+
+int64_t
 nxu_ipc_port_allocate(void)
 {
 	return nxu_syscall0(NXU_SYS_IPC_PORT_ALLOCATE);

@@ -71,7 +71,7 @@ log_madt(const uint8_t *bytes, uint32_t length)
 		uint8_t type = bytes[cursor], size = bytes[cursor + 1];
 
 		if (size < 2 || size > length - cursor) {
-			kputln("NxuACPIPlatform: malformed MADT entry rejected");
+			kputln("ACPIPlatformExpert: malformed MADT entry rejected");
 			break;
 		}
 
@@ -81,21 +81,21 @@ log_madt(const uint8_t *bytes, uint32_t length)
 			uint32_t flags;
 
 			memcpy(&flags, entry + 4, 4);
-			kprintf("NxuACPIPlatform: local APIC processor=%u id=%u flags=0x%x\n", entry[2], entry[3], flags);
+			kprintf("ACPIPlatformExpert: local APIC processor=%u id=%u flags=0x%x\n", entry[2], entry[3], flags);
 		} else if (type == 1 && size >= 12) {
 			uint32_t address;
 			uint32_t gsi;
 
 			memcpy(&address, entry + 4, 4);
 			memcpy(&gsi, entry + 8, 4);
-			kprintf("NxuACPIPlatform: IOAPIC id=%u address=0x%x GSI-base=%u\n", entry[2], address, gsi);
+			kprintf("ACPIPlatformExpert: IOAPIC id=%u address=0x%x GSI-base=%u\n", entry[2], address, gsi);
 		} else if (type == 2 && size >= 10) {
 			uint32_t gsi;
 
 			memcpy(&gsi, entry + 4, 4);
-			kprintf("NxuACPIPlatform: interrupt override bus=%u IRQ=%u GSI=%u\n", entry[2], entry[3], gsi);
+			kprintf("ACPIPlatformExpert: interrupt override bus=%u IRQ=%u GSI=%u\n", entry[2], entry[3], gsi);
 		} else {
-			kprintf("NxuACPIPlatform: MADT entry type=%u size=%u\n", type, size);
+			kprintf("ACPIPlatformExpert: MADT entry type=%u size=%u\n", type, size);
 		}
 
 		cursor += size;
@@ -111,7 +111,7 @@ log_table(void *ctx, uacpi_table_info *info)
 
 	memcpy(signature, info->signature, 4);
 	signature[4] = 0;
-	kprintf("NxuACPIPlatform: table %s address=0x%llx size=%u checksum=%s\n", signature,
+	kprintf("ACPIPlatformExpert: table %s address=0x%llx size=%u checksum=%s\n", signature,
 			(unsigned long long)info->phys_addr, (unsigned)info->size,
 			(info->flags & UACPI_TABLE_CSUM_BAD)	   ? "invalid"
 			: (info->flags & UACPI_TABLE_CSUM_CHECKED) ? "valid"
@@ -152,16 +152,16 @@ log_table(void *ctx, uacpi_table_info *info)
 
 					memcpy(&length, header + 4, 4);
 					if (!memcmp(header, "FACS", 4) && length >= 64 && length <= 1024 * 1024) {
-						kprintf("NxuACPIPlatform: table FACS address=0x%llx size=%u checksum=not applicable\n",
+						kprintf("ACPIPlatformExpert: table FACS address=0x%llx size=%u checksum=not applicable\n",
 								(unsigned long long)facs, length);
 						tables++;
 					} else {
-						kputln("NxuACPIPlatform: invalid FACS rejected");
+						kputln("ACPIPlatformExpert: invalid FACS rejected");
 					}
 
 					uacpi_kernel_unmap((void *)header, 8);
 				} else {
-					kputln("NxuACPIPlatform: FACS outside supported physical address range");
+					kputln("ACPIPlatformExpert: FACS outside supported physical address range");
 				}
 			}
 
@@ -193,18 +193,18 @@ log_device(void *ctx, uacpi_namespace_node *node, uacpi_u32 depth)
 									  : "absent",
 			sta);
 	if (result != UACPI_STATUS_OK) {
-		kprintf("NxuACPIPlatform: device metadata failed: %s\n", uacpi_status_to_string(result));
+		kprintf("ACPIPlatformExpert: device metadata failed: %s\n", uacpi_status_to_string(result));
 	}
 
 	if (info) {
 		if (info->flags & UACPI_NS_NODE_INFO_HAS_ADR) {
-			kprintf("NxuACPIPlatform: device %s ADR=0x%llx\n", path ? path : "<unavailable>",
+			kprintf("ACPIPlatformExpert: device %s ADR=0x%llx\n", path ? path : "<unavailable>",
 					(unsigned long long)info->adr);
 		}
 
 		if (info->flags & UACPI_NS_NODE_INFO_HAS_CID) {
 			for (uint32_t i = 0; i < info->cid.num_ids; i++) {
-				kprintf("NxuACPIPlatform: device %s CID=%s\n", path ? path : "<unavailable>", info->cid.ids[i].value);
+				kprintf("ACPIPlatformExpert: device %s CID=%s\n", path ? path : "<unavailable>", info->cid.ids[i].value);
 			}
 		}
 
@@ -248,15 +248,15 @@ nxu_acpi_discover(const i386_boot_info_t *boot)
 	}
 
 	if (!nxu_acpi_rsdp) {
-		kputln("NxuACPIPlatform: firmware has no discoverable RSDP");
+		kputln("ACPIPlatformExpert: Firmware has no discoverable RSDP.");
 		return;
 	}
 
-	kprintf("NxuACPIPlatform: RSDP address=0x%llx\n", (unsigned long long)nxu_acpi_rsdp);
+	kprintf("ACPIPlatformExpert: RSDP address=0x%llx\n", (unsigned long long)nxu_acpi_rsdp);
 	uacpi_status status = uacpi_initialize(UACPI_FLAG_NO_ACPI_MODE | UACPI_FLAG_BAD_CSUM_FATAL |
 										   UACPI_FLAG_BAD_TBL_SIGNATURE_FATAL | UACPI_FLAG_PROACTIVE_TBL_CSUM);
 	if (status != UACPI_STATUS_OK) {
-		kprintf("NxuACPIPlatform: initialization failed: %s\n", uacpi_status_to_string(status));
+		kprintf("ACPIPlatformExpert: initialization failed: %s\n", uacpi_status_to_string(status));
 		return;
 	}
 
@@ -284,7 +284,7 @@ nxu_acpi_discover(const i386_boot_info_t *boot)
 
 			memcpy(signature, header->signature, 4);
 			signature[4] = 0;
-			kprintf("NxuACPIPlatform: root table %s address=0x%llx size=%u\n", signature, (unsigned long long)root,
+			kprintf("ACPIPlatformExpert: root table %s address=0x%llx size=%u\n", signature, (unsigned long long)root,
 					header->length);
 			uacpi_kernel_unmap((void *)header, sizeof(*header));
 		}
@@ -296,13 +296,13 @@ nxu_acpi_discover(const i386_boot_info_t *boot)
 	/* Include tables installed by module-level AML during namespace loading. */
 	(void)uacpi_for_each_table(log_table, 0);
 	if (status != UACPI_STATUS_OK) {
-		kprintf("NxuACPIPlatform: namespace load failed: %s\n", uacpi_status_to_string(status));
+		kprintf("ACPIPlatformExpert: namespace load failed: %s\n", uacpi_status_to_string(status));
 		return;
 	}
 
 	status = uacpi_namespace_for_each_child(
 		uacpi_namespace_root(), log_device, 0,
 		UACPI_OBJECT_DEVICE_BIT | UACPI_OBJECT_PROCESSOR_BIT | UACPI_OBJECT_THERMAL_ZONE_BIT, UACPI_MAX_DEPTH_ANY, 0);
-	kprintf("NxuACPIPlatform: discovery complete tables=%u devices=%u status=%s\n", tables, devices,
+	kprintf("ACPIPlatformExpert: discovery complete tables=%u devices=%u status=%s\n", tables, devices,
 			uacpi_status_to_string(status));
 }

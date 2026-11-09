@@ -27,7 +27,7 @@
 #include <stdint.h>
 
 /* The ABI's layout (UIService.h) is fixed the same on i386 and arm64. */
-_Static_assert(sizeof(UIServiceProcessInfo) == 80U, "UIServiceProcessInfo layout");
+_Static_assert(sizeof(UIServiceProcessInfo) == 88U, "UIServiceProcessInfo layout");
 _Static_assert(sizeof(UIServiceCpuInfo) == 32U, "UIServiceCpuInfo layout");
 _Static_assert(offsetof(UIServiceActivity, cpus) == 56U, "UIServiceActivity layout");
 _Static_assert(UI_SERVICE_ACTIVITY_NAME_MAX + 1U <= PROC_NAME_MAX, "process names fit");
@@ -36,6 +36,7 @@ _Static_assert(UI_SERVICE_ACTIVITY_NAME_MAX + 1U <= PROC_NAME_MAX, "process name
 static nxu_spinlock_t g_activity_lock;
 static proc_snapshot_t g_activity_procs[PROC_MAX];
 static thread_snapshot_t g_activity_threads[THREAD_MAX];
+static nxu_stats_process_memory_t g_activity_memory[PROC_MAX];
 
 static uint32_t
 ui_service_activity_state(const proc_snapshot_t *proc, bool on_cpu, bool runnable)
@@ -102,6 +103,11 @@ ui_service_get_activity(void *context, UIServiceActivity *activity, UIServicePro
 		info->reserved = 0U;
 	}
 
+	/* Resident memory per process. Taken before g_activity_lock: it binds to the
+	 * boot CPU (serialising against exec/exit that free the address space) and so
+	 * must not run under a spinlock. Joined into the output by uniqueid below. */
+	uint32_t memory_count = proc_memory_snapshot(g_activity_memory, PROC_MAX);
+
 	uint64_t irq = nxu_spin_lock_irqsave(&g_activity_lock);
 	uint32_t proc_count = proc_snapshot(g_activity_procs, PROC_MAX);
 	uint32_t thread_count = thread_snapshot(g_activity_threads, THREAD_MAX);
@@ -162,6 +168,14 @@ ui_service_get_activity(void *context, UIServiceActivity *activity, UIServicePro
 		}
 		info->name[length] = '\0';
 		info->name_length = length;
+
+		info->resident_bytes = 0ULL;
+		for (uint32_t memory = 0U; memory < memory_count; memory++) {
+			if (g_activity_memory[memory].uniqueid == proc->uniqueid) {
+				info->resident_bytes = g_activity_memory[memory].resident_pages * PMM_PAGE_SIZE;
+				break;
+			}
+		}
 	}
 
 	nxu_spin_unlock_irqrestore(&g_activity_lock, irq);

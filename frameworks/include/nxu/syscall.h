@@ -107,6 +107,10 @@ int64_t nxu_recovery_present(const uint32_t *pixels, uint32_t stride, uint32_t x
 int64_t nxu_recovery_input(nxu_recovery_input_event_t *event);
 int64_t nxu_system_reset(void);
 
+/* Debug: deliberately panic the kernel (the kpanic tool). Does not return on
+ * success; the machine stops. */
+int64_t nxu_panic(void);
+
 int64_t nxu_ipc_port_allocate(void);
 int64_t nxu_ipc_port_deallocate(uint32_t name);
 int64_t nxu_ipc_bootstrap_port(void);

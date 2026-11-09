@@ -453,6 +453,20 @@ ui_bridge_control_activity(uint64_t user_request)
 	return result;
 }
 
+/* Activity Monitor's Kill button: terminate an arbitrary process by pid. The
+ * kernel task (PID 0) is never killable here; everything else gets SIGKILL from
+ * the kernel. */
+static int64_t
+ui_bridge_control_kill(uint32_t pid)
+{
+	if (pid == PROC_PID_KERNEL) return -NXU_SYS_E_INVALID_ARGUMENT;
+
+#if MACHINE_USER_CONTEXT
+	(void)signal_send(proc_kernel(), pid, NXU_SIGKILL);
+#endif
+	return 0;
+}
+
 int64_t
 ui_bridge_syscall_control(uint64_t operation, uint64_t argument)
 {
@@ -467,6 +481,9 @@ ui_bridge_syscall_control(uint64_t operation, uint64_t argument)
 
 	case NXU_UI_CONTROL_ACTIVITY:
 		return ui_bridge_control_activity(argument);
+
+	case NXU_UI_CONTROL_KILL:
+		return ui_bridge_control_kill((uint32_t)argument);
 
 	case NXU_UI_CONTROL_LAUNCH: {
 		char path[NXU_UI_PATH_MAX];

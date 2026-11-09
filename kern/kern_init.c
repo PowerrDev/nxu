@@ -635,23 +635,23 @@ kern_init_processes(void)
 {
 	ipc_init();
 
-	kputln("NXU_ProcessManager: initializing process manager");
+	kputln("[com.butterscotch.proc]: initializing process manager");
 
 	if (!proc_bootstrap()) {
-		kern_fail("NXU_ProcessManager: process manager initialization failed");
+		kern_fail("[com.butterscotch.proc]: process manager initialization failed");
 	}
 
 	if (!proc_validate()) {
-		kern_fail("NXU_ProcessManager: process manager validation failed");
+		kern_fail("[com.butterscotch.proc]: process manager validation failed");
 	}
 
-	kputln("NXU_ProcessManager: process manager initialized");
+	kputln("[com.butterscotch.proc]: process manager initialized");
 
 	if (proc_kernel() == 0) {
-		kern_fail("NXU_ProcessManager: kernel process unavailable");
+		kern_fail("[com.butterscotch.proc]: kernel process unavailable");
 	}
 
-	kputs("NXU_ProcessManager: kernel process PID: ");
+	kputs("[com.butterscotch.proc]: kernel process PID: ");
 	kputu64(proc_kernel()->p_ident.pid);
 	kputc('\n');
 }
@@ -710,7 +710,7 @@ kern_init_scheduler(void)
 		kern_fail("sched_bootstrap: scheduler initialization failed");
 	}
 
-	kputln("thread: thread subsystem initialized");
+	kputln("thread_bootstrap: thread subsystem initialized");
 }
 
 /*
