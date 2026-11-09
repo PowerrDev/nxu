@@ -327,6 +327,18 @@ nxu_setgroups(uint32_t count, const uint32_t *list)
 }
 
 int64_t
+nxu_chmod(const char *path, uint32_t mode)
+{
+	return nxu_syscall2(NXU_SYS_CHMOD, NXU_PTR(path), mode);
+}
+
+int64_t
+nxu_chown(const char *path, uint32_t uid, uint32_t gid)
+{
+	return nxu_syscall3(NXU_SYS_CHOWN, NXU_PTR(path), uid, gid);
+}
+
+int64_t
 nxu_getpid(void)
 {
 	return nxu_syscall0(NXU_SYS_GETPID);

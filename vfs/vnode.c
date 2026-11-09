@@ -173,6 +173,18 @@ vnode_getattr(vnode_t vnode, vnode_attr_t *attr)
 	return vnode->v_ops->getattr(vnode, attr);
 }
 
+vfs_status_t
+vnode_setattr(vnode_t vnode, const vnode_attr_t *attr, uint32_t which)
+{
+	if (vnode == 0 || attr == 0 || !vnode->v_active) return VFS_STATUS_INVALID;
+
+	if ((which & (VNODE_ATTR_MODE | VNODE_ATTR_UID | VNODE_ATTR_GID)) == 0U) return VFS_STATUS_OK;
+
+	if (vnode->v_ops == 0 || vnode->v_ops->setattr == 0) return VFS_STATUS_NOT_SUPPORTED;
+
+	return vnode->v_ops->setattr(vnode, attr, which);
+}
+
 /*
  * vnode_readlink:
  *

@@ -33,8 +33,8 @@ typedef uint32_t nxu_gid_t;
 #define NXU_UID_NOBODY 65534U
 #define NXU_GID_NOBODY 65534U
 
-/* An unset ID, used as "no change" in multi-argument setters (setresuid). */
-#define NXU_ID_UNCHANGED UINT32_MAX
+/* NXU_ID_UNCHANGED ("no change" for a uid/gid in chown) is defined in
+ * kern/syscall/syscall_defs.h so userland shares it. */
 
 /* Supplementary groups carried per process. */
 #define NXU_NGROUPS_MAX 16U
@@ -86,6 +86,18 @@ static inline bool
 ucred_is_root(const struct ucred *cred)
 {
 	return cred != 0 && cred->cr_uid == NXU_UID_ROOT;
+}
+
+/* True when gid is the credential's effective or real group, or one of its
+ * supplementary groups. */
+static inline bool
+ucred_in_group(const struct ucred *cred, nxu_gid_t gid)
+{
+	if (cred == 0) return false;
+	if (cred->cr_gid == gid || cred->cr_rgid == gid) return true;
+	for (uint32_t i = 0U; i < cred->cr_ngroups; i++)
+		if (cred->cr_groups[i] == gid) return true;
+	return false;
 }
 
 /*

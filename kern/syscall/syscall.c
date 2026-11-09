@@ -862,10 +862,143 @@ syscall_stat(uint64_t user_path, uint64_t user_stat)
 	if (vnode->v_type == VNODE_TYPE_CHARACTER) stat.type = NXU_STAT_TYPE_CHARACTER;
 
 	if (vnode->v_type == VNODE_TYPE_BLOCK) stat.type = NXU_STAT_TYPE_BLOCK;
+
+	/* Ownership and mode come from the filesystem when it reports them. A
+	 * filesystem without getattr (ramfs, devfs) falls back to root ownership
+	 * and a mode synthesized from the vnode type, so stat always answers. */
+	vnode_attr_t attr;
+	if (vnode_getattr(vnode, &attr) == VFS_STATUS_OK) {
+		stat.mode = attr.va_mode;
+		stat.uid = attr.va_uid;
+		stat.gid = attr.va_gid;
+		stat.nlink = attr.va_nlink;
+		if (attr.va_size != 0ULL) stat.size = attr.va_size;
+	} else {
+		stat.uid = NXU_UID_ROOT;
+		stat.gid = NXU_GID_WHEEL;
+		stat.nlink = 1U;
+		switch (vnode->v_type) {
+		case VNODE_TYPE_REGULAR:
+			stat.mode = NXU_S_IFREG | 0644U;
+			break;
+		case VNODE_TYPE_DIRECTORY:
+			stat.mode = NXU_S_IFDIR | 0755U;
+			break;
+		case VNODE_TYPE_CHARACTER:
+			stat.mode = NXU_S_IFCHR | 0666U;
+			break;
+		case VNODE_TYPE_BLOCK:
+			stat.mode = NXU_S_IFBLK | 0660U;
+			break;
+		default:
+			stat.mode = 0U;
+			break;
+		}
+	}
 	vnode_rele(vnode);
 
 	if (!vm_copy_to_user(user_stat, &stat, sizeof(stat))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 
+	return syscall_return(0ULL);
+}
+
+/*
+ * chmod(path, mode): change a file's permission bits. Only the file's owner
+ * (effective UID equals the file's uid) or root may do so.
+ */
+static syscall_result_t
+syscall_chmod(uint64_t user_path, uint64_t mode)
+{
+	char path[VFS_PATH_MAX];
+	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
+	vnode_t vnode;
+	vfs_status_t status = vfs_lookup(path, &vnode);
+	if (status != VFS_STATUS_OK) return syscall_error(syscall_vfs_error(status));
+
+	vnode_attr_t attr;
+	status = vnode_getattr(vnode, &attr);
+	if (status != VFS_STATUS_OK) {
+		vnode_rele(vnode);
+		return syscall_error(syscall_vfs_error(status));
+	}
+
+	struct ucred *cred = proc_ucred(current_proc());
+	if (cred == 0 || (!ucred_is_root(cred) && cred->cr_uid != attr.va_uid)) {
+		vnode_rele(vnode);
+		return syscall_error(SYSCALL_ERROR_DENIED);
+	}
+
+	vnode_attr_t set = {.va_mode = (uint32_t)(mode & 0x0FFFU)};
+	status = vnode_setattr(vnode, &set, VNODE_ATTR_MODE);
+	vnode_rele(vnode);
+	if (status != VFS_STATUS_OK) return syscall_error(syscall_vfs_error(status));
+	return syscall_return(0ULL);
+}
+
+/*
+ * chown(path, uid, gid): change a file's owner and/or group. NXU_ID_UNCHANGED
+ * for either leaves it alone. Changing the owner uid needs root. Changing the
+ * group needs root, or that the caller owns the file and belongs to the target
+ * group.
+ */
+static syscall_result_t
+syscall_chown(uint64_t user_path, uint64_t uid, uint64_t gid)
+{
+	if (uid > UINT32_MAX || gid > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
+	char path[VFS_PATH_MAX];
+	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
+	vnode_t vnode;
+	vfs_status_t status = vfs_lookup(path, &vnode);
+	if (status != VFS_STATUS_OK) return syscall_error(syscall_vfs_error(status));
+
+	vnode_attr_t attr;
+	status = vnode_getattr(vnode, &attr);
+	if (status != VFS_STATUS_OK) {
+		vnode_rele(vnode);
+		return syscall_error(syscall_vfs_error(status));
+	}
+
+	struct ucred *cred = proc_ucred(current_proc());
+	if (cred == 0) {
+		vnode_rele(vnode);
+		return syscall_error(SYSCALL_ERROR_DENIED);
+	}
+
+	bool root = ucred_is_root(cred);
+	bool owner = cred->cr_uid == attr.va_uid;
+	bool change_uid = (uint32_t)uid != NXU_ID_UNCHANGED;
+	bool change_gid = (uint32_t)gid != NXU_ID_UNCHANGED;
+
+	if (change_uid && !root) {
+		vnode_rele(vnode);
+		return syscall_error(SYSCALL_ERROR_DENIED);
+	}
+	if (change_gid && !root && (!owner || !ucred_in_group(cred, (nxu_gid_t)gid))) {
+		vnode_rele(vnode);
+		return syscall_error(SYSCALL_ERROR_DENIED);
+	}
+
+	uint32_t which = 0U;
+	vnode_attr_t set = {0};
+	if (change_uid) {
+		set.va_uid = (uint32_t)uid;
+		which |= VNODE_ATTR_UID;
+	}
+	if (change_gid) {
+		set.va_gid = (uint32_t)gid;
+		which |= VNODE_ATTR_GID;
+	}
+	if (which == 0U) {
+		vnode_rele(vnode);
+		return syscall_return(0ULL);
+	}
+
+	status = vnode_setattr(vnode, &set, which);
+	vnode_rele(vnode);
+	if (status != VFS_STATUS_OK) return syscall_error(syscall_vfs_error(status));
 	return syscall_return(0ULL);
 }
 
@@ -2417,6 +2550,10 @@ syscall_dispatch_inner(const syscall_request_t *request)
 		return syscall_getgroups(request->arguments[0], request->arguments[1]);
 	case SYSCALL_SETGROUPS:
 		return syscall_setgroups(request->arguments[0], request->arguments[1]);
+	case SYSCALL_CHMOD:
+		return syscall_chmod(request->arguments[0], request->arguments[1]);
+	case SYSCALL_CHOWN:
+		return syscall_chown(request->arguments[0], request->arguments[1], request->arguments[2]);
 	case SYSCALL_EXIT:
 		return syscall_exit(request->arguments[0]);
 	case SYSCALL_WRITE:

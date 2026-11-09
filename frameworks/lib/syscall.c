@@ -533,6 +533,18 @@ nxu_setgroups(uint32_t count, const uint32_t *list)
 }
 
 int64_t
+nxu_chmod(const char *path, uint32_t mode)
+{
+	return nxu_syscall2(NXU_SYS_CHMOD, (uint64_t)path, mode);
+}
+
+int64_t
+nxu_chown(const char *path, uint32_t uid, uint32_t gid)
+{
+	return nxu_syscall3(NXU_SYS_CHOWN, (uint64_t)path, uid, gid);
+}
+
+int64_t
 nxu_kill(uint64_t pid, uint32_t signal)
 {
 	return nxu_syscall2(NXU_SYS_KILL, pid, signal);
