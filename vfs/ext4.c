@@ -5,6 +5,8 @@
 #include <drivers/block/block_device.h>
 #include <crc32c.h>
 #include <kern/memory/heap.h>
+#include <kern/process/proc.h>
+#include <kern/security/ucred.h>
 #include <platform/uart.h>
 #include <vfs/jbd2.h>
 #include <vfs/vfs.h>
@@ -2163,6 +2165,13 @@ ext4_create(vnode_t directory, const char *name, vnode_type_t type, vnode_t *res
 	memset(&inode, 0, sizeof(inode));
 	inode.number = inode_number;
 	inode.mode = type == VNODE_TYPE_DIRECTORY ? EXT4_INODE_MODE_DIRECTORY : EXT4_INODE_MODE_REGULAR;
+	/* A new file belongs to the effective user and group of whoever created it
+	 * (the kernel/boot creator is root). */
+	const struct ucred *creator = proc_ucred(current_proc());
+	if (creator != 0) {
+		inode.uid = creator->cr_uid;
+		inode.gid = creator->cr_gid;
+	}
 	inode.flags = EXT4_EXTENTS_FL;
 	inode.generation = data->next_generation++;
 	if (data->next_generation == 0U) data->next_generation = 1U;

@@ -545,6 +545,7 @@ USER_C_SOURCES := \
     frameworks/BootDaemons.framework/stat.c \
     frameworks/BootDaemons.framework/chmod.c \
     frameworks/BootDaemons.framework/chown.c \
+    frameworks/BootDaemons.framework/credtest.c \
     frameworks/BootDaemons.framework/playsound.c \
     libk/wav.c \
     frameworks/BootDaemons.framework/sockettest_server.c \
@@ -629,6 +630,7 @@ USER_DAEMONS := \
     $(USER_BUILD)/stat \
     $(USER_BUILD)/chmod \
     $(USER_BUILD)/chown \
+    $(USER_BUILD)/credtest \
     $(USER_BUILD)/playsound \
     $(USER_BUILD)/sockettest_server \
     $(USER_BUILD)/sockettest_client \
@@ -1058,6 +1060,13 @@ $(USER_BUILD)/chown: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 
+$(USER_BUILD)/credtest: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/credtest.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+
 $(USER_BUILD)/playsound: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/playsound.o $(USER_BUILD)/libk/wav.o
 
 	$(QUIET_PRINT) "LD" "$@"
@@ -1184,6 +1193,8 @@ $(USER_STAGE_STAMP): frameworks/Terminal.framework/Info.plist tools/UI/Icons/Ter
 	$(Q)cp $(USER_BUILD)/chmod $(DISK_ROOT)/System/Library/CoreServices/chmod
 
 	$(Q)cp $(USER_BUILD)/chown $(DISK_ROOT)/System/Library/CoreServices/chown
+
+	$(Q)cp $(USER_BUILD)/credtest $(DISK_ROOT)/System/Library/CoreServices/credtest
 
 	$(Q)cp $(USER_BUILD)/playsound $(DISK_ROOT)/System/Library/CoreServices/playsound
 

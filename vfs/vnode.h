@@ -169,6 +169,19 @@ vfs_status_t vnode_write(vnode_t vnode, uint64_t offset, const void *buffer, uin
 vfs_status_t vnode_truncate(vnode_t vnode, uint64_t size);
 vfs_status_t vnode_getattr(vnode_t vnode, vnode_attr_t *attr);
 vfs_status_t vnode_setattr(vnode_t vnode, const vnode_attr_t *attr, uint32_t which);
+
+/*
+ * vnode_access: does credential `cred` have the wanted access to this vnode?
+ * `want` is a mask of VNODE_ACCESS_*. Returns VFS_STATUS_OK when allowed and
+ * VFS_STATUS_DENIED when not. Root (effective UID 0) is always allowed.
+ * Filesystems that do not report ownership (no getattr) are not enforced.
+ */
+#define VNODE_ACCESS_READ (1U << 0U)
+#define VNODE_ACCESS_WRITE (1U << 1U)
+#define VNODE_ACCESS_EXEC (1U << 2U)
+
+struct ucred;
+vfs_status_t vnode_access(vnode_t vnode, const struct ucred *cred, uint32_t want);
 vfs_status_t vnode_readlink(vnode_t vnode, char *buffer, uint64_t capacity, uint64_t *length);
 vfs_status_t vnode_open(vnode_t vnode, uint32_t flags);
 void vnode_close(vnode_t vnode, uint32_t flags);

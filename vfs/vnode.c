@@ -1,5 +1,7 @@
 #include <vfs/vnode.h>
 
+#include <kern/security/ucred.h>
+
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -183,6 +185,38 @@ vnode_setattr(vnode_t vnode, const vnode_attr_t *attr, uint32_t which)
 	if (vnode->v_ops == 0 || vnode->v_ops->setattr == 0) return VFS_STATUS_NOT_SUPPORTED;
 
 	return vnode->v_ops->setattr(vnode, attr, which);
+}
+
+vfs_status_t
+vnode_access(vnode_t vnode, const struct ucred *cred, uint32_t want)
+{
+	if (vnode == 0 || cred == 0) return VFS_STATUS_INVALID;
+	if (want == 0U) return VFS_STATUS_OK;
+
+	/* Root bypasses the mode check (classic Unix: uid 0 is omnipotent). */
+	if (ucred_is_root(cred)) return VFS_STATUS_OK;
+
+	vnode_attr_t attr;
+	vfs_status_t status = vnode_getattr(vnode, &attr);
+	/* A filesystem without ownership metadata (ramfs, devfs) is not enforced. */
+	if (status == VFS_STATUS_NOT_SUPPORTED) return VFS_STATUS_OK;
+	if (status != VFS_STATUS_OK) return status;
+
+	/* Pick the permission triad: owner, then group, then other. */
+	uint32_t bits;
+	if (cred->cr_uid == attr.va_uid)
+		bits = (attr.va_mode >> 6U) & 7U;
+	else if (ucred_in_group(cred, attr.va_gid))
+		bits = (attr.va_mode >> 3U) & 7U;
+	else
+		bits = attr.va_mode & 7U;
+
+	uint32_t need = 0U;
+	if ((want & VNODE_ACCESS_READ) != 0U) need |= 4U;
+	if ((want & VNODE_ACCESS_WRITE) != 0U) need |= 2U;
+	if ((want & VNODE_ACCESS_EXEC) != 0U) need |= 1U;
+
+	return ((bits & need) == need) ? VFS_STATUS_OK : VFS_STATUS_DENIED;
 }
 
 /*

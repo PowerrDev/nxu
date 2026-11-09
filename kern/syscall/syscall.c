@@ -637,6 +637,24 @@ syscall_open(uint64_t user_path, uint64_t flags)
 	/* The same 32 bits vfs_open sees, so a high bit cannot get past the check. */
 	if (!syscall_open_may_modify(path, (uint32_t)flags)) return syscall_error(SYSCALL_ERROR_DENIED);
 
+	/*
+	 * Unix permission check for a file that already exists: the caller's
+	 * credentials against the file's owner/group/mode. Root bypasses. Creating
+	 * a new file is governed by the directory (a directory write/search check
+	 * is a later slice) and remains gated by NXU_CAP_FS_WRITE.
+	 */
+	uint32_t want = 0U;
+	if (((uint32_t)flags & NXU_O_READ) != 0U) want |= VNODE_ACCESS_READ;
+	if (((uint32_t)flags & NXU_O_MODIFYING) != 0U) want |= VNODE_ACCESS_WRITE;
+	if (want != 0U) {
+		vnode_t existing;
+		if (vfs_lookup(path, &existing) == VFS_STATUS_OK) {
+			vfs_status_t access = vnode_access(existing, proc_ucred(current_proc()), want);
+			vnode_rele(existing);
+			if (access != VFS_STATUS_OK) return syscall_error(syscall_vfs_error(access));
+		}
+	}
+
 	uint32_t descriptor;
 	vfs_status_t status = vfs_open(&current_proc()->p_fd, path, (uint32_t)flags, &descriptor);
 	if (status != VFS_STATUS_OK) return syscall_error(syscall_vfs_error(status));
