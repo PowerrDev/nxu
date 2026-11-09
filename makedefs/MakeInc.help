@@ -1,0 +1,70 @@
+# =============================================================================
+# MakeInc.help -- diagnostic and help targets, and clobber
+# =============================================================================
+
+.PHONY: help print-config clobber
+
+help:
+	@echo "NXU build system"
+	@echo ""
+	@echo "Common targets:"
+	@echo "  all            Build the default kernel image (aarch64)"
+	@echo "  i386 x86_64    Build those kernel ELFs"
+	@echo "  userland       Build userspace daemons and apps"
+	@echo "  run run-console run-i386 run-x86_64   Boot under QEMU"
+	@echo "  test-i386-vm test-arm64-btrfs ...     Regression tests (see makedefs/)"
+	@echo "  install        Stage build products into DSTROOT (never the host)"
+	@echo "  exporthdrs     Export public headers into DSTROOT"
+	@echo "  clean          Remove intermediate build artifacts (BUILD_ROOT)"
+	@echo "  clobber        clean, plus staged binaries removed from the disk tree"
+	@echo "  print-config   Show the resolved build configuration"
+	@echo "  help           This message"
+	@echo ""
+	@echo "Configuration variables:"
+	@echo "  ARCH_CONFIGS=\"aarch64 i386 x86_64\"          (default: aarch64)"
+	@echo "  KERNEL_CONFIGS=\"DEBUG DEVELOPMENT RELEASE\"   (default: DEVELOPMENT)"
+	@echo "  OBJROOT= SYMROOT= DSTROOT=                   build output roots"
+	@echo "  BUILD_JOBS=N                                 parallel jobs for sub-makes"
+	@echo ""
+	@echo "Run 'make print-config' to see how these resolve."
+
+print-config:
+	@echo "ARCH_CONFIGS     = $(ARCH_CONFIGS)"
+	@echo "KERNEL_CONFIGS   = $(KERNEL_CONFIGS)"
+	@echo "BUILD_ROOT       = $(BUILD_ROOT)"
+	@echo "OBJROOT          = $(OBJROOT)"
+	@echo "SYMROOT          = $(SYMROOT)"
+	@echo "DSTROOT          = $(DSTROOT)"
+	@echo "CC               = $(CC)"
+	@echo "LD               = $(LD)"
+	@echo "BUILD_JOBS       = $(BUILD_JOBS)"
+	@echo "architectures:"
+	@$(foreach a,$(ARCH_CONFIGS),printf '  %-8s triple=%-18s cflags="%s" linker=%s -> %s\n' '$(a)' '$(ARCH_TRIPLE_$(a))' '$(ARCH_CFLAGS_$(a))' '$(notdir $(ARCH_LINKER_SCRIPT_$(a)))' '$(OBJROOT)/$(ARCH_BUILDDIR_$(a))';)
+	@echo "configurations:"
+	@$(foreach c,$(KERNEL_CONFIGS),printf '  %-12s cflags="%s"\n' '$(c)' '$(CONFIG_CFLAGS_$(c))';)
+
+# clobber = clean (intermediate build artifacts) plus the userspace binaries and
+# frameworks staged into the development disk tree. Splitting these from `clean`
+# lets `make clean` wipe the build without re-staging the whole disk image.
+clobber: clean
+	rm -f $(DISK_ROOT)/System/Library/CoreServices/bootd \
+		$(DISK_ROOT)/System/Library/CoreServices/bootd.manifest \
+		$(DISK_ROOT)/System/Library/CoreServices/bootd.recovery
+	rm -f $(DISK_ROOT)/System/Library/CoreServices/crashd \
+		$(DISK_ROOT)/System/Library/CoreServices/crashd.recovery \
+		$(DISK_ROOT)/System/Library/CoreServices/problemreporter \
+		$(DISK_ROOT)/System/Library/CoreServices/crashtest
+	rm -f $(DISK_ROOT)/System/Library/CoreServices/dyrld \
+		$(DISK_ROOT)/System/Library/CoreServices/dyrld-runtime
+	rm -f $(DISK_ROOT)/System/Library/Frameworks/Runtime.framework/Runtime.so \
+		$(DISK_ROOT)/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation.so
+	rm -f $(DISK_ROOT)/System/Library/Frameworks/WindowServer.framework/WindowServer.so
+	rm -f $(DISK_ROOT)/System/Library/CoreServices/desktop_service
+	rm -rf $(DISK_ROOT)/System/Library/Frameworks/CoreGraphics.framework \
+		$(DISK_ROOT)/System/Library/Frameworks/DesktopService.framework
+	rm -f $(DISK_ROOT)/System/Library/CoreServices/logd \
+		$(DISK_ROOT)/System/Library/CoreServices/logd.recovery
+	rm -f $(DISK_ROOT)/System/Library/CoreServices/patchd \
+		$(DISK_ROOT)/System/Library/CoreServices/patchd.recovery
+	rm -f $(DISK_ROOT)/System/Recovery/triageOS
+	rm -rf $(DISK_ROOT)/System/Library/BootDaemons

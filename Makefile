@@ -6,6 +6,13 @@ BUILD := $(BUILD_ROOT)/$(CONFIG)
 
 USER_BUILD := $(BUILD_ROOT)/userland
 
+# Centralized build configuration (ARCH_CONFIGS x KERNEL_CONFIGS) and the
+# per-architecture toolchain table. Additive: these resolve to NXU's historical
+# defaults and do not change how the ports currently build. See makedefs/.
+include makedefs/MakeInc.config
+include makedefs/MakeInc.arch
+include makedefs/MakeInc.rules
+
 # Font rasterization needs Pillow. Keep that host-only dependency isolated
 # from the system Python used by the rest of the build.
 FONT_PYTHON := .venv-fonts/bin/python3
@@ -1470,6 +1477,8 @@ include makedefs/tests.mk
 include makedefs/i386.mk
 include makedefs/x86_64.mk
 
+include makedefs/MakeInc.help
+
 
 # =============================================================================
 # Cleanup
@@ -1478,35 +1487,6 @@ include makedefs/x86_64.mk
 clean:
 
 	rm -rf $(BUILD_ROOT)
-
-	rm -f $(DISK_ROOT)/System/Library/CoreServices/bootd
-
-	rm -f $(DISK_ROOT)/System/Library/CoreServices/bootd.manifest
-
-	rm -f $(DISK_ROOT)/System/Library/CoreServices/bootd.recovery
-
-	rm -f $(DISK_ROOT)/System/Library/CoreServices/crashd \
-		$(DISK_ROOT)/System/Library/CoreServices/crashd.recovery \
-		$(DISK_ROOT)/System/Library/CoreServices/problemreporter $(DISK_ROOT)/System/Library/CoreServices/crashtest
-	rm -f $(DISK_ROOT)/System/Library/CoreServices/dyrld $(DISK_ROOT)/System/Library/CoreServices/dyrld-runtime
-	rm -f $(DISK_ROOT)/System/Library/Frameworks/Runtime.framework/Runtime.so \
-		$(DISK_ROOT)/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation.so
-	rm -f $(DISK_ROOT)/System/Library/Frameworks/WindowServer.framework/WindowServer.so
-	rm -f $(DISK_ROOT)/System/Library/CoreServices/desktop_service
-	rm -rf $(DISK_ROOT)/System/Library/Frameworks/CoreGraphics.framework \
-		$(DISK_ROOT)/System/Library/Frameworks/DesktopService.framework
-
-	rm -f $(DISK_ROOT)/System/Library/CoreServices/logd
-
-	rm -f $(DISK_ROOT)/System/Library/CoreServices/logd.recovery
-
-	rm -f $(DISK_ROOT)/System/Library/CoreServices/patchd
-
-	rm -f $(DISK_ROOT)/System/Library/CoreServices/patchd.recovery
-
-	rm -f $(DISK_ROOT)/System/Recovery/triageOS
-
-	rm -rf $(DISK_ROOT)/System/Library/BootDaemons
 
 
 .PHONY: test-crashd
