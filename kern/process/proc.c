@@ -393,6 +393,8 @@ proc_bootstrap(void)
 
 	kernel_proc->p_caps = NXU_CAP_ALL;
 
+	ucred_init_root(&kernel_proc->p_ucred);
+
 	kernel_proc->p_refcount = 1U;
 
 	proc_copy_name(kernel_proc->p_comm, "kernel_task");
@@ -473,6 +475,11 @@ proc_create_user(proc_t parent, const char *name, uint64_t entry, uint64_t stack
 	/* Default-deny: only PID 1 (bootd, or triageOS in recovery) starts with
 	 * every capability; everything else is granted a subset by its parent. */
 	proc->p_caps = pid == 1U ? NXU_CAP_ALL : 0U;
+
+	/* Inherit the parent's Unix credentials. PID 1 is forced to root even if
+	 * spun up directly by the kernel task (which is already root anyway). */
+	ucred_copy(&proc->p_ucred, &parent->p_ucred);
+	if (pid == 1U) ucred_init_root(&proc->p_ucred);
 
 	proc->p_ident.uniqueid = proc_allocate_uniqueid_locked();
 
@@ -562,6 +569,7 @@ proc_fork(proc_t parent, proc_t *result)
 
 	proc->p_ipc_bootstrap_name = parent->p_ipc_bootstrap_name;
 	proc->p_caps = parent->p_caps;
+	ucred_copy(&proc->p_ucred, &parent->p_ucred);
 	memcpy(proc->p_exec_path, parent->p_exec_path, sizeof(proc->p_exec_path));
 	memcpy(proc->p_image_id, parent->p_image_id, sizeof(proc->p_image_id));
 	memcpy(proc->p_dyrld_main, parent->p_dyrld_main, sizeof(proc->p_dyrld_main));
@@ -1012,13 +1020,29 @@ proc_selfpid(void)
 bool
 proc_has_caps(proc_t proc, uint32_t caps)
 {
-	return proc != 0 && (proc->p_caps & caps) == caps;
+	if (proc == 0) return false;
+	/* Credential->capability bridge: an effective-UID-0 (root) process is
+	 * treated as holding every capability. Non-root uses its granted mask. */
+	if (ucred_is_root(&proc->p_ucred)) return true;
+	return (proc->p_caps & caps) == caps;
 }
 
 void
 proc_set_caps(proc_t proc, uint32_t caps)
 {
 	if (proc != 0) proc->p_caps = caps & NXU_CAP_ALL;
+}
+
+struct ucred *
+proc_ucred(proc_t proc)
+{
+	return proc != 0 ? &proc->p_ucred : 0;
+}
+
+bool
+proc_is_root(proc_t proc)
+{
+	return proc != 0 && ucred_is_root(&proc->p_ucred);
 }
 
 proc_id_t

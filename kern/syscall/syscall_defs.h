@@ -97,6 +97,19 @@
 #define NXU_SYS_NETWORK 85ULL
 #define NXU_SYS_DUP2 86ULL
 #define NXU_SYS_READ_POLL 87ULL
+/* 88 reserved (NXU_SYS_PANIC on other lines). */
+/* Unix process credentials (kern/security/ucred.h). getX read an effective or
+ * real ID; setX apply POSIX transition rules the kernel enforces. */
+#define NXU_SYS_GETUID 89ULL
+#define NXU_SYS_GETEUID 90ULL
+#define NXU_SYS_GETGID 91ULL
+#define NXU_SYS_GETEGID 92ULL
+#define NXU_SYS_SETUID 93ULL
+#define NXU_SYS_SETEUID 94ULL
+#define NXU_SYS_SETGID 95ULL
+#define NXU_SYS_SETEGID 96ULL
+#define NXU_SYS_GETGROUPS 97ULL
+#define NXU_SYS_SETGROUPS 98ULL
 #include <kern/syscall/net_defs.h>
 #include <kern/syscall/dyrld_defs.h>
 #include <kern/syscall/crash_defs.h>

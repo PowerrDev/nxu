@@ -17,11 +17,21 @@
 #include <kern/sched_prism/processor.h>
 #include <kern/ipc/ipc_port.h>
 
-#define CALL_COUNT (NXU_SYS_READ_POLL + 1U)
+#define CALL_COUNT (NXU_SYS_SETGROUPS + 1U)
 static const char *const g_names[CALL_COUNT] = {
 	[NXU_SYS_NETWORK] = "network",
 	[NXU_SYS_DUP2] = "dup2",
 	[NXU_SYS_READ_POLL] = "read_poll",
+	[NXU_SYS_GETUID] = "getuid",
+	[NXU_SYS_GETEUID] = "geteuid",
+	[NXU_SYS_GETGID] = "getgid",
+	[NXU_SYS_GETEGID] = "getegid",
+	[NXU_SYS_SETUID] = "setuid",
+	[NXU_SYS_SETEUID] = "seteuid",
+	[NXU_SYS_SETGID] = "setgid",
+	[NXU_SYS_SETEGID] = "setegid",
+	[NXU_SYS_GETGROUPS] = "getgroups",
+	[NXU_SYS_SETGROUPS] = "setgroups",
 	[NXU_SYS_EXIT] = "exit",
 	[NXU_SYS_WRITE] = "write",
 	[NXU_SYS_GET_VERSION] = "get_version",

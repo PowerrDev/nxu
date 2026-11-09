@@ -11,6 +11,7 @@
 
 #include <kern/ipc/ipc_space.h>
 #include <kern/sched_prism/waitq.h>
+#include <kern/security/ucred.h>
 #include <kern/syscall/syscall_defs.h>
 #include <kern/process/task.h>
 #include <vfs/file.h>
@@ -107,8 +108,16 @@ typedef struct {
  *     it is PID 1 (all of them), its parent granted a subset when spawning it,
  *     or the kernel set them on a test process (loader_spawn_caps, before its thread can run
  *     on any CPU; proc_set_caps after the fact would race). fork and exec
- *     keep the caller's mask. There are no credentials; this mask is the whole
- *     security model for the system calls that change the machine.
+ *     keep the caller's mask. It remains the machine-mutation gate; Unix
+ *     identity now lives alongside it in p_ucred, bridged so that effective
+ *     UID 0 (root) is treated as holding every capability. See
+ *     doc/architecture/unix-security.md.
+ *
+ * p_ucred
+ *     Unix user/group credentials (real/effective/saved UID and GID plus
+ *     supplementary groups). The kernel task and PID 1 start as root;
+ *     proc_create_user and proc_fork inherit the parent's credentials; exec
+ *     preserves them. See kern/security/ucred.h.
  */
 struct proc {
 	uint64_t p_gui_epoch, p_gui_features;
@@ -146,6 +155,8 @@ struct proc {
 	waitq_t p_waitq;
 	uint32_t p_sigpending;
 	uint32_t p_caps;
+
+	struct ucred p_ucred;
 
 	proc_ident_t p_ident;
 
@@ -229,6 +240,13 @@ bool proc_has_caps(proc_t proc, uint32_t caps);
  * that has not run yet (a test spawn) and for the spawn system call, which
  * checks the mask against the parent's first. */
 void proc_set_caps(proc_t proc, uint32_t caps);
+
+/* The process's Unix credentials (never null for a live process). */
+struct ucred *proc_ucred(proc_t proc);
+
+/* True when proc's effective UID is root (NXU_UID_ROOT). Drives the
+ * credential->capability bridge in proc_has_caps. */
+bool proc_is_root(proc_t proc);
 
 proc_t proc_parent_ref(proc_t proc);
 proc_t proc_first_child_ref(proc_t proc);

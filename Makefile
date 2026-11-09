@@ -532,6 +532,8 @@ USER_C_SOURCES := \
     frameworks/BootDaemons.framework/proctest.c \
     frameworks/BootDaemons.framework/execchild.c \
     frameworks/BootDaemons.framework/privtest.c \
+    frameworks/BootDaemons.framework/whoami.c \
+    frameworks/BootDaemons.framework/id.c \
     frameworks/BootDaemons.framework/playsound.c \
     libk/wav.c \
     frameworks/BootDaemons.framework/sockettest_server.c \
@@ -610,6 +612,8 @@ USER_DAEMONS := \
     $(USER_BUILD)/proctest \
     $(USER_BUILD)/execchild \
     $(USER_BUILD)/privtest \
+    $(USER_BUILD)/whoami \
+    $(USER_BUILD)/id \
     $(USER_BUILD)/playsound \
     $(USER_BUILD)/sockettest_server \
     $(USER_BUILD)/sockettest_client \
@@ -995,6 +999,20 @@ $(USER_BUILD)/privtest: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaem
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 
+$(USER_BUILD)/whoami: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/whoami.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+
+$(USER_BUILD)/id: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/id.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+
 $(USER_BUILD)/playsound: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/playsound.o $(USER_BUILD)/libk/wav.o
 
 	$(QUIET_PRINT) "LD" "$@"
@@ -1111,6 +1129,10 @@ $(USER_STAGE_STAMP): frameworks/Terminal.framework/Info.plist tools/UI/Icons/Ter
 	$(Q)cp $(USER_BUILD)/execchild $(DISK_ROOT)/System/Library/CoreServices/execchild
 
 	$(Q)cp $(USER_BUILD)/privtest $(DISK_ROOT)/System/Library/CoreServices/privtest
+
+	$(Q)cp $(USER_BUILD)/whoami $(DISK_ROOT)/System/Library/CoreServices/whoami
+
+	$(Q)cp $(USER_BUILD)/id $(DISK_ROOT)/System/Library/CoreServices/id
 
 	$(Q)cp $(USER_BUILD)/playsound $(DISK_ROOT)/System/Library/CoreServices/playsound
 
