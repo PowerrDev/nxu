@@ -352,27 +352,42 @@ proc_bootstrap(void)
 	 * proc.max can override the CPU-derived target within those hard bounds. */
 	uint64_t free_pages = pmm_get_free_page_count();
 	uint32_t cpus = processor_count();
-	if (cpus == 0U) cpus = 1U;
+
+  if (cpus == 0U) cpus = 1U;
 	uint32_t target = 96U + cpus * 16U;
-	if (target > PROC_MAX) target = PROC_MAX;
-	uint32_t configured = boot_arg_uint32("proc.max", target);
-	if (configured < 2U) configured = 2U;
+
+  if (target > PROC_MAX) target = PROC_MAX;
+
+  uint32_t configured = boot_arg_uint32("proc.max", target);
+
+  if (configured < 2U) configured = 2U;
 	if (configured < target) target = configured;
-	else if (configured > target) target = configured > PROC_MAX ? PROC_MAX : configured;
-	uint64_t pages_per_proc = (sizeof(struct proc) + PMM_PAGE_SIZE - 1ULL) / PMM_PAGE_SIZE;
-	if (pages_per_proc == 0ULL) pages_per_proc = 1ULL;
-	uint64_t memory_limit = (free_pages / pages_per_proc) * 3ULL / 4ULL;
-	if (memory_limit < 2ULL) memory_limit = 2ULL;
+
+  else if (configured > target) target = configured > PROC_MAX ? PROC_MAX : configured;
+
+  uint64_t pages_per_proc = (sizeof(struct proc) + PMM_PAGE_SIZE - 1ULL) / PMM_PAGE_SIZE;
+
+  if (pages_per_proc == 0ULL) pages_per_proc = 1ULL;
+
+  uint64_t memory_limit = (free_pages / pages_per_proc) * 3ULL / 4ULL;
+
+  if (memory_limit < 2ULL) memory_limit = 2ULL;
 	if ((uint64_t)target > memory_limit) target = (uint32_t)memory_limit;
 	if (target > PROC_MAX) target = PROC_MAX;
-	g_proc_slots = kmalloc((size_t)target * sizeof(*g_proc_slots));
-	if (g_proc_slots == 0) {
+
+  g_proc_slots = kmalloc((size_t)target * sizeof(*g_proc_slots));
+
+  if (g_proc_slots == 0) {
 		proc_unlock(&g_proc_lock);
-		return false;
+
+    return false;
 	}
-	memset(g_proc_slots, 0, (size_t)target * sizeof(*g_proc_slots));
-	g_proc_limit = target;
-	kprintf("proc: runtime process limit %u (free pages %llu, configured CPUs %u)\n",
+	
+  memset(g_proc_slots, 0, (size_t)target * sizeof(*g_proc_slots));
+
+  g_proc_limit = target;
+
+  kprintf("proc: runtime process limit %u (free pages %llu, configured CPUs %u)\n",
 			(unsigned)g_proc_limit, free_pages, (unsigned)cpus);
 
 	proc_t kernel_proc = proc_allocate_slot_locked();
@@ -402,7 +417,8 @@ proc_bootstrap(void)
 	if (!task_init_kernel(&kernel_proc->p_task, 0ULL, kernel_proc)) {
 		proc_release_slot_locked(kernel_proc);
 		proc_unlock(&g_proc_lock);
-		return false;
+
+    return false;
 	}
 
 	proc_all_insert_locked(kernel_proc);
@@ -415,7 +431,8 @@ proc_bootstrap(void)
 	g_proc_initialized = true;
 
 	proc_unlock(&g_proc_lock);
-	return true;
+	
+  return true;
 }
 
 uint32_t
@@ -524,14 +541,16 @@ proc_fork(proc_t parent, proc_t *result)
 	if (!g_proc_initialized || parent == g_kernproc || parent->p_stat == PROC_STATE_ZOMBIE ||
 		parent->p_stat == PROC_STATE_DEAD) {
 		proc_unlock(&g_proc_lock);
-		return false;
+	
+    return false;
 	}
 
 	proc_t proc = proc_allocate_slot_locked();
 
 	if (proc == 0) {
 		proc_unlock(&g_proc_lock);
-		return false;
+	
+    return false;
 	}
 
 	proc_id_t pid = proc_allocate_pid_locked();
@@ -539,7 +558,8 @@ proc_fork(proc_t parent, proc_t *result)
 	if (pid == PROC_PID_INVALID) {
 		proc_release_slot_locked(proc);
 		proc_unlock(&g_proc_lock);
-		return false;
+
+    return false;
 	}
 
 	proc->p_ident.pid = pid;
@@ -554,32 +574,41 @@ proc_fork(proc_t parent, proc_t *result)
 	if (!task_fork(&proc->p_task, &parent->p_task, proc->p_ident.uniqueid, proc)) {
 		proc_release_slot_locked(proc);
 		proc_unlock(&g_proc_lock);
-		return false;
+	
+    return false;
 	}
 
-	if (!filedesc_fork(&proc->p_fd, &parent->p_fd) || !ipc_space_fork(&proc->p_ipc, &parent->p_ipc)) {
-		/* Undo everything task_fork built; the embryo never became visible. */
+	if (!filedesc_fork(&proc->p_fd, &parent->p_fd) || !ipc_space_fork(&proc->p_ipc, &parent->p_ipc)) {	
+    /* Undo everything task_fork built */
 		(void)task_terminate(&proc->p_task);
 		filedesc_close_all(&proc->p_fd);
 		ipc_space_close_all(&proc->p_ipc);
 		proc_release_slot_locked(proc);
 		proc_unlock(&g_proc_lock);
-		return false;
+	
+    return false;
 	}
 
 	proc->p_ipc_bootstrap_name = parent->p_ipc_bootstrap_name;
 	proc->p_caps = parent->p_caps;
+
 	ucred_copy(&proc->p_ucred, &parent->p_ucred);
-	memcpy(proc->p_exec_path, parent->p_exec_path, sizeof(proc->p_exec_path));
+	
+  memcpy(proc->p_exec_path, parent->p_exec_path, sizeof(proc->p_exec_path));
 	memcpy(proc->p_image_id, parent->p_image_id, sizeof(proc->p_image_id));
 	memcpy(proc->p_dyrld_main, parent->p_dyrld_main, sizeof(proc->p_dyrld_main));
-	proc->p_dyrld_count = parent->p_dyrld_count;
+
+  proc->p_dyrld_count = parent->p_dyrld_count;
 	proc->p_dyrld_finalized = parent->p_dyrld_finalized;
-	memcpy(proc->p_dyrld_relro_start, parent->p_dyrld_relro_start, sizeof(proc->p_dyrld_relro_start));
+
+  memcpy(proc->p_dyrld_relro_start, parent->p_dyrld_relro_start, sizeof(proc->p_dyrld_relro_start));
 	memcpy(proc->p_dyrld_relro_end, parent->p_dyrld_relro_end, sizeof(proc->p_dyrld_relro_end));
-	proc->p_dyrld_interpreter = parent->p_dyrld_interpreter;
-	memcpy(proc->p_dyrld_images, parent->p_dyrld_images, sizeof(proc->p_dyrld_images));
-	signal_inherit(proc, parent);
+
+  proc->p_dyrld_interpreter = parent->p_dyrld_interpreter;
+
+  memcpy(proc->p_dyrld_images, parent->p_dyrld_images, sizeof(proc->p_dyrld_images));
+
+  signal_inherit(proc, parent);
 
 	proc_child_insert_locked(parent, proc);
 	proc_all_insert_locked(proc);
@@ -607,11 +636,13 @@ proc_fork(proc_t parent, proc_t *result)
 		/* Already visible in the parent's child list: end it and let the
 		 * parent's next waitpid clean it up like any other exit. */
 		(void)proc_exit(proc, 127ULL);
-		return false;
+
+    return false;
 	}
 
 	*result = proc;
-	return true;
+	
+  return true;
 }
 
 proc_t
@@ -626,7 +657,8 @@ proc_find(proc_id_t pid)
 	}
 
 	proc_unlock(&g_proc_lock);
-	return proc;
+
+  return proc;
 }
 
 proc_t
@@ -641,7 +673,8 @@ proc_find_zombie(proc_id_t pid)
 	}
 
 	proc_unlock(&g_proc_lock);
-	return proc;
+
+  return proc;
 }
 
 proc_t
@@ -663,7 +696,8 @@ proc_find_ident(const proc_ident_t *ident)
 	}
 
 	proc_unlock(&g_proc_lock);
-	return proc;
+
+  return proc;
 }
 
 bool
@@ -676,7 +710,8 @@ proc_reference(proc_t proc)
 	bool result = proc_reference_locked(proc);
 
 	proc_unlock(&g_proc_lock);
-	return result;
+
+  return result;
 }
 
 void

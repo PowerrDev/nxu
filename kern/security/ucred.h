@@ -15,14 +15,14 @@
  * capability set (NXU_CAP_ALL) so existing capability checks keep working.
  *
  * Unlike XNU's reference-counted, shared kauth_cred_t, a ucred is embedded in
- * struct proc with copy semantics. Simpler for a first cut; revisit if sharing
- * cost matters.
+ * struct proc with copy semantics. 
  */
 #ifndef NXU_KERN_UCRED_H
 #define NXU_KERN_UCRED_H
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <kern/console/console.h>
 
 typedef uint32_t nxu_uid_t;
 typedef uint32_t nxu_gid_t;
@@ -61,18 +61,23 @@ struct ucred {
 static inline void
 ucred_init_root(struct ucred *cred)
 {
-	if (cred == 0) return;
+  kprintf("ucred_init_root: initializing cred to root\n");
+	
+  if (cred == 0) return;
 	cred->cr_ruid = cred->cr_uid = cred->cr_svuid = NXU_UID_ROOT;
 	cred->cr_rgid = cred->cr_gid = cred->cr_svgid = NXU_GID_WHEEL;
 	cred->cr_ngroups = 0U;
-	for (uint32_t i = 0U; i < NXU_NGROUPS_MAX; i++) cred->cr_groups[i] = 0U;
+
+  for (uint32_t i = 0U; i < NXU_NGROUPS_MAX; i++) cred->cr_groups[i] = 0U;
 }
 
 /* Copy src into dst (inheritance at fork/spawn/create). */
 static inline void
 ucred_copy(struct ucred *dst, const struct ucred *src)
 {
-	if (dst == 0 || src == 0) return;
+  kprintf("ucred_copy: copying src into dst\n");
+
+  if (dst == 0 || src == 0) return;
 	*dst = *src;
 }
 
@@ -92,14 +97,16 @@ static inline bool
 ucred_may_seteuid(const struct ucred *cred, nxu_uid_t target)
 {
 	if (cred == 0) return false;
-	return ucred_is_root(cred) || target == cred->cr_ruid || target == cred->cr_svuid;
+
+  return ucred_is_root(cred) || target == cred->cr_ruid || target == cred->cr_svuid;
 }
 
 static inline bool
 ucred_may_setegid(const struct ucred *cred, nxu_gid_t target)
 {
 	if (cred == 0) return false;
-	return ucred_is_root(cred) || target == cred->cr_rgid || target == cred->cr_svgid;
+
+  return ucred_is_root(cred) || target == cred->cr_rgid || target == cred->cr_svgid;
 }
 
 /*
@@ -110,31 +117,41 @@ ucred_may_setegid(const struct ucred *cred, nxu_gid_t target)
 static inline bool
 ucred_setuid(struct ucred *cred, nxu_uid_t uid)
 {
+  kprintf("ucred_setuid: setting uid. Will return false if transition is not permitted.");
 	if (cred == 0) return false;
-	if (ucred_is_root(cred)) {
+
+  if (ucred_is_root(cred)) {
 		cred->cr_ruid = cred->cr_uid = cred->cr_svuid = uid;
 		return true;
 	}
-	if (uid == cred->cr_ruid || uid == cred->cr_svuid) {
+
+  if (uid == cred->cr_ruid || uid == cred->cr_svuid) {
 		cred->cr_uid = uid;
-		return true;
+
+    return true;
 	}
-	return false;
+
+  return false;
 }
 
 static inline bool
 ucred_setgid(struct ucred *cred, nxu_gid_t gid)
 {
 	if (cred == 0) return false;
-	if (ucred_is_root(cred)) {
+	
+  if (ucred_is_root(cred)) {
 		cred->cr_rgid = cred->cr_gid = cred->cr_svgid = gid;
-		return true;
+	
+    return true;
 	}
+
 	if (gid == cred->cr_rgid || gid == cred->cr_svgid) {
 		cred->cr_gid = gid;
-		return true;
+
+    return true;
 	}
-	return false;
+
+  return false;
 }
 
 /* seteuid(uid): change only the effective UID, within the rule above. */
@@ -143,7 +160,8 @@ ucred_seteuid(struct ucred *cred, nxu_uid_t uid)
 {
 	if (!ucred_may_seteuid(cred, uid)) return false;
 	cred->cr_uid = uid;
-	return true;
+	
+  return true;
 }
 
 static inline bool
@@ -151,7 +169,8 @@ ucred_setegid(struct ucred *cred, nxu_gid_t gid)
 {
 	if (!ucred_may_setegid(cred, gid)) return false;
 	cred->cr_gid = gid;
-	return true;
+
+  return true;
 }
 
 #endif
