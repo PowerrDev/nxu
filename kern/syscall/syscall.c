@@ -174,6 +174,111 @@ syscall_getppid(void)
 }
 
 /*
+ * Unix process credentials (kern/security/ucred.h). The get* calls read an
+ * effective or real ID; the set* calls apply the POSIX transition rules the
+ * kernel enforces, returning DENIED when the caller lacks privilege.
+ */
+static syscall_result_t
+syscall_getuid(void)
+{
+	struct ucred *cred = proc_ucred(current_proc());
+	return syscall_return(cred != 0 ? (uint64_t)cred->cr_ruid : 0ULL);
+}
+
+static syscall_result_t
+syscall_geteuid(void)
+{
+	struct ucred *cred = proc_ucred(current_proc());
+	return syscall_return(cred != 0 ? (uint64_t)cred->cr_uid : 0ULL);
+}
+
+static syscall_result_t
+syscall_getgid(void)
+{
+	struct ucred *cred = proc_ucred(current_proc());
+	return syscall_return(cred != 0 ? (uint64_t)cred->cr_rgid : 0ULL);
+}
+
+static syscall_result_t
+syscall_getegid(void)
+{
+	struct ucred *cred = proc_ucred(current_proc());
+	return syscall_return(cred != 0 ? (uint64_t)cred->cr_gid : 0ULL);
+}
+
+static syscall_result_t
+syscall_setuid(uint64_t uid)
+{
+	struct ucred *cred = proc_ucred(current_proc());
+	if (cred == 0 || uid > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	if (!ucred_setuid(cred, (nxu_uid_t)uid)) return syscall_error(SYSCALL_ERROR_DENIED);
+	return syscall_return(0ULL);
+}
+
+static syscall_result_t
+syscall_seteuid(uint64_t uid)
+{
+	struct ucred *cred = proc_ucred(current_proc());
+	if (cred == 0 || uid > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	if (!ucred_seteuid(cred, (nxu_uid_t)uid)) return syscall_error(SYSCALL_ERROR_DENIED);
+	return syscall_return(0ULL);
+}
+
+static syscall_result_t
+syscall_setgid(uint64_t gid)
+{
+	struct ucred *cred = proc_ucred(current_proc());
+	if (cred == 0 || gid > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	if (!ucred_setgid(cred, (nxu_gid_t)gid)) return syscall_error(SYSCALL_ERROR_DENIED);
+	return syscall_return(0ULL);
+}
+
+static syscall_result_t
+syscall_setegid(uint64_t gid)
+{
+	struct ucred *cred = proc_ucred(current_proc());
+	if (cred == 0 || gid > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	if (!ucred_setegid(cred, (nxu_gid_t)gid)) return syscall_error(SYSCALL_ERROR_DENIED);
+	return syscall_return(0ULL);
+}
+
+/*
+ * getgroups(size, list): size 0 returns the number of supplementary groups
+ * without touching list. Otherwise list must hold at least that many; the
+ * groups are copied out and the count returned. size < ngroups is EINVAL.
+ */
+static syscall_result_t
+syscall_getgroups(uint64_t size, uint64_t user_list)
+{
+	struct ucred *cred = proc_ucred(current_proc());
+	if (cred == 0 || size > NXU_NGROUPS_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	if (size == 0ULL) return syscall_return((uint64_t)cred->cr_ngroups);
+	if (size < (uint64_t)cred->cr_ngroups) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	if (cred->cr_ngroups != 0U &&
+		!vm_copy_to_user(user_list, cred->cr_groups, (size_t)cred->cr_ngroups * sizeof(nxu_gid_t)))
+		return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	return syscall_return((uint64_t)cred->cr_ngroups);
+}
+
+/*
+ * setgroups(count, list): replace the supplementary group list. Privileged
+ * operation (root only).
+ */
+static syscall_result_t
+syscall_setgroups(uint64_t count, uint64_t user_list)
+{
+	struct ucred *cred = proc_ucred(current_proc());
+	if (cred == 0 || count > NXU_NGROUPS_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	if (!ucred_is_root(cred)) return syscall_error(SYSCALL_ERROR_DENIED);
+	nxu_gid_t groups[NXU_NGROUPS_MAX];
+	if (count != 0ULL && !vm_copy_from_user(groups, user_list, (size_t)count * sizeof(nxu_gid_t)))
+		return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	for (uint32_t i = 0U; i < (uint32_t)count; i++) cred->cr_groups[i] = groups[i];
+	cred->cr_ngroups = (uint32_t)count;
+	return syscall_return(0ULL);
+}
+
+/*
  * fork: a copy-on-write copy of the calling process. The child resumes right
  * after this system call with 0 in the result register; the parent gets the
  * child's PID.
@@ -2292,6 +2397,26 @@ syscall_dispatch_inner(const syscall_request_t *request)
 		return syscall_dup2(request->arguments[0], request->arguments[1]);
 	case SYSCALL_READ_POLL:
 		return syscall_read_poll(request->arguments[0], request->arguments[1], request->arguments[2]);
+	case SYSCALL_GETUID:
+		return syscall_getuid();
+	case SYSCALL_GETEUID:
+		return syscall_geteuid();
+	case SYSCALL_GETGID:
+		return syscall_getgid();
+	case SYSCALL_GETEGID:
+		return syscall_getegid();
+	case SYSCALL_SETUID:
+		return syscall_setuid(request->arguments[0]);
+	case SYSCALL_SETEUID:
+		return syscall_seteuid(request->arguments[0]);
+	case SYSCALL_SETGID:
+		return syscall_setgid(request->arguments[0]);
+	case SYSCALL_SETEGID:
+		return syscall_setegid(request->arguments[0]);
+	case SYSCALL_GETGROUPS:
+		return syscall_getgroups(request->arguments[0], request->arguments[1]);
+	case SYSCALL_SETGROUPS:
+		return syscall_setgroups(request->arguments[0], request->arguments[1]);
 	case SYSCALL_EXIT:
 		return syscall_exit(request->arguments[0]);
 	case SYSCALL_WRITE:

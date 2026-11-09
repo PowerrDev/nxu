@@ -267,6 +267,66 @@ nxu_getppid(void)
 }
 
 int64_t
+nxu_getuid(void)
+{
+	return nxu_syscall0(NXU_SYS_GETUID);
+}
+
+int64_t
+nxu_geteuid(void)
+{
+	return nxu_syscall0(NXU_SYS_GETEUID);
+}
+
+int64_t
+nxu_getgid(void)
+{
+	return nxu_syscall0(NXU_SYS_GETGID);
+}
+
+int64_t
+nxu_getegid(void)
+{
+	return nxu_syscall0(NXU_SYS_GETEGID);
+}
+
+int64_t
+nxu_setuid(uint32_t uid)
+{
+	return nxu_syscall1(NXU_SYS_SETUID, uid);
+}
+
+int64_t
+nxu_seteuid(uint32_t uid)
+{
+	return nxu_syscall1(NXU_SYS_SETEUID, uid);
+}
+
+int64_t
+nxu_setgid(uint32_t gid)
+{
+	return nxu_syscall1(NXU_SYS_SETGID, gid);
+}
+
+int64_t
+nxu_setegid(uint32_t gid)
+{
+	return nxu_syscall1(NXU_SYS_SETEGID, gid);
+}
+
+int64_t
+nxu_getgroups(uint32_t size, uint32_t *list)
+{
+	return nxu_syscall2(NXU_SYS_GETGROUPS, size, NXU_PTR(list));
+}
+
+int64_t
+nxu_setgroups(uint32_t count, const uint32_t *list)
+{
+	return nxu_syscall2(NXU_SYS_SETGROUPS, count, NXU_PTR(list));
+}
+
+int64_t
 nxu_getpid(void)
 {
 	return nxu_syscall0(NXU_SYS_GETPID);

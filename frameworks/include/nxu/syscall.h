@@ -232,6 +232,22 @@ int64_t nxu_socket_accept(uint64_t listen_descriptor);
 int64_t nxu_fork(void);
 int64_t nxu_exec(const char *path, const char *const *argv);
 int64_t nxu_getppid(void);
+
+/*
+ * Unix process credentials. The get* calls return an ID; the set* calls return
+ * 0 on success or a negative error (-NXU_SYS_E_DENIED when the caller lacks
+ * privilege for the transition). setgroups is root-only.
+ */
+int64_t nxu_getuid(void);
+int64_t nxu_geteuid(void);
+int64_t nxu_getgid(void);
+int64_t nxu_getegid(void);
+int64_t nxu_setuid(uint32_t uid);
+int64_t nxu_seteuid(uint32_t uid);
+int64_t nxu_setgid(uint32_t gid);
+int64_t nxu_setegid(uint32_t gid);
+int64_t nxu_getgroups(uint32_t size, uint32_t *list);
+int64_t nxu_setgroups(uint32_t count, const uint32_t *list);
 int64_t nxu_kill(uint64_t pid, uint32_t signal);
 int64_t nxu_sigaction(uint32_t signal, const nxu_sigaction_t *action, nxu_sigaction_t *old_action);
 int64_t nxu_sigprocmask(uint32_t how, uint32_t set);
