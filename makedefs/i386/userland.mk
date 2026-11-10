@@ -351,8 +351,16 @@ $(I386_DISK): $(I386_USER_STAMP)
 
 	$(Q)PATH="$(I386_E2FS_PATH):$$PATH" $(I386_MKFS_EXT4) -F -q -b 4096 -I 256 \
 		-O has_journal,metadata_csum,^metadata_csum_seed,^dir_index,^orphan_file,^fast_commit \
-		-E lazy_itable_init=0,lazy_journal_init=0 \
+		-E lazy_itable_init=0,lazy_journal_init=0,root_owner=0:0 \
 		-L $(I386_DISK_LABEL) -d $(I386_DISKROOT) $@
+
+	# mkfs -d stamps files with the host build user's uid; the OS expects system
+	# files to be root-owned (setuid-exec in particular reads the file owner).
+	# Rewrite every inode's owner to root directly in the image with debugfs.
+	$(Q)find $(I386_DISKROOT) -mindepth 1 | sed 's|^$(I386_DISKROOT)||' | while IFS= read -r entry; do \
+		printf 'sif "%s" uid 0\nsif "%s" gid 0\n' "$$entry" "$$entry"; \
+	done > $(I386_BUILD)/chown-root.debugfs
+	$(Q)PATH="$(I386_E2FS_PATH):$$PATH" $(I386_DEBUGFS) -w -f $(I386_BUILD)/chown-root.debugfs $(I386_DISK) >/dev/null
 
 i386-disk: $(I386_DISK)
 
