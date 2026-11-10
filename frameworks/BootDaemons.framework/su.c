@@ -15,6 +15,7 @@
 #include <nxu/syscall.h>
 #include <nxu/spawn_io.h>
 #include <nxu/pwdb.h>
+#include <nxu/auth.h>
 
 #include <stdint.h>
 
@@ -27,6 +28,25 @@ say(const char *text)
 	while (text[length] != '\0')
 		length++;
 	(void)nxu_write(1ULL, text, length);
+}
+
+/* Read one line from standard input into buffer; returns its length, or -1. */
+static int64_t
+read_line(char *buffer, uint32_t capacity)
+{
+	uint32_t length = 0U;
+	while (length + 1U < capacity) {
+		char c;
+		int64_t count = nxu_read(0ULL, &c, 1ULL);
+		if (count <= 0) {
+			if (length == 0U) return -1;
+			break;
+		}
+		if (c == '\n' || c == '\r') break;
+		buffer[length++] = c;
+	}
+	buffer[length] = '\0';
+	return (int64_t)length;
 }
 
 int
@@ -44,12 +64,18 @@ main(uint64_t argc, const char *const *argv)
 
 	/*
 	 * The real UID is who actually invoked su (even when su is setuid-root and
-	 * so running with effective root). Only real root may switch without a
-	 * password; everyone else needs authentication, which does not exist yet.
+	 * so running with effective root). Real root may switch without a password;
+	 * everyone else must authenticate as the target account.
 	 */
 	if (nxu_getuid() != 0) {
-		say("su: password authentication is not available yet\n");
-		return 1;
+		say("Password: ");
+		char password[128];
+		int64_t length = read_line(password, sizeof(password));
+		say("\n");
+		if (length < 0 || !nxu_authenticate(target, password)) {
+			say("su: authentication failure\n");
+			return 1;
+		}
 	}
 
 	/* Group first: once the effective UID leaves root, the gid can no longer

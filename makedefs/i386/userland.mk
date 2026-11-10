@@ -155,6 +155,7 @@ I386_DISK_STATIC_FILES := \
     tools/DiskRoot/System/README.txt \
     tools/DiskRoot/etc/passwd \
     tools/DiskRoot/etc/group \
+    tools/DiskRoot/etc/shadow \
     tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.mp3 \
     tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.wav
 
@@ -216,7 +217,7 @@ $(I386_USER_BUILD)/bootd: $(I386_USER_COMMON_OBJECTS) $(I386_USER_COREFOUNDATION
 
 	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
 
-$(I386_USER_BUILD)/logd $(I386_USER_BUILD)/threadtest $(I386_USER_BUILD)/top $(I386_USER_BUILD)/sockettest_server $(I386_USER_BUILD)/sockettest_client $(I386_USER_BUILD)/whoami $(I386_USER_BUILD)/id $(I386_USER_BUILD)/stat $(I386_USER_BUILD)/chmod $(I386_USER_BUILD)/chown $(I386_USER_BUILD)/credtest $(I386_USER_BUILD)/suidhelper $(I386_USER_BUILD)/suidtest $(I386_USER_BUILD)/su: $(I386_USER_BUILD)/%: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/$(I386_USER_DAEMON_DIR)/%.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
+$(I386_USER_BUILD)/logd $(I386_USER_BUILD)/threadtest $(I386_USER_BUILD)/top $(I386_USER_BUILD)/sockettest_server $(I386_USER_BUILD)/sockettest_client $(I386_USER_BUILD)/whoami $(I386_USER_BUILD)/id $(I386_USER_BUILD)/stat $(I386_USER_BUILD)/chmod $(I386_USER_BUILD)/chown $(I386_USER_BUILD)/credtest $(I386_USER_BUILD)/suidhelper $(I386_USER_BUILD)/suidtest: $(I386_USER_BUILD)/%: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/$(I386_USER_DAEMON_DIR)/%.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
 
 	@mkdir -p $(dir $@)
 
@@ -262,6 +263,11 @@ $(I386_USER_BUILD)/terminal: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/fram
 	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
 
 $(I386_USER_BUILD)/libk/sha256.o: I386_USER_CFLAGS += -Ilibk
+$(I386_USER_BUILD)/frameworks/lib/auth.o: I386_USER_CFLAGS += -Ilibk
+
+$(I386_USER_BUILD)/su: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/$(I386_USER_DAEMON_DIR)/su.o $(I386_USER_BUILD)/frameworks/lib/auth.o $(I386_USER_BUILD)/libk/sha256.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
+	$(QUIET_PRINT) "LD" "$@"
+	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
 
 $(I386_USER_BUILD)/patchd: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/frameworks/BootDaemons.framework/patchd.o $(I386_USER_BUILD)/frameworks/SoftwareUpdate.framework/lib/nsw.o $(I386_USER_BUILD)/frameworks/SoftwareUpdate.framework/lib/manifest.o $(I386_USER_BUILD)/frameworks/CoreFoundation.framework/lib/plist/plist.o $(I386_USER_BUILD)/libk/sha256.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
 	$(QUIET_PRINT) "LD" "$@"
@@ -291,7 +297,9 @@ $(I386_USER_STAMP): $(I386_USER_BINARIES) $(I386_USER_PLISTS) $(I386_DISK_STATIC
 
 	$(Q)cp tools/DiskRoot/System/README.txt $(I386_DISKROOT)/System/README.txt
 
-	$(Q)cp tools/DiskRoot/etc/passwd tools/DiskRoot/etc/group $(I386_DISKROOT)/etc/
+	$(Q)cp tools/DiskRoot/etc/passwd tools/DiskRoot/etc/group tools/DiskRoot/etc/shadow $(I386_DISKROOT)/etc/
+
+	$(Q)chmod 600 $(I386_DISKROOT)/etc/shadow
 
 	$(Q)cp tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.mp3 tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.wav $(I386_DISKROOT)/System/Library/Resources/Audio/
 
@@ -314,6 +322,8 @@ $(I386_USER_STAMP): $(I386_USER_BINARIES) $(I386_USER_PLISTS) $(I386_DISK_STATIC
 	$(Q)cp $(I386_USER_BUILD)/nzh $(I386_USER_BUILD)/ping $(I386_USER_BUILD)/ifconfig $(I386_USER_BUILD)/terminaltest $(I386_USER_BUILD)/kpanic $(I386_DISKROOT)/System/Library/CoreServices/
 
 	$(Q)cp $(I386_USER_BUILD)/whoami $(I386_USER_BUILD)/id $(I386_USER_BUILD)/stat $(I386_USER_BUILD)/chmod $(I386_USER_BUILD)/chown $(I386_USER_BUILD)/credtest $(I386_USER_BUILD)/suidhelper $(I386_USER_BUILD)/suidtest $(I386_USER_BUILD)/su $(I386_DISKROOT)/System/Library/CoreServices/
+
+	$(Q)chmod 4755 $(I386_DISKROOT)/System/Library/CoreServices/su
 
 	$(Q)cp $(I386_USER_PLISTS) $(I386_DISKROOT)/System/Library/BootDaemons/
 

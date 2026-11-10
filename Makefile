@@ -897,6 +897,7 @@ $(USER_BUILD)/CoreFoundation.so: $(DYRLD_FOUNDATION_OBJECTS) $(USER_BUILD)/Runti
 	$(Q)$(USER_LD) $(DYRLD_SHARED_FLAGS) --soname CoreFoundation.framework/CoreFoundation.so $(DYRLD_FOUNDATION_OBJECTS) $(USER_BUILD)/Runtime.so -o $@
 
 $(USER_BUILD)/libk/sha256.o: USER_CFLAGS += -Ilibk
+$(USER_BUILD)/frameworks/lib/auth.o: USER_CFLAGS += -Ilibk
 
 $(USER_BUILD)/dyrld: $(USER_COMMON_OBJECTS) \
 	$(USER_BUILD)/frameworks/CoreFoundation.framework/lib/service/bootstrap_client.o \
@@ -1088,7 +1089,7 @@ $(USER_BUILD)/suidtest: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaem
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 
-$(USER_BUILD)/su: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/su.o
+$(USER_BUILD)/su: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/su.o $(USER_BUILD)/frameworks/lib/auth.o $(USER_BUILD)/libk/sha256.o
 
 	$(QUIET_PRINT) "LD" "$@"
 
