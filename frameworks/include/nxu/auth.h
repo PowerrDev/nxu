@@ -49,4 +49,18 @@ int nxu_pwverify(const char *password, const char *crypt);
  */
 int nxu_authenticate(const char *name, const char *password);
 
+/*
+ * Fill salt with NXU_PW_SALT_LEN bytes for a new password. A salt need only be
+ * unique, not secret; this derives it from boot time, PID and timing jitter,
+ * hashed. Returns 0.
+ */
+int nxu_pwsalt(uint8_t *salt);
+
+/*
+ * Set `name`'s crypt string in /etc/shadow, replacing the existing entry or
+ * appending one. The caller must be able to write /etc/shadow (i.e. be root).
+ * Returns 0 on success, -1 on failure.
+ */
+int nxu_shadow_set(const char *name, const char *crypt);
+
 #endif

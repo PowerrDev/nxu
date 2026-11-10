@@ -286,4 +286,92 @@ nxu_authenticate(const char *name, const char *password)
 	}
 	return 0;
 }
+
+int
+nxu_pwsalt(uint8_t *salt)
+{
+	if (salt == 0) return -1;
+
+	uint8_t material[72];
+	uint32_t n = 0U;
+
+	uint64_t values[9];
+	values[0] = (uint64_t)nxu_getpid();
+	values[1] = (uint64_t)nxu_uptime_us();
+	for (uint32_t i = 2U; i < 9U; i++) {
+		(void)nxu_sleep_us(1ULL);
+		values[i] = (uint64_t)nxu_uptime_us();
+	}
+	for (uint32_t i = 0U; i < 9U; i++) {
+		for (uint32_t b = 0U; b < 8U; b++) material[n++] = (uint8_t)(values[i] >> (b * 8U));
+	}
+
+	uint8_t digest[SHA256_DIGEST_SIZE];
+	sha256(material, n, digest);
+	for (uint32_t i = 0U; i < NXU_PW_SALT_LEN; i++) salt[i] = digest[i];
+	return 0;
+}
+
+int
+nxu_shadow_set(const char *name, const char *crypt)
+{
+	if (name == 0 || crypt == 0) return -1;
+
+	int64_t fd = nxu_open(NXU_SHADOW_PATH, NXU_O_READ);
+	char input[2048];
+	uint64_t total = 0ULL;
+	if (fd >= 0) {
+		while (total + 1ULL < sizeof(input)) {
+			int64_t count = nxu_read((uint64_t)fd, input + total, sizeof(input) - 1ULL - total);
+			if (count <= 0) break;
+			total += (uint64_t)count;
+		}
+		(void)nxu_close((uint64_t)fd);
+	}
+	input[total] = '\0';
+
+	uint32_t name_len = auth_strlen(name);
+
+	char output[2560];
+	uint32_t out = 0U;
+	int replaced = 0;
+
+	/* Copy each line, substituting the target account's record. */
+	const char *line = input;
+	while (*line != '\0') {
+		const char *end = line;
+		while (*end != '\0' && *end != '\n') end++;
+
+		const char *colon = line;
+		while (colon < end && *colon != ':') colon++;
+		int is_target = (uint32_t)(colon - line) == name_len;
+		for (uint32_t i = 0U; is_target && i < name_len; i++)
+			if (line[i] != name[i]) is_target = 0;
+
+		if (is_target) {
+			for (uint32_t i = 0U; name[i] != '\0' && out + 1U < sizeof(output); i++) output[out++] = name[i];
+			if (out + 1U < sizeof(output)) output[out++] = ':';
+			for (uint32_t i = 0U; crypt[i] != '\0' && out + 1U < sizeof(output); i++) output[out++] = crypt[i];
+			replaced = 1;
+		} else {
+			for (const char *p = line; p < end && out + 1U < sizeof(output); p++) output[out++] = *p;
+		}
+		if (out + 1U < sizeof(output)) output[out++] = '\n';
+
+		line = (*end == '\n') ? end + 1 : end;
+	}
+
+	if (!replaced) {
+		for (uint32_t i = 0U; name[i] != '\0' && out + 1U < sizeof(output); i++) output[out++] = name[i];
+		if (out + 1U < sizeof(output)) output[out++] = ':';
+		for (uint32_t i = 0U; crypt[i] != '\0' && out + 1U < sizeof(output); i++) output[out++] = crypt[i];
+		if (out + 1U < sizeof(output)) output[out++] = '\n';
+	}
+
+	int64_t wfd = nxu_open(NXU_SHADOW_PATH, NXU_O_WRITE | NXU_O_CREATE | NXU_O_TRUNCATE);
+	if (wfd < 0) return -1;
+	int ok = nxu_write((uint64_t)wfd, output, out) == (int64_t)out;
+	(void)nxu_close((uint64_t)wfd);
+	return ok ? 0 : -1;
+}
 #endif
