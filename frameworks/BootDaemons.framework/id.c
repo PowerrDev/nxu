@@ -2,10 +2,11 @@
  * Copyright (c) 2026 NXU Project. All rights reserved.
  */
 /*
- * id -- print real and effective user and group IDs, and supplementary groups.
- * Names arrive once an account database exists; for now the IDs are numeric.
+ * id -- print real and effective user and group IDs, and supplementary groups,
+ * each annotated with its name from /etc/passwd and /etc/group when known.
  */
 #include <nxu/syscall.h>
+#include <nxu/pwdb.h>
 
 #include <stdint.h>
 
@@ -39,17 +40,52 @@ static void
 field(const char *label, int64_t value)
 {
 	say(label);
-	say(value < 0 ? "?" : "");
-	if (value >= 0) say_u32((uint32_t)value);
+	if (value < 0) {
+		say("?");
+		return;
+	}
+	say_u32((uint32_t)value);
+}
+
+/* Append "(name)" for a user id, if /etc/passwd knows it. */
+static void
+user_name(int64_t value)
+{
+	if (value < 0) return;
+	nxu_passwd_t pw;
+	if (nxu_getpwuid((uint32_t)value, &pw) == 0) {
+		say("(");
+		say(pw.pw_name);
+		say(")");
+	}
+}
+
+/* Append "(name)" for a group id, if /etc/group knows it. */
+static void
+group_name(int64_t value)
+{
+	if (value < 0) return;
+	nxu_group_t gr;
+	if (nxu_getgrgid((uint32_t)value, &gr) == 0) {
+		say("(");
+		say(gr.gr_name);
+		say(")");
+	}
 }
 
 int
 main(void)
 {
-	field("uid=", nxu_getuid());
-	field(" gid=", nxu_getgid());
+	int64_t uid = nxu_getuid();
+	int64_t gid = nxu_getgid();
+	field("uid=", uid);
+	user_name(uid);
+	field(" gid=", gid);
+	group_name(gid);
 	field(" euid=", nxu_geteuid());
+	user_name(nxu_geteuid());
 	field(" egid=", nxu_getegid());
+	group_name(nxu_getegid());
 
 	uint32_t groups[16];
 	int64_t count = nxu_getgroups(16U, groups);
@@ -58,6 +94,7 @@ main(void)
 		for (int64_t i = 0; i < count; i++) {
 			if (i != 0) say(",");
 			say_u32(groups[i]);
+			group_name((int64_t)groups[i]);
 		}
 	}
 	say("\n");

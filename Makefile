@@ -573,7 +573,8 @@ USER_COMMON_OBJECTS := \
     $(USER_BUILD)/frameworks/crt0.o \
     $(USER_BUILD)/frameworks/lib/syscall.o \
     $(USER_BUILD)/frameworks/lib/string.o \
-    $(USER_BUILD)/frameworks/lib/thread.o
+    $(USER_BUILD)/frameworks/lib/thread.o \
+    $(USER_BUILD)/frameworks/lib/pwdb.o
 
 
 USER_COREFOUNDATION_OBJECTS := \

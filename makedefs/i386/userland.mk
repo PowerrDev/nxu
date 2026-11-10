@@ -66,7 +66,8 @@ I386_USER_COMMON_OBJECTS := \
     $(I386_USER_BUILD)/frameworks/lib/syscall_i386.o \
     $(I386_USER_BUILD)/frameworks/lib/string.o \
     $(I386_USER_BUILD)/frameworks/lib/spawn_io_i386.o \
-    $(I386_USER_BUILD)/frameworks/lib/thread_i386.o
+    $(I386_USER_BUILD)/frameworks/lib/thread_i386.o \
+    $(I386_USER_BUILD)/frameworks/lib/pwdb.o
 
 # User code is freestanding and the compiler lowers 64-bit / and % on i386 to
 # __udivdi3 and friends. libk's implementation goes into an archive so a
@@ -151,6 +152,8 @@ I386_USER_PLISTS := \
 I386_DISK_STATIC_FILES := \
     tools/DiskRoot/hello.txt \
     tools/DiskRoot/System/README.txt \
+    tools/DiskRoot/etc/passwd \
+    tools/DiskRoot/etc/group \
     tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.mp3 \
     tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.wav
 
@@ -279,13 +282,15 @@ $(I386_USER_STAMP): $(I386_USER_BINARIES) $(I386_USER_PLISTS) $(I386_DISK_STATIC
 
 	$(Q)rm -rf $(I386_DISKROOT)
 
-	$(Q)mkdir -p $(I386_DISKROOT)/System/Library/CoreServices $(I386_DISKROOT)/System/Library/BootDaemons $(I386_DISKROOT)/System/Recovery $(I386_DISKROOT)/System/Library/Resources/Audio $(I386_DISKROOT)/var/log $(I386_DISKROOT)/var/db/patchd
+	$(Q)mkdir -p $(I386_DISKROOT)/System/Library/CoreServices $(I386_DISKROOT)/System/Library/BootDaemons $(I386_DISKROOT)/System/Recovery $(I386_DISKROOT)/System/Library/Resources/Audio $(I386_DISKROOT)/var/log $(I386_DISKROOT)/var/db/patchd $(I386_DISKROOT)/etc
 
 	$(Q)cp $(I386_USER_BUILD)/triageOS $(I386_DISKROOT)/System/Recovery/triageOS
 
 	$(Q)cp tools/DiskRoot/hello.txt $(I386_DISKROOT)/hello.txt
 
 	$(Q)cp tools/DiskRoot/System/README.txt $(I386_DISKROOT)/System/README.txt
+
+	$(Q)cp tools/DiskRoot/etc/passwd tools/DiskRoot/etc/group $(I386_DISKROOT)/etc/
 
 	$(Q)cp tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.mp3 tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.wav $(I386_DISKROOT)/System/Library/Resources/Audio/
 

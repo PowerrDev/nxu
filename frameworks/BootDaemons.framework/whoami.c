@@ -2,11 +2,11 @@
  * Copyright (c) 2026 NXU Project. All rights reserved.
  */
 /*
- * whoami -- print the effective user. Until an account database exists there is
- * no name lookup, so root prints as "root" and any other effective UID prints
- * as "uid <n>".
+ * whoami -- print the effective user's name, resolved from /etc/passwd. An
+ * effective UID with no account entry prints as "uid <n>".
  */
 #include <nxu/syscall.h>
+#include <nxu/pwdb.h>
 
 #include <stdint.h>
 
@@ -44,10 +44,14 @@ main(void)
 		say("whoami: cannot read credentials\n");
 		return 1;
 	}
-	if (euid == 0) {
-		say("root\n");
+
+	nxu_passwd_t pw;
+	if (nxu_getpwuid((uint32_t)euid, &pw) == 0) {
+		say(pw.pw_name);
+		say("\n");
 		return 0;
 	}
+
 	say("uid ");
 	say_u32((uint32_t)euid);
 	say("\n");
