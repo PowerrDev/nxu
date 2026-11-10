@@ -549,6 +549,7 @@ USER_C_SOURCES := \
     frameworks/BootDaemons.framework/suidhelper.c \
     frameworks/BootDaemons.framework/suidtest.c \
     frameworks/BootDaemons.framework/su.c \
+    frameworks/BootDaemons.framework/sudo.c \
     frameworks/BootDaemons.framework/playsound.c \
     libk/wav.c \
     frameworks/BootDaemons.framework/sockettest_server.c \
@@ -638,6 +639,7 @@ USER_DAEMONS := \
     $(USER_BUILD)/suidhelper \
     $(USER_BUILD)/suidtest \
     $(USER_BUILD)/su \
+    $(USER_BUILD)/sudo \
     $(USER_BUILD)/playsound \
     $(USER_BUILD)/sockettest_server \
     $(USER_BUILD)/sockettest_client \
@@ -1096,6 +1098,13 @@ $(USER_BUILD)/su: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.fr
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 
+$(USER_BUILD)/sudo: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/sudo.o $(USER_BUILD)/frameworks/lib/auth.o $(USER_BUILD)/libk/sha256.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+
 $(USER_BUILD)/playsound: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/playsound.o $(USER_BUILD)/libk/wav.o
 
 	$(QUIET_PRINT) "LD" "$@"
@@ -1230,6 +1239,8 @@ $(USER_STAGE_STAMP): frameworks/Terminal.framework/Info.plist tools/UI/Icons/Ter
 	$(Q)cp $(USER_BUILD)/suidtest $(DISK_ROOT)/System/Library/CoreServices/suidtest
 
 	$(Q)cp $(USER_BUILD)/su $(DISK_ROOT)/System/Library/CoreServices/su
+
+	$(Q)cp $(USER_BUILD)/sudo $(DISK_ROOT)/System/Library/CoreServices/sudo
 
 	$(Q)cp $(USER_BUILD)/playsound $(DISK_ROOT)/System/Library/CoreServices/playsound
 

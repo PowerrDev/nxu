@@ -116,6 +116,7 @@ I386_USER_PROGRAMS := \
     suidhelper \
     suidtest \
     su \
+    sudo \
     kpanic
 
 I386_USER_BINARIES := $(addprefix $(I386_USER_BUILD)/,$(I386_USER_PROGRAMS))
@@ -156,6 +157,7 @@ I386_DISK_STATIC_FILES := \
     tools/DiskRoot/etc/passwd \
     tools/DiskRoot/etc/group \
     tools/DiskRoot/etc/shadow \
+    tools/DiskRoot/etc/sudoers \
     tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.mp3 \
     tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.wav
 
@@ -265,7 +267,7 @@ $(I386_USER_BUILD)/terminal: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/fram
 $(I386_USER_BUILD)/libk/sha256.o: I386_USER_CFLAGS += -Ilibk
 $(I386_USER_BUILD)/frameworks/lib/auth.o: I386_USER_CFLAGS += -Ilibk
 
-$(I386_USER_BUILD)/su: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/$(I386_USER_DAEMON_DIR)/su.o $(I386_USER_BUILD)/frameworks/lib/auth.o $(I386_USER_BUILD)/libk/sha256.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
+$(I386_USER_BUILD)/su $(I386_USER_BUILD)/sudo: $(I386_USER_BUILD)/%: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/$(I386_USER_DAEMON_DIR)/%.o $(I386_USER_BUILD)/frameworks/lib/auth.o $(I386_USER_BUILD)/libk/sha256.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
 	$(QUIET_PRINT) "LD" "$@"
 	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
 
@@ -297,7 +299,7 @@ $(I386_USER_STAMP): $(I386_USER_BINARIES) $(I386_USER_PLISTS) $(I386_DISK_STATIC
 
 	$(Q)cp tools/DiskRoot/System/README.txt $(I386_DISKROOT)/System/README.txt
 
-	$(Q)cp tools/DiskRoot/etc/passwd tools/DiskRoot/etc/group tools/DiskRoot/etc/shadow $(I386_DISKROOT)/etc/
+	$(Q)cp tools/DiskRoot/etc/passwd tools/DiskRoot/etc/group tools/DiskRoot/etc/shadow tools/DiskRoot/etc/sudoers $(I386_DISKROOT)/etc/
 
 	$(Q)chmod 600 $(I386_DISKROOT)/etc/shadow
 
@@ -321,9 +323,9 @@ $(I386_USER_STAMP): $(I386_USER_BINARIES) $(I386_USER_PLISTS) $(I386_DISK_STATIC
 
 	$(Q)cp $(I386_USER_BUILD)/nzh $(I386_USER_BUILD)/ping $(I386_USER_BUILD)/ifconfig $(I386_USER_BUILD)/terminaltest $(I386_USER_BUILD)/kpanic $(I386_DISKROOT)/System/Library/CoreServices/
 
-	$(Q)cp $(I386_USER_BUILD)/whoami $(I386_USER_BUILD)/id $(I386_USER_BUILD)/stat $(I386_USER_BUILD)/chmod $(I386_USER_BUILD)/chown $(I386_USER_BUILD)/credtest $(I386_USER_BUILD)/suidhelper $(I386_USER_BUILD)/suidtest $(I386_USER_BUILD)/su $(I386_DISKROOT)/System/Library/CoreServices/
+	$(Q)cp $(I386_USER_BUILD)/whoami $(I386_USER_BUILD)/id $(I386_USER_BUILD)/stat $(I386_USER_BUILD)/chmod $(I386_USER_BUILD)/chown $(I386_USER_BUILD)/credtest $(I386_USER_BUILD)/suidhelper $(I386_USER_BUILD)/suidtest $(I386_USER_BUILD)/su $(I386_USER_BUILD)/sudo $(I386_DISKROOT)/System/Library/CoreServices/
 
-	$(Q)chmod 4755 $(I386_DISKROOT)/System/Library/CoreServices/su
+	$(Q)chmod 4755 $(I386_DISKROOT)/System/Library/CoreServices/su $(I386_DISKROOT)/System/Library/CoreServices/sudo
 
 	$(Q)cp $(I386_USER_PLISTS) $(I386_DISKROOT)/System/Library/BootDaemons/
 

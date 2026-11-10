@@ -1,0 +1,5 @@
+# Accounts permitted to run sudo. One name per line; '#' begins a comment.
+# (Per-command and group rules are not parsed yet; a listed user may run
+# anything as root.)
+root
+user
