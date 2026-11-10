@@ -429,7 +429,7 @@ login_thread(void *unused)
 	keyboard_set_secure(true);
 	keyboard_flush_keys();
 	input_flush();
-	kputln("NXUKeystoreManager: waiting for tepOS authentication");
+	kputln("NXUKeystoreManager: waiting for authentication.");
 
 	uint8_t password[65] = {0}, first[65] = {0};
 	uint32_t length = 0, first_length = 0;
@@ -532,12 +532,12 @@ login_thread(void *unused)
 						keyboard_set_secure(false);
 						ui_service_secure_end();
 						if (wallpaper != 0) (void)kfree(wallpaper);
-						kputln("NXUKeystoreManager: unlocked by tepOS");
 						return;
 					}
 
-					kputln("NXUKeystoreManager: password refused");
-					if (result == TEP_ERR_INVALID) {
+					kputln("NXUKeystoreManager: password refused.");
+					
+          if (result == TEP_ERR_INVALID) {
 						message = "Passwords did not match. Try again.";
 					} else if (result == TEP_ERR_DENIED) {
 						message = "Incorrect password. Try again.";

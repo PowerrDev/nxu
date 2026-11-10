@@ -6,7 +6,7 @@
  *
  * Process credentials: the Unix user/group identity the kernel owns and
  * enforces. Modeled on XNU's bsd/sys/ucred.h (see doc/architecture/
- * unix-security.md). Phase 1 of the native Unix security substrate.
+ * unix-security.md). 
  *
  * A credential carries real, effective and saved user and group IDs plus a
  * supplementary group list. The effective IDs decide what the process may do;
@@ -129,7 +129,7 @@ ucred_may_setegid(const struct ucred *cred, nxu_gid_t target)
 static inline bool
 ucred_setuid(struct ucred *cred, nxu_uid_t uid)
 {
-  kprintf("ucred_setuid: setting uid. Will return false if transition is not permitted.");
+  kprintf("ucred_setuid: setting uid. Will return false if transition is not permitted.\n");
 	if (cred == 0) return false;
 
   if (ucred_is_root(cred)) {
