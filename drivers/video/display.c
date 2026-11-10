@@ -20,7 +20,8 @@ display_init(void)
 bool
 display_register(display_device_t *display)
 {
-	if (!g_display_initialized || display == 0 || display->registered || display->framebuffer == 0 ||
+  kprintf("display_register: registering display\n");
+  if (!g_display_initialized || display == 0 || display->registered || display->framebuffer == 0 ||
 		display->width == 0U || display->height == 0U || display->stride < display->width ||
 		display->bytes_per_pixel == 0U || display->present == 0 || g_primary_display != 0) {
 		return false;
@@ -59,10 +60,10 @@ void
 display_dump(void)
 {
 	if (g_primary_display == 0) {
-		kputln("DriverKitDisplayFamily: no primary display");
+		kputln("com.butterscotch.io.display: no primary display");
 		return;
 	}
 
-	kprintf("DriverKitDisplayFamily: primary %ux%u, stride %u pixels, %u Bpp\n", g_primary_display->width,
+	kprintf("com.butterscotch.io.display: primary %ux%u, stride %u pixels, %u Bpp\n", g_primary_display->width,
 			g_primary_display->height, g_primary_display->stride, g_primary_display->bytes_per_pixel);
 }

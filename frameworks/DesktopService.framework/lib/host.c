@@ -1,4 +1,4 @@
-/* Desktop host callbacks use bounded public syscalls, not kernel imports. */
+/** This uses bounded public syscalls and NOT kernel imports. */
 #include <CoreGraphics.h>
 #include <nxu/string.h>
 #include <nxu/syscall.h>

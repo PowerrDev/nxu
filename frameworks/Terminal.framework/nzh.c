@@ -2,7 +2,7 @@
  * Copyright (c) 2026 NXU Project. All rights reserved.
  *
  * NXU's small interactive shell. Terminal supplies canonical input, editing,
- * and history; this process parses commands and owns foreground children.
+ * and history. This process parses commands and owns foreground children.
  */
 #include "shell.h"
 #include "netutil.h"
