@@ -3,9 +3,7 @@
  */
 /*
  * id -- print real and effective user and group IDs, and supplementary groups.
- * Part of Phase 2 of the native Unix security substrate
- * (doc/architecture/unix-security.md). Names arrive with the account database
- * (Phase 5); for now the IDs are numeric.
+ * Names arrive once an account database exists; for now the IDs are numeric.
  */
 #include <nxu/syscall.h>
 

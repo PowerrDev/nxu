@@ -2,8 +2,7 @@
  * Copyright (c) 2026 NXU Project. All rights reserved.
  */
 /*
- * chmod -- change a file's permission bits. Phase 3 of the native Unix security
- * substrate (doc/architecture/unix-security.md). Mode is given in octal, e.g.
+ * chmod -- change a file's permission bits. Mode is given in octal, e.g.
  * `chmod 644 /Volumes/mainOS/etc/motd`.
  */
 #include <nxu/syscall.h>

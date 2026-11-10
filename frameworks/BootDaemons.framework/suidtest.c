@@ -2,8 +2,8 @@
  * Copyright (c) 2026 NXU Project. All rights reserved.
  */
 /*
- * suidtest -- demonstrate setuid-exec (Phase 4, doc/architecture/unix-security.md).
- * As root it marks suidhelper setuid-root (chmod 04755), drops itself to a
+ * suidtest -- demonstrate setuid-exec. As root it marks suidhelper setuid-root
+ * (chmod 04755), drops itself to a
  * non-root UID, then spawns the helper. The kernel's loader sees the setuid bit
  * and gives the child the file owner's (root's) effective UID; the helper
  * reports that back through its exit code. The kernel also logs the transition

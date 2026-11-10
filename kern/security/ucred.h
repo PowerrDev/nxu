@@ -6,7 +6,7 @@
  *
  * Process credentials: the Unix user/group identity the kernel owns and
  * enforces. Modeled on XNU's bsd/sys/ucred.h (see doc/architecture/
- * unix-security.md). Phase 1 of the native Unix security substrate.
+ * unix-security.md).
  *
  * A credential carries real, effective and saved user and group IDs plus a
  * supplementary group list. The effective IDs decide what the process may do;

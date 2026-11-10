@@ -2,10 +2,9 @@
  * Copyright (c) 2026 NXU Project. All rights reserved.
  */
 /*
- * whoami -- print the effective user. Part of Phase 2 of the native Unix
- * security substrate (doc/architecture/unix-security.md). Until an account
- * database exists (Phase 5) there is no name lookup, so root prints as "root"
- * and any other effective UID prints as "uid <n>".
+ * whoami -- print the effective user. Until an account database exists there is
+ * no name lookup, so root prints as "root" and any other effective UID prints
+ * as "uid <n>".
  */
 #include <nxu/syscall.h>
 

@@ -2,7 +2,7 @@
  * Copyright (c) 2026 NXU Project. All rights reserved.
  */
 /*
- * credtest -- demonstrate Phase 3 permission enforcement. The shell runs as
+ * credtest -- demonstrate file permission enforcement. The shell runs as
  * root, and root bypasses every check, so this tool drops itself to a non-root
  * UID (root -> 1000 is always allowed) and then shows the kernel refusing
  * privileged operations on a root-owned file: a non-owner may not chmod it, a

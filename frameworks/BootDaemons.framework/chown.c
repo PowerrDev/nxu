@@ -2,9 +2,8 @@
  * Copyright (c) 2026 NXU Project. All rights reserved.
  */
 /*
- * chown -- change a file's owner and/or group. Phase 3 of the native Unix
- * security substrate (doc/architecture/unix-security.md). The owner is given as
- * `uid`, `uid:gid`, or `:gid`, e.g. `chown 0:0 /Volumes/mainOS/etc/motd`.
+ * chown -- change a file's owner and/or group. The owner is given as `uid`,
+ * `uid:gid`, or `:gid`, e.g. `chown 0:0 /Volumes/mainOS/etc/motd`.
  */
 #include <nxu/syscall.h>
 

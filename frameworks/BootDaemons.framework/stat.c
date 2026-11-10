@@ -2,9 +2,8 @@
  * Copyright (c) 2026 NXU Project. All rights reserved.
  */
 /*
- * stat -- show a file's type, mode, owner and size. Phase 3 of the native Unix
- * security substrate (doc/architecture/unix-security.md): the first tool that
- * surfaces file ownership and mode bits, now that the VFS reports them.
+ * stat -- show a file's type, mode, owner and size: the tool that surfaces file
+ * ownership and mode bits now that the VFS reports them.
  */
 #include <nxu/syscall.h>
 
