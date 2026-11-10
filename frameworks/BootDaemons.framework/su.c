@@ -30,6 +30,17 @@ say(const char *text)
 	(void)nxu_write(1ULL, text, length);
 }
 
+/* The final path component: used as argv[0] / the process name, which must be
+ * short (the full path overflows the kernel's process-name buffer). */
+static const char *
+basename_of(const char *path)
+{
+	const char *base = path;
+	for (const char *p = path; *p != '\0'; p++)
+		if (*p == '/') base = p + 1;
+	return base;
+}
+
 /* Read one line from standard input into buffer; returns its length, or -1. */
 static int64_t
 read_line(char *buffer, uint32_t capacity)
@@ -86,7 +97,7 @@ main(uint64_t argc, const char *const *argv)
 	}
 
 	const char *shell = pw.pw_shell[0] != '\0' ? pw.pw_shell : SU_DEFAULT_SHELL;
-	const char *const arguments[] = {shell, 0};
+	const char *const arguments[] = {basename_of(shell), 0};
 
 	int64_t stream = -1;
 	int64_t child = nxu_spawn_io(shell, arguments, &stream);
