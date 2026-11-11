@@ -1,9 +1,8 @@
 # NXU
+
 Power's ARM64 & x86_64 operational system.
 
 # Source layout
-The tree is split into subsystems, so that architecture-specific code, core
-kernel code and machine discovery never bleed into one another.
 
 ```text
 kern/arm64   ARM64-specific kernel code, including startup, exceptions,
@@ -52,60 +51,59 @@ resolves `<kern/...>`, `<vfs/...>`, `<vm/...>` and `<platform/...>`; and
 
 `make userland` builds `bootd`, `logd`, `patchd`, and the recovery-only `triageOS`
 as static AArch64 ELF64 programs. Disk image creation stages them under `/System/Library/CoreServices`;
-the kernel loads `bootd` from the mounted system volume as PID 1. `bootd` then
+
+The kernel loads `bootd` from the mounted system volume as PID 1. `bootd` then
 discovers declarative XML service definitions from `/System/Library/BootDaemons`
-instead of compiling daemon names into PID 1. See `doc/root-services.md` and
+instead of compiling daemon names into PID 1.
+
+See `doc/root-services.md` and
 `doc/service-plists.md` for discovery, supervision, logging, and recovery.
 
-Recovery UI is deliberately isolated from the main sevOS UI stack: Shift+R selects
+Recovery framework is deliberately isolated from the mainOS UIKit stack - Shift+R selects
 `triageOS`, which links `Recovery.framework`/StartupOptionsUI only, while normal
-sevOS continues to use the external UIService.framework. See `doc/recovery-ui.md`.
+mainOS continues to use the external UIService.framework. See `doc/recovery-ui.md`.
 
-`make run` boots everything that can share one boot in a single QEMU instance:
-bootd with logd, patchd and the Dock, the boot chime, the UIService desktop
-(WindowServer, the menu bar and the windows of the apps in `/Applications`, each
-a process the Dock starts; see `doc/apps-and-dock.md`), audio on the host's
-speakers, and the userland
-tests (IPC, threads, process control, sockets, sound) running against that live
-system, ending in one `unified_boot_summary` block on the serial console. It needs
-the sibling `WindowServer.framework` and `UIService.framework`; `make run-console`
-is the plain boot without them. What is left out of it, and why, is in
-`doc/testing.md`; any test can still be booted alone with `make test TEST=<id>`
-or picked from `make tests`.
-
-Development boot arguments are passed with `BOOT_ARGS`, for example
+`Development boot arguments are passed with `BOOT_ARGS`, for example
 `make run-console BOOT_ARGS="-v -no-gpu"`. See `doc/boot-args.md` for the current
 read-only Device Tree NVRAM backend and supported switches.
 
 # UART
+
 To print things in our kernel, we need to know about memory-mapped I/O.
 
 On QEMU's ARM64 `virt` machine, the UART is a PL011 (a standard ARM serial chip used for data transfer) located at usually `0x09000000`.
 **Note:** This address does not point to normal RAM. Reading and writing there communicates with hardware.
 
 ### Memory Mapped I/O
+
 Normally, something like `value = *address;` means that it will read the value from memory, with memory-mapped hardware, the same operation can mean:
+
 - read the UART status register;
 - send a character;
 - acknowledge an interrupt;
 - configure a timer;
 
 FYI, the address determines which hardware register you access, for the PL011 UART, the most important registers are:
+
 ```text
 UART base + 0x00 = Data Register
 UART base + 0x18 = Flag Register
 ```
+
 So:
+
 ```text
 0x09000000 = UARTDR
 0x09000018 = UARTFR
 ```
 
-# UART flag register 
+# UART flag register
+
 Of course, before writing a character we must check whether the transmit FIFO is full (first-in, first-out).
 The 5th bit of `UARTFR` is `TXFF`, and it's also the transmit FIFO full.
 
 If bit 5 is 1, we must wait, something like:
+
 ```c
 while (UARTFR & (1 << 5)) {
 
@@ -115,13 +113,17 @@ while (UARTFR & (1 << 5)) {
 And finally, when the bits become 0, we can write character to UARTDR (UART data register)
 
 ## Why should we use `volatile`?
+
 The type qualifier keyword `volatile` forces the CPU to read the actual memory address every single time the variable is accessed, rather than caching its value in a register.
 
 So, hardware could (and can) change the UART status at any moment. This loop:
+
 ```c
 while (UART_FR & UART_FR_TXFF) {}
 ```
+
 must read `UART_FR`repeatdly; Without `volatile`, the compiler could theoretically turn it into:
+
 ```c
 status = UART_FR;
 
@@ -133,9 +135,11 @@ That would read the hardware only once and potentially loop forever. The type qu
 **Note**: It does not make code thread-safe. It is mainly important here because we are communicating with hardware.
 
 # ARM64 Exception Levels and `CurrentEL`
+
 An ARM64 Exception Level, abbreviated EL, is a CPU privilege level.
 
 It is not the same thing as a C++ or Java exception. In ARM terminology, an exception is an event such as:
+
 - an interrupt
 - a page fault
 - an invalid instruction
@@ -143,6 +147,7 @@ It is not the same thing as a C++ or Java exception. In ARM terminology, an exce
 - a timer event
 
 In total, we have four levels:
+
 - `EL0`: Normally used for user applications, lowest privilege
 - `EL1`: Used for operating system kernel, privileged.
 - `EL2`: Used in the Hypervisor. More privileged.
@@ -151,16 +156,21 @@ In total, we have four levels:
 EL0 and EL1 are mandatory architectural levels. EL2 and EL3 are optional, depending on whether virtualization and security extensions are implemented or exposed.
 
 # How do I know the current level?
+
 The register `CurrentEL` contains the Exception Level. FYI, it's not normal RAM, and it does not have a memory address. Therefore, we do not use `ldr` to read it.
 
 For us, ARM64 provides `mrs` (Move Register from System Register):
+
 ```asm
 mrs x0, CurrentEL
 ```
+
 Conceptually, x0 = `CurrentEL` , furthermore, there is also a reverse instruction called `msr` (Move general-purpose register to System Register / Special Register)
 
 # `CurrentEL` does not directly contain 1, 2, or 3
+
 Remember this. CurrentEL is a 64-bit register, but the EL number is stored only in bits 3 and 2:
+
 ```plaintext
 63                                      4 3   2 1   0
 +----------------------------------------+-----+-----+
@@ -169,14 +179,18 @@ Remember this. CurrentEL is a 64-bit register, but the EL number is stored only 
                                              ^
                                          bits [3:2]
 ```
+
 The possible fields values are:
+
 ```plaintext
 bits [3:2] = 00 -> EL0
 bits [3:2] = 01 -> EL1
 bits [3:2] = 10 -> EL2
 bits [3:2] = 11 -> EL3
 ```
+
 This means the raw register values look like:
+
 | Level | Binary register value | Raw value |
 | ----- | --------------------: | --------: |
 | EL0   |                `0000` |     `0x0` |
@@ -185,26 +199,32 @@ This means the raw register values look like:
 | EL3   |                `1100` |     `0xC` |
 
 For example, `EL1` is encoded like this:
+
 ```plaintext
 CurrentEL = 0000 0100
                     ^^
                  bits 3:2
 ```
+
 To extract the actual number, we shift it right by two bits:
+
 ```plaintext
 0000 0100 >> 2
           =
 0000 0001
 ```
+
 So: `current_el = raw_current_el >> 2;`
 Let's also apply a mask: `current_el = (raw_current_el >> 2) & 0x3;`
 
 `0x3` is binary; therefore `0x3 = 0011`. This keeps only the lowest bits
 
 # ARM64 Exceptions
+
 Let's make our CPU execute a invalid instruction. Instead of silently freezing the kernel, it will log the exception so we know what's going on
 
 The target output is something like:
+
 ```plaintext
 panic(cpu 0 caller 0x0000000000000000): "Kernel trap type 1 -- Undefined Instruction"
 Debugger message: panic
@@ -231,9 +251,10 @@ System uptime: unavailable
 Kernel halted.
 ```
 
-BTW, *your* exact address and `SPSR_EL1` value can be different.
+BTW, _your_ exact address and `SPSR_EL1` value can be different.
 
 ## What even happens during an exception?
+
 Let's suppose the CPU reaches `udf #0` - `udf` means permanently undefined instruction. It intentionally causes a synchronous exception.
 
 The CPU will stop normal execution, record why the execution happened in ESR_EL1, record where it happened in ELR_EL1, save the old processor state in SPSR_EL1, look up the exception-vector base in VBAR_EL1, choose one entry in the vector table and finally start executing that entry.
@@ -245,6 +266,7 @@ The CPU will stop normal execution, record why the execution happened in ESR_EL1
 Our invalid instruction causes a synchronous exception.
 
 “Synchronous” means the exception is directly caused by the instruction currently executing. That includes:
+
 - Undefined instruction
 - Invalid memory access
 - System call
@@ -252,6 +274,7 @@ Our invalid instruction causes a synchronous exception.
 - Alignment fault
 
 Other exception types are asynchronous, such as:
+
 - IRQ
 - FIQ
 - SError
@@ -264,6 +287,7 @@ An invalid instruction **is** synchronous because the CPU can identify the exact
 
 An AArch64 vector table contains 16 entries.
 Each entry occupies `0x80`, or 128 bytes:
+
 ```plaintext
 Entry 0  starts at VBAR + 0x000
 Entry 1  starts at VBAR + 0x080
@@ -277,6 +301,7 @@ The whole table occupies 2048 bytes (16 entries x 128 bytes). Therefore, the bas
 ## Registers the CPU fills in
 
 ESR_EL1 - The Exception Syndrome Register explains why an exception was taken to EL1; Its important high layout is:
+
 ```plaintext
 63             32 31       26 25 24                 0
 +----------------+-----------+--+---------------------+
@@ -292,8 +317,6 @@ It provides extra information whose interpretation depends on the exception clas
 `SPSR_EL1` stores the processor state from before the exception so when a real handler eventually executes `eret` the CPU will restore its execution state from `SPSR_EL1` and resume using `ELR_EL1`
 `FAR_EL1` means Fault Address Register. It is especially useful for memory faults. For an undefined instruction, FAR_EL1 is not the important register, but we will print it because it will matter during page-fault work.
 
-
-
 ## Input drivers
 
 NXU now includes a modern VirtIO-MMIO core with split virtqueues and VirtIO
@@ -301,7 +324,6 @@ Input drivers for the QEMU `virt` keyboard and relative mouse. `make run` adds
 `virtio-keyboard-device` and `virtio-mouse-device`; their MMIO frames and GIC
 interrupts are discovered through the boot Device Tree. See
 `doc/drivers/virtio.md` and `doc/drivers/input.md`.
-
 
 ## VFS and ext4
 
