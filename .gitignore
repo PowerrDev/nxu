@@ -28,3 +28,6 @@ __pycache__/
 
 # Compiler cache survives make clean.
 /.build-cache/
+
+# Local working-plan notes for Claude (not committed).
+/CLAUDE.md
