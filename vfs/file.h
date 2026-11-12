@@ -98,9 +98,28 @@ vfs_status_t filedesc_dup2(filedesc_t filedesc, uint32_t source, uint32_t destin
 vfs_status_t filedesc_get(filedesc_t filedesc, uint32_t descriptor, file_t *result);
 vfs_status_t filedesc_remove(filedesc_t filedesc, uint32_t descriptor, file_t *result);
 
-vfs_status_t file_read(file_t file, void *buffer, uint64_t size, uint64_t *read_size);
+/*
+ * file_read / file_write
+ *
+ * One transfer on an open file. ioflags (VNODE_IO_*, vfs/vnode.h) apply to
+ * this call only and are added to what the file was opened with: a file
+ * opened VFS_OPEN_NONBLOCK never waits, and a caller may ask any file not to
+ * wait this once. A socket honours VNODE_IO_NONBLOCK for reads; its writes
+ * always wait for room.
+ */
+vfs_status_t file_read(file_t file, void *buffer, uint64_t size, uint32_t ioflags, uint64_t *read_size);
 vfs_status_t file_readdir(file_t file, vfs_dirent_t *entry);
-vfs_status_t file_write(file_t file, const void *buffer, uint64_t size, uint64_t *written_size);
+vfs_status_t file_write(file_t file, const void *buffer, uint64_t size, uint32_t ioflags, uint64_t *written_size);
+
+/*
+ * file_is_stream
+ *
+ * True for a file that has no positions, only arrival order: a socket, a
+ * character device, a FIFO. A read of one returns what has arrived, however
+ * little, and must not wait for more once it has something to return.
+ */
+bool file_is_stream(file_t file);
+
 vfs_status_t file_seek(file_t file, uint64_t offset);
 vfs_status_t file_ioctl(file_t file, uint32_t command, void *argument);
 

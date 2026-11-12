@@ -53,6 +53,11 @@ Device vnodes also use three optional operations, `open`, `close` and `ioctl`
 (see [devfs](devfs.md)); a filesystem that does not provide them opens and closes
 freely and answers `NOT_SUPPORTED` to `ioctl`.
 
+The `read` and `write` operations take per-call I/O flags (`VNODE_IO_*`).
+`vnode_read_io()` and `vnode_write_io()` pass them through; `vnode_read()` and
+`vnode_write()` are the same calls with no flags, for the kernel's own readers
+of regular files. Filesystems whose transfers never wait ignore the flags.
+
 The wrappers in `vnode.c` enforce common type and argument checks before
 entering filesystem code.
 

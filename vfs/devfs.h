@@ -27,8 +27,9 @@ typedef struct {
 	/* All optional: an operation that is missing answers NOT_SUPPORTED (open and close succeed). */
 	vfs_status_t (*open)(void *context, uint32_t flags);
 	void (*close)(void *context);
-	vfs_status_t (*read)(void *context, void *buffer, uint64_t size, uint64_t *read_size);
-	vfs_status_t (*write)(void *context, const void *buffer, uint64_t size, uint64_t *written_size);
+	/* ioflags is VNODE_IO_* for this one transfer (vfs/vnode.h). */
+	vfs_status_t (*read)(void *context, void *buffer, uint64_t size, uint32_t ioflags, uint64_t *read_size);
+	vfs_status_t (*write)(void *context, const void *buffer, uint64_t size, uint32_t ioflags, uint64_t *written_size);
 	vfs_status_t (*ioctl)(void *context, uint32_t command, void *argument);
 } devfs_operations_t;
 

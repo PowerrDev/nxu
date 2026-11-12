@@ -519,6 +519,21 @@ syscall_sigreturn(void)
 #endif
 }
 
+/*
+ * syscall_io_partial:
+ *
+ * Whether a transfer that stopped with status after moving some bytes should
+ * report those bytes rather than the status. Bytes a stream has taken or given
+ * cannot be offered again, so "would block" and "interrupted" after a partial
+ * transfer are a short count; the caller meets the condition itself on its next
+ * call.
+ */
+static bool
+syscall_io_partial(vfs_status_t status, uint64_t complete)
+{
+	return complete != 0ULL && (status == VFS_STATUS_WOULD_BLOCK || status == VFS_STATUS_INTERRUPTED);
+}
+
 static syscall_result_t
 syscall_write(uint64_t file_descriptor, uint64_t user_buffer, uint64_t length)
 {
@@ -526,50 +541,65 @@ syscall_write(uint64_t file_descriptor, uint64_t user_buffer, uint64_t length)
 
 	if (length != 0ULL && length - 1ULL > UINT64_MAX - user_buffer) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 
+	if (file_descriptor >= VFS_FD_MAX) return syscall_error(SYSCALL_ERROR_BAD_FD);
+
+	/*
+	 * Standard output and standard error with no file installed are the kernel
+	 * console: a service the kernel started has nothing else to write to.
+	 */
+	file_t file = 0;
+	bool console = false;
+
+	if (filedesc_get(&current_proc()->p_fd, (uint32_t)file_descriptor, &file) != VFS_STATUS_OK) {
+		if (file_descriptor != SYSCALL_STDOUT && file_descriptor != SYSCALL_STDERR)
+			return syscall_error(SYSCALL_ERROR_BAD_FD);
+
+		console = true;
+	}
+
 	char buffer[SYSCALL_FILE_IO_BUFFER_SIZE];
 	uint64_t written = 0ULL;
+	bool failed = false;
+	syscall_error_t error = SYSCALL_ERROR_IO;
 
 	while (written < length) {
 		uint64_t chunk_size = length - written;
 		if (chunk_size > sizeof(buffer)) chunk_size = sizeof(buffer);
 
-		if (!vm_copy_from_user(buffer, user_buffer + written, chunk_size))
-			return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+		if (!vm_copy_from_user(buffer, user_buffer + written, chunk_size)) {
+			failed = true;
+			error = SYSCALL_ERROR_BAD_ADDRESS;
+			break;
+		}
 
-		if (file_descriptor == SYSCALL_STDOUT || file_descriptor == SYSCALL_STDERR) {
-			file_t redirected;
-
-			if (filedesc_get(&current_proc()->p_fd, (uint32_t)file_descriptor, &redirected) == VFS_STATUS_OK) {
-				uint64_t count = 0;
-				vfs_status_t status = file_write(redirected, buffer, chunk_size, &count);
-				file_rele(redirected);
-
-				if (status != VFS_STATUS_OK) return syscall_error(syscall_vfs_error(status));
-
-				written += count;
-				if (count != chunk_size) break;
-			} else {
-				for (uint64_t index = 0; index < chunk_size; index++) {
-					kputc(buffer[index]);
-				}
-				written += chunk_size;
+		if (console) {
+			for (uint64_t index = 0; index < chunk_size; index++) {
+				kputc(buffer[index]);
 			}
 
+			written += chunk_size;
 			continue;
 		}
 
-		if (file_descriptor >= VFS_FD_MAX) return syscall_error(SYSCALL_ERROR_BAD_FD);
+		uint64_t count = 0ULL;
+		vfs_status_t status = file_write(file, buffer, chunk_size, 0U, &count);
 
-		uint64_t file_written = 0ULL;
-		vfs_status_t status =
-			vfs_write(&current_proc()->p_fd, (uint32_t)file_descriptor, buffer, chunk_size, &file_written);
-		if (status != VFS_STATUS_OK) return syscall_error(syscall_vfs_error(status));
+		if (status != VFS_STATUS_OK) {
+			if (!syscall_io_partial(status, written)) {
+				failed = true;
+				error = syscall_vfs_error(status);
+			}
 
-		written += file_written;
-		if (file_written != chunk_size) break;
+			break;
+		}
+
+		written += count;
+		if (count != chunk_size) break;
 	}
 
-	return syscall_return(written);
+	if (file != 0) file_rele(file);
+
+	return failed ? syscall_error(error) : syscall_return(written);
 }
 
 static syscall_result_t
@@ -581,27 +611,55 @@ syscall_read(uint64_t file_descriptor, uint64_t user_buffer, uint64_t length)
 
 	if (length != 0ULL && length - 1ULL > UINT64_MAX - user_buffer) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 
+	file_t file;
+
+	if (filedesc_get(&current_proc()->p_fd, (uint32_t)file_descriptor, &file) != VFS_STATUS_OK)
+		return syscall_error(SYSCALL_ERROR_BAD_FD);
+
+	/*
+	 * A regular file is read in buffer-sized pieces until the request is met or
+	 * the file ends. A stream is asked once: what one read of it returns (a
+	 * line, a datagram, whatever has arrived) is the stream's decision, and
+	 * asking again would wait for input the caller did not ask to wait for.
+	 */
+	bool stream = file_is_stream(file);
+
 	char buffer[SYSCALL_FILE_IO_BUFFER_SIZE];
 	uint64_t complete = 0ULL;
+	bool failed = false;
+	syscall_error_t error = SYSCALL_ERROR_IO;
 
 	while (complete < length) {
 		uint64_t chunk_size = length - complete;
 		if (chunk_size > sizeof(buffer)) chunk_size = sizeof(buffer);
 
 		uint64_t read_size = 0ULL;
-		vfs_status_t status =
-			vfs_read(&current_proc()->p_fd, (uint32_t)file_descriptor, buffer, chunk_size, &read_size);
-		if (status != VFS_STATUS_OK) return syscall_error(syscall_vfs_error(status));
+		vfs_status_t status = file_read(file, buffer, chunk_size, 0U, &read_size);
+
+		if (status != VFS_STATUS_OK) {
+			if (!syscall_io_partial(status, complete)) {
+				failed = true;
+				error = syscall_vfs_error(status);
+			}
+
+			break;
+		}
 
 		if (read_size == 0ULL) break;
 
-		if (!vm_copy_to_user(user_buffer + complete, buffer, read_size))
-			return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+		if (!vm_copy_to_user(user_buffer + complete, buffer, read_size)) {
+			failed = true;
+			error = SYSCALL_ERROR_BAD_ADDRESS;
+			break;
+		}
+
 		complete += read_size;
-		if (read_size < chunk_size) break;
+		if (stream || read_size < chunk_size) break;
 	}
 
-	return syscall_return(complete);
+	file_rele(file);
+
+	return failed ? syscall_error(error) : syscall_return(complete);
 }
 
 /*
@@ -670,7 +728,7 @@ syscall_open(uint64_t user_path, uint64_t flags)
 static syscall_result_t
 syscall_ioctl(uint64_t descriptor, uint64_t command, uint64_t user_argument)
 {
-	if (descriptor < VFS_FD_FIRST_FILE || descriptor >= VFS_FD_MAX) return syscall_error(SYSCALL_ERROR_BAD_FD);
+	if (descriptor >= VFS_FD_MAX) return syscall_error(SYSCALL_ERROR_BAD_FD);
 
 	if (command > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
@@ -2568,17 +2626,19 @@ syscall_read_poll(uint64_t descriptor, uint64_t user_buffer, uint64_t length)
 		return syscall_error(SYSCALL_ERROR_BAD_FD);
 	}
 
-	if (file->f_type != FILE_TYPE_SOCKET) {
+	/* Only a stream can have "nothing yet": a socket, or a device that honours VNODE_IO_NONBLOCK. */
+	if (!file_is_stream(file)) {
 		file_rele(file);
 		return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
 	}
 
 	char buffer[SYSCALL_IO_BUFFER_SIZE];
 	uint64_t capacity = length < sizeof(buffer) ? length : sizeof(buffer);
-	int64_t count = socket_read_poll(file->f_socket, buffer, capacity);
+	uint64_t count = 0ULL;
+	vfs_status_t status = file_read(file, buffer, capacity, VNODE_IO_NONBLOCK, &count);
 	file_rele(file);
 
-	if (count < 0) return syscall_error(count == -2 ? SYSCALL_ERROR_AGAIN : SYSCALL_ERROR_IO);
+	if (status != VFS_STATUS_OK) return syscall_error(syscall_vfs_error(status));
 
 	if (count != 0 && !vm_copy_to_user(user_buffer, buffer, count)) {
 		return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);

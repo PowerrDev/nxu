@@ -365,8 +365,26 @@ filedesc_close_all(filedesc_t filedesc)
 	}
 }
 
+bool
+file_is_stream(file_t file)
+{
+	if (file == 0 || !file->f_active) return false;
+	if (file->f_type == FILE_TYPE_SOCKET) return true;
+
+	vnode_type_t type = file->f_vnode->v_type;
+
+	return type == VNODE_TYPE_CHARACTER || type == VNODE_TYPE_FIFO || type == VNODE_TYPE_SOCKET;
+}
+
+/* The I/O flags of one transfer: what the caller asked for this once, plus what the file was opened with. */
+static uint32_t
+file_ioflags(file_t file, uint32_t ioflags)
+{
+	return (file->f_flags & VFS_OPEN_NONBLOCK) != 0U ? ioflags | VNODE_IO_NONBLOCK : ioflags;
+}
+
 vfs_status_t
-file_read(file_t file, void *buffer, uint64_t size, uint64_t *read_size)
+file_read(file_t file, void *buffer, uint64_t size, uint32_t ioflags, uint64_t *read_size)
 {
 	if (read_size != 0) *read_size = 0ULL;
 	if (file == 0 || buffer == 0 || read_size == 0 || !file->f_active) return VFS_STATUS_INVALID;
@@ -374,13 +392,19 @@ file_read(file_t file, void *buffer, uint64_t size, uint64_t *read_size)
 	if ((file->f_flags & VFS_OPEN_READ) == 0U) return VFS_STATUS_INVALID;
 
 	if (file->f_type == FILE_TYPE_SOCKET) {
-		int64_t result = socket_read(file->f_socket, buffer, size);
+		bool nonblock = (file_ioflags(file, ioflags) & VNODE_IO_NONBLOCK) != 0U;
+		int64_t result = nonblock ? socket_read_poll(file->f_socket, buffer, size)
+								  : socket_read(file->f_socket, buffer, size);
+
+		/* socket_read_poll: -2 is "nothing yet, the peer is still there". */
+		if (result == -2) return VFS_STATUS_WOULD_BLOCK;
 		if (result < 0) return VFS_STATUS_IO_ERROR;
 		*read_size = (uint64_t)result;
 		return VFS_STATUS_OK;
 	}
 
-	vfs_status_t status = vnode_read(file->f_vnode, file->f_offset, buffer, size, read_size);
+	vfs_status_t status =
+		vnode_read_io(file->f_vnode, file->f_offset, buffer, size, file_ioflags(file, ioflags), read_size);
 	if (status == VFS_STATUS_OK) file->f_offset += *read_size;
 	return status;
 }
@@ -402,7 +426,7 @@ file_readdir(file_t file, vfs_dirent_t *entry)
 }
 
 vfs_status_t
-file_write(file_t file, const void *buffer, uint64_t size, uint64_t *written_size)
+file_write(file_t file, const void *buffer, uint64_t size, uint32_t ioflags, uint64_t *written_size)
 {
 	if (written_size != 0) *written_size = 0ULL;
 	if (file == 0 || buffer == 0 || written_size == 0 || !file->f_active) return VFS_STATUS_INVALID;
@@ -418,7 +442,8 @@ file_write(file_t file, const void *buffer, uint64_t size, uint64_t *written_siz
 
 	uint64_t offset = (file->f_flags & VFS_OPEN_APPEND) != 0U ? file->f_vnode->v_size : file->f_offset;
 
-	vfs_status_t status = vnode_write(file->f_vnode, offset, buffer, size, written_size);
+	vfs_status_t status =
+		vnode_write_io(file->f_vnode, offset, buffer, size, file_ioflags(file, ioflags), written_size);
 	if (status == VFS_STATUS_OK) file->f_offset = offset + *written_size;
 	return status;
 }

@@ -127,6 +127,18 @@ vnode_readdir(vnode_t directory, uint64_t *offset, vfs_dirent_t *entry)
 vfs_status_t
 vnode_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint64_t *read_size)
 {
+	return vnode_read_io(vnode, offset, buffer, size, 0U, read_size);
+}
+
+vfs_status_t
+vnode_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint64_t *written_size)
+{
+	return vnode_write_io(vnode, offset, buffer, size, 0U, written_size);
+}
+
+vfs_status_t
+vnode_read_io(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint32_t ioflags, uint64_t *read_size)
+{
 	if (read_size != 0) *read_size = 0ULL;
 
 	if (vnode == 0 || buffer == 0 || read_size == 0) return VFS_STATUS_INVALID;
@@ -136,11 +148,12 @@ vnode_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint64_t
 
 	if (vnode->v_ops == 0 || vnode->v_ops->read == 0) return VFS_STATUS_NOT_SUPPORTED;
 
-	return vnode->v_ops->read(vnode, offset, buffer, size, read_size);
+	return vnode->v_ops->read(vnode, offset, buffer, size, ioflags, read_size);
 }
 
 vfs_status_t
-vnode_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint64_t *written_size)
+vnode_write_io(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint32_t ioflags,
+			   uint64_t *written_size)
 {
 	if (written_size != 0) *written_size = 0ULL;
 
@@ -151,7 +164,7 @@ vnode_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, u
 
 	if (vnode->v_ops == 0 || vnode->v_ops->write == 0) return VFS_STATUS_NOT_SUPPORTED;
 
-	return vnode->v_ops->write(vnode, offset, buffer, size, written_size);
+	return vnode->v_ops->write(vnode, offset, buffer, size, ioflags, written_size);
 }
 
 vfs_status_t

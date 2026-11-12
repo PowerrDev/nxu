@@ -86,8 +86,8 @@ static vfs_status_t btrfs_lookup(vnode_t directory, const char *name, vnode_t *r
 static vfs_status_t btrfs_create(vnode_t directory, const char *name, vnode_type_t type, vnode_t *result);
 static vfs_status_t btrfs_unlink(vnode_t directory, const char *name);
 static vfs_status_t btrfs_readdir(vnode_t directory, uint64_t *offset, vfs_dirent_t *entry);
-static vfs_status_t btrfs_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint64_t *read_size);
-static vfs_status_t btrfs_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size,
+static vfs_status_t btrfs_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint32_t ioflags, uint64_t *read_size);
+static vfs_status_t btrfs_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint32_t ioflags,
 								uint64_t *written_size);
 static vfs_status_t btrfs_truncate(vnode_t vnode, uint64_t size);
 static vfs_status_t btrfs_getattr(vnode_t vnode, vnode_attr_t *attr);
@@ -621,8 +621,11 @@ btrfs_readdir(vnode_t directory, uint64_t *offset, vfs_dirent_t *result)
 }
 
 static vfs_status_t
-btrfs_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint64_t *read_size)
+btrfs_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint32_t ioflags,
+		   uint64_t *read_size)
 {
+	(void)ioflags;
+
 	if (read_size != 0) *read_size = 0ULL;
 	if (vnode == 0 || buffer == 0 || read_size == 0) return VFS_STATUS_INVALID;
 
@@ -708,8 +711,11 @@ btrfs_unlink(vnode_t directory, const char *name)
 }
 
 static vfs_status_t
-btrfs_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint64_t *written_size)
+btrfs_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint32_t ioflags,
+		   uint64_t *written_size)
 {
+	(void)ioflags;
+
 	(void)vnode;
 	(void)offset;
 	(void)buffer;

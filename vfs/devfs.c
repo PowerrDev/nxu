@@ -27,8 +27,9 @@ static vfs_status_t devfs_sync(mount_t mount);
 static vfs_status_t devfs_unmount(mount_t mount);
 static vfs_status_t devfs_lookup(vnode_t directory, const char *name, vnode_t *result);
 static vfs_status_t devfs_readdir(vnode_t directory, uint64_t *offset, vfs_dirent_t *entry);
-static vfs_status_t devfs_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint64_t *read_size);
-static vfs_status_t devfs_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size,
+static vfs_status_t devfs_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint32_t ioflags,
+							   uint64_t *read_size);
+static vfs_status_t devfs_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint32_t ioflags,
 								uint64_t *written_size);
 static vfs_status_t devfs_open(vnode_t vnode, uint32_t flags);
 static void devfs_close(vnode_t vnode, uint32_t flags);
@@ -176,7 +177,7 @@ devfs_readdir(vnode_t directory, uint64_t *offset, vfs_dirent_t *entry)
 }
 
 static vfs_status_t
-devfs_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint64_t *read_size)
+devfs_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint32_t ioflags, uint64_t *read_size)
 {
 	(void)offset;
 
@@ -185,11 +186,12 @@ devfs_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint64_t
 	if (node == 0) return VFS_STATUS_INVALID;
 	if (node->operations->read == 0) return VFS_STATUS_NOT_SUPPORTED;
 
-	return node->operations->read(node->context, buffer, size, read_size);
+	return node->operations->read(node->context, buffer, size, ioflags, read_size);
 }
 
 static vfs_status_t
-devfs_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint64_t *written_size)
+devfs_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint32_t ioflags,
+			uint64_t *written_size)
 {
 	(void)offset;
 
@@ -198,7 +200,7 @@ devfs_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, u
 	if (node == 0) return VFS_STATUS_INVALID;
 	if (node->operations->write == 0) return VFS_STATUS_NOT_SUPPORTED;
 
-	return node->operations->write(node->context, buffer, size, written_size);
+	return node->operations->write(node->context, buffer, size, ioflags, written_size);
 }
 
 static vfs_status_t

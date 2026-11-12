@@ -110,8 +110,11 @@ virtio_snd_dev_close(void *context)
 }
 
 static vfs_status_t
-virtio_snd_dev_write(void *context, const void *buffer, uint64_t size, uint64_t *written_size)
+virtio_snd_dev_write(void *context, const void *buffer, uint64_t size, uint32_t ioflags, uint64_t *written_size)
 {
+	/* The device is exclusive, so the mode its one opener chose at open is the mode of every write. */
+	(void)ioflags;
+
 	return virtio_snd_dev_status(virtio_snd_playback_write(context, buffer, size, written_size));
 }
 

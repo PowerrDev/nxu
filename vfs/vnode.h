@@ -87,14 +87,30 @@ typedef struct {
 #define VNODE_ATTR_UID (1U << 1U)
 #define VNODE_ATTR_GID (1U << 2U)
 
+/*
+ * Per-call I/O flags, passed to the read and write operations.
+ *
+ * They describe one transfer, not the vnode: two files open on the same
+ * device may ask for different behaviour, and one file may ask for different
+ * behaviour from one call to the next. Filesystems whose transfers never wait
+ * ignore them.
+ *
+ * VNODE_IO_NONBLOCK
+ *     A transfer that would have to sleep answers WOULD_BLOCK instead (or a
+ *     short count, if part of it could be done without sleeping).
+ */
+#define VNODE_IO_NONBLOCK (1U << 0U)
+
 typedef struct {
 	vfs_status_t (*lookup)(vnode_t directory, const char *name, vnode_t *result);
 	vfs_status_t (*create)(vnode_t directory, const char *name, vnode_type_t type, vnode_t *result);
 	vfs_status_t (*unlink)(vnode_t directory, const char *name);
 	vfs_status_t (*unlink_held)(vnode_t directory, const char *name, vnode_t *expected);
 	vfs_status_t (*readdir)(vnode_t directory, uint64_t *offset, vfs_dirent_t *entry);
-	vfs_status_t (*read)(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint64_t *read_size);
-	vfs_status_t (*write)(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint64_t *written_size);
+	vfs_status_t (*read)(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint32_t ioflags,
+						 uint64_t *read_size);
+	vfs_status_t (*write)(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint32_t ioflags,
+						  uint64_t *written_size);
 	vfs_status_t (*truncate)(vnode_t vnode, uint64_t size);
 
 	/* Optional: filesystems that do not provide them answer NOT_SUPPORTED. */
@@ -166,6 +182,19 @@ vfs_status_t vnode_unlink(vnode_t directory, const char *name);
 vfs_status_t vnode_readdir(vnode_t directory, uint64_t *offset, vfs_dirent_t *entry);
 vfs_status_t vnode_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint64_t *read_size);
 vfs_status_t vnode_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint64_t *written_size);
+
+/*
+ * vnode_read_io / vnode_write_io
+ *
+ * vnode_read and vnode_write with per-call I/O flags (VNODE_IO_*). The plain
+ * forms above are these with no flags, which is what the kernel's own readers
+ * of regular files want; the file layer uses these so that what a descriptor
+ * was opened with reaches the device.
+ */
+vfs_status_t vnode_read_io(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint32_t ioflags,
+						   uint64_t *read_size);
+vfs_status_t vnode_write_io(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint32_t ioflags,
+							uint64_t *written_size);
 vfs_status_t vnode_truncate(vnode_t vnode, uint64_t size);
 vfs_status_t vnode_getattr(vnode_t vnode, vnode_attr_t *attr);
 vfs_status_t vnode_setattr(vnode_t vnode, const vnode_attr_t *attr, uint32_t which);

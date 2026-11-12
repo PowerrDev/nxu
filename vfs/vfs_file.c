@@ -74,7 +74,7 @@ vfs_read(filedesc_t filedesc, uint32_t descriptor, void *buffer, uint64_t size, 
 	vfs_status_t status = filedesc_get(filedesc, descriptor, &file);
 	if (status != VFS_STATUS_OK) return status;
 
-	status = file_read(file, buffer, size, read_size);
+	status = file_read(file, buffer, size, 0U, read_size);
 	file_rele(file);
 	return status;
 }
@@ -104,7 +104,7 @@ vfs_write(filedesc_t filedesc, uint32_t descriptor, const void *buffer, uint64_t
 	vfs_status_t status = filedesc_get(filedesc, descriptor, &file);
 	if (status != VFS_STATUS_OK) return status;
 
-	status = file_write(file, buffer, size, written_size);
+	status = file_write(file, buffer, size, 0U, written_size);
 	file_rele(file);
 	return status;
 }

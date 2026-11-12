@@ -80,6 +80,19 @@ vnode's current size, then updates the file offset to the end of the write.
 
 `vfs_seek()` currently supports only assignment of an absolute offset.
 
+## Streams
+
+A socket, a character device or a FIFO is a stream (`file_is_stream()`): it has
+arrival order, not positions. The `read` system call reads a regular file in
+buffer-sized pieces until the request is met, but asks a stream exactly once
+and returns what that one read gave, because what a single read of a stream
+returns is the stream's decision and asking again would wait for more input.
+One read of a stream therefore returns at most 4096 bytes.
+
+`file_read()` and `file_write()` take per-call I/O flags that are added to what
+the file was opened with. A write that is cut short by "would block" or a
+signal after moving some bytes reports the bytes, not the status.
+
 ## Locking
 
 The global file table has one lock protecting allocation and file reference

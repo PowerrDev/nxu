@@ -166,8 +166,8 @@ static vfs_status_t ext4_unlink_held(vnode_t directory, const char *name, vnode_
 static vfs_status_t ext4_rmdir(vnode_t directory, const char *name);
 static vfs_status_t ext4_rmdir_held(vnode_t directory, const char *name, vnode_t *expected);
 static vfs_status_t ext4_readdir(vnode_t directory, uint64_t *offset, vfs_dirent_t *entry);
-static vfs_status_t ext4_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint64_t *read_size);
-static vfs_status_t ext4_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size,
+static vfs_status_t ext4_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint32_t ioflags, uint64_t *read_size);
+static vfs_status_t ext4_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint32_t ioflags,
 							   uint64_t *written_size);
 static vfs_status_t ext4_truncate(vnode_t vnode, uint64_t size);
 static vfs_status_t ext4_getattr(vnode_t vnode, vnode_attr_t *attr);
@@ -2419,8 +2419,11 @@ ext4_setattr(vnode_t vnode, const vnode_attr_t *attr, uint32_t which)
 }
 
 static vfs_status_t
-ext4_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint64_t *read_size)
+ext4_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint32_t ioflags,
+		   uint64_t *read_size)
 {
+	(void)ioflags;
+
 	if (read_size != 0) *read_size = 0ULL;
 
 	ext4_mount_data_t *data = ext4_data(vnode);
@@ -2436,8 +2439,11 @@ ext4_read(vnode_t vnode, uint64_t offset, void *buffer, uint64_t size, uint64_t 
 }
 
 static vfs_status_t
-ext4_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint64_t *written_size)
+ext4_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, uint32_t ioflags,
+		   uint64_t *written_size)
 {
+	(void)ioflags;
+
 	if (written_size != 0) *written_size = 0ULL;
 	if (vnode == 0 || buffer == 0 || written_size == 0) return VFS_STATUS_INVALID;
 
