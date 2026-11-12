@@ -3,7 +3,9 @@
 # =============================================================================
 #
 #   make run                the normal graphical boot on 4 CPUs, gated on the
-#                           kernel's own startup self-tests (make test TEST=desktop)
+#                           kernel's own startup self-tests (make test TEST=desktop),
+#                           through UEFI firmware and NBL (ARM64_BOOT=direct for
+#                           QEMU's -kernel loader instead)
 #   make tests              interactive picker (tools/test_menu.sh)
 #   make test TEST=<id>     build and boot a single test directly
 #   make test-list          machine-readable registry (id, group, description)
@@ -259,6 +261,28 @@ check:
 	+@MAKE="$(MAKE)" CHECK_ONLY="$(CHECK_ONLY)" CHECK_I386="$(CHECK_I386)" tools/check.sh
 
 
+# How the test kernel is booted. `direct` is QEMU's own -kernel loader, what
+# every test and `make check` use. `firmware` goes through UEFI firmware and
+# NBL (makedefs/nbl.mk, doc/nbl.md), which plays the boot chime itself; it is
+# what `make run` boots. The firmware hands NBL a Device Tree only with ACPI off.
+ARM64_BOOT ?= direct
+
+TEST_BOOT_ARGS = $(BOOT_ARGS) $(TEST_$(TEST)_BOOT_ARGS) ui.scale=$(QEMU_UI_SCALE_PERMILLE)
+
+ifeq ($(ARM64_BOOT),firmware)
+TEST_MACHINE := virt,gic-version=3,acpi=off
+TEST_BOOT_GOALS := nbl-image-arm64 nbl-check-firmware-arm64
+TEST_BOOT_FLAGS = \
+		-drive if=pflash,format=raw,readonly=on,file="$(NBL_ARM64_FIRMWARE)" \
+		-drive if=pflash,format=raw,file=BUILD/$(TEST)/uefi-vars-arm64.fd \
+		-drive if=none,format=raw,file=BUILD/$(TEST)/nxu-arm64-boot.img,id=nbl \
+		-device qemu-xhci -device usb-storage,drive=nbl,bootindex=0
+else
+TEST_MACHINE := virt,gic-version=3
+TEST_BOOT_GOALS :=
+TEST_BOOT_FLAGS = -kernel BUILD/$(TEST)/kernel.bin -append "$(TEST_BOOT_ARGS)"
+endif
+
 test: $(DISK) $(DISK_FORMAT_STAMP)
 
 	@echo "NXU: building test $(TEST) ($(TEST_$(TEST)_DESC)) with $(BUILD_JOBS) host job(s)"
@@ -267,15 +291,15 @@ test: $(DISK) $(DISK_FORMAT_STAMP)
 		BUILD_ROOT=BUILD CONFIG=$(TEST) \
 		$(TEST_$(TEST)_FRAMEWORKS) \
 		EXTRA_CFLAGS="$(EXTRA_CFLAGS) $(TEST_$(TEST)_CFLAGS)" \
-		all
+		NBL_ARM64_ARGS="$(TEST_BOOT_ARGS)" \
+		all $(TEST_BOOT_GOALS)
 
 	$(TEP_WRAPPER) qemu-system-aarch64 \
-		-machine virt,gic-version=3 \
+		-machine $(TEST_MACHINE) \
 		-cpu cortex-a72 \
 		-smp $(or $(TEST_$(TEST)_SMP),1) \
 		-m 8G \
-		-kernel BUILD/$(TEST)/kernel.bin \
-		-append "$(BOOT_ARGS) $(TEST_$(TEST)_BOOT_ARGS) ui.scale=$(QEMU_UI_SCALE_PERMILLE)" \
+		$(TEST_BOOT_FLAGS) \
 		-display $(or $(TEST_$(TEST)_DISPLAY),none) \
 		-global virtio-mmio.force-legacy=false \
 		-drive if=none,format=raw,file=$(DISK),id=nxudisk \

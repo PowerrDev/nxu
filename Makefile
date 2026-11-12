@@ -1457,9 +1457,14 @@ $(DISK_FORMAT_STAMP):
 # sound tests against it, for `make check`, not for every day.
 # For the plain kernel-only console boot (no sibling framework repos required;
 # what `run` used to be), use `run-console`.
+#
+# It boots the way a machine does: UEFI firmware starts NBL (doc/nbl.md), which
+# brings the display up, plays the boot chime and loads the kernel.
+# `make run ARM64_BOOT=direct` uses QEMU's -kernel loader instead, and the
+# kernel then plays the chime itself.
 run:
 
-	$(MAKE) test TEST=desktop
+	$(MAKE) test TEST=desktop ARM64_BOOT=$(if $(filter command line environment,$(origin ARM64_BOOT)),$(ARM64_BOOT),firmware)
 
 run-console: $(KERNEL_IMAGE) $(DISK) $(DISK_FORMAT_STAMP)
 

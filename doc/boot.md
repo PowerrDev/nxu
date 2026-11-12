@@ -6,14 +6,20 @@ instruction of `kern_init()`. Everything after that point is described in
 
 ## Image loading
 
-NXU is booted as a raw binary. The `run` target passes
-`-kernel build/kernel.bin` to `qemu-system-aarch64`. QEMU loads that image into
-guest RAM and begins execution at its first byte.
+The kernel reaches memory in one of two ways, and cannot tell them apart:
 
-NXU does not implement, and must not be described as supporting, any of the
-following: UEFI, U-Boot, the Linux ARM64 boot protocol, PSCI-based secondary
-CPU bring-up, or an ELF-aware bootloader. There is no image header, no magic
-number and no boot-protocol handshake in the repository.
+- **Direct.** `make run-console`, `make test` and `make check` pass
+  `-kernel BUILD/<config>/kernel.bin` to `qemu-system-aarch64`. QEMU loads that
+  raw binary into guest RAM and begins execution at its first byte.
+- **Through firmware.** `make run` boots UEFI firmware, which starts NBL
+  ([NBL](nbl.md)). NBL loads `kernel.elf` at the same physical addresses and
+  enters the same first instruction in the same CPU state: MMU and caches off,
+  the Device Tree address in `x0`.
+
+The kernel itself does not implement, and must not be described as supporting,
+any of the following: U-Boot, the Linux ARM64 boot protocol, or an image header,
+magic number or boot-protocol handshake. Its only contract is the entry state
+above; the UEFI side lives entirely in NBL.
 
 ## Physical load address and higher-half VMA
 
