@@ -137,7 +137,7 @@ vfs_register_filesystem(filesystem_t filesystem)
 		g_filesystem_count++;
 
 		vfs_unlock(&g_vfs_lock);
-		kverbosef("vfs: registered filesystem %s slot=%u\n", filesystem->fs_name, index);
+		kverbosef("registered filesystem %s slot=%u\n", filesystem->fs_name, index);
 		return true;
 	}
 
@@ -243,7 +243,7 @@ vfs_mount(const char *filesystem_name, block_device_t device, const char *path)
 	mount->m_active = true;
 	g_mount_count++;
 	vfs_unlock(&g_vfs_lock);
-	kverbosef("vfs: mounted filesystem=%s path=%s slot=%u\n", filesystem_name, path, slot);
+	kverbosef("mounted filesystem=%s path=%s slot=%u\n", filesystem_name, path, slot);
 	return VFS_STATUS_OK;
 }
 

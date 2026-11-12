@@ -37,7 +37,7 @@ signal_process_test(void)
 		loader_spawn_as(proc_kernel(), SIGNAL_PROCESS_TEST_PATH, "sigtest", 0U, NXU_UID_NOBODY, NXU_GID_NOBODY, &proc);
 
 	if (loaded != LOADER_STATUS_OK) {
-		kprintf("signal_process_test: spawning sigtest failed: %s\n", loader_status_name(loaded));
+		kprintf("spawning sigtest failed: %s\n", loader_status_name(loaded));
 		return false;
 	}
 
@@ -46,17 +46,17 @@ signal_process_test(void)
 
 	while (!proc_reap(proc_kernel(), proc->p_ident.pid, &status)) {
 		if (timer_get_microseconds() > deadline || !sched_yield()) {
-			kputln("signal_process_test: sigtest did not exit in time");
+			kprintf("sigtest did not exit in time\n");
 			return false;
 		}
 	}
 
 	if (status != 0ULL) {
-		kprintf("signal_process_test: sigtest failed with status 0x%llx (check number, or a kill)\n",
+		kprintf("sigtest failed with status 0x%llx (check number, or a kill)\n",
 				(unsigned long long)status);
 		return false;
 	}
 
-	kputln("signal_process_test: signal handlers, stop, continue and kill work between spawned processes");
+	kprintf("signal handlers, stop, continue and kill work between spawned processes\n");
 	return true;
 }

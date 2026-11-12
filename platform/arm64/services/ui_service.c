@@ -652,7 +652,7 @@ ui_service_bootstrap(void)
 	}
 
 	if (UIServiceAPIVersion() != UI_SERVICE_API_VERSION) {
-		kprintf("[com.butterscotch.UIService.framework]: API mismatch, kernel expects %u but framework reported %u\n",
+		IOLog("[com.butterscotch.UIService.framework]: API mismatch, kernel expects %u but framework reported %u\n",
 				UI_SERVICE_API_VERSION, UIServiceAPIVersion());
 		return false;
 	}
@@ -718,7 +718,7 @@ ui_service_bootstrap(void)
 		return false;
 	}
 
-	kprintf("[com.butterscotch.UIService.framework]: ABI v%u, %ux%u XRGB8888, %s\n", UIServiceABIVersion(), width,
+	IOLog("[com.butterscotch.UIService.framework]: ABI v%u, %ux%u XRGB8888, %s\n", UIServiceABIVersion(), width,
 			height, using_ramfb ? "RAMFB" : "VirtIO GPU");
 	kputln(UIServiceHasInter() != 0U ? "[com.butterscotch.UIService.framework]: font renderer active"
 									 : "[com.butterscotch.UIService.framework]: bootstrap text renderer active");
@@ -758,7 +758,7 @@ ui_service_bootstrap(void)
 	g_ui_service_running = false;
 	if (using_ramfb) (void)ramfb_console_set_mirroring(true);
 
-	kprintf("[com.butterscotch.UIService.framework]: the desktop exited unexpectedly with status %u\n", status);
+	IOLog("[com.butterscotch.UIService.framework]: the desktop exited unexpectedly with status %u\n", status);
 	(void)kfree(backbuffer);
 	return false;
 #endif

@@ -115,7 +115,7 @@ net_start(void)
 
 	thread_deallocate(thread);
 	g_started = true;
-	kputln("network: IPv4/ICMP and IPv6/ICMPv6 worker started");
+	kprintf("IPv4/ICMP and IPv6/ICMPv6 worker started\n");
 	return true;
 }
 

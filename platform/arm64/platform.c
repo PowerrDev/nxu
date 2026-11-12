@@ -861,8 +861,8 @@ platform_get(void)
 static void
 platform_dump_region(const char *name, const platform_region_t *region)
 {
-	kprintf("platform: %s base: %p\n", name, (void *)region->base);
-	kverbosef("platform: %s size: %llu bytes\n", name, (unsigned long long)region->size);
+	kprintf("%s base: %p\n", name, (void *)region->base);
+	kverbosef("%s size: %llu bytes\n", name, (unsigned long long)region->size);
 }
 
 void
@@ -872,42 +872,42 @@ platform_dump(const platform_t *platform)
 		return;
 	}
 
-	kprintf("platform: device tree nodes: %u\n", platform->device_node_count);
+	kprintf("device tree nodes: %u\n", platform->device_node_count);
 	for (uint32_t index = 0; index < platform->device_node_count; index++) {
 		const platform_device_node_t *node = &platform->device_nodes[index];
 		for (uint32_t level = 0; level < node->depth; level++) {
-			kprintf("  ");
+			IOLog("  ");
 		}
-		kprintf("+- %s", node->name != 0 && node->name[0] != '\0' ? node->name : "/");
+		IOLog("+- %s", node->name != 0 && node->name[0] != '\0' ? node->name : "/");
 		if (node->compatible != 0) {
-			kprintf(" [");
-			kprintf("%s", node->compatible);
-			kprintf("]");
+			IOLog(" [");
+			IOLog("%s", node->compatible);
+			IOLog("]");
 		}
 		if (node->has_reg) {
-			kprintf(" @ %p", (void *)node->reg.base);
+			IOLog(" @ %p", (void *)node->reg.base);
 			for (uint32_t entry = 1U;; entry++) {
 				platform_region_t range;
 				if (!platform_device_reg_get(platform, index, entry, &range)) break;
-				kprintf(", %p+%llu", (void *)range.base, (unsigned long long)range.size);
+				IOLog(", %p+%llu", (void *)range.base, (unsigned long long)range.size);
 			}
 		}
-		if (node->ranges_present) kprintf(" [ranges: %u bytes]", node->ranges_length);
+		if (node->ranges_present) IOLog(" [ranges: %u bytes]", node->ranges_length);
 		if (node->interrupt_parent_resolved && node->interrupt_parent_index < platform->device_node_count) {
 			const platform_device_node_t *controller = &platform->device_nodes[node->interrupt_parent_index];
-			kprintf(" [interrupt-parent: %s, %u cells]", controller->name, node->interrupt_parent_cells);
+			IOLog(" [interrupt-parent: %s, %u cells]", controller->name, node->interrupt_parent_cells);
 		} else if (node->interrupt_parent_phandle != 0U) {
-			kprintf(" [interrupt-parent phandle 0x%x unresolved]", node->interrupt_parent_phandle);
+			IOLog(" [interrupt-parent phandle 0x%x unresolved]", node->interrupt_parent_phandle);
 		}
-		if (node->interrupts != 0) kprintf(" [interrupt specifier: %u bytes]", node->interrupts_length);
-		kprintf(" (%s)\n", node->status != 0 ? node->status : "okay");
+		if (node->interrupts != 0) IOLog(" [interrupt specifier: %u bytes]", node->interrupts_length);
+		IOLog(" (%s)\n", node->status != 0 ? node->status : "okay");
 	}
 
-	kprintf("platform: memory regions: %u\n", platform->memory_region_count);
+	kprintf("memory regions: %u\n", platform->memory_region_count);
 
 	for (uint32_t index = 0; index < platform->memory_region_count; index++) {
-		kprintf("platform: RAM[%u] base: %p\n", index, (void *)platform->memory_regions[index].base);
-		kverbosef("platform: RAM[%u] size: %llu bytes\n", index,
+		kprintf("RAM[%u] base: %p\n", index, (void *)platform->memory_regions[index].base);
+		kverbosef("RAM[%u] size: %llu bytes\n", index,
 				  (unsigned long long)platform->memory_regions[index].size);
 	}
 
@@ -929,15 +929,15 @@ platform_dump(const platform_t *platform)
 	if (platform->pcie_ecam.size != 0U) {
 		platform_dump_region("PCI ECAM", &platform->pcie_ecam);
 
-		kprintf("platform: PCI bus range: %u-%u\n", (unsigned)platform->pcie_bus_start,
+		kprintf("PCI bus range: %u-%u\n", (unsigned)platform->pcie_bus_start,
 				(unsigned)platform->pcie_bus_end);
 	}
 
-	kprintf("platform: VirtIO MMIO transports: %u\n", platform->virtio_mmio_count);
+	kprintf("VirtIO MMIO transports: %u\n", platform->virtio_mmio_count);
 
 	/* One line per transport slot: a table for `-v`, noise otherwise. */
 	for (uint32_t index = 0; index < platform->virtio_mmio_count; index++) {
-		kverbosef("platform: VirtIO[%u] base: %p, INTID: %u\n", index, (void *)platform->virtio_mmio[index].base,
+		kverbosef("VirtIO[%u] base: %p, INTID: %u\n", index, (void *)platform->virtio_mmio[index].base,
 				  (unsigned)platform->virtio_mmio_intid[index]);
 	}
 }

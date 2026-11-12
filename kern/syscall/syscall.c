@@ -1722,7 +1722,7 @@ syscall_panic_backtrace(void)
 	uintptr_t fp = (uintptr_t)__builtin_frame_address(0);
 	uintptr_t previous = 0U;
 
-	kprintf("backtrace   :");
+	IOLog("backtrace   :");
 	for (uint32_t depth = 0U; depth < 24U; depth++) {
 		if (fp == 0U || (fp & (sizeof(uintptr_t) - 1U)) != 0U || fp <= previous) {
 			break;
@@ -1734,12 +1734,12 @@ syscall_panic_backtrace(void)
 		if (return_address == 0U) {
 			break;
 		}
-		kprintf(" %p", (void *)return_address);
+		IOLog(" %p", (void *)return_address);
 
 		previous = fp;
 		fp = frame[0];
 	}
-	kprintf("\n");
+	IOLog("\n");
 }
 
 static syscall_result_t
@@ -1747,17 +1747,17 @@ syscall_panic(void)
 {
 	proc_t proc = current_proc();
 
-	kprintf("\n");
-	kprintf("==================== KERNEL PANIC ====================\n");
-	kprintf("reason      : user-requested panic (kpanic debug tool)\n");
-	kprintf("process     : pid %u (%s)\n", proc != 0 ? proc->p_ident.pid : 0U,
+	IOLog("\n");
+	IOLog("==================== KERNEL PANIC ====================\n");
+	IOLog("reason      : user-requested panic (kpanic debug tool)\n");
+	IOLog("process     : pid %u (%s)\n", proc != 0 ? proc->p_ident.pid : 0U,
 			proc != 0 ? proc->p_comm : "<none>");
-	kprintf("cpu         : %u of %u\n", current_processor()->cpu_id, processor_count());
-	kprintf("uptime      : %llu us\n", (unsigned long long)timer_get_microseconds());
+	IOLog("cpu         : %u of %u\n", current_processor()->cpu_id, processor_count());
+	IOLog("uptime      : %llu us\n", (unsigned long long)timer_get_microseconds());
 	syscall_panic_backtrace();
-	kprintf("-----------------------------------------------------\n");
-	kprintf("Stopping all other CPUs; this one halts. Reset required.\n");
-	kprintf("=====================================================\n");
+	IOLog("-----------------------------------------------------\n");
+	IOLog("Stopping all other CPUs; this one halts. Reset required.\n");
+	IOLog("=====================================================\n");
 
 	smp_stop_other_cpus();
 

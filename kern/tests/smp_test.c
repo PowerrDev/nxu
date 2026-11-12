@@ -134,7 +134,7 @@ pause_us(uint64_t microseconds)
 static bool
 check(bool condition, const char *name, const char *what)
 {
-	if (!condition) kprintf("smp_test: %s: FAILED: %s\n", name, what);
+	if (!condition) kprintf("%s: FAILED: %s\n", name, what);
 	return condition;
 }
 
@@ -363,10 +363,10 @@ test_mlfq_concurrent(void)
 	 * thread (bootd, the boot chime), so it can be busier than the others, and
 	 * placement then rightly sends the workers elsewhere.
 	 */
-	kprintf("smp_test: mlfq: iterations per CPU:");
+	kprintf("mlfq: iterations per CPU:");
 	for (uint32_t cpu = 0U; cpu < g_ncpu; cpu++)
-		kprintf(" cpu%u=%llu", cpu, (unsigned long long)g_mlfq.cpu_hits[cpu]);
-	kprintf("\n");
+		IOLog(" cpu%u=%llu", cpu, (unsigned long long)g_mlfq.cpu_hits[cpu]);
+	IOLog("\n");
 
 	for (uint32_t cpu = 1U; cpu < g_ncpu; cpu++) {
 		if (!check(g_mlfq.cpu_hits[cpu] != 0ULL, name, "a secondary CPU never ran one of the workers")) return false;
@@ -583,7 +583,7 @@ test_ipi(void)
 
 	uint64_t ipis = processor->ipi_reschedule_count - ipis_before;
 
-	kprintf("smp_test: ipi: wake-up latency of an idle CPU: median %llu us, worst %llu us, %llu IPIs taken\n",
+	kprintf("ipi: wake-up latency of an idle CPU: median %llu us, worst %llu us, %llu IPIs taken\n",
 			(unsigned long long)latency[10], (unsigned long long)latency[19], (unsigned long long)ipis);
 
 	/* A tick is 10000 us: without the IPI a sleeping CPU would wait for it, so the median would be near 5000 us. */
@@ -759,7 +759,7 @@ test_balance(void)
 
 	uint32_t distinct = (uint32_t)__builtin_popcount(g_bal.seen_mask);
 
-	kprintf("smp_test: balance: %u threads, %llu us, %u CPUs used, %llu migrated by the balancer\n", count,
+	kprintf("balance: %u threads, %llu us, %u CPUs used, %llu migrated by the balancer\n", count,
 			(unsigned long long)elapsed, distinct, (unsigned long long)moved);
 
 	if (!check(finished, name, "the workers did not finish")) return false;
@@ -1120,7 +1120,7 @@ test_memory(void)
 
 	release_threads();
 
-	kprintf("smp_test: memory: %u of %u rounds reused the same kernel virtual address\n", g_tlb.same_address,
+	kprintf("memory: %u of %u rounds reused the same kernel virtual address\n", g_tlb.same_address,
 			TLB_ROUNDS);
 
 	if (!check(finished, name, "the TLB writer and reader did not finish")) return false;
@@ -1438,7 +1438,7 @@ test_cow_race(void)
 			 vmm_physical_to_higher_half(physical, &alias);
 
 		if (!ok) {
-			kprintf("smp_test: %s: FAILED: setup\n", name);
+			kprintf("%s: FAILED: setup\n", name);
 			break;
 		}
 
@@ -1449,7 +1449,7 @@ test_cow_race(void)
 			 vm_address_space_fork(&g_cow.parent, &g_cow.child);
 
 		if (!ok) {
-			kprintf("smp_test: %s: FAILED: fork of the address space\n", name);
+			kprintf("%s: FAILED: fork of the address space\n", name);
 			break;
 		}
 
@@ -1473,7 +1473,7 @@ test_cow_race(void)
 				 *(volatile uint64_t *)parent_alias == 0xC0DE000000ULL + round;
 		}
 
-		if (!ok) kprintf("smp_test: %s: FAILED: after round %u the copy is wrong or was lost\n", name, round);
+		if (!ok) kprintf("%s: FAILED: after round %u the copy is wrong or was lost\n", name, round);
 
 		/* Each mapping owns its page: the child's is the original, the parent's is the copy. */
 		user_space_free(&g_cow.child);
@@ -1679,7 +1679,7 @@ test_timed_wait(void)
 	finished = wait_for(&g_timed.done, TIMED_RACE_SLEEPERS + 1U, 5000000ULL) && finished;
 	release_threads();
 
-	kprintf("smp_test: %s: race: %u woken, %u timed out\n", name, g_timed.woken, g_timed.timed_out);
+	kprintf("%s: race: %u woken, %u timed out\n", name, g_timed.woken, g_timed.timed_out);
 
 	if (!check(finished, name, "a racing timed wait never ended (lost wakeup and lost deadline)")) return false;
 	if (!check(g_timed.interrupted == 0U, name, "an uninterruptible wait reported an interruption")) return false;
@@ -1915,24 +1915,24 @@ run_cases(const smp_test_case_t *cases, uint32_t count)
 {
 	g_ncpu = smp_online_count();
 
-	kprintf("smp_test: %u CPUs online\n", g_ncpu);
+	kprintf("%u CPUs online\n", g_ncpu);
 
 	for (uint32_t index = 0U; index < count; index++) {
-		kprintf("smp_test: %s: running\n", cases[index].name);
+		kprintf("%s: running\n", cases[index].name);
 
 		if (!cases[index].run()) return false;
 
 		if (!sched_validate_all()) {
-			kprintf("smp_test: %s: FAILED: the run queues are inconsistent afterwards\n", cases[index].name);
+			kprintf("%s: FAILED: the run queues are inconsistent afterwards\n", cases[index].name);
 			return false;
 		}
 
-		kprintf("smp_test: %s: ok\n", cases[index].name);
+		kprintf("%s: ok\n", cases[index].name);
 	}
 	for (uint32_t cpu = 0U; cpu < g_ncpu; cpu++) {
 		processor_t processor = processor_by_id(cpu);
 
-		kprintf("smp_test: cpu%u: %llu ticks, %llu switches, %llu preemptions, %llu IPIs, %llu migrated in, %llu out\n",
+		kprintf("cpu%u: %llu ticks, %llu switches, %llu preemptions, %llu IPIs, %llu migrated in, %llu out\n",
 				cpu, (unsigned long long)processor->ticks, (unsigned long long)processor->context_switch_count,
 				(unsigned long long)processor->preemption_count, (unsigned long long)processor->ipi_reschedule_count,
 				(unsigned long long)processor->migrate_in_count, (unsigned long long)processor->migrate_out_count);
@@ -1981,7 +1981,7 @@ smp_test_run_vm(void)
 	 * cross-CPU translation to make stale, so the shootdown is trivially correct
 	 * and the suite has nothing to exercise. */
 	if (smp_online_count() < 2U) {
-		kprintf("smp_test: %u CPU online; cross-CPU VM tests need two, skipping\n", smp_online_count());
+		kprintf("%u CPU online; cross-CPU VM tests need two, skipping\n", smp_online_count());
 		return true;
 	}
 

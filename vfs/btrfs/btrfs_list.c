@@ -104,7 +104,7 @@ list_print_entry(list_walk_t *walk, vnode_t vnode, vnode_type_t type, const char
 
 	if (vnode_getattr(vnode, &attr) != VFS_STATUS_OK) {
 		walk->errors++;
-		kprintf("btrfs_list_run: getattr failed for %s\n", path);
+		kprintf("getattr failed for %s\n", path);
 		return;
 	}
 
@@ -127,10 +127,10 @@ list_print_entry(list_walk_t *walk, vnode_t vnode, vnode_type_t type, const char
 		}
 
 		walk->link[length < LIST_LINK_MAX ? length : LIST_LINK_MAX - 1U] = '\0';
-		kprintf("%c%s %u %llu %s -> %s\n", list_type_char(type), mode, attr.va_nlink, (unsigned long long)attr.va_size,
+		IOLog("%c%s %u %llu %s -> %s\n", list_type_char(type), mode, attr.va_nlink, (unsigned long long)attr.va_size,
 				path, walk->link);
 	} else {
-		kprintf("%c%s %u %llu %s\n", list_type_char(type), mode, attr.va_nlink, (unsigned long long)attr.va_size, path);
+		IOLog("%c%s %u %llu %s\n", list_type_char(type), mode, attr.va_nlink, (unsigned long long)attr.va_size, path);
 	}
 }
 
@@ -143,7 +143,7 @@ list_walk(list_walk_t *walk, vnode_t directory, char *path, uint32_t depth)
 
 	if (entry == 0) {
 		walk->errors++;
-		kputln("btrfs_list_run: out of memory");
+		kprintf("out of memory\n");
 		return;
 	}
 
@@ -154,7 +154,7 @@ list_walk(list_walk_t *walk, vnode_t directory, char *path, uint32_t depth)
 
 		if (status != VFS_STATUS_OK) {
 			walk->errors++;
-			kprintf("btrfs_list_run: readdir of %s failed: %s\n", path, vfs_status_name(status));
+			kprintf("readdir of %s failed: %s\n", path, vfs_status_name(status));
 			break;
 		}
 
@@ -164,7 +164,7 @@ list_walk(list_walk_t *walk, vnode_t directory, char *path, uint32_t depth)
 
 		if (base + 1U + entry->name_length + 1U >= LIST_PATH_MAX) {
 			walk->errors++;
-			kprintf("btrfs_list_run: path too long under %s, entry skipped\n", path);
+			kprintf("path too long under %s, entry skipped\n", path);
 			continue;
 		}
 
@@ -177,14 +177,14 @@ list_walk(list_walk_t *walk, vnode_t directory, char *path, uint32_t depth)
 
 		if (status != VFS_STATUS_OK) {
 			walk->errors++;
-			kprintf("btrfs_list_run: lookup of %s failed: %s\n", path, vfs_status_name(status));
+			kprintf("lookup of %s failed: %s\n", path, vfs_status_name(status));
 		} else {
 			list_print_entry(walk, child, entry->type, path);
 
 			if (child->v_type == VNODE_TYPE_DIRECTORY) {
 				if (depth + 1U > LIST_DEPTH_MAX) {
 					walk->errors++;
-					kprintf("btrfs_list_run: %s is nested deeper than %u levels, not descended\n", path,
+					kprintf("%s is nested deeper than %u levels, not descended\n", path,
 							LIST_DEPTH_MAX);
 				} else {
 					list_walk(walk, child, path, depth + 1U);
@@ -252,7 +252,7 @@ list_cat(vnode_t root, const char *path)
 	vfs_status_t status = list_resolve(root, path, &file);
 
 	if (status != VFS_STATUS_OK) {
-		kprintf("btrfs_list_run: %s: %s\n", path, vfs_status_name(status));
+		kprintf("%s: %s\n", path, vfs_status_name(status));
 		return false;
 	}
 
@@ -261,7 +261,7 @@ list_cat(vnode_t root, const char *path)
 	memset(&attr, 0, sizeof(attr));
 
 	if (vnode_getattr(file, &attr) != VFS_STATUS_OK || file->v_type != VNODE_TYPE_REGULAR) {
-		kprintf("btrfs_list_run: %s is not a regular file\n", path);
+		kprintf("%s is not a regular file\n", path);
 		vnode_rele(file);
 		return false;
 	}
@@ -270,7 +270,7 @@ list_cat(vnode_t root, const char *path)
 	uint8_t *buffer = kmalloc((size_t)want + 1U);
 
 	if (buffer == 0) {
-		kputln("btrfs_list_run: out of memory");
+		kprintf("out of memory\n");
 		vnode_rele(file);
 		return false;
 	}
@@ -281,12 +281,12 @@ list_cat(vnode_t root, const char *path)
 	vnode_rele(file);
 
 	if (status != VFS_STATUS_OK) {
-		kprintf("btrfs_list_run: read of %s failed: %s\n", path, vfs_status_name(status));
+		kprintf("read of %s failed: %s\n", path, vfs_status_name(status));
 		kfree(buffer);
 		return false;
 	}
 
-	kprintf("btrfs_list_run: %s: %llu bytes%s\n", path, (unsigned long long)attr.va_size,
+	kprintf("%s: %llu bytes%s\n", path, (unsigned long long)attr.va_size,
 			attr.va_size > want ? " (first part shown)" : "");
 	kputln("---- begin file ----");
 
@@ -313,7 +313,7 @@ btrfs_list_run(const btrfs_list_request_t *request)
 
 	if (!registered) {
 		if (!btrfs_register()) {
-			kputln("btrfs_list_run: btrfs_register failed");
+			kprintf("btrfs_register failed\n");
 			return false;
 		}
 
@@ -323,7 +323,7 @@ btrfs_list_run(const btrfs_list_request_t *request)
 	block_device_t device = block_device_get(request->device_index);
 
 	if (device == 0) {
-		kprintf("btrfs_list_run: no block device %u (%u present)\n", request->device_index, block_device_count());
+		kprintf("no block device %u (%u present)\n", request->device_index, block_device_count());
 		return false;
 	}
 
@@ -333,13 +333,13 @@ btrfs_list_run(const btrfs_list_request_t *request)
 	mount_path[6] = (char)('0' + (request->device_index % 10U));
 	mount_path[7] = '\0';
 
-	kprintf("btrfs_list_run: mounting %s (%llu sectors) at %s%s\n", device->name,
+	kprintf("mounting %s (%llu sectors) at %s%s\n", device->name,
 			(unsigned long long)device->sector_count, mount_path, request->noverify ? ", data checksums off" : "");
 
 	vfs_status_t status = vfs_mkdir(mount_path);
 
 	if (status != VFS_STATUS_OK && status != VFS_STATUS_EXISTS) {
-		kprintf("btrfs_list_run: mkdir %s: %s\n", mount_path, vfs_status_name(status));
+		kprintf("mkdir %s: %s\n", mount_path, vfs_status_name(status));
 		return false;
 	}
 
@@ -350,7 +350,7 @@ btrfs_list_run(const btrfs_list_request_t *request)
 	status = vfs_mount("btrfs", device, mount_path);
 
 	if (status != VFS_STATUS_OK) {
-		kprintf("btrfs_list_run: mount failed: %s (%s)\n", vfs_status_name(status), btrfs_last_mount_status_name());
+		kprintf("mount failed: %s (%s)\n", vfs_status_name(status), btrfs_last_mount_status_name());
 		return false;
 	}
 
@@ -360,7 +360,7 @@ btrfs_list_run(const btrfs_list_request_t *request)
 	status = vfs_lookup(mount_path, &root);
 
 	if (status != VFS_STATUS_OK) {
-		kprintf("btrfs_list_run: lookup of %s: %s\n", mount_path, vfs_status_name(status));
+		kprintf("lookup of %s: %s\n", mount_path, vfs_status_name(status));
 		ok = false;
 	} else {
 		if (request->list) {
@@ -372,7 +372,7 @@ btrfs_list_run(const btrfs_list_request_t *request)
 			walk.link = kmalloc(LIST_LINK_MAX);
 
 			if (path == 0 || walk.link == 0) {
-				kputln("btrfs_list_run: out of memory");
+				kprintf("out of memory\n");
 				ok = false;
 			} else {
 				path[0] = '/';
@@ -380,16 +380,16 @@ btrfs_list_run(const btrfs_list_request_t *request)
 				list_walk(&walk, root, path, 0U);
 				kputln("---- end tree ----");
 
-				kprintf("btrfs_list_run: %u entries: %u directories, %u files (%llu bytes), %u symlinks, %u other\n",
+				kprintf("%u entries: %u directories, %u files (%llu bytes), %u symlinks, %u other\n",
 						walk.entries, walk.directories, walk.files, (unsigned long long)walk.bytes, walk.symlinks,
 						walk.others);
 
 				if (walk.entries > walk.printed) {
-					kprintf("btrfs_list_run: only the first %u entries were printed (raise btrfs-max)\n", walk.printed);
+					kprintf("only the first %u entries were printed (raise btrfs-max)\n", walk.printed);
 				}
 
 				if (walk.errors != 0U) {
-					kprintf("btrfs_list_run: %u error(s) while walking\n", walk.errors);
+					kprintf("%u error(s) while walking\n", walk.errors);
 					ok = false;
 				}
 			}
@@ -406,10 +406,10 @@ btrfs_list_run(const btrfs_list_request_t *request)
 	status = vfs_unmount(mount_path);
 
 	if (status != VFS_STATUS_OK) {
-		kprintf("btrfs_list_run: unmount failed (a leaked vnode reference?): %s\n", vfs_status_name(status));
+		kprintf("unmount failed (a leaked vnode reference?): %s\n", vfs_status_name(status));
 		ok = false;
 	} else {
-		kputln("btrfs_list_run: unmounted");
+		kprintf("unmounted\n");
 	}
 
 	return ok;

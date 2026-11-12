@@ -55,16 +55,49 @@ uint64_t kconsole_uptime_us(void);
 /* Enable or disable timestamps on subsequent console lines. */
 void kconsole_set_timestamp(bool enabled);
 
-int kprintf(const char *format, ...);
+/*
+ * Two tiers of boot output, each in two flavours.
+ *
+ * kprintf() is the milestone log: what happened and whether it passed, one
+ * fact per line. It is a macro: the name of the calling function is put in
+ * front of every line it starts ("vfs_mount: devfs mounted at /dev"), so a
+ * format never spells its own prefix -- write kprintf("devfs mounted at
+ * /dev\n") -- and the prefix can never go stale when code moves. To log under
+ * another name, log from that function.
+ *
+ * IOLog() prints exactly what it is given: for IOKit-style family tags
+ * ("VirtIOFamily: ..."), banners, panic reports, tables and the rest of a
+ * line something else started.
+ *
+ * kverbosef()/IOLogVerbose() are the same pair for detail -- register values,
+ * per-slot tables, allocator statistics -- printed only with -v or
+ * log.verbose=1.
+ *
+ * kvprintf() is the unprefixed va_list primitive under all of them.
+ */
+int kprintf_from(const char *function, const char *format, ...);
+int kverbosef_from(const char *function, const char *format, ...);
+int IOLog(const char *format, ...);
+int IOLogVerbose(const char *format, ...);
 int kvprintf(const char *format, va_list arguments);
 
+#define kprintf(...) kprintf_from(__func__, __VA_ARGS__)
+
 /*
- * Two tiers of boot output. kprintf() is the milestone log: what happened
- * and whether it passed, one fact per line, prefixed with the function that
- * printed it. kverbosef() is the detail behind it -- register values, per-slot
- * tables, allocator statistics -- disabled by default. -v or log.verbose=1
- * explicitly enables detail. Both take the same formats.
+ * kprintf_for(function, format, ...)
+ *
+ * Log under the name of a function other than the caller -- usually the one
+ * just called, when it is the caller that reports how the call went:
+ *
+ *	if (!ipc_process_test()) boot_test_fail(...);
+ *	kprintf_for(ipc_process_test, "passed\n");   -> "ipc_process_test: passed"
+ *
+ * `function` must name a real function: it is checked at compile time, so the
+ * prefix cannot drift from the code when the function is renamed.
  */
+#define kprintf_for(function, ...) ((void)sizeof(&(function)), kprintf_from(#function, __VA_ARGS__))
+#define kverbosef(...) kverbosef_from(__func__, __VA_ARGS__)
+
 void kconsole_set_verbose(bool verbose);
 bool kconsole_verbose(void);
 
@@ -76,6 +109,5 @@ bool kconsole_verbose(void);
  * Frees the lock unless the calling CPU itself holds it.
  */
 void kconsole_break_lock(void);
-int kverbosef(const char *format, ...);
 
 #endif

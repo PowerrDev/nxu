@@ -178,7 +178,7 @@ diagnostics_syscall_begin(const syscall_request_t *request)
     if (id < NXU_MAX_CPUS) __atomic_fetch_add(&g_calls[id][call_slot(request->number)], 1U, __ATOMIC_RELAXED);
 
 	if (trace_call(request->number))
-		kverbosef("syscall: cpu=%u pid=%u tid=%llu %s(%llu) args=%llx,%llx,%llx,%llx,%llx,%llx enter\n", id,
+		kverbosef("cpu=%u pid=%u tid=%llu %s(%llu) args=%llx,%llx,%llx,%llx,%llx,%llx enter\n", id,
 				  proc_selfpid(), (unsigned long long)thread_tid(current_thread()),
 				  g_names[call_slot(request->number)] != 0 ? g_names[call_slot(request->number)] : "unknown",
                   (unsigned long long)request->number, (unsigned long long)request->arguments[0],
@@ -199,7 +199,7 @@ diagnostics_syscall_end(const syscall_request_t *request, syscall_result_t resul
 		__atomic_fetch_add(&g_errors[id][call_slot(request->number)], 1U, __ATOMIC_RELAXED);
 	
     if (trace_call(request->number))
-		kverbosef("syscall: cpu=%u pid=%u tid=%llu %s result=%llx action=%u\n", id, proc_selfpid(),
+		kverbosef("cpu=%u pid=%u tid=%llu %s result=%llx action=%u\n", id, proc_selfpid(),
 				  (unsigned long long)thread_tid(current_thread()),
                   g_names[call_slot(request->number)] != 0 ? g_names[call_slot(request->number)] : "unknown",
                   (unsigned long long)result.value, (unsigned)result.action);
@@ -213,7 +213,7 @@ diagnostics_sample(void)
     nxu_stats_system_t system;
 	statistics_snapshot(NXU_STATS_SYSTEM, &system, 1U, &total);
 	
-    kverbosef("memory: uptime_us=%llu physical_pages=%llu free=%llu heap=%llu processes=%u threads=%u\n",
+    kverbosef("uptime_us=%llu physical_pages=%llu free=%llu heap=%llu processes=%u threads=%u\n",
 			  (unsigned long long)system.sampled_us, (unsigned long long)system.total_pages,
 			  (unsigned long long)system.free_pages, (unsigned long long)system.heap_pages, system.process_count,
 			  system.thread_count);
@@ -225,7 +225,7 @@ diagnostics_sample(void)
 		nxu_stats_cpu_t cpu;
         statistics_cpu_snapshot(i, &cpu);
 		
-        kverbosef("sched: cpu=%u online=%u busy_us=%llu runq=%u switches=%llu dispatches=%llu preemptions=%llu "
+        kverbosef("cpu=%u online=%u busy_us=%llu runq=%u switches=%llu dispatches=%llu preemptions=%llu "
 				  "quantum=%llu faults=%llu irqs=%llu\n",
 				  i, cpu.online, (unsigned long long)cpu.busy_us, cpu.run_queue_depth,
 				  (unsigned long long)cpu.context_switches, (unsigned long long)cpu.dispatches,
@@ -236,13 +236,13 @@ diagnostics_sample(void)
 	nxu_stats_virtio_t virtio;
 	statistics_snapshot(NXU_STATS_VIRTIO, &virtio, 1U, &total);
 	
-    kverbosef("virtqueue: queues=%llu submitted=%llu completed=%llu used_bytes=%llu rejected=%llu invalid=%llu "
+    kverbosef("queues=%llu submitted=%llu completed=%llu used_bytes=%llu rejected=%llu invalid=%llu "
 			  "exhausted=%llu\n",
 			  (unsigned long long)virtio.live_queues, (unsigned long long)virtio.submissions,
 			  (unsigned long long)virtio.completions, (unsigned long long)virtio.used_bytes,
 			  (unsigned long long)virtio.rejected_submissions, (unsigned long long)virtio.invalid_completions,
 			  (unsigned long long)virtio.descriptor_exhaustions);
-	kverbosef("ipc: outstanding_ports=%llu\n", (unsigned long long)ipc_port_outstanding_count());
+	kverbosef("outstanding_ports=%llu\n", (unsigned long long)ipc_port_outstanding_count());
 	
     uint32_t processes = proc_snapshot(g_processes, PROC_MAX);
 	uint32_t memories = proc_memory_snapshot(g_memory, PROC_MAX);
@@ -259,14 +259,14 @@ diagnostics_sample(void)
 			}
 		p->name[PROC_NAME_MAX - 1U] = 0;
 	
-        kverbosef("proc: pid=%u ppid=%u uniqueid=%llu name=%s state=%u flags=%x threads=%u\n", p->pid, p->ppid,
+        kverbosef("pid=%u ppid=%u uniqueid=%llu name=%s state=%u flags=%x threads=%u\n", p->pid, p->ppid,
 				  (unsigned long long)p->uniqueid, p->name, (unsigned)p->state, p->flags, p->thread_count);
 	}
     
 	for (uint32_t i = 0; i < memories; i++) {
 		nxu_stats_process_memory_t *m = &g_memory[i];
 	
-        kverbosef("vm: pid=%u uniqueid=%llu resident_pages=%llu shared=%llu anon_reserved=%llu tables=%llu faults=%llu "
+        kverbosef("pid=%u uniqueid=%llu resident_pages=%llu shared=%llu anon_reserved=%llu tables=%llu faults=%llu "
 				  "flags=%x\n",
 				  m->pid, (unsigned long long)m->uniqueid, (unsigned long long)m->resident_pages,
 				  (unsigned long long)m->shared_pages, (unsigned long long)m->anon_reserved_pages,
@@ -278,7 +278,7 @@ diagnostics_sample(void)
     for (uint32_t i = 0; i < threads; i++) {
 		thread_snapshot_t *t = &g_threads[i];
 	
-        kverbosef("thread: tid=%llu task=%llu cpu=%u cpu_us=%llu faults=%llu mlfq=%u idle=%u running=%u waiting=%u\n",
+        kverbosef("tid=%llu task=%llu cpu=%u cpu_us=%llu faults=%llu mlfq=%u idle=%u running=%u waiting=%u\n",
 				  (unsigned long long)t->thread_id, (unsigned long long)t->task_uniqueid, t->last_cpu,
 				  (unsigned long long)t->run_us, (unsigned long long)t->page_faults, t->mlfq_level, t->idle, t->on_cpu,
 				  t->waiting);
@@ -292,7 +292,7 @@ diagnostics_sample(void)
 		}
 	
         if (calls || errors)
-			kverbosef("syscall: interval %s calls=%llu errors=%llu\n", g_names[call] != 0 ? g_names[call] : "unknown",
+			kverbosef("interval %s calls=%llu errors=%llu\n", g_names[call] != 0 ? g_names[call] : "unknown",
 					  (unsigned long long)calls, (unsigned long long)errors);
 	}
 }
@@ -328,7 +328,7 @@ diagnostics_start(void)
     cpuset_add(&affinity, 0U);
     
 	if (!kernel_thread_create(proc_task(proc_kernel()), diagnostics_worker, (void *)(uintptr_t)interval, &thread)) {
-		kputln("diagnostics: could not create logger thread");
+		kprintf("could not create logger thread\n");
 		return;
 	}
 
@@ -337,7 +337,7 @@ diagnostics_start(void)
 		thread_reap(thread);
 		thread_deallocate(thread);
         
-		kputln("diagnostics: could not schedule logger thread");
+		kprintf("could not schedule logger thread\n");
 		
         return;
 	}
@@ -345,6 +345,6 @@ diagnostics_start(void)
 	thread_deallocate(thread);
 	g_started = true;
     
-	kverbosef("diagnostics: live kernel snapshots every %u ms\n", interval);
-	kverbosef("diagnostics: syscall traces=%u\n", boot_arg_bool("log.trace", true));
+	kverbosef("live kernel snapshots every %u ms\n", interval);
+	kverbosef("syscall traces=%u\n", boot_arg_bool("log.trace", true));
 }

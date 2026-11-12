@@ -32,7 +32,7 @@ x86_platform_memory_map_load(const struct nxu_boot_x86_64 *boot, platform_t *pla
 		boot->memory_descriptor_size != sizeof(struct nxu_boot_memory_map_entry) ||
 		boot->memory_map_size % boot->memory_descriptor_size != 0ULL ||
 		boot->memory_map > UINT64_MAX - boot->memory_map_size) {
-		kprintf("x86_platform_memory_map_load: invalid handoff fields\n");
+		kprintf("invalid handoff fields\n");
 		return false;
 	}
 
@@ -71,7 +71,7 @@ x86_platform_memory_map_load(const struct nxu_boot_x86_64 *boot, platform_t *pla
 			uint64_t previous_end = previous->base + previous->size;
 
 			if (base < previous_end) {
-				kprintf("x86_platform_memory_map_load: overlapping usable ranges %u: 0x%llx < 0x%llx\n",
+				kprintf("overlapping usable ranges %u: 0x%llx < 0x%llx\n",
 						(unsigned)index, (unsigned long long)base, (unsigned long long)previous_end);
 				return false;
 			}
@@ -92,7 +92,7 @@ x86_platform_memory_map_load(const struct nxu_boot_x86_64 *boot, platform_t *pla
 	}
 
 	if (platform->memory_region_count == 0U) {
-		kprintf("x86_platform_memory_map_load: no usable ranges below 1 GiB\n");
+		kprintf("no usable ranges below 1 GiB\n");
 		return false;
 	}
 

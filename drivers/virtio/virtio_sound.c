@@ -106,8 +106,8 @@ virtio_snd_log_features(const virtio_snd_device_t *device)
 
 	VIRTIO_SND_LOG("%u feature bit(s) offered\n", offered_count);
 	VIRTIO_SND_LOG("%u feature bit(s) accepted\n", accepted_count);
-	kverbosef("virtio_snd_log_features: features offered 0x%llx\n", (unsigned long long)offered);
-	kverbosef("virtio_snd_log_features: features accepted 0x%llx\n", (unsigned long long)accepted);
+	kverbosef("features offered 0x%llx\n", (unsigned long long)offered);
+	kverbosef("features accepted 0x%llx\n", (unsigned long long)accepted);
 }
 
 /*
@@ -332,10 +332,10 @@ virtio_snd_control(virtio_snd_device_t *device, uint32_t request_bytes, uint32_t
 
 	if (error != VIRTIO_SND_E_NONE) {
 		device->control_failures++;
-		kverbosef("virtio_snd_control: request 0x%x (%s) answered %s (0x%x)\n", request_code,
+		kverbosef("request 0x%x (%s) answered %s (0x%x)\n", request_code,
 				  virtio_snd_request_name(request_code), virtio_snd_status_name(status), status);
 	} else {
-		kverbosef("virtio_snd_control: request 0x%x (%s) answered OK, %u byte(s)\n", request_code,
+		kverbosef("request 0x%x (%s) answered OK, %u byte(s)\n", request_code,
 				  virtio_snd_request_name(request_code), length);
 	}
 
@@ -486,7 +486,7 @@ virtio_snd_log_stream(uint32_t stream_id, const virtio_snd_pcm_info_t *info)
 	VIRTIO_SND_LOG("stream %u: formats %s\n", stream_id, formats);
 	VIRTIO_SND_LOG("stream %u: rates %s Hz\n", stream_id, rates);
 	VIRTIO_SND_LOG("stream %u: features 0x%x\n", stream_id, info->features);
-	kverbosef("virtio_snd_log_stream: stream %u: HDA function node %u\n", stream_id, info->hdr.hda_fn_nid);
+	kverbosef("stream %u: HDA function node %u\n", stream_id, info->hdr.hda_fn_nid);
 }
 
 /*
@@ -807,14 +807,14 @@ virtio_snd_dump(void)
 		VIRTIO_SND_LOG("device %u: %llu playback open(s)\n", index + 1U, (unsigned long long)playback->opens);
 		VIRTIO_SND_LOG("device %u: %llu period(s) played\n", index + 1U, (unsigned long long)playback->total_periods);
 		VIRTIO_SND_LOG("device %u: %llu underrun(s)\n", index + 1U, (unsigned long long)playback->total_xruns);
-		kverbosef("virtio_snd_dump: device %u: %llu control request(s), %llu failed\n", index + 1U,
+		kverbosef("device %u: %llu control request(s), %llu failed\n", index + 1U,
 				  (unsigned long long)device->control_requests, (unsigned long long)device->control_failures);
-		kverbosef("virtio_snd_dump: device %u: %llu interrupt(s)\n", index + 1U, (unsigned long long)device->irq_count);
-		kverbosef("virtio_snd_dump: device %u: %llu event(s), %llu xrun, %llu jack\n", index + 1U,
+		kverbosef("device %u: %llu interrupt(s)\n", index + 1U, (unsigned long long)device->irq_count);
+		kverbosef("device %u: %llu event(s), %llu xrun, %llu jack\n", index + 1U,
 				  (unsigned long long)device->event_count, (unsigned long long)device->xrun_events,
 				  (unsigned long long)device->jack_events);
 		if (device->event_count != 0ULL)
-			kverbosef("virtio_snd_dump: device %u: last event %s (0x%x) for %u\n", index + 1U,
+			kverbosef("device %u: last event %s (0x%x) for %u\n", index + 1U,
 					  virtio_snd_event_name(device->last_event), device->last_event, device->last_event_data);
 	}
 }

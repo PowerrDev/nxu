@@ -177,7 +177,7 @@ post_test_ext4(void)
 		if (!post_ext4_read_exact(filedesc, "/Volumes/mainOS/NXU/journal-recovery.txt", g_jbd2_recovery_message,
 								  sizeof(g_jbd2_recovery_message) - 1ULL))
 			return false;
-		kputln("jbd2: committed crash-test transaction recovered");
+		kprintf("committed crash-test transaction recovered\n");
 	} else if (status != VFS_STATUS_NOT_FOUND) {
 		return false;
 	}

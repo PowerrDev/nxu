@@ -114,7 +114,7 @@ cleanup:
 
 	if (!passed) return false;
 
-	kputln("vm_shm: self-test passed (page shared read/write across two address spaces)");
+	kprintf("self-test passed (page shared read/write across two address spaces)\n");
 	return true;
 }
 
@@ -199,6 +199,6 @@ shm_registry_self_test(void)
 	uint64_t free_after = pmm_get_free_page_count();
 	if (free_after != free_before) return false;
 
-	kputln("shm_registry: self-test passed (publish/attach/withdraw/release left nothing behind)");
+	kprintf("self-test passed (publish/attach/withdraw/release left nothing behind)\n");
 	return true;
 }

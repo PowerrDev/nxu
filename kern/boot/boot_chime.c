@@ -25,7 +25,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#define BOOT_CHIME_LOG(format, ...) kprintf("%s: " format, __func__, ##__VA_ARGS__)
+#define BOOT_CHIME_LOG(format, ...) kprintf(format, ##__VA_ARGS__)
 
 /* How long the thread waits for the sound device and the file before it says why it gave up. */
 #define BOOT_CHIME_WAIT_US 10000000ULL

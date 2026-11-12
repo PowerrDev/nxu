@@ -207,7 +207,7 @@ boot_args_dump(void)
 {
 	kputs("boot-args: ");
 	kputln(g_boot_args[0] != '\0' ? g_boot_args : "<none>");
-	kprintf("boot-args: verbose=%u safe=%u gpu=%s input=%s block=%s sound=%s logd=%s patchd=%s\n",
+	IOLog("boot-args: verbose=%u safe=%u gpu=%s input=%s block=%s sound=%s logd=%s patchd=%s\n",
 			boot_args_verbose() ? 1U : 0U, boot_args_safe_mode() ? 1U : 0U,
 			boot_args_component_disabled(BOOT_COMPONENT_GPU) ? "off" : "on",
 			boot_args_component_disabled(BOOT_COMPONENT_INPUT) ? "off" : "on",

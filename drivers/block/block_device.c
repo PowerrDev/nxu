@@ -184,16 +184,16 @@ block_device_verify(block_device_t device)
 void
 block_device_dump(void)
 {
-	kprintf("VirtIOBlockFamily: devices: %u\n", g_block_device_count);
+	IOLog("VirtIOBlockFamily: devices: %u\n", g_block_device_count);
 
 	for (uint32_t index = 0U; index < g_block_device_count; index++) {
 		block_device_t device = g_block_devices[index];
 
-		kprintf("VirtIOBlockFamily: %s: %llu sectors\n", device->name, (unsigned long long)device->sector_count);
-		kverbosef("VirtIOBlockFamily: %s: sector size: %llu\n", device->name, (unsigned long long)device->sector_size);
-		kverbosef("VirtIOBlockFamily: %s: logical block size: %llu\n", device->name,
+		IOLog("VirtIOBlockFamily: %s: %llu sectors\n", device->name, (unsigned long long)device->sector_count);
+		IOLogVerbose("VirtIOBlockFamily: %s: sector size: %llu\n", device->name, (unsigned long long)device->sector_size);
+		IOLogVerbose("VirtIOBlockFamily: %s: logical block size: %llu\n", device->name,
 				  (unsigned long long)device->logical_block_size);
-		kverbosef("VirtIOBlockFamily: %s: read-only: %s\n", device->name, device->read_only ? "yes" : "no");
+		IOLogVerbose("VirtIOBlockFamily: %s: read-only: %s\n", device->name, device->read_only ? "yes" : "no");
 	}
 }
 

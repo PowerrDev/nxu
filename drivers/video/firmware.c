@@ -34,7 +34,7 @@ bool
 firmware_display_init(const i386_boot_info_t *boot)
 {
 
-  kprintf("firmware_display_init: initializing firmware display\n");
+  kprintf("initializing firmware display\n");
 
   if (display_primary()) {
 		return true;
@@ -100,7 +100,7 @@ firmware_display_init(const i386_boot_info_t *boot)
 		return false;
 	}
 
-	kprintf("firmware_display_init: firmware framebuffer %ux%u address=0x%llx pitch=%u bytes\n", width, height,
+	kprintf("firmware framebuffer %ux%u address=0x%llx pitch=%u bytes\n", width, height,
 			(unsigned long long)address, stride);
 	return true;
 }

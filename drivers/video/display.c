@@ -20,7 +20,7 @@ display_init(void)
 bool
 display_register(display_device_t *display)
 {
-  kprintf("display_register: registering display\n");
+  kprintf("registering display\n");
   if (!g_display_initialized || display == 0 || display->registered || display->framebuffer == 0 ||
 		display->width == 0U || display->height == 0U || display->stride < display->width ||
 		display->bytes_per_pixel == 0U || display->present == 0 || g_primary_display != 0) {
@@ -64,6 +64,6 @@ display_dump(void)
 		return;
 	}
 
-	kprintf("com.butterscotch.io.display: primary %ux%u, stride %u pixels, %u Bpp\n", g_primary_display->width,
+	IOLog("com.butterscotch.io.display: primary %ux%u, stride %u pixels, %u Bpp\n", g_primary_display->width,
 			g_primary_display->height, g_primary_display->stride, g_primary_display->bytes_per_pixel);
 }

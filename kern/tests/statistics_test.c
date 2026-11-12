@@ -55,6 +55,6 @@ statistics_self_test(void)
 	virtqueue_statistics(&after);
 	if (after.live_queues != before.live_queues || pmm_get_free_page_count() != free_before) ok = false;
 
-	if (ok) kputln("statistics: self-test passed (VirtIO traffic, errors, and queue cleanup)");
+	if (ok) kprintf("self-test passed (VirtIO traffic, errors, and queue cleanup)\n");
 	return ok;
 }

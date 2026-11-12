@@ -119,7 +119,7 @@ kern_fail(const char *message)
 static void
 kern_dump_boot_dtb(const dtb_t *device_tree)
 {
-	kputln("dtb: valid flattened Device Tree");
+	kprintf("valid flattened Device Tree\n");
 
 	kputs("dtb: version: ");
 	kputu64(device_tree->version);
@@ -131,13 +131,13 @@ kern_dump_boot_dtb(const dtb_t *device_tree)
 
 	if (!kconsole_verbose()) return;
 
-	kprintf("dtb: address: %p\n", (void *)device_tree->base);
+	kprintf("address: %p\n", (void *)device_tree->base);
 
-	kprintf("dtb: structure address: %p\n", (void *)device_tree->structure);
-	kprintf("dtb: structure size: %llu bytes\n", (unsigned long long)device_tree->structure_size);
+	kprintf("structure address: %p\n", (void *)device_tree->structure);
+	kprintf("structure size: %llu bytes\n", (unsigned long long)device_tree->structure_size);
 
-	kprintf("dtb: strings address: %p\n", (void *)device_tree->strings);
-	kprintf("dtb: strings size: %llu bytes\n", (unsigned long long)device_tree->strings_size);
+	kprintf("strings address: %p\n", (void *)device_tree->strings);
+	kprintf("strings size: %llu bytes\n", (unsigned long long)device_tree->strings_size);
 }
 
 static bool
@@ -148,7 +148,7 @@ kern_test_pmm(void)
 	for (uint32_t index = 0U; index < 3U; index++) {
 		if (!pmm_allocate_page(&test_pages[index])) return false;
 
-		kverbosef("kern_test_pmm: allocated test page %u at 0x%llx\n", index, (unsigned long long)test_pages[index]);
+		kverbosef("allocated test page %u at 0x%llx\n", index, (unsigned long long)test_pages[index]);
 	}
 	for (uint32_t index = 0U; index < 3U; index++) {
 		if (!pmm_free_page(test_pages[index])) return false;
@@ -411,11 +411,11 @@ kern_dump_higher_half_state(void)
 {
 	if (!kconsole_verbose()) return;
 
-	kprintf("kern_init: higher-half PC: %p\n", (void *)arm64_read_program_counter());
-	kprintf("kern_init: higher-half SP: %p\n", (void *)arm64_read_stack_pointer());
-	kprintf("kern_init: higher-half VBAR_EL1: %p\n", (void *)arm64_read_vector_base());
-	kprintf("kern_init: platform state: %p\n", (void *)platform_get());
-	kprintf("kern_init: Device Tree state: %p\n", (void *)dtb_get_boot());
+	kprintf("higher-half PC: %p\n", (void *)arm64_read_program_counter());
+	kprintf("higher-half SP: %p\n", (void *)arm64_read_stack_pointer());
+	kprintf("higher-half VBAR_EL1: %p\n", (void *)arm64_read_vector_base());
+	kprintf("platform state: %p\n", (void *)platform_get());
+	kprintf("Device Tree state: %p\n", (void *)dtb_get_boot());
 }
 
 /* Rebase every long-lived kernel pointer before TTBR0 is removed. */
@@ -505,7 +505,7 @@ kern_enter_higher_half(void)
 		kern_fail("kern_init: higher entry translation mismatch");
 	}
 
-	kputln("kern_init: entering higher-half kernel");
+	kprintf("entering higher-half kernel\n");
 
 	arm64_enter_higher_half(VMM_HIGHER_HALF_BASE, higher_vbar, higher_entry);
 }
@@ -533,7 +533,7 @@ kern_finish_higher_half_transition(void)
 		kern_fail("kern_init: higher-half state validation failed");
 	}
 
-	kputln("kern_init: higher-half transition complete");
+	kprintf("higher-half transition complete\n");
 	kern_dump_higher_half_state();
 	nxu_boot_log_higher_half();
 
@@ -541,13 +541,13 @@ kern_finish_higher_half_transition(void)
 		kern_fail("vmm_validate_linked_kernel_layout: higher-half linked layout validation failed");
 	}
 
-	kputln("vmm_validate_linked_kernel_layout: higher-half linked layout validated");
+	kprintf("higher-half linked layout validated\n");
 
 	if (!kern_test_linked_kernel_pointers()) {
 		kern_fail("kern_test_linked_kernel_pointers: static higher-half pointer validation failed");
 	}
 
-	kputln("kern_test_linked_kernel_pointers: static kernel pointers are higher-half linked");
+	kprintf("static kernel pointers are higher-half linked\n");
 
 	/* Permanent TTBR1 runtime state. */
 
@@ -555,19 +555,19 @@ kern_finish_higher_half_transition(void)
 		kern_fail("kern_init: higher-half pointer rebasing failed");
 	}
 
-	kputln("kern_init: kernel pointers rebased to TTBR1");
+	kprintf("kernel pointers rebased to TTBR1\n");
 
 	if (!vmm_disable_ttbr0()) {
 		kern_fail("vmm_disable_ttbr0: TTBR0 shutdown failed");
 	}
 
-	kputln("vmm_disable_ttbr0: TTBR0 disabled");
+	kprintf("TTBR0 disabled\n");
 
 	if (!kern_validate_ttbr0_shutdown()) {
 		kern_fail("kern_validate_ttbr0_shutdown: TTBR0 shutdown validation failed");
 	}
 
-	kputln("kern_validate_ttbr0_shutdown: lower address translation rejected");
+	kprintf("lower address translation rejected\n");
 }
 
 /*
@@ -579,21 +579,21 @@ kern_finish_higher_half_transition(void)
 static void
 kern_init_memory(void)
 {
-	kputln("vm_kern_init: initializing kernel virtual arena");
+	kprintf("initializing kernel virtual arena\n");
 
 	if (!vm_kern_init()) {
 		kern_fail("vm_kern_init: initialization failed");
 	}
 
-	kputln("vm_kern_init: kernel virtual arena initialized");
+	kprintf("kernel virtual arena initialized\n");
 
-	kputln("heap_init: initializing kernel heap");
+	kprintf("initializing kernel heap\n");
 
 	if (!heap_init()) {
 		kern_fail("heap_init: initialization failed");
 	}
 
-	kputln("heap_init: kernel heap initialized");
+	kprintf("kernel heap initialized\n");
 
 	if (!kernel_do_post(KERNEL_POST_MEMORY)) {
 		kern_fail("kernel_do_post: memory self-tests failed");
@@ -701,19 +701,19 @@ kern_init_filesystem(void)
 static void
 kern_init_scheduler(void)
 {
-	kputln("thread_bootstrap: initializing thread subsystem");
+	kprintf("initializing thread subsystem\n");
 
 	if (!thread_bootstrap()) {
 		kern_fail("thread_bootstrap: subsystem initialization failed");
 	}
 
-	kputln("sched_bootstrap: initializing processor scheduler");
+	kprintf("initializing processor scheduler\n");
 
 	if (!sched_bootstrap(proc_task(proc_kernel()))) {
 		kern_fail("sched_bootstrap: scheduler initialization failed");
 	}
 
-	kputln("thread_bootstrap: thread subsystem initialized");
+	kprintf("thread subsystem initialized\n");
 }
 
 /*
@@ -734,7 +734,7 @@ kern_mount_system_volume(void)
 		boot_mount_recovery_volume();
 		if (boot_recovery_volume_available()) {
 			boot_mode_force_recovery();
-			kputln("boot: system mount failed; starting the recovery partition");
+			kprintf("system mount failed; starting the recovery partition\n");
 			return;
 		}
 
@@ -767,13 +767,13 @@ kern_launch_init_process(display_device_t *boot_display)
 		bool bootd_matches_recovery = false;
 		loader_status_t compare_status = loader_images_equal(init_path, bootd_recovery_path, &bootd_matches_recovery);
 		if (compare_status == LOADER_STATUS_OK && !bootd_matches_recovery) {
-			kputln("loader_images_equal: bootd primary differs from recovery image");
+			kprintf("bootd primary differs from recovery image\n");
 			init_path = bootd_recovery_path;
 			init_uses_fallback = true;
 		}
 	}
 
-	kprintf("boot: selected environment: %s\n", boot_mode_name());
+	kprintf("selected environment: %s\n", boot_mode_name());
 	if (boot_display != 0 && !boot_splash_finish()) kern_fail("boot_splash_finish: completion failed");
 	kputs("loader_spawn: loading ");
 	kputs(init_path);
@@ -783,7 +783,7 @@ kern_launch_init_process(display_device_t *boot_display)
 	if (init_status != LOADER_STATUS_OK && !recovery_boot && !init_uses_fallback) {
 		kputs("loader_spawn: primary bootd unavailable: ");
 		kputln(loader_status_name(init_status));
-		kputln("loader_spawn: trying bootd recovery image");
+		kprintf("trying bootd recovery image\n");
 		init_status = loader_spawn(proc_kernel(), bootd_recovery_path, init_name, &g_boot_process);
 	}
 
@@ -794,7 +794,7 @@ kern_launch_init_process(display_device_t *boot_display)
 	}
 
 	if (g_boot_process->p_ident.pid != 1U) kern_fail("loader_spawn: selected environment did not receive PID 1");
-	kprintf("%s: PID %u ready for scheduler dispatch\n", init_name, g_boot_process->p_ident.pid);
+	IOLog("%s: PID %u ready for scheduler dispatch\n", init_name, g_boot_process->p_ident.pid);
 	kputln("VirtIOBlockFamily: VirtIO block device initialized");
 }
 
@@ -807,27 +807,27 @@ kern_launch_init_process(display_device_t *boot_display)
 static __attribute__((noreturn)) void
 kern_start_scheduler(const driverkit_config_t *drivers)
 {
-	if (drivers->input_enabled) kputln("input: VirtIO keyboard and mouse initialized");
+	if (drivers->input_enabled) kprintf("VirtIO keyboard and mouse initialized\n");
 
 	gic_enable_ppi(PHYSICAL_TIMER_INTID, 0x80U);
-	kputln("kern_init: physical timer PPI enabled");
+	kprintf("physical timer PPI enabled\n");
 
 	timer_start_periodic(KERNEL_TIMER_HZ);
 
-	kprintf("kern_init: periodic timer started at %u Hz\n", KERNEL_TIMER_HZ);
+	kprintf("periodic timer started at %u Hz\n", KERNEL_TIMER_HZ);
 
 	/* After the boot CPU's timer (the secondaries copy its rate) and before it takes its first interrupt. */
 	(void)smp_boot_secondaries();
 
 	arm64_enable_irqs();
-	kputln("kern_init: IRQs enabled");
+	kprintf("IRQs enabled\n");
 	diagnostics_start();
 
 #if defined(NXU_SMP_USER_TEST)
 	/* Real user processes and threads on every CPU: the boot thread supervises. */
 	if (!smp_user_test_run()) kern_fail("smp_user_test: failed");
-	kputln("smp_user_test: passed");
-	kputln("smp_user_test: halting (test build)");
+	kprintf_for(smp_user_test_run, "passed\n");
+	kprintf("halting (test build)\n");
 	for (;;)
 		__asm__ volatile("wfe");
 #endif
@@ -835,14 +835,14 @@ kern_start_scheduler(const driverkit_config_t *drivers)
 #if defined(NXU_SMP_TEST)
 	/* The secondary CPUs are up and the boot CPU takes interrupts: the SMP suite runs on the boot thread. */
 	if (!smp_test_run()) kern_fail("smp_test: failed");
-	kputln("smp_test: passed");
-	kputln("smp_test: halting (test build)");
+	kprintf_for(smp_test_run, "passed\n");
+	kprintf("halting (test build)\n");
 	for (;;)
 		__asm__ volatile("wfe");
 #endif
 
 	if (g_boot_process != 0) {
-		kprintf("sched: dispatching %s PID %u\n", boot_mode_is_triage_os() ? "triageOS" : "bootd",
+		kprintf("dispatching %s PID %u\n", boot_mode_is_triage_os() ? "triageOS" : "bootd",
 				g_boot_process->p_ident.pid);
 		kputln(boot_mode_is_triage_os() ? "kern_init: recovery userspace active"
 										: "kern_init: root userspace services active");
@@ -856,7 +856,7 @@ kern_start_scheduler(const driverkit_config_t *drivers)
 			(void)waitq_block(&userspace_supervisor_done, false);
 	}
 
-	kputln("kern_init: remaining in kernel-only mode");
+	kprintf("remaining in kernel-only mode\n");
 
 	uint64_t last_second = 0ULL;
 
@@ -977,13 +977,13 @@ kern_init(const void *dtb_address)
 	uint64_t current_el_raw = arm_read_current_el_raw();
 	uint32_t current_el = arm_read_current_el();
 
-	kputln("kern_init: uart initialized");
+	kprintf("uart initialized\n");
 	nxu_boot_log_early(dtb_address, current_el_raw, current_el);
 
 	/* Catch bootstrap faults before touching firmware-provided memory. */
-    kputln("kern_init: initializing exception vectors");
+    kprintf("initializing exception vectors\n");
     exception_init();
-	kputln("kern_init: early exception vectors installed");
+	kprintf("early exception vectors installed\n");
 
 	/* Permanent Device Tree metadata. */
 
@@ -999,13 +999,13 @@ kern_init(const void *dtb_address)
 
 	kputc('\n');
 
-	kputln("dtb: bootstrap begin");
+	kprintf("bootstrap begin\n");
 
 	if (!dtb_bootstrap(dtb_address)) {
 		kern_fail("dtb_bootstrap: invalid Device Tree Blob");
 	}
 
-	kputln("dtb_bootstrap: bootstrap complete");
+	kprintf("bootstrap complete\n");
 
 	const dtb_t *device_tree = dtb_get_boot();
 
@@ -1013,13 +1013,13 @@ kern_init(const void *dtb_address)
 		kern_fail("dtb_t device_tree: boot Device Tree unavailable");
 	}
 
-	kputln("nvram_bootstrap: bootstrap begin");
+	kprintf("bootstrap begin\n");
 	if (!nvram_bootstrap(device_tree)) kern_fail("nvram_bootstrap: bootstrap failed");
-	kputln("nvram_bootstrap: bootstrap complete");
+	kprintf("bootstrap complete\n");
 
-	kputln("boot_args: initialization begin");
+	kprintf("initialization begin\n");
 	if (!boot_args_init()) kern_fail("boot_args_init: initialization failed");
-	kputln("boot_args_init: initialization complete");
+	kprintf("initialization complete\n");
 	boot_args_dump();
 
 	/*
@@ -1035,7 +1035,7 @@ kern_init(const void *dtb_address)
 
 		cpuset_fill(&everywhere, NXU_MAX_CPUS);
 		processor_set_default_affinity(&everywhere);
-		kputln("sched: new threads may run on any CPU (sched.affinity=all)");
+		kprintf("new threads may run on any CPU (sched.affinity=all)\n");
 	}
 
 	/*
@@ -1051,12 +1051,12 @@ kern_init(const void *dtb_address)
 		cpuset_clear(&boot_only);
 		cpuset_add(&boot_only, 0U);
 		processor_set_default_user_affinity(&boot_only);
-		kputln("sched: user threads stay on the boot CPU (sched.user=boot)");
+		kprintf("user threads stay on the boot CPU (sched.user=boot)\n");
 	}
 
 	kern_dump_boot_dtb(device_tree);
 
-	kputln("dtb: walking structure block");
+	kprintf("walking structure block\n");
 
 	// if (!dtb_dump(device_tree)) {
 	// 	kern_fail(
@@ -1066,7 +1066,7 @@ kern_init(const void *dtb_address)
 
 	/* Permanent platform description. */
 
-	kputln("platform: discovering hardware");
+	kprintf("discovering hardware\n");
 
 	if (!platform_bootstrap(device_tree)) {
 		kern_fail("platform: hardware discovery failed");
@@ -1078,19 +1078,19 @@ kern_init(const void *dtb_address)
 		kern_fail("platform: permanent platform state unavailable");
 	}
 
-	kputln("platform: hardware discovery complete");
+	kprintf("hardware discovery complete\n");
 
 	platform_dump(platform);
 	nxu_boot_log_platform(device_tree, platform);
 
 	/* Physical memory manager. */
-	kputln("pmm_init: initializing physical memory manager");
+	kprintf("initializing physical memory manager\n");
 
 	if (!pmm_init(platform, device_tree)) {
 		kern_fail("pmm_init: initialization failed");
 	}
 
-	kputln("pmm_init: physical memory manager initialized");
+	kprintf("physical memory manager initialized\n");
 
 	pmm_dump();
 
@@ -1098,7 +1098,7 @@ kern_init(const void *dtb_address)
 		kern_fail("kern_test_pmm: allocation/free test failed");
 	}
 
-	kputln("kern_test_pmm: allocation/free test passed");
+	kprintf("allocation/free test passed\n");
 
 	/* Exception level and vector table. */
 
@@ -1114,13 +1114,13 @@ kern_init(const void *dtb_address)
 	/* Note: Exception vectors were installed during early bootstrap. */
 
 	/* TTBR0 identity address space. */
-	kputln("vmm_init: building identity address space");
+	kprintf("building identity address space\n");
 
 	if (!vmm_init(platform)) {
 		kern_fail("vmm_init: initialization failed");
 	}
 
-	kputln("vmm_init: stage 1 MMU enabled");
+	kprintf("stage 1 MMU enabled\n");
 
 	vmm_dump();
 
@@ -1128,73 +1128,73 @@ kern_init(const void *dtb_address)
 		kern_fail("vmm_validate_kernel_permissions: kernel permission validation failed");
 	}
 
-	kputln("vmm_validate_kernel_permissions: kernel permissions validated");
+	kprintf("kernel permissions validated\n");
 
 	if (!kern_validate_identity_mappings(platform)) {
 		kern_fail("kern_validate_identity_mappings: identity translation test failed");
 	}
 
-	kputln("kern_validate_identity_mappings: stack identity translation passed");
-	kputln("kern_validate_identity_mappings: UART identity translation passed");
+	kprintf("stack identity translation passed\n");
+	kprintf("UART identity translation passed\n");
 
 	/* CPU caches and live table updates. */
-	kputln("cache_init: initializing CPU caches");
+	kprintf("initializing CPU caches\n");
 
 	if (!cache_init()) {
 		kern_fail("cache_init: initialization failed");
 	}
 
-	kputln("cache_init: CPU caches initialized");
+	kprintf("CPU caches initialized\n");
 
 	cache_dump();
 
 	/* TTBR1 kernel alias and full direct map. */
-	kputln("vmm_init_higher_half_alias: installing TTBR1 higher-half alias");
+	kprintf("installing TTBR1 higher-half alias\n");
 
 	if (!vmm_init_higher_half_alias()) {
 		kern_fail("vmm_init_higher_half_alias: TTBR1 higher-half initialization failed");
 	}
 
-	kputln("vmm_init_higher_half_alias: TTBR1 higher-half alias installed");
+	kprintf("TTBR1 higher-half alias installed\n");
 
 	if (kconsole_verbose()) vmm_dump_higher_half();
 
 	/* The live mapping test now targets a TTBR1 virtual address */
-	kputln("kern_test_live_vmm: testing live page mappings");
+	kprintf("testing live page mappings\n");
 
 	if (!kern_test_live_vmm()) {
 		kern_fail("kern_test_live_vmm: live page mapping test failed");
 	}
 
-	kputln("kern_test_live_vmm: live page mapping test passed");
+	kprintf("live page mapping test passed\n");
 
-	kputln("kern_test_higher_half_alias: testing higher-half execution");
+	kprintf("testing higher-half execution\n");
 
 	if (!kern_test_higher_half_alias()) {
 		kern_fail("kern_test_higher_half_alias: higher-half execution test failed");
 	}
 
-	kputln("kern_test_higher_half_alias: higher-half execution test passed");
+	kprintf("higher-half execution test passed\n");
 
-	kputln("vmm_map_higher_half_direct_map: building higher-half direct map");
+	kprintf("building higher-half direct map\n");
 
 	if (!vmm_map_higher_half_direct_map(platform)) {
 		kern_fail("vmm_map_higher_half_direct_map: higher-half direct map failed");
 	}
 
-	kputln("vmm_map_higher_half_direct_map: higher-half direct map installed");
+	kprintf("higher-half direct map installed\n");
 
 	if (!vmm_validate_higher_half_direct_map(platform)) {
 		kern_fail("vmm_validate_higher_half_direct_map: higher-half direct map validation failed");
 	}
 
-	kputln("vmm_validate_higher_half_direct_map: higher-half direct map validated");
+	kprintf("higher-half direct map validated\n");
 
 	if (!kern_test_higher_half_ram_alias()) {
 		kern_fail("kern_test_higher_half_ram_alias: higher-half RAM alias test failed");
 	}
 
-	kputln("kern_test_higher_half_ram_alias: higher-half RAM alias test passed");
+	kprintf("higher-half RAM alias test passed\n");
 
 	vmm_dump_higher_half();
 

@@ -197,6 +197,7 @@ keyboard_attach(uint32_t device_id)
 	if (!g_keyboard.initialized || g_keyboard.present || device_id == 0U) return false;
 	g_keyboard.device_id = device_id;
 	g_keyboard.present = true;
+	kprintf("input device %u is the system keyboard\n", device_id);
 	return true;
 }
 

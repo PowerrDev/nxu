@@ -68,7 +68,7 @@ check(bool ok, const char *what)
 {
 	if (!ok) g_failures++;
 
-	kprintf("i386_init_interrupts_selftest: %s: %s\n", ok ? "ok" : "FAIL", what);
+	kprintf("%s: %s\n", ok ? "ok" : "FAIL", what);
 }
 
 static void
@@ -199,7 +199,7 @@ test_tick_rate(void)
 {
 	window_result_t result = measure_windows(5U, 100ULL);
 
-	kprintf("i386_init_interrupts_selftest: best window %llu ticks, expected about %llu, at %u Hz\n",
+	kprintf("best window %llu ticks, expected about %llu, at %u Hz\n",
 			(unsigned long long)result.best_ticks, (unsigned long long)result.best_expected,
 			timer_get_interrupt_rate());
 
@@ -220,7 +220,7 @@ test_delay_and_restart(void)
 	/* 100 ms of timer_delay_ms against the PIT is about 20 ticks at 200 Hz. */
 	window_result_t result = measure_windows(5U, 100ULL);
 
-	kprintf("i386_init_interrupts_selftest: timer_delay_ms(100) x5: shortest %llu us, best window %llu ticks (expected "
+	kprintf("timer_delay_ms(100) x5: shortest %llu us, best window %llu ticks (expected "
 			"about %llu) at 200 Hz\n",
 			(unsigned long long)result.shortest_us, (unsigned long long)result.best_ticks,
 			(unsigned long long)result.best_expected);
@@ -379,7 +379,7 @@ test_cascade(void)
 	pic_unmask(I386_RTC_IRQ);
 	wait_with_interrupts(50ULL);
 
-	kprintf("i386_init_interrupts_selftest: %u RTC interrupts in 50 ms at 1024 Hz\n", rtc.hits);
+	kprintf("%u RTC interrupts in 50 ms at 1024 Hz\n", rtc.hits);
 	check(rtc.hits >= 5U, "a slave line (IRQ8) is delivered repeatedly, so the cascade EOI works");
 	check(rtc.last_intid == I386_RTC_IRQ && rtc.seen_if_set == 0U, "the slave interrupt arrives as IRQ8 with IF clear");
 
@@ -424,6 +424,6 @@ i386_init_interrupts_selftest(const i386_boot_info_t *boot)
 	ml_irq_restore(flags);
 	check((i386_read_flags() & I386_EFLAGS_IF) == 0ULL, "interrupts are disabled again on return");
 
-	kprintf("i386_init_interrupts_selftest: %u failure(s)\n", g_failures);
+	kprintf("%u failure(s)\n", g_failures);
 	return g_failures == 0U;
 }

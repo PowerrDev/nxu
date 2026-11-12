@@ -352,7 +352,7 @@ virtio_input_attach(const virtio_device_t *transport)
 	device->attached = true;
 	g_virtio_input_device_count++;
 
-	kprintf("VirtIOInputFamily: matched %s \"%s\" at 0x%llx\n",
+	IOLog("VirtIOInputFamily: matched %s \"%s\" at 0x%llx\n",
 			device->device_class == INPUT_DEVICE_KEYBOARD ? "keyboard"
 			: device->device_class == INPUT_DEVICE_MOUSE  ? "mouse"
 														  : "input device",
@@ -368,7 +368,7 @@ virtio_input_attach(const virtio_device_t *transport)
 	return true;
 
 fail:
-	kprintf("VirtIOInputFamily: attach failed during %s\n", failure_stage);
+	IOLog("VirtIOInputFamily: attach failed during %s\n", failure_stage);
 	virtio_device_fail(&device->transport);
 	virtio_input_cleanup(device);
 	return false;
@@ -426,10 +426,10 @@ virtio_input_dump(void)
 		else if (device->device_class == INPUT_DEVICE_MOUSE)
 			class_name = "mouse";
 
-		kprintf("VirtIOInputFamily: device %llu: %s\n", (unsigned long long)device->input_device_id, class_name);
-		kprintf("VirtIOInputFamily: device %llu: name %s\n", (unsigned long long)device->input_device_id,
+		IOLog("VirtIOInputFamily: device %llu: %s\n", (unsigned long long)device->input_device_id, class_name);
+		IOLog("VirtIOInputFamily: device %llu: name %s\n", (unsigned long long)device->input_device_id,
 				device->name[0] != '\0' ? device->name : "unnamed");
-		kverbosef("VirtIOInputFamily: device %llu: INTID %u\n", (unsigned long long)device->input_device_id,
+		IOLogVerbose("VirtIOInputFamily: device %llu: INTID %u\n", (unsigned long long)device->input_device_id,
 				  (unsigned)device->transport.intid);
 	}
 }

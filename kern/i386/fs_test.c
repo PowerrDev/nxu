@@ -38,7 +38,7 @@ static const char g_journal_message[] = "NXU JBD2 committed metadata survived th
 static bool
 fs_test_fail(const char *what)
 {
-	kprintf("i386_fs_test: FAIL %s\n", what);
+	kprintf("FAIL %s\n", what);
 	return false;
 }
 
@@ -189,14 +189,14 @@ fs_test_write(void)
 			return fs_test_fail("persistence marker contents");
 		}
 
-		kputln("i386_fs_test: persistence marker recovered from previous boot");
+		kprintf("persistence marker recovered from previous boot\n");
 	} else if (status == VFS_STATUS_NOT_FOUND) {
 		if (!fs_test_write_file(filedesc, "/Volumes/mainOS/NXU/persistent.txt", VFS_OPEN_WRITE | VFS_OPEN_CREATE,
 								g_persist_message, sizeof(g_persist_message) - 1ULL)) {
 			return fs_test_fail("create persistence marker");
 		}
 
-		kputln("i386_fs_test: persistence marker created");
+		kprintf("persistence marker created\n");
 	} else {
 		return fs_test_fail("lookup of persistence marker");
 	}
@@ -205,7 +205,7 @@ fs_test_write(void)
 
 	if (filedesc->fd_open_count != 0U) return fs_test_fail("descriptors left open");
 
-	kputln("i386_fs_test: write test passed");
+	kprintf("write test passed\n");
 	return true;
 }
 
@@ -242,8 +242,8 @@ fs_test_journal_crash(void)
 
 	if (!ext4_debug_journal_crash_reached()) return fs_test_fail("durable crash point was not reached");
 
-	kputln("i386_fs_test: journal transaction committed, checkpoint intentionally skipped");
-	kputln("i386_fs_test: simulating power loss");
+	kprintf("journal transaction committed, checkpoint intentionally skipped\n");
+	kprintf("simulating power loss\n");
 
 	/* Power off with the transaction only in the journal: no unmount, no sync. */
 	i386_shutdown(0x00U);
@@ -259,7 +259,7 @@ fs_test_journal_verify(void)
 		return fs_test_fail("the committed transaction was not recovered by the mount");
 	}
 
-	kputln("i386_fs_test: committed crash-test transaction recovered");
+	kprintf("committed crash-test transaction recovered\n");
 	return true;
 }
 
@@ -272,6 +272,6 @@ i386_fs_test_run(const char *mode)
 
 	if (strcmp(mode, "journal-verify") == 0) return fs_test_journal_verify();
 
-	kprintf("i386_fs_test: unknown fs-test \"%s\"\n", mode);
+	kprintf("unknown fs-test \"%s\"\n", mode);
 	return false;
 }

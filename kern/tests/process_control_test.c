@@ -62,12 +62,12 @@ process_control_test_privileges(void)
 
 	uint64_t exit_status = 0ULL;
 	if (!process_control_test_wait(proc_kernel(), proc->p_ident.pid, &exit_status)) {
-		kputln("process_control_test: privtest did not exit in time");
+		kprintf("privtest did not exit in time\n");
 		return false;
 	}
 
 	if (exit_status != 0ULL) {
-		kprintf("process_control_test: privtest failed with status 0x%llx (check number, or a kill)\n",
+		kprintf("privtest failed with status 0x%llx (check number, or a kill)\n",
 				(unsigned long long)exit_status);
 		return false;
 	}
@@ -92,12 +92,12 @@ process_control_test_run(bool exclusive)
 
 	uint64_t exit_status = 0ULL;
 	if (!process_control_test_wait(proc_kernel(), proc->p_ident.pid, &exit_status)) {
-		kputln("process_control_test: proctest did not exit in time");
+		kprintf("proctest did not exit in time\n");
 		return false;
 	}
 
 	if (exit_status != 0ULL) {
-		kprintf("process_control_test: proctest failed with status 0x%llx (check number, or a kill)\n",
+		kprintf("proctest failed with status 0x%llx (check number, or a kill)\n",
 				(unsigned long long)exit_status);
 		return false;
 	}
@@ -107,7 +107,7 @@ process_control_test_run(bool exclusive)
 	uint64_t used_after = pmm_get_used_page_count();
 	uint64_t leaked = used_after > used_before ? used_after - used_before : 0ULL;
 
-	kprintf("process_control_test: pages in use before %llu, after %llu\n", (unsigned long long)used_before,
+	kprintf("pages in use before %llu, after %llu\n", (unsigned long long)used_before,
 			(unsigned long long)used_after);
 
 	/*
@@ -116,17 +116,17 @@ process_control_test_run(bool exclusive)
 	 * daemon starts. The count is printed, but it proves nothing there.
 	 */
 	if (!exclusive) {
-		kputln("process_control_test: page reclaim not checked: other work is running in this boot");
-		kputln("process_control_test: fork, exec, signals, copy-on-write, demand paging and capabilities all worked");
+		kprintf("page reclaim not checked: other work is running in this boot\n");
+		kprintf("fork, exec, signals, copy-on-write, demand paging and capabilities all worked\n");
 		return true;
 	}
 
 	if (leaked > PROCESS_CONTROL_TEST_LEAK_TOLERANCE_PAGES) {
-		kprintf("process_control_test: %llu pages were not given back\n", (unsigned long long)leaked);
+		kprintf("%llu pages were not given back\n", (unsigned long long)leaked);
 		return false;
 	}
 
-	kputln("process_control_test: fork, exec, signals, copy-on-write, demand paging and capabilities all worked and "
+	kprintf("fork, exec, signals, copy-on-write, demand paging and capabilities all worked and \n"
 		   "every page was reclaimed");
 	return true;
 }

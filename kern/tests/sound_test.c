@@ -24,7 +24,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#define SOUND_TEST_LOG(format, ...) kprintf("%s: " format, __func__, ##__VA_ARGS__)
+#define SOUND_TEST_LOG(format, ...) kprintf(format, ##__VA_ARGS__)
 
 #define SOUND_TEST_CHUNK_FRAMES 1024U
 

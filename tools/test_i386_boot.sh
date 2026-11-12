@@ -76,7 +76,7 @@ run_case kernel-only no "qemu-exit=1" $STATUS_CLEAN \
   "i386_init: boot phases complete"
 
 run_case bootd yes "run-seconds=10 qemu-exit=1" $STATUS_CLEAN \
-  "i386_init_userland: bootd PID 1 ready for scheduler dispatch" \
+  "userland_spawn_bootd: bootd PID 1 ready for scheduler dispatch" \
   "bootd: userspace service manager started as PID 1" \
   "bootd: com.nxu.logd: started" \
   "bootd: com.nxu.patchd: started" \

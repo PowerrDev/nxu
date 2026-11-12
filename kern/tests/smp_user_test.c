@@ -38,7 +38,7 @@ smp_user_test_dump(uint32_t cpus)
 		processor_t processor = processor_by_id(cpu);
 		thread_t active = processor->active_thread;
 
-		kprintf("smp_user_test: cpu%u: state %u, running tid %llu%s, %u queued, need_resched %u, %llu ticks\n", cpu,
+		kprintf("cpu%u: state %u, running tid %llu%s, %u queued, need_resched %u, %llu ticks\n", cpu,
 				(unsigned)processor->state, (unsigned long long)(active != 0 ? active->thread_id : 0ULL),
 				(active != 0 && thread_is_idle(active)) ? " (idle)" : "", processor->runq.count,
 				processor->preemption_pending ? 1U : 0U, (unsigned long long)processor->ticks);
@@ -53,7 +53,7 @@ smp_user_test_run(void)
 	uint32_t cpus = smp_online_count();
 
 	if (cpus < 2U) {
-		kputln("smp_user_test: FAILED: fewer than two CPUs online");
+		kprintf("FAILED: fewer than two CPUs online\n");
 		return false;
 	}
 
@@ -76,7 +76,7 @@ smp_user_test_run(void)
 	loader_status_t status = loader_spawn(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/smptest", "smptest", &proc);
 
 	if (status != LOADER_STATUS_OK) {
-		kprintf("smp_user_test: FAILED: spawning smptest: %s\n", loader_status_name(status));
+		kprintf("FAILED: spawning smptest: %s\n", loader_status_name(status));
 		return false;
 	}
 
@@ -94,8 +94,8 @@ smp_user_test_run(void)
 		if (!reaped && !dumped && timer_get_microseconds() > watchdog) {
 			/* The run normally takes a few seconds: this one is stuck. Record where everything is while it still is. */
 			dumped = true;
-			kputln("smp_user_test: smptest is taking too long");
-			kputln("smp_user_test: scheduler state:");
+			kprintf("smptest is taking too long\n");
+			kprintf("scheduler state:\n");
 			smp_user_test_dump(cpus);
 		}
 
@@ -104,13 +104,13 @@ smp_user_test_run(void)
 		if (!reaped) (void)sched_sleep_us(5000ULL);
 	}
 	if (!reaped) {
-		kputln("smp_user_test: FAILED: smptest did not finish");
+		kprintf("FAILED: smptest did not finish\n");
 		smp_user_test_dump(cpus);
 		return false;
 	}
 
 	if (exit_status != 0ULL) {
-		kprintf("smp_user_test: FAILED: smptest exited with status %llu (its own lines above say which case)\n",
+		kprintf("FAILED: smptest exited with status %llu (its own lines above say which case)\n",
 				(unsigned long long)exit_status);
 		return false;
 	}
@@ -123,37 +123,37 @@ smp_user_test_run(void)
 
 		if (dispatched != 0ULL) cpus_used++;
 
-		kprintf("smp_user_test: cpu%u ran user threads %llu times\n", cpu, (unsigned long long)dispatched);
+		kprintf("cpu%u ran user threads %llu times\n", cpu, (unsigned long long)dispatched);
 	}
 
-	kprintf("smp_user_test: user threads ran on %u of %u CPUs\n", cpus_used, cpus);
-	kprintf("smp_user_test: at most %u CPUs ran them at the same time\n", peak);
+	kprintf("user threads ran on %u of %u CPUs\n", cpus_used, cpus);
+	kprintf("at most %u CPUs ran them at the same time\n", peak);
 
 	uint32_t wanted = cpus < 3U ? cpus : 3U;
 
 	if (cpus_used < wanted) {
-		kputln("smp_user_test: FAILED: user threads did not spread over the CPUs");
+		kprintf("FAILED: user threads did not spread over the CPUs\n");
 		return false;
 	}
 
 	if (peak < wanted) {
-		kputln("smp_user_test: FAILED: too few CPUs ever ran user threads at the same time");
+		kprintf("FAILED: too few CPUs ever ran user threads at the same time\n");
 		return false;
 	}
 
 	if (!sched_validate_all()) {
-		kputln("smp_user_test: FAILED: the run queues are inconsistent afterwards");
+		kprintf_for(sched_validate_all, "FAILED: the run queues are inconsistent afterwards\n");
 		return false;
 	}
 
 	/* Every process is gone: every page they used, and their page tables, must be back. */
 	uint64_t free_after = pmm_get_free_page_count();
 
-	kprintf("smp_user_test: free pages before %llu, after %llu\n", (unsigned long long)free_before,
+	kprintf("free pages before %llu, after %llu\n", (unsigned long long)free_before,
 			(unsigned long long)free_after);
 
 	if (free_after + SMP_USER_TEST_LEAK_TOLERANCE_PAGES < free_before) {
-		kputln("smp_user_test: FAILED: pages were leaked");
+		kprintf("FAILED: pages were leaked\n");
 		return false;
 	}
 

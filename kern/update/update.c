@@ -616,7 +616,7 @@ update_space(void)
 	}
 
 	if (backup_bytes > recovery.free_bytes || growth_bytes > system.free_bytes) {
-		kputln("patchd: insufficient space for update files and rollback backups");
+		kprintf("insufficient space for update files and rollback backups\n");
 		return false;
 	}
 
@@ -636,7 +636,7 @@ update_backup(void)
 
 		if (entry->kind != UPDATE_FILE || !entry->old_present) continue;
 
-		kprintf("patchd: backing up /Volumes/mainOS/%s\n", entry->relative);
+		kprintf("backing up /Volumes/mainOS/%s\n", entry->relative);
 
 		if (!update_path(source, "/Volumes/mainOS", entry->relative) || !update_backup_path(path, index) ||
 			!update_copy(source, path, entry->old_hash, entry->old_size, false)) {
@@ -673,7 +673,7 @@ update_apply(void)
 		}
 
 		if (entry->kind == UPDATE_DIRECTORY) {
-			kprintf("patchd: applying patches to %s/\n", target);
+			kprintf("applying patches to %s/\n", target);
 
 			if (!update_mkdir(target)) return false;
 
@@ -683,11 +683,11 @@ update_apply(void)
 		if (update_matches(target, entry->new_hash, entry->new_size)) continue;
 
 		if (applied == fail_after) {
-			kputln("patchd: injected installation failure");
+			kprintf("injected installation failure\n");
 			return false;
 		}
 
-		kprintf("patchd: applying patches to %s\n", target);
+		kprintf("applying patches to %s\n", target);
 
 		if (!update_copy(source, target, entry->new_hash, entry->new_size, true)) return false;
 
@@ -701,7 +701,7 @@ static bool
 update_rollback(void)
 {
 	/* Restore the journaled prior state; validate backups before any destructive step. */
-	kputln("patchd: restoring the previous system from the update journal");
+	kprintf("restoring the previous system from the update journal\n");
 
 	if (!update_load_plan()) return false;
 
@@ -730,7 +730,7 @@ update_rollback(void)
 		if (entry->old_present) {
 			if (update_matches(target, entry->old_hash, entry->old_size)) continue;
 
-			kprintf("patchd: rolling back %s\n", target);
+			kprintf("rolling back %s\n", target);
 
 			if (!update_backup_path(source, index) ||
 				!update_copy(source, target, entry->old_hash, entry->old_size, true)) {
@@ -738,7 +738,7 @@ update_rollback(void)
 			}
 
 		} else {
-			kprintf("patchd: removing new update file %s\n", target);
+			kprintf("removing new update file %s\n", target);
 			vfs_status_t status = vfs_unlink(target);
 
 			if (status != VFS_STATUS_OK && status != VFS_STATUS_NOT_FOUND) return false;
@@ -820,7 +820,7 @@ update_mount_image(block_file_image_t *image, const char *filename, const char *
 	vfs_status_t status = vfs_mount("ext4", &image->device, mountpoint);
 
 	if (status != VFS_STATUS_OK) {
-		kprintf("patchd: cannot mount %s: %s\n", mountpoint, vfs_status_name(status));
+		kprintf("cannot mount %s: %s\n", mountpoint, vfs_status_name(status));
 		block_file_image_close(image);
 		return false;
 	}
@@ -876,16 +876,16 @@ update_recovery(void)
 	if (!update_validate_images(false) || !update_open_recovery()) {
 		if (boot_recovery_volume_available()) {
 			boot_mode_force_recovery();
-			kputln("patchd: starting the standalone recovery partition");
+			kprintf("starting the standalone recovery partition\n");
 			return true;
 		}
 
-		kputln("patchd: rollback and recovery boot are unavailable\npatchd: refusing a partial system boot");
+		kprintf("rollback and recovery boot are unavailable\npatchd: refusing a partial system boot\n");
 		return false;
 	}
 
 	boot_mode_force_recovery();
-	kputln("patchd: starting the verified recovery environment");
+	kprintf("starting the verified recovery environment\n");
 	return true;
 }
 
@@ -935,7 +935,7 @@ boot_update_install(void)
 		!nsw_request_parse(pending, size, &g_request) ||
 		!update_path(g_transaction, NSW_TRANSACTIONS_ROOT, g_request.transaction) ||
 		!update_path(state_path, g_transaction, "State")) {
-		kputln("patchd: pending installation is malformed\npatchd: refusing an unverifiable system boot");
+		kprintf("pending installation is malformed\npatchd: refusing an unverifiable system boot\n");
 		return false;
 	}
 
@@ -952,7 +952,7 @@ boot_update_install(void)
 	vfs_status_t journal_status = vfs_lookup(path, &journal);
 
 	if (journal_status != VFS_STATUS_OK && journal_status != VFS_STATUS_NOT_FOUND) {
-		kputln("patchd: unable to inspect the update journal\npatchd: requiring verified recovery");
+		kprintf("unable to inspect the update journal\npatchd: requiring verified recovery\n");
 		return update_recovery();
 	}
 
@@ -961,7 +961,7 @@ boot_update_install(void)
 		/* Any journalled, unconfirmed transaction is restored before userspace. */
 		if (update_rollback()) {
 			update_clear_pending();
-			kputln("patchd: interrupted or unconfirmed update rolled back");
+			kprintf("interrupted or unconfirmed update rolled back\n");
 			return true;
 		}
 
@@ -970,23 +970,23 @@ boot_update_install(void)
 
 	if (!ready) {
 		if (strcmp(request_path, NSW_ACTIVE_UPDATE) == 0) {
-			kputln("patchd: active update journal is unavailable\npatchd: requiring recovery");
+			kprintf("active update journal is unavailable\npatchd: requiring recovery\n");
 			return update_recovery();
 		}
 
 		update_clear_pending();
-		kputln("patchd: incomplete installation queue discarded\npatchd: system files were not changed");
+		kprintf("incomplete installation queue discarded\npatchd: system files were not changed\n");
 		return true;
 	}
 
 	if (boot_mode_is_triage_os()) return true;
 
-	kprintf("patchd: installing prepared build %s before userspace starts\n", g_request.build);
+	kprintf("installing prepared build %s before userspace starts\n", g_request.build);
 
 	if (!update_validate_images(true) || !update_open_recovery() ||
 		!update_mount_image(&g_source_image, g_manifest.system, UPDATE_SOURCE, "nsw-system") || !update_plan() ||
 		!update_space()) {
-		kputln("patchd: update preflight failed\npatchd: system files were not changed");
+		kprintf("update preflight failed\npatchd: system files were not changed\n");
 		update_close_source();
 		update_close_recovery();
 		update_clear_pending();
@@ -994,7 +994,7 @@ boot_update_install(void)
 	}
 
 	if (!update_backup()) {
-		kputln("patchd: backup failed\npatchd: system files were not changed");
+		kprintf("backup failed\npatchd: system files were not changed\n");
 		update_close_source();
 		update_close_recovery();
 		update_clear_pending();
@@ -1007,7 +1007,7 @@ boot_update_install(void)
 		if (update_rollback()) {
 			update_close_recovery();
 			update_clear_pending();
-			kputln("patchd: failed installation rolled back");
+			kprintf("failed installation rolled back\n");
 			return true;
 		}
 
@@ -1017,7 +1017,7 @@ boot_update_install(void)
 	update_close_source();
 	update_close_recovery();
 	g_trial = true;
-	kputln("patchd: patches applied\npatchd: waiting for the updated system to confirm its boot");
+	kprintf("patches applied\npatchd: waiting for the updated system to confirm its boot\n");
 	return true;
 }
 
@@ -1033,15 +1033,15 @@ update_watch(void *argument)
 
 	while (timer_get_microseconds() < deadline) {
 		if (update_text(path, "committed\n")) {
-			kputln("patchd: updated boot health confirmed");
+			kprintf("updated boot health confirmed\n");
 			return;
 		}
 
 		(void)sched_sleep_us(1000000);
 	}
 
-	kputln("patchd: updated boot was not confirmed");
-	kputln("patchd: restarting to roll back");
+	kprintf("updated boot was not confirmed\n");
+	kprintf("restarting to roll back\n");
 	machine_system_reset();
 }
 
@@ -1054,7 +1054,7 @@ boot_update_watch_start(void)
 	thread_t thread;
 
 	if (!kernel_thread_create(proc_task(proc_kernel()), update_watch, 0, &thread) || !sched_thread_start(thread)) {
-		kputln("patchd: unable to start update boot watchdog\npatchd: restarting to roll back");
+		kprintf("unable to start update boot watchdog\npatchd: restarting to roll back\n");
 		machine_system_reset();
 	}
 }

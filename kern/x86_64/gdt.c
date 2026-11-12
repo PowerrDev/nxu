@@ -81,10 +81,10 @@ x86_gdt_initialize(uint64_t kernel_stack_top)
 	};
 	x86_gdt_load(&descriptor);
 
-	kprintf("x86_gdt_initialize: kernel selectors installed\n");
-	kprintf("x86_gdt_initialize: TSS at 0x%llx, RSP0 0x%llx\n", (unsigned long long)tss_base,
+	kprintf("kernel selectors installed\n");
+	kprintf("TSS at 0x%llx, RSP0 0x%llx\n", (unsigned long long)tss_base,
 			(unsigned long long)kernel_stack_top);
-	kprintf("x86_gdt_initialize: IST stacks ready for double fault, NMI, and machine check\n");
+	kprintf("IST stacks ready for double fault, NMI, and machine check\n");
 
 	return true;
 }

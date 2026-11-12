@@ -24,7 +24,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#define TEP_BOOT_LOG(format, ...) kprintf("%s: " format, __func__, ##__VA_ARGS__)
+#define TEP_BOOT_LOG(format, ...) kprintf(format, ##__VA_ARGS__)
 
 #define TEP_BOOT_POLL_US 1000000ULL
 /* How long the disk may take to show bootd before the check gives up. */

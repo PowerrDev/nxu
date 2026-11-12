@@ -60,7 +60,7 @@ extern uint8_t __kernel_start[];
 #define VM_CHECK(condition)                                                                                            \
 	do {                                                                                                               \
 		if (!(condition)) {                                                                                            \
-			kprintf("%s: check failed (line %d): %s\n", __func__, __LINE__, #condition);                               \
+			kprintf("check failed (line %d): %s\n", __LINE__, #condition);                               \
 			return false;                                                                                              \
 		}                                                                                                              \
 	} while (0)
@@ -303,7 +303,7 @@ vm_test_pmm(const i386_boot_info_t *boot)
 	VM_CHECK(pmm_get_free_page_count() == free_before);
 	VM_CHECK(pmm_get_used_page_count() == used_before);
 
-	kprintf("vm_test_pmm: passed (%llu pages, %llu free)\n", pmm_get_page_count(), pmm_get_free_page_count());
+	kprintf("passed (%llu pages, %llu free)\n", pmm_get_page_count(), pmm_get_free_page_count());
 	return true;
 }
 
@@ -431,7 +431,7 @@ vm_test_direct_map(const platform_t *platform)
 		VM_CHECK(directory[index] != 0U);
 	VM_CHECK(!vm_probe_read(VM_KERN_BASE + (uint32_t)VM_KERN_SIZE + PMAP_PAGE_SIZE, 0));
 
-	kprintf("vm_test_direct_map: passed (text read-only, data writable, aliases coherent)\n");
+	kprintf("passed (text read-only, data writable, aliases coherent)\n");
 	return true;
 }
 
@@ -540,7 +540,7 @@ vm_test_vm_kern(void)
 	VM_CHECK(vm_kern_get_allocation_count() == allocations_before);
 	VM_CHECK(pmm_get_free_page_count() == free_before);
 
-	kprintf("vm_test_vm_kern: passed (single, multi-page, 5 MiB, read-only, exact accounting)\n");
+	kprintf("passed (single, multi-page, 5 MiB, read-only, exact accounting)\n");
 	return true;
 }
 
@@ -667,7 +667,7 @@ vm_test_kernel_mappings(void)
 	VM_CHECK(!vm_probe_read((uint32_t)(uintptr_t)mmio, 0));
 	VM_CHECK(pmm_free_page(page));
 
-	kprintf("vm_test_kernel_mappings: passed (map, protect, unmap, device type, mmio window)\n");
+	kprintf("passed (map, protect, unmap, device type, mmio window)\n");
 	return true;
 }
 
@@ -922,7 +922,7 @@ vm_test_address_spaces(void)
 	VM_CHECK(pmm_get_free_page_count() == free_before);
 
 	kprintf(
-		"vm_test_address_spaces: passed (isolation, shared kernel half, CR3 switching, protections, TLB, teardown)\n");
+		"passed (isolation, shared kernel half, CR3 switching, protections, TLB, teardown)\n");
 	return true;
 }
 
@@ -1010,7 +1010,7 @@ vm_test_heap(void)
 	VM_CHECK(heap_get_page_count() == pages_before);
 	VM_CHECK(pmm_get_free_page_count() == free_before);
 
-	kprintf("vm_test_heap: passed (small, page-sized, large, kcalloc, coalescing)\n");
+	kprintf("passed (small, page-sized, large, kcalloc, coalescing)\n");
 	return true;
 }
 
@@ -1030,7 +1030,7 @@ bool
 i386_execute_selftest(void)
 {
 	if (!pmap_nx_enabled()) {
-		kputln("i386_execute_selftest: unavailable (CPU lacks NX)");
+		kprintf("unavailable (CPU lacks NX)\n");
 		return true;
 	}
 
@@ -1061,7 +1061,7 @@ i386_execute_selftest(void)
 	VM_CHECK(vm_address_space_unmap_page(&space, VM_USER_A));
 	VM_CHECK(vm_address_space_destroy(&space));
 	VM_CHECK(pmm_free_page(physical));
-	kputln("i386_execute_selftest: passed (kernel and user data NX, code RX)");
+	kprintf("passed (kernel and user data NX, code RX)\n");
 	return true;
 }
 
@@ -1072,7 +1072,7 @@ i386_execute_selftest(void)
 static void
 vm_selftest_deliberate_fault(const char *name)
 {
-	kprintf("i386_init_vm_selftest: raising deliberate fault \"%s\"\n", name);
+	kprintf("raising deliberate fault \"%s\"\n", name);
 
 	if (strcmp(name, "execute-data") == 0) {
 		void *page;
@@ -1114,7 +1114,7 @@ vm_selftest_deliberate_fault(const char *name)
 			*(volatile uint32_t *)(uintptr_t)VM_USER_RO = 1U;
 		}
 	} else {
-		kprintf("i386_init_vm_selftest: unknown vm-fault \"%s\"\n", name);
+		kprintf("unknown vm-fault \"%s\"\n", name);
 	}
 }
 
@@ -1126,7 +1126,7 @@ i386_init_vm_selftest(const i386_boot_info_t *boot)
 	memset(&platform, 0, sizeof(platform));
 
 	if (boot == 0 || boot->multiboot == 0 || !i386_memory_map_load(&platform, boot->multiboot)) {
-		kputln("i386_init_vm_selftest: no memory map to test against");
+		kprintf("no memory map to test against\n");
 		return false;
 	}
 
@@ -1146,21 +1146,21 @@ i386_init_vm_selftest(const i386_boot_info_t *boot)
 	if (!vm_test_address_spaces()) return false;
 
 	if (!vm_shm_self_test()) {
-		kputln("i386_init_vm_selftest: vm_shm self-test failed");
+		kprintf("vm_shm self-test failed\n");
 		return false;
 	}
 
 	if (!vm_map_self_test()) {
-		kputln("i386_init_vm_selftest: vm_map self-test failed");
+		kprintf("vm_map self-test failed\n");
 		return false;
 	}
 
 	if (pmap_current_directory_physical() != pmap_kernel_directory_physical()) {
-		kputln("i386_init_vm_selftest: a test left a user address space active");
+		kprintf("a test left a user address space active\n");
 		return false;
 	}
 
-	kprintf("i386_init_vm_selftest: all checks passed, %llu free page(s), %llu used\n", pmm_get_free_page_count(),
+	kprintf("all checks passed, %llu free page(s), %llu used\n", pmm_get_free_page_count(),
 			pmm_get_used_page_count());
 
 	char fault[32];
@@ -1169,7 +1169,7 @@ i386_init_vm_selftest(const i386_boot_info_t *boot)
 		vm_selftest_deliberate_fault(fault);
 
 		/* Only reached if the fault did not happen. */
-		kputln("i386_init_vm_selftest: deliberate fault did not fault");
+		kprintf("deliberate fault did not fault\n");
 		return false;
 	}
 

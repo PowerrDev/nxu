@@ -28,7 +28,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define UNIFIED_BOOT_LOG(format, ...) kprintf("%s: " format, __func__, ##__VA_ARGS__)
+#define UNIFIED_BOOT_LOG(format, ...) kprintf(format, ##__VA_ARGS__)
 
 /* Highest PID the summary looks for when it lists what is still running. */
 #define UNIFIED_BOOT_PID_SCAN_MAX 64U
@@ -130,24 +130,24 @@ unified_boot_summary(void)
 {
 	unsigned int passed = 0U;
 
-	kputln("unified_boot_summary: begin");
+	kprintf("begin\n");
 
 	for (unsigned int index = 0U; index < UNIFIED_TEST_COUNT; index++) {
 		unified_test_t *test = &g_unified_tests[index];
 
-		kprintf("unified_boot_summary: %s %s\n", test->name, unified_state_name(test->state));
+		kprintf("%s %s\n", test->name, unified_state_name(test->state));
 		if (test->state == UNIFIED_PASSED) passed++;
 	}
 
-	kprintf("unified_boot_summary: boot_chime %s\n", unified_chime_name());
+	kprintf("boot_chime %s\n", unified_chime_name());
 
 	bool ui_alive = unified_ui_alive();
 
 	if (ui_alive) {
-		kprintf("unified_boot_summary: UIService desktop running (%llu event polls so far)\n",
+		kprintf("UIService desktop running (%llu event polls so far)\n",
 				(unsigned long long)ui_service_poll_count());
 	} else {
-		kprintf("unified_boot_summary: UIService desktop FAILED: %s\n",
+		kprintf("UIService desktop FAILED: %s\n",
 				g_unified_ui_failed ? "the session did not start" : "its event loop is not running");
 	}
 
@@ -155,20 +155,20 @@ unified_boot_summary(void)
 	for (proc_id_t pid = 1U; pid <= UNIFIED_BOOT_PID_SCAN_MAX; pid++) {
 		proc_t proc = proc_find(pid);
 
-		if (proc != 0) kprintf("unified_boot_summary: process %u (%s) running\n", (unsigned int)pid, proc->p_comm);
+		if (proc != 0) kprintf("process %u (%s) running\n", (unsigned int)pid, proc->p_comm);
 	}
 
 	bool bootd_alive = proc_find(1U) != 0;
 
-	if (!bootd_alive) kputln("unified_boot_summary: bootd FAILED: PID 1 is gone");
+	if (!bootd_alive) kprintf("bootd FAILED: PID 1 is gone\n");
 
 	bool all = passed == UNIFIED_TEST_COUNT && ui_alive && bootd_alive;
 
 	if (all) {
-		kprintf("unified_boot_summary: all %u test(s) passed, the UI session and bootd are running\n",
+		kprintf("all %u test(s) passed, the UI session and bootd are running\n",
 				(unsigned int)UNIFIED_TEST_COUNT);
 	} else {
-		kprintf("unified_boot_summary: FAILED: %u of %u test(s) passed\n", passed, (unsigned int)UNIFIED_TEST_COUNT);
+		kprintf("FAILED: %u of %u test(s) passed\n", passed, (unsigned int)UNIFIED_TEST_COUNT);
 	}
 
 	return all;
@@ -220,9 +220,9 @@ unified_boot_thread(void *parameter)
 		test->state = ok ? UNIFIED_PASSED : UNIFIED_FAILED;
 
 		if (ok)
-			kprintf("%s: passed\n", test->name);
+			IOLog("%s: passed\n", test->name);
 		else
-			kprintf("%s: FAILED\n", test->name);
+			IOLog("%s: FAILED\n", test->name);
 	}
 
 	(void)unified_boot_summary();

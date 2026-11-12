@@ -66,17 +66,17 @@ i386_print_cpu(void)
 
 	i386_cpuid(1U, &eax, &ebx, &ecx, &edx);
 
-	kprintf("i386_init: cpu vendor %s\n", vendor);
-	kprintf("i386_init: cpu max leaf %u\n", max_leaf);
+	kprintf("cpu vendor %s\n", vendor);
+	kprintf("cpu max leaf %u\n", max_leaf);
 	uint32_t family = (eax >> 8U) & 0xFU;
 	uint32_t model = (eax >> 4U) & 0xFU;
 	if (family == 6U || family == 15U) model |= ((eax >> 16U) & 0xFU) << 4U;
 
 	if (family == 15U) family += (eax >> 20U) & 0xFFU;
-	kprintf("i386_init: cpu family %u\n", family);
-	kprintf("i386_init: cpu model %u\n", model);
-	kprintf("i386_init: cpu stepping %u\n", eax & 0xFU);
-	kprintf("i386_init: CPU features PAE=%s PSE=%s APIC=%s\n", (edx & (1U << 6U)) ? "yes" : "no",
+	kprintf("cpu family %u\n", family);
+	kprintf("cpu model %u\n", model);
+	kprintf("cpu stepping %u\n", eax & 0xFU);
+	kprintf("CPU features PAE=%s PSE=%s APIC=%s\n", (edx & (1U << 6U)) ? "yes" : "no",
 			(edx & (1U << 3U)) ? "yes" : "no", (edx & (1U << 9U)) ? "yes" : "no");
 }
 
@@ -204,10 +204,13 @@ static const i386_phase_t g_phases[] = {{"platform", i386_init_platform, i386_in
 										{"drivers", i386_init_drivers, i386_init_drivers_selftest},
 										{"userland", i386_init_userland, i386_init_userland_selftest}};
 
+void i386_init(uint32_t magic, const multiboot_info_t *info);
+
+/* Reported under i386_init's name: it is i386_init's phase that failed. */
 static void
 i386_fail(const char *phase, const char *what)
 {
-	kprintf("i386_init: %s %s failed\n", phase, what);
+	kprintf_for(i386_init, "%s %s failed\n", phase, what);
 	i386_shutdown(0x01U);
 }
 
@@ -236,46 +239,36 @@ i386_init(uint32_t magic, const multiboot_info_t *info)
 	i386_gdt_init();
 	i386_idt_init();
 
-	uint64_t frequency = timer_calibrate();
+	IOLog("%s [%s]\n", NXU_KERNEL_VERSION, sizeof(void *) == 8U ? "x86_64" : "i386");
+	IOLog("Copyright (c) 2026 NXU Project. All rights reserved.\n");
 
-	kprintf("%s [%s]\n", NXU_KERNEL_VERSION, sizeof(void *) == 8U ? "x86_64" : "i386");
-
-	if (frequency != 0ULL) {
-		/* kprintf has no field widths, so pad the kHz remainder by hand. */
-		uint32_t khz = (uint32_t)(frequency / 1000ULL % 1000ULL);
-
-		kprintf("i386_init: tsc %llu Hz (%llu.%c%c%c MHz)\n", (unsigned long long)frequency,
-				(unsigned long long)(frequency / 1000000ULL), (char)('0' + khz / 100U), (char)('0' + khz / 10U % 10U),
-				(char)('0' + khz % 10U));
-	} else {
-		kputln("i386_init: tsc calibration failed");
-	}
+	(void)timer_calibrate();
 
 	i386_print_cpu();
 
-	kprintf("i386_init: kernel image %p - %p (%u KiB)\n", (void *)__kernel_start, (void *)__kernel_end,
+	kprintf("kernel image %p - %p (%u KiB)\n", (void *)__kernel_start, (void *)__kernel_end,
 			(uint32_t)((uintptr_t)__kernel_end - (uintptr_t)__kernel_start) / 1024U);
 
 	if (magic != MULTIBOOT_BOOTLOADER_MAGIC || info == 0) {
-		kprintf("i386_init: not entered from a Multiboot loader (magic 0x%x)\n", magic);
+		kprintf("not entered from a Multiboot loader (magic 0x%x)\n", magic);
 	} else {
 		if ((info->flags & MULTIBOOT_INFO_MEMORY) != 0U) {
-			kprintf("i386_init: memory %u KiB lower, %u KiB upper\n", info->mem_lower, info->mem_upper);
+			kprintf("memory %u KiB lower, %u KiB upper\n", info->mem_lower, info->mem_upper);
 		}
 
 		if ((info->flags & MULTIBOOT_INFO_CMDLINE) != 0U && info->cmdline != 0U) {
-			kprintf("i386_init: boot-args \"%s\"\n", (const char *)(uintptr_t)info->cmdline);
+			kprintf("boot-args \"%s\"\n", (const char *)(uintptr_t)info->cmdline);
 		}
 	}
 
 	if (!i386_trap_self_test()) {
-		kputln("i386_init: trap self-test failed");
+		kprintf("trap self-test failed\n");
 		for (;;) {
 			__asm__ volatile("cli\n\thlt");
 		}
 	}
 
-	kputln("i386_init: trap self-test passed (breakpoint resume, int 0x80 frame write-back)");
+	kprintf("trap self-test passed (breakpoint resume, int 0x80 frame write-back)\n");
 
 	{
 		char test[I386_CMDLINE_VALUE_MAX];
@@ -290,23 +283,23 @@ i386_init(uint32_t magic, const multiboot_info_t *info)
 		if (i386_startup_tests_enabled() && (strcmp(phase->name, "platform") == 0 || strcmp(phase->name, "vm") == 0 ||
 											 strcmp(phase->name, "kernel") == 0 ||
 											 strcmp(phase->name, "threads") == 0 || strcmp(phase->name, "smp") == 0)) {
-			kprintf("i386_startup: running %s power-on self-tests\n", phase->name);
+			kprintf("running %s power-on self-tests\n", phase->name);
 			if (!phase->selftest(&g_boot_info)) i386_fail(phase->name, "power-on self-test");
 
 			if (strcmp(phase->name, "threads") == 0 && !i386_startup_core_test())
 				i386_fail("core", "power-on self-test");
-			kprintf("i386_startup: %s power-on self-tests passed\n", phase->name);
+			kprintf("%s power-on self-tests passed\n", phase->name);
 		}
 		if (i386_boot_test_requested(phase->name)) {
-			kprintf("i386_init: running %s self-test\n", phase->name);
+			kprintf("running %s self-test\n", phase->name);
 
 			if (!phase->selftest(&g_boot_info)) i386_fail(phase->name, "self-test");
 
-			kprintf("i386_init: %s self-test passed\n", phase->name);
+			kprintf("%s self-test passed\n", phase->name);
 		}
 	}
 
-	kputln("i386_init: boot phases complete");
+	kprintf("boot phases complete\n");
 
 	diagnostics_start();
 	i386_init_run(&g_boot_info);

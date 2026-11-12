@@ -302,8 +302,8 @@ task_terminate(task_t task)
 		 */
 		if (thread != self && sched_is_initialized() && !sched_wait_thread_off_cpu(thread)) {
 			all_off_cpu = false;
-			kputln("task_terminate: a thread of the task would not stop");
-			kputln("task_terminate: its memory is leaked");
+			kprintf("a thread of the task would not stop\n");
+			kprintf("its memory is leaked\n");
 		}
 	}
 	for (uint32_t i = 0U; i < stopped_count; i++) {
@@ -350,7 +350,7 @@ task_terminate(task_t task)
 			(void)vm_address_space_destroy(&task->map);
 		}
 	} else {
-		kprintf("task_terminate: address space not released (a CPU still uses it): leaked\n");
+		kprintf("address space not released (a CPU still uses it): leaked\n");
 	}
 
 	task->active = false;

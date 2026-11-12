@@ -121,7 +121,7 @@ i386_trap_syscall(x86_saved_state_t *state)
 		kputln(")");
 
 		if (!i386_trap_user_terminate(state)) {
-			kputln("i386_trap_syscall: exit from a frame that cannot be unwound");
+			kprintf("exit from a frame that cannot be unwound\n");
 			state->eax = I386_SYSCALL_UNIMPLEMENTED;
 		}
 
@@ -182,20 +182,20 @@ user_exception_report(const x86_saved_state_t *state, proc_t proc)
 	name[0] = '\0';
 	if (proc != 0) (void)proc_get_name(proc, name, sizeof(name));
 
-	kprintf("i386_trap_user_exception: pid %u (%s) terminated by %s at 0x%x:0x%x\n", (uint32_t)proc_selfpid(), name,
+	kprintf("pid %u (%s) terminated by %s at 0x%x:0x%x\n", (uint32_t)proc_selfpid(), name,
 			user_exception_name(state->trapno), state->cs & 0xFFFFU, state->eip);
 
 	if (state->trapno == T_PAGE_FAULT) {
-		kprintf("  cause: %s of 0x%x by user code: %s\n",
+		IOLog("  cause: %s of 0x%x by user code: %s\n",
 				(state->err & PF_FETCH) != 0U ? "instruction fetch"
 											  : ((state->err & PF_WRITE) != 0U ? "write" : "read"),
 				state->cr2, (state->err & PF_PRESENT) != 0U ? "protection violation" : "page not present");
 	} else if (state->trapno == T_GENERAL_PROTECTION || state->trapno == T_SEGMENT_NOT_PRESENT ||
 			   state->trapno == T_STACK_FAULT) {
-		kprintf("  error code 0x%x\n", state->err);
+		IOLog("  error code 0x%x\n", state->err);
 	}
 
-	kprintf("  eax=%x ebx=%x ecx=%x edx=%x\n  esi=%x edi=%x ebp=%x esp=%x\n  eip=%x efl=%x cs=%x ss=%x\n", state->eax,
+	IOLog("  eax=%x ebx=%x ecx=%x edx=%x\n  esi=%x edi=%x ebp=%x esp=%x\n  eip=%x efl=%x cs=%x ss=%x\n", state->eax,
 			state->ebx, state->ecx, state->edx, state->esi, state->edi, state->ebp, state->uesp, state->eip, state->efl,
 			state->cs & 0xFFFFU, state->ss & 0xFFFFU);
 }

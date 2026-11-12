@@ -735,7 +735,7 @@ loader_spawn_internal(proc_t parent, const char *path, const loader_spawn_reques
 				child_cred->cr_svgid = setgid_gid;
 			}
 			if (setuid_exec && before != setuid_uid)
-				kprintf("loader: setuid-exec %s: euid %u -> %u\n", path, (unsigned)before, (unsigned)setuid_uid);
+				kprintf("setuid-exec %s: euid %u -> %u\n", path, (unsigned)before, (unsigned)setuid_uid);
 		}
 	}
 
@@ -797,6 +797,9 @@ loader_spawn_internal(proc_t parent, const char *path, const loader_spawn_reques
 		loader_discard_process(parent, proc);
 		return status;
 	}
+
+	kverbosef("pid %u %s from %s, entry 0x%llx%s\n", proc->p_ident.pid, request->name, dynamic_main != 0 ? dynamic_main : path,
+			  (unsigned long long)header.entry, dynamic_main != 0 ? " (dynamically linked, through dyrld)" : "");
 
 	*result = proc;
 	return LOADER_STATUS_OK;

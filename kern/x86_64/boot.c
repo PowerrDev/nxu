@@ -67,10 +67,10 @@ x86_log_processor(void)
 	__asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
 	__asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
 
-	kprintf("x86_log_processor: build %s, clang %u.%u.%u\n", NXU_BUILD, __clang_major__, __clang_minor__,
+	kprintf("build %s, clang %u.%u.%u\n", NXU_BUILD, __clang_major__, __clang_minor__,
 			__clang_patchlevel__);
 	kconsole_set_timestamp(false);
-	kprintf("x86_log_processor: vendor %s, initial APIC ID %llu\n", vendor,
+	kprintf("vendor %s, initial APIC ID %llu\n", vendor,
 			(unsigned long long)machine_cpu_mpidr());
 
 	if (maximum_leaf >= 1U) {
@@ -82,30 +82,30 @@ x86_log_processor(void)
 		uint32_t model = (eax >> 4U) & 0xFU;
 		if (family == 0xFU) family += (eax >> 20U) & 0xFFU;
 		if (family == 0x6U || family == 0xFU) model |= ((eax >> 16U) & 0xFU) << 4U;
-		kprintf("x86_log_processor: family 0x%x, model 0x%x, stepping %u\n", family, model, eax & 0xFU);
-		kprintf("x86_log_processor: local APIC %s\n",
+		kprintf("family 0x%x, model 0x%x, stepping %u\n", family, model, eax & 0xFU);
+		kprintf("local APIC %s\n",
 				apic_available ? "available" : "unavailable");
 	}
 
 	if (maximum_extended_leaf >= 0x80000001U) {
 		eax = 0x80000001U;
 		__asm__ volatile("cpuid" : "+a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx));
-		kprintf("x86_log_processor: long mode %s\n", (edx & X86_CPUID_LONG_MODE) != 0U ? "available" : "unavailable");
-		kprintf("x86_log_processor: NX %s\n", (edx & X86_CPUID_NX) != 0U ? "available" : "unavailable");
+		kprintf("long mode %s\n", (edx & X86_CPUID_LONG_MODE) != 0U ? "available" : "unavailable");
+		kprintf("NX %s\n", (edx & X86_CPUID_NX) != 0U ? "available" : "unavailable");
 		if (maximum_extended_leaf >= 0x80000008U) {
 			eax = 0x80000008U;
 			__asm__ volatile("cpuid" : "+a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx));
-			kprintf("x86_log_processor: physical address width %u bits\n", eax & 0xFFU);
+			kprintf("physical address width %u bits\n", eax & 0xFFU);
 		} else {
-			kputln("x86_log_processor: physical address width unknown");
+			kprintf("physical address width unknown\n");
 		}
 	}
 
-	kprintf("x86_log_processor: CR0 0x%llx\n", (unsigned long long)cr0);
-	kprintf("x86_log_processor: CR3 0x%llx\n", (unsigned long long)cr3);
-	kprintf("x86_log_processor: CR4 0x%llx\n", (unsigned long long)cr4);
-	kprintf("x86_log_processor: TSC %s\n", tsc_available ? "available" : "not detected");
-	kputln("x86_log_processor: logical processor count 1");
+	kprintf("CR0 0x%llx\n", (unsigned long long)cr0);
+	kprintf("CR3 0x%llx\n", (unsigned long long)cr3);
+	kprintf("CR4 0x%llx\n", (unsigned long long)cr4);
+	kprintf("TSC %s\n", tsc_available ? "available" : "not detected");
+	kprintf("logical processor count 1\n");
 }
 
 extern void x86_enter_higher_half(x86_kernel_entry_t entry, const struct nxu_boot_x86_64 *boot,
@@ -131,49 +131,49 @@ x86_kernel_main(const struct nxu_boot_x86_64 *boot)
 	x86_uart_initialize();
 	kconsole_set_verbose(true);
 	kconsole_set_timestamp(true);
-	kputln("x86_kernel_main: kernel entry reached");
+	kprintf("kernel entry reached\n");
 	kconsole_set_timestamp(false);
 
 	if (boot == 0 || boot->magic != NXU_BOOT_X86_64_MAGIC || boot->version != NXU_BOOT_X86_64_VERSION ||
 		boot->size != sizeof(*boot)) {
-		kputln("x86_kernel_main: invalid UEFI handoff");
+		kprintf("invalid UEFI handoff\n");
 		return;
 	}
 
 	kconsole_set_timestamp(true);
-	kprintf("x86_kernel_main: %s\n", NXU_KERNEL_VERSION);
+	kprintf("%s\n", NXU_KERNEL_VERSION);
 	x86_log_processor();
-	kprintf("x86_kernel_main: handoff 0x%llx, size %u, version %u\n", (unsigned long long)(uintptr_t)boot,
+	kprintf("handoff 0x%llx, size %u, version %u\n", (unsigned long long)(uintptr_t)boot,
 			boot->size, boot->version);
-	kprintf("x86_kernel_main: RSDP 0x%llx\n", (unsigned long long)boot->rsdp);
-	kprintf("x86_kernel_main: boot arguments 0x%llx\n", (unsigned long long)boot->bootargs);
-	kprintf("x86_kernel_main: stack top 0x%llx\n", (unsigned long long)boot->stack_top);
-	kprintf("x86_kernel_main: UEFI map address 0x%llx\n", (unsigned long long)boot->memory_map);
-	kprintf("x86_kernel_main: UEFI map size %llu bytes\n", (unsigned long long)boot->memory_map_size);
-	kprintf("x86_kernel_main: UEFI descriptor stride %llu bytes\n",
+	kprintf("RSDP 0x%llx\n", (unsigned long long)boot->rsdp);
+	kprintf("boot arguments 0x%llx\n", (unsigned long long)boot->bootargs);
+	kprintf("stack top 0x%llx\n", (unsigned long long)boot->stack_top);
+	kprintf("UEFI map address 0x%llx\n", (unsigned long long)boot->memory_map);
+	kprintf("UEFI map size %llu bytes\n", (unsigned long long)boot->memory_map_size);
+	kprintf("UEFI descriptor stride %llu bytes\n",
 			(unsigned long long)boot->memory_descriptor_size);
 
 	if (!x86_vm_bootstrap(boot)) {
-		kputln("x86_kernel_main: page-table bootstrap failed");
+		kprintf("page-table bootstrap failed\n");
 		return;
 	}
 
-	kputln("x86_kernel_main: NXU page tables active");
+	kprintf("NXU page tables active\n");
 	uintptr_t active_cr3;
 	__asm__ volatile("mov %%cr3, %0" : "=r"(active_cr3));
-	kprintf("x86_vm_bootstrap: root 0x%llx\n", (unsigned long long)active_cr3);
-	kputln("x86_vm_bootstrap: four-level paging active");
-	kputln("x86_vm_bootstrap: identity map covers 0-1024 MiB");
-	kputln("x86_vm_bootstrap: direct map covers 0-1024 MiB");
-	kputln("x86_kernel_main: initializing physical and virtual memory");
+	kprintf("root 0x%llx\n", (unsigned long long)active_cr3);
+	kprintf("four-level paging active\n");
+	kprintf("identity map covers 0-1024 MiB\n");
+	kprintf("direct map covers 0-1024 MiB\n");
+	kprintf("initializing physical and virtual memory\n");
 
 	if (!x86_vm_initialize(boot)) {
-		kputln("x86_kernel_main: VM initialization failed");
+		kprintf("VM initialization failed\n");
 		return;
 	}
 
-	kputln("x86_kernel_main: VM initialization complete");
-	kputln("x86_kernel_main: switching to higher-half aliases");
+	kprintf("VM initialization complete\n");
+	kprintf("switching to higher-half aliases\n");
 
 	uintptr_t high_entry = (uintptr_t)x86_kernel_high_main;
 	uintptr_t high_boot = (uintptr_t)boot;
@@ -196,37 +196,37 @@ void
 x86_kernel_high_main(const struct nxu_boot_x86_64 *boot)
 {
 	if (boot == 0 || boot->magic != NXU_BOOT_X86_64_MAGIC || boot->version != NXU_BOOT_X86_64_VERSION) {
-		kputln("x86_kernel_high_main: higher-half handoff is invalid");
+		kprintf("higher-half handoff is invalid\n");
 	} else {
 		uint64_t stack_top = boot->stack_top + VMM_HIGHER_HALF_BASE;
 		if (!x86_gdt_initialize(stack_top)) {
-			kputln("x86_kernel_high_main: GDT and TSS initialization failed");
+			kprintf("GDT and TSS initialization failed\n");
 			for (;;) {
 				__asm__ volatile("cli; hlt" : : : "memory");
 			}
 		}
 
 		if (!x86_idt_initialize()) {
-			kputln("x86_kernel_high_main: IDT initialization failed");
+			kprintf("IDT initialization failed\n");
 			for (;;) {
 				__asm__ volatile("cli; hlt" : : : "memory");
 			}
 		}
 
 		if (!x86_trap_self_test()) {
-			kputln("x86_kernel_high_main: IDT exception checks failed");
+			kprintf("IDT exception checks failed\n");
 			for (;;) {
 				__asm__ volatile("cli; hlt" : : : "memory");
 			}
 		}
-		kputln("x86_kernel_high_main: breakpoint and page-fault paths passed");
+		kprintf("breakpoint and page-fault paths passed\n");
 
-		kputln("x86_kernel_high_main: higher-half kernel alias active");
-		kprintf("x86_kernel_high_main: code address 0x%llx\n",
+		kprintf("higher-half kernel alias active\n");
+		kprintf("code address 0x%llx\n",
 				(unsigned long long)((uintptr_t)x86_kernel_high_main + VMM_HIGHER_HALF_BASE));
-		kprintf("x86_kernel_high_main: handoff address 0x%llx\n", (unsigned long long)(uintptr_t)boot);
-		kprintf("x86_kernel_high_main: stack top 0x%llx\n", (unsigned long long)boot->stack_top + VMM_HIGHER_HALF_BASE);
-		kputln("x86_kernel_high_main: interrupts remain disabled until a controller is initialized");
+		kprintf("handoff address 0x%llx\n", (unsigned long long)(uintptr_t)boot);
+		kprintf("stack top 0x%llx\n", (unsigned long long)boot->stack_top + VMM_HIGHER_HALF_BASE);
+		kprintf("interrupts remain disabled until a controller is initialized\n");
 	}
 
 	for (;;) {

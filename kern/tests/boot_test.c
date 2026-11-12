@@ -88,11 +88,11 @@ boot_test_run_jbd2_crash(void)
 
 	if (!ext4_debug_journal_crash_reached()) boot_test_fail("jbd2: durable crash point was not reached");
 
-	kputln("jbd2: crash-test transaction committed");
-	kputln("jbd2: durable commit verified before simulated power loss");
-	kputln("jbd2: home metadata intentionally not checkpointed");
-	kputln("jbd2: halt complete");
-	kputln("jbd2: close QEMU and run make run");
+	kprintf("crash-test transaction committed\n");
+	kprintf("durable commit verified before simulated power loss\n");
+	kprintf("home metadata intentionally not checkpointed\n");
+	kprintf("halt complete\n");
+	kprintf("close QEMU and run make run\n");
 	ml_irq_disable();
 	for (;;)
 		__asm__ volatile("wfe");
@@ -191,56 +191,56 @@ boot_test_storage(display_device_t *boot_display)
 
 #if defined(NXU_IPC_PROCESS_TEST)
 	if (!ipc_process_test()) boot_test_fail("ipc_process_test: failed");
-	kputln("ipc_process_test: passed");
-	kputln("ipc_process_test: halting (test build, no bootd)");
+	kprintf_for(ipc_process_test, "passed\n");
+	kprintf("halting (test build, no bootd)\n");
 	for (;;)
 		__asm__ volatile("wfe");
 #endif
 
 #if defined(NXU_THREAD_PROCESS_TEST)
 	if (!thread_process_test()) boot_test_fail("thread_process_test: failed");
-	kputln("thread_process_test: passed");
-	kputln("thread_process_test: halting (test build, no bootd)");
+	kprintf_for(thread_process_test, "passed\n");
+	kprintf("halting (test build, no bootd)\n");
 	for (;;)
 		__asm__ volatile("wfe");
 #endif
 
 #if defined(NXU_FAULT_PROCESS_TEST)
 	if (!fault_process_test()) boot_test_fail("fault_process_test: failed");
-	kputln("fault_process_test: passed");
-	kputln("fault_process_test: halting (test build, no bootd)");
+	kprintf_for(fault_process_test, "passed\n");
+	kprintf("halting (test build, no bootd)\n");
 	for (;;)
 		__asm__ volatile("wfe");
 #endif
 
 #if defined(NXU_PROCESS_CONTROL_TEST)
 	if (!process_control_test()) boot_test_fail("process_control_test: failed");
-	kputln("process_control_test: passed");
-	kputln("process_control_test: halting (test build, no bootd)");
+	kprintf_for(process_control_test, "passed\n");
+	kprintf("halting (test build, no bootd)\n");
 	for (;;)
 		__asm__ volatile("wfe");
 #endif
 
 #if defined(NXU_SOUND_TEST)
 	if (!sound_test_run()) boot_test_fail("sound_test: failed");
-	kputln("sound_test: passed");
-	kputln("sound_test: halting (test build, no bootd)");
+	kprintf_for(sound_test_run, "passed\n");
+	kprintf("halting (test build, no bootd)\n");
 	for (;;)
 		__asm__ volatile("wfe");
 #endif
 
 #if defined(NXU_TEP_MAILBOX_TEST)
 	if (!tep_mailbox_test_run()) boot_test_fail("tep_mailbox_test: failed");
-	kputln("tep_mailbox_test: passed");
-	kputln("tep_mailbox_test: halting (test build, no bootd)");
+	kprintf_for(tep_mailbox_test_run, "passed\n");
+	kprintf("halting (test build, no bootd)\n");
 	for (;;)
 		__asm__ volatile("wfe");
 #endif
 
 #if defined(NXU_SOCKET_PROCESS_TEST)
 	if (!socket_process_test()) boot_test_fail("socket_process_test: failed");
-	kputln("socket_process_test: passed");
-	kputln("socket_process_test: halting (test build, no bootd)");
+	kprintf_for(socket_process_test, "passed\n");
+	kprintf("halting (test build, no bootd)\n");
 	for (;;)
 		__asm__ volatile("wfe");
 #endif
@@ -257,8 +257,8 @@ boot_test_storage(display_device_t *boot_display)
 	if (boot_display != 0 && !boot_splash_finish()) boot_test_fail("boot_splash_finish: completion failed");
 
 	if (!windowserver_process_test()) boot_test_fail("windowserver_process_test: failed");
-	kputln("windowserver_process_test: passed");
-	kputln("windowserver_process_test: halting (test build)");
+	kprintf_for(windowserver_process_test, "passed\n");
+	kprintf("halting (test build)\n");
 	for (;;)
 		__asm__ volatile("wfe");
 #endif
@@ -267,8 +267,8 @@ boot_test_storage(display_device_t *boot_display)
 	if (boot_display != 0 && !boot_splash_finish()) boot_test_fail("boot_splash_finish: completion failed");
 
 	if (!about_sevos_process_test()) boot_test_fail("about_sevos_process_test: failed");
-	kputln("about_sevos_process_test: passed");
-	kputln("about_sevos_process_test: halting (test build)");
+	kprintf_for(about_sevos_process_test, "passed\n");
+	kprintf("halting (test build)\n");
 	for (;;)
 		__asm__ volatile("wfe");
 #endif

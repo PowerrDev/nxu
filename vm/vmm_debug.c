@@ -205,13 +205,13 @@ vmm_validate_higher_half_direct_map(const platform_t *platform)
 static void
 vmm_dump_section(const char *name, uint64_t start, uint64_t end, const char *permissions)
 {
-	kprintf("vmm: %s: %p-%p %s\n", name, (void *)start, (void *)end, permissions);
+	kprintf("%s: %p-%p %s\n", name, (void *)start, (void *)end, permissions);
 }
 
 void
 vmm_dump(void)
 {
-	kprintf("vmm: stage-1 translation: %s\n", (vmm_read_sctlr() & VMM_SCTLR_M) != 0ULL ? "enabled" : "disabled");
+	kprintf("stage-1 translation: %s\n", (vmm_read_sctlr() & VMM_SCTLR_M) != 0ULL ? "enabled" : "disabled");
 
 	vmm_dump_section(".text", (uint64_t)__text_start, (uint64_t)__text_end, "r-x");
 	vmm_dump_section(".rodata", (uint64_t)__rodata_start, (uint64_t)__rodata_end, "r--");
@@ -220,14 +220,14 @@ vmm_dump(void)
 
 	if (!kconsole_verbose()) return;
 
-	kprintf("vmm: root table: %p\n", (void *)g_vmm.root_physical);
-	kprintf("vmm: translation tables: %llu\n", (unsigned long long)g_vmm.table_count);
-	kprintf("vmm: virtual address size: %llu bits\n", (unsigned long long)VMM_VA_BITS);
-	kprintf("vmm: physical address size: %llu bits\n", (unsigned long long)g_vmm.physical_bits);
-	kprintf("vmm: TTBR0_EL1: %p\n", (void *)vmm_read_ttbr0());
-	kprintf("vmm: TCR_EL1: %p\n", (void *)vmm_read_tcr());
-	kprintf("vmm: MAIR_EL1: %p\n", (void *)vmm_read_mair());
-	kprintf("vmm: SCTLR_EL1: %p\n", (void *)vmm_read_sctlr());
+	kprintf("root table: %p\n", (void *)g_vmm.root_physical);
+	kprintf("translation tables: %llu\n", (unsigned long long)g_vmm.table_count);
+	kprintf("virtual address size: %llu bits\n", (unsigned long long)VMM_VA_BITS);
+	kprintf("physical address size: %llu bits\n", (unsigned long long)g_vmm.physical_bits);
+	kprintf("TTBR0_EL1: %p\n", (void *)vmm_read_ttbr0());
+	kprintf("TCR_EL1: %p\n", (void *)vmm_read_tcr());
+	kprintf("MAIR_EL1: %p\n", (void *)vmm_read_mair());
+	kprintf("SCTLR_EL1: %p\n", (void *)vmm_read_sctlr());
 }
 
 void
@@ -236,13 +236,13 @@ vmm_dump_higher_half(void)
 	uint64_t ttbr1 = vmm_read_ttbr1();
 	uint64_t tcr = vmm_read_tcr();
 
-	kprintf("vmm: higher-half base: %p\n", (void *)VMM_HIGHER_HALF_BASE);
-	kprintf("vmm: TTBR1 translation: %s\n", (tcr & VMM_TCR_EPD1) ? "disabled" : "enabled");
+	kprintf("higher-half base: %p\n", (void *)VMM_HIGHER_HALF_BASE);
+	kprintf("TTBR1 translation: %s\n", (tcr & VMM_TCR_EPD1) ? "disabled" : "enabled");
 
 	if (!kconsole_verbose()) return;
 
-	kprintf("vmm: TTBR1 root: %p\n", (void *)g_vmm.ttbr1_root);
-	kprintf("vmm: TTBR1 translation tables: %llu\n", (unsigned long long)g_vmm.ttbr1_table_count);
-	kprintf("vmm: TTBR1_EL1: %p\n", (void *)ttbr1);
-	kprintf("vmm: TCR_EL1 after TTBR1: %p\n", (void *)tcr);
+	kprintf("TTBR1 root: %p\n", (void *)g_vmm.ttbr1_root);
+	kprintf("TTBR1 translation tables: %llu\n", (unsigned long long)g_vmm.ttbr1_table_count);
+	kprintf("TTBR1_EL1: %p\n", (void *)ttbr1);
+	kprintf("TCR_EL1 after TTBR1: %p\n", (void *)tcr);
 }

@@ -88,7 +88,7 @@ i386_idt_init(void)
 
 	__asm__ volatile("lidt %0" : : "m"(g_idt_pointer) : "memory");
 
-	kprintf("i386_idt_init: %u gates at %p, exceptions 0-%u, irqs %u-%u, syscall 0x%x, ipi 0x%x-0x%x, spurious 0x%x\n",
+	kprintf("%u gates at %p, exceptions 0-%u, irqs %u-%u, syscall 0x%x, ipi 0x%x-0x%x, spurious 0x%x\n",
 			IDT_ENTRY_COUNT, (void *)g_idt, T_EXCEPTION_COUNT - 1U, T_IRQ_BASE, T_IRQ_BASE + T_IRQ_COUNT - 1U,
 			T_SYSCALL, T_IPI_RESCHEDULE, T_IPI_CPU_STOP, T_LAPIC_SPURIOUS);
 }

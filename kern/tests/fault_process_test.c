@@ -78,7 +78,7 @@ fault_process_test(void)
 		const fault_process_case_t *test_case = &g_cases[index];
 
 		if (!fault_process_test_set_mode(test_case->mode)) {
-			kputln("fault_process_test: could not write " FAULT_PROCESS_TEST_MODE_PATH);
+			kprintf("could not write \n" FAULT_PROCESS_TEST_MODE_PATH);
 			return false;
 		}
 
@@ -93,22 +93,22 @@ fault_process_test(void)
 
 		uint64_t exit_status = 0ULL;
 		if (!fault_process_test_wait(proc_kernel(), proc->p_ident.pid, &exit_status)) {
-			kprintf("fault_process_test: %s: faulttest did not exit in time\n", test_case->description);
+			kprintf("%s: faulttest did not exit in time\n", test_case->description);
 			return false;
 		}
 
 		if (exit_status != test_case->expected_status) {
-			kprintf("fault_process_test: %s: exit status 0x%llx, expected 0x%llx\n", test_case->description,
+			kprintf("%s: exit status 0x%llx, expected 0x%llx\n", test_case->description,
 					(unsigned long long)exit_status, (unsigned long long)test_case->expected_status);
 			return false;
 		}
 
-		kprintf("fault_process_test: %s: exit status 0x%llx as expected\n", test_case->description,
+		kprintf("%s: exit status 0x%llx as expected\n", test_case->description,
 				(unsigned long long)exit_status);
 	}
 
 	(void)vfs_unlink(FAULT_PROCESS_TEST_MODE_PATH);
 
-	kputln("fault_process_test: every user fault killed only its own process and the kernel kept running");
+	kprintf("every user fault killed only its own process and the kernel kept running\n");
 	return true;
 }

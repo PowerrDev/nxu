@@ -484,7 +484,7 @@ virtio_block_attach(const virtio_device_t *transport)
 	if (!virtio_device_begin(&device->transport, accepted_features)) {
 		goto fail;
 	}
-	kverbosef("VirtIOBlockFamily: offered features 0x%llx, accepted 0x%llx, DMA mask 0x%llx\n",
+	IOLogVerbose("VirtIOBlockFamily: offered features 0x%llx, accepted 0x%llx, DMA mask 0x%llx\n",
 			  (unsigned long long)device->transport.device_features,
 			  (unsigned long long)device->transport.driver_features,
 			  (unsigned long long)device->transport.dma.address_mask);
@@ -570,7 +570,7 @@ virtio_block_attach(const virtio_device_t *transport)
 
 	g_virtio_block_device_count++;
 
-	kprintf("VirtIOBlockFamily: matched virtio-blk at 0x%llx, %llu MiB, %s\n",
+	IOLog("VirtIOBlockFamily: matched virtio-blk at 0x%llx, %llu MiB, %s\n",
 			(unsigned long long)device->transport.region.base,
 			(unsigned long long)((capacity * (uint64_t)BLOCK_SECTOR_SIZE) / (1024ULL * 1024ULL)),
 			device->read_only ? "read-only" : "read-write");
@@ -581,14 +581,14 @@ virtio_block_attach(const virtio_device_t *transport)
 
 fail_after_finish:
 	device->attached = false;
-	kprintf("VirtIOBlockFamily: attach failed during block-device registration\n");
+	IOLog("VirtIOBlockFamily: attach failed during block-device registration\n");
 
 	virtio_block_cleanup(device);
 
 	return false;
 
 fail:
-	kprintf("VirtIOBlockFamily: attach failed during %s\n", failure_stage);
+	IOLog("VirtIOBlockFamily: attach failed during %s\n", failure_stage);
 	virtio_block_cleanup(device);
 
 	return false;
@@ -621,10 +621,10 @@ virtio_block_dump(void)
 	for (uint32_t index = 0U; index < g_virtio_block_device_count; index++) {
 		const virtio_block_device_t *device = &g_virtio_block_devices[index];
 
-		kprintf("VirtIOBlockFamily: device %u: %llu sectors\n", index + 1U,
+		IOLog("VirtIOBlockFamily: device %u: %llu sectors\n", index + 1U,
 				(unsigned long long)device->block->sector_count);
-		kverbosef("VirtIOBlockFamily: device %u: %llu requests\n", index + 1U,
+		IOLogVerbose("VirtIOBlockFamily: device %u: %llu requests\n", index + 1U,
 				  (unsigned long long)device->request_count);
-		kverbosef("VirtIOBlockFamily: device %u: read-only %s\n", index + 1U, device->read_only ? "yes" : "no");
+		IOLogVerbose("VirtIOBlockFamily: device %u: read-only %s\n", index + 1U, device->read_only ? "yes" : "no");
 	}
 }

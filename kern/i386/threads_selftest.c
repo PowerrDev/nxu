@@ -67,7 +67,7 @@
 #define SELFTEST_CHECK(condition, what)                                                                                \
 	do {                                                                                                               \
 		if (!(condition)) {                                                                                            \
-			kprintf("i386_init_threads_selftest: FAIL %s (line %u)\n", (what), (uint32_t)__LINE__);                    \
+			kprintf("FAIL %s (line %u)\n", (what), (uint32_t)__LINE__);                    \
 			return false;                                                                                              \
 		}                                                                                                              \
 	} while (0)
@@ -119,7 +119,7 @@ thread_check(bool condition, const char *what)
 {
 	if (condition) return;
 
-	kprintf("i386_init_threads_selftest: FAIL (in thread) %s\n", what);
+	kprintf("FAIL (in thread) %s\n", what);
 	g_thread_failures++;
 }
 
@@ -211,7 +211,7 @@ test_shared_scheduler(void)
 	SELFTEST_CHECK(sched_mlfq_self_test(), "sched_mlfq_self_test");
 	SELFTEST_CHECK(sched_validate() && thread_validate(), "sched_validate/thread_validate");
 
-	kputln("i386_init_threads_selftest: run queue and MLFQ self-tests passed");
+	kprintf("run queue and MLFQ self-tests passed\n");
 	return true;
 }
 
@@ -259,7 +259,7 @@ test_machine_thread(void)
 				   "initial callee-saved registers zero");
 	SELFTEST_CHECK(((machine.context.sp + 5U * 4U) & 0xFU) == 12U, "entry sees an ABI-aligned stack");
 
-	kputln("i386_init_threads_selftest: machine_thread contracts passed");
+	kprintf("machine_thread contracts passed\n");
 	return true;
 }
 
@@ -321,7 +321,7 @@ test_kernel_threads(void)
 	SELFTEST_CHECK(thread_count() == baseline, "thread count back to baseline");
 	SELFTEST_CHECK(sched_validate() && thread_validate(), "validate after ping-pong");
 
-	kprintf("i386_init_threads_selftest: kernel threads passed (log %s)\n", (const char *)g_log);
+	kprintf("kernel threads passed (log %s)\n", (const char *)g_log);
 	return true;
 }
 
@@ -407,7 +407,7 @@ test_tick_and_preempt(void)
 	SELFTEST_CHECK(selftest_boost_self(), "boost returns the running thread to level 0");
 	SELFTEST_CHECK(self->mlfq_level == SCHED_MLFQ_TOP_LEVEL, "level 0 after the boost");
 
-	kputln("i386_init_threads_selftest: MLFQ ticks and preempt-on-return passed");
+	kprintf("MLFQ ticks and preempt-on-return passed\n");
 	return true;
 }
 
@@ -459,7 +459,7 @@ test_syscall_frame(void)
 	__asm__ volatile("int $0x80" : "+a"(eax) : : "memory");
 	SELFTEST_CHECK(eax == (uint32_t)(0 - (int32_t)SYSCALL_ERROR_UNKNOWN), "unknown syscall returns -1");
 
-	kputln("i386_init_threads_selftest: system-call request path passed");
+	kprintf("system-call request path passed\n");
 	return true;
 }
 
@@ -792,7 +792,7 @@ test_ring3_syscalls(void)
 	SELFTEST_CHECK(entry->eax == 0xC0FFEEU, "initial eax carries the thread argument");
 	SELFTEST_CHECK(entry->ebx == 0U && entry->ebp == 0U, "other registers still zero");
 
-	kputln("i386_init_threads_selftest: ring 3 entry and system calls passed");
+	kprintf("ring 3 entry and system calls passed\n");
 	return true;
 }
 
@@ -827,7 +827,7 @@ test_ring3_faults(void)
 
 	SELFTEST_CHECK(sched_validate() && thread_validate(), "validate after user faults");
 
-	kputln("i386_init_threads_selftest: ring 3 faults terminate only the offender");
+	kprintf("ring 3 faults terminate only the offender\n");
 	return true;
 }
 
@@ -888,7 +888,7 @@ test_ring3_preemption(void)
 	SELFTEST_CHECK(self->mlfq_level == SCHED_MLFQ_TOP_LEVEL, "test thread back at level 0");
 	SELFTEST_CHECK(sched_validate() && thread_validate(), "validate after the preemption test");
 
-	kprintf("i386_init_threads_selftest: ring 3 preemption passed (log %s)\n", (const char *)g_log);
+	kprintf("ring 3 preemption passed (log %s)\n", (const char *)g_log);
 	return true;
 }
 
@@ -896,7 +896,7 @@ static bool
 test_ring3(void)
 {
 	if (selftest_paging_enabled()) {
-		kputln("i386_init_threads_selftest: paging is on, ring 3 stages skipped (need mapped user pages)");
+		kprintf("paging is on, ring 3 stages skipped (need mapped user pages)\n");
 		return true;
 	}
 
@@ -911,7 +911,7 @@ i386_init_threads_selftest(const i386_boot_info_t *boot)
 	(void)boot;
 
 	if (!sched_is_initialized()) {
-		kputln("i386_init_threads_selftest: scheduler is not up");
+		kprintf("scheduler is not up\n");
 		return false;
 	}
 
@@ -925,7 +925,7 @@ i386_init_threads_selftest(const i386_boot_info_t *boot)
 	selftest_restore_pic();
 
 	if (passed && (thread_count() != baseline || g_thread_failures != 0U)) {
-		kputln("i386_init_threads_selftest: FAIL leaked threads or a thread-side failure");
+		kprintf("FAIL leaked threads or a thread-side failure\n");
 		passed = false;
 	}
 

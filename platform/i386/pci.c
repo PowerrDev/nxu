@@ -280,7 +280,7 @@ pci_init(void)
 	g_pci_present = pci_detect();
 
 	if (!g_pci_present) {
-		kputln("pci_init: no configuration mechanism 1 host bridge");
+		kprintf("no configuration mechanism 1 host bridge\n");
 		return false;
 	}
 
@@ -448,14 +448,14 @@ pci_print_location(const pci_device_t *device)
 void
 pci_dump(void)
 {
-	kprintf("pci_dump: %u function(s) on %u bus(es)\n", g_pci_device_count, g_pci_bus_count);
+	kprintf("%u function(s) on %u bus(es)\n", g_pci_device_count, g_pci_bus_count);
 
 	for (uint32_t index = 0U; index < g_pci_device_count; index++) {
 		const pci_device_t *device = &g_pci_devices[index];
 
 		kputs("pci_dump: ");
 		pci_print_location(device);
-		kprintf(" %x:%x class %x:%x (%s) irq %u pin %c\n", (unsigned int)device->vendor_id,
+		IOLog(" %x:%x class %x:%x (%s) irq %u pin %c\n", (unsigned int)device->vendor_id,
 				(unsigned int)device->device_id, (unsigned int)device->class_code, (unsigned int)device->subclass,
 				pci_class_name(device->class_code, device->subclass), (unsigned int)device->interrupt_line,
 				device->interrupt_pin == 0U ? '-' : (char)('A' + device->interrupt_pin - 1U));
@@ -467,7 +467,7 @@ pci_dump(void)
 
 			kputs("pci_dump: ");
 			pci_print_location(device);
-			kprintf(" BAR%u %s%s base 0x%llx size 0x%llx\n", bar, region->io ? "io" : "mem", region->is64 ? "64" : "",
+			IOLog(" BAR%u %s%s base 0x%llx size 0x%llx\n", bar, region->io ? "io" : "mem", region->is64 ? "64" : "",
 					(unsigned long long)region->base, (unsigned long long)region->size);
 		}
 	}

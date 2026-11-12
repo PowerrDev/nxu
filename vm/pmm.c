@@ -952,17 +952,17 @@ pmm_get_used_page_count(void)
 void
 pmm_dump(void)
 {
-	kprintf("pmm_dump: total pages: %llu\n", (unsigned long long)g_pmm.page_count);
-	kprintf("pmm_dump: used pages: %llu\n", (unsigned long long)g_pmm.used_page_count);
-	kprintf("pmm_dump: free pages: %llu\n", (unsigned long long)g_pmm.free_page_count);
+	kprintf("total pages: %llu\n", (unsigned long long)g_pmm.page_count);
+	kprintf("used pages: %llu\n", (unsigned long long)g_pmm.used_page_count);
+	kprintf("free pages: %llu\n", (unsigned long long)g_pmm.free_page_count);
 
 	if (!kconsole_verbose()) return;
 
-	kprintf("pmm_dump: RAM range: 0x%llx-0x%llx\n", (unsigned long long)g_pmm.memory_base,
+	kprintf("RAM range: 0x%llx-0x%llx\n", (unsigned long long)g_pmm.memory_base,
 			(unsigned long long)g_pmm.memory_end);
-	kprintf("pmm_dump: page size: %llu bytes\n", (unsigned long long)PMM_PAGE_SIZE);
-	kprintf("pmm_dump: bitmap: %p\n", (void *)g_pmm.bitmap);
-	kprintf("pmm_dump: bitmap logical size: %llu bytes\n", (unsigned long long)g_pmm.bitmap_bytes);
-	kprintf("pmm_dump: bitmap reserved size: %llu bytes\n", (unsigned long long)g_pmm.bitmap_storage_bytes);
-	kprintf("pmm_dump: kernel: %p-%p\n", (void *)__kernel_start, (void *)__kernel_end);
+	kprintf("page size: %llu bytes\n", (unsigned long long)PMM_PAGE_SIZE);
+	kprintf("bitmap: %p\n", (void *)g_pmm.bitmap);
+	kprintf("bitmap logical size: %llu bytes\n", (unsigned long long)g_pmm.bitmap_bytes);
+	kprintf("bitmap reserved size: %llu bytes\n", (unsigned long long)g_pmm.bitmap_storage_bytes);
+	kprintf("kernel: %p-%p\n", (void *)__kernel_start, (void *)__kernel_end);
 }

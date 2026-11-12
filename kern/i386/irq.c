@@ -82,7 +82,7 @@ i386_trap_irq(x86_saved_state_t *state)
 
 	if (!handled) {
 		g_irq_unhandled_count++;
-		kprintf("i386_trap_irq: no handler for IRQ %u\n", irq);
+		kprintf("no handler for IRQ %u\n", irq);
 	}
 
 	/*
@@ -103,22 +103,22 @@ i386_init_interrupts(const i386_boot_info_t *boot)
 	pic_init();
 
 	if (!irq_init()) {
-		kputln("i386_init_interrupts: irq_init failed");
+		kprintf("irq_init failed\n");
 		return false;
 	}
 
 	if (!irq_register(I386_TIMER_IRQ, i386_timer_irq, 0)) {
-		kputln("i386_init_interrupts: cannot register the timer handler");
+		kprintf("cannot register the timer handler\n");
 		return false;
 	}
 
-	kprintf("i386_init_interrupts: pic remapped to vectors %u-%u, all lines masked\n", T_IRQ_BASE,
+	kprintf("pic remapped to vectors %u-%u, all lines masked\n", T_IRQ_BASE,
 			T_IRQ_BASE + T_IRQ_COUNT - 1U);
 
 	/* Also opens IRQ0 at the PIC. Nothing is delivered until IF is set. */
 	timer_start_periodic(I386_TIMER_HZ);
 
-	kprintf("i386_init_interrupts: pit channel 0 armed at %u Hz on IRQ %u, interrupts disabled\n",
+	kprintf("pit channel 0 armed at %u Hz on IRQ %u, interrupts disabled\n",
 			timer_get_interrupt_rate(), I386_TIMER_IRQ);
 
 	return true;

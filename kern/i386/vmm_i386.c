@@ -162,7 +162,7 @@ vmm_init(const platform_t *platform)
 		const platform_region_t *region = &platform->memory_regions[index];
 
 		if (region->size == 0ULL || region->base + region->size > VM_DIRECT_MAP_SIZE) {
-			kprintf("vmm_init: region %u is not covered by the direct map\n", index);
+			kprintf("region %u is not covered by the direct map\n", index);
 			return false;
 		}
 
@@ -481,9 +481,9 @@ vmm_validate_higher_half_direct_map(const platform_t *platform)
 void
 vmm_dump(void)
 {
-	kprintf("vmm: %s, kernel directory phys 0x%x, %u kernel table page(s)\n",
+	kprintf("%s, kernel directory phys 0x%x, %u kernel table page(s)\n",
 			g_vmm_enabled ? "enabled" : "not initialised", pmap_kernel_directory_physical(), pmap_kernel_table_count());
-	kprintf("vmm: image 0x%x-0x%x, text 0x%x-0x%x, rodata 0x%x-0x%x, data 0x%x-0x%x, bss 0x%x-0x%x\n",
+	kprintf("image 0x%x-0x%x, text 0x%x-0x%x, rodata 0x%x-0x%x, data 0x%x-0x%x, bss 0x%x-0x%x\n",
 			(uint32_t)(uintptr_t)__kernel_start, (uint32_t)(uintptr_t)__kernel_end, (uint32_t)(uintptr_t)__text_start,
 			(uint32_t)(uintptr_t)__text_end, (uint32_t)(uintptr_t)__rodata_start, (uint32_t)(uintptr_t)__rodata_end,
 			(uint32_t)(uintptr_t)__data_start, (uint32_t)(uintptr_t)__data_end, (uint32_t)(uintptr_t)__bss_start,

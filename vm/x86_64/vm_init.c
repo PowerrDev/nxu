@@ -34,45 +34,45 @@ x86_vm_initialize(const struct nxu_boot_x86_64 *boot)
 	platform_t platform;
 
 	if (boot != 0) {
-		kprintf("x86_vm_initialize: map 0x%llx, bytes %llu, stride %llu\n",
+		kprintf("map 0x%llx, bytes %llu, stride %llu\n",
 				(unsigned long long)boot->memory_map, (unsigned long long)boot->memory_map_size,
 				(unsigned long long)boot->memory_descriptor_size);
 	}
 
 	if (!x86_platform_memory_map_load(boot, &platform)) {
-		kprintf("x86_vm_initialize: UEFI RAM map rejected\n");
+		kprintf("UEFI RAM map rejected\n");
 		return false;
 	}
 
-	kprintf("x86_vm_initialize: %u usable RAM range(s)\n", platform.memory_region_count);
+	kprintf("%u usable RAM range(s)\n", platform.memory_region_count);
 	uint64_t usable_bytes = 0ULL;
 	for (uint32_t index = 0U; index < platform.memory_region_count; index++) {
 		const platform_region_t *region = &platform.memory_regions[index];
 		usable_bytes += region->size;
-		kprintf("x86_vm_initialize: RAM[%u] 0x%llx-0x%llx, %llu MiB\n", index,
+		kprintf("RAM[%u] 0x%llx-0x%llx, %llu MiB\n", index,
 				(unsigned long long)region->base, (unsigned long long)(region->base + region->size),
 				(unsigned long long)(region->size / (1024ULL * 1024ULL)));
 	}
-	kprintf("x86_vm_initialize: %llu MiB usable below the 1 GiB direct-map limit\n",
+	kprintf("%llu MiB usable below the 1 GiB direct-map limit\n",
 			(unsigned long long)(usable_bytes / (1024ULL * 1024ULL)));
 
 	uint64_t boot_address = (uint64_t)(uintptr_t)boot;
 	if (boot_address < X86_VM_HANDOFF_OFFSET ||
 		!pmm_reserve_boot_range(boot_address - X86_VM_HANDOFF_OFFSET, X86_VM_HANDOFF_ALLOCATION_SIZE)) {
-		kprintf("x86_vm_initialize: boot handoff reservation failed\n");
+		kprintf("boot handoff reservation failed\n");
 		return false;
 	}
 
 	if (!pmm_init(&platform, 0)) {
-		kprintf("x86_vm_initialize: physical allocator initialization failed\n");
+		kprintf("physical allocator initialization failed\n");
 		return false;
 	}
 
-	kprintf("x86_vm_initialize: pmm has %llu free page(s)\n", pmm_get_free_page_count());
+	kprintf("pmm has %llu free page(s)\n", pmm_get_free_page_count());
 	pmm_dump();
 
 	if (!vmm_init(&platform)) {
-		kprintf("x86_vm_initialize: VMM root initialization failed\n");
+		kprintf("VMM root initialization failed\n");
 		return false;
 	}
     
@@ -81,18 +81,18 @@ x86_vm_initialize(const struct nxu_boot_x86_64 *boot)
 
 	if (!vmm_validate_linked_kernel_layout() || !vmm_validate_higher_half_direct_map(&platform) ||
 		!vmm_validate_kernel_permissions()) {
-		kprintf("x86_vm_initialize: VMM validation failed\n");
+		kprintf("VMM validation failed\n");
 		return false;
 	}
 
 	if (!vm_kern_init()) {
-		kprintf("x86_vm_initialize: kernel arena initialization failed\n");
+		kprintf("kernel arena initialization failed\n");
 		return false;
 	}
 	vm_kern_dump();
 
 	if (!heap_init()) {
-		kprintf("x86_vm_initialize: kernel heap initialization failed\n");
+		kprintf("kernel heap initialization failed\n");
 		return false;
 	}
 	heap_dump();

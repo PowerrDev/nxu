@@ -63,10 +63,51 @@ implemented.
 ## Verbose tier
 
 Boot output comes in two tiers. `kprintf()` is the milestone log: what
-happened and whether it passed, one fact per line, prefixed with the function
-that printed it (`kern_test_live_vmm: live page mapping test passed`).
-`kverbosef()` takes the same formats and is disabled by default, including
-before boot arguments are parsed. `-v` or `log.verbose=1` explicitly enables
+happened and whether it passed, one fact per line. `kverbosef()` takes the
+same formats and is disabled by default, including before boot arguments are
+parsed.
+
+## Line prefixes
+
+The prefix is never written by hand. `kprintf()` and `kverbosef()` are macros
+that pass the caller's `__func__`, and the console writes it, followed by `: `,
+at the start of every line the call begins:
+
+```c
+kprintf("devfs mounted at /dev\n");    /* vfs_mount: devfs mounted at /dev */
+```
+
+So the prefix is always the function that actually printed the line, and it
+follows the code when functions are renamed or split. A line continued by a
+later call (`kprintf(" %p", ...)` after a call that did not end in `\n`) gets
+no second prefix. Logging more detail from inside the function that did the
+work, rather than from its caller, gives each line its own prefix instead of
+repeating the caller's.
+
+Two variants cover the other cases:
+
+* `kprintf_for(function, format, ...)` logs under the name of another
+  function, usually the one just called when the caller reports how it went
+  (`kprintf_for(ipc_process_test, "passed\n")` prints
+  `ipc_process_test: passed`). The name is checked at compile time.
+* `IOLog()` (and `IOLogVerbose()`) print exactly what they are given, with no
+  prefix: IOKit-style family tags such as `VirtIOFamily:` or
+  `[com.butterscotch.xpc]:`, the version banner, panic reports, tables, and
+  the rest of a line something else started.
+
+`kputs()`/`kputc()` stay raw; userland text reaching the console through them
+keeps its own prefix (`bootd: ...`).
+
+## Verbose display
+
+With `-v` the boot display shows the console instead of the logo. The text
+already printed when the display comes up is drawn in one go (one paint, one
+present) rather than scrolled through, and later lines follow live. The
+display leaves out the `[ seconds ]` stamps the serial log carries.
+
+## Verbose switches
+
+`-v` or `log.verbose=1` explicitly enables
 detail; `log.verbose=0` selects milestone output. Verbose boots expose `-v` to
 userland services.
 

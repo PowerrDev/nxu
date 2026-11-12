@@ -409,7 +409,7 @@ proc_bootstrap(void)
 
   g_proc_limit = target;
 
-  kprintf("proc: runtime process limit %u (free pages %llu, configured CPUs %u)\n",
+  kprintf("runtime process limit %u (free pages %llu, configured CPUs %u)\n",
 			(unsigned)g_proc_limit, free_pages, (unsigned)cpus);
 
 	proc_t kernel_proc = proc_allocate_slot_locked();

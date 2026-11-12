@@ -80,6 +80,15 @@ typedef struct devfs_operations {
 bool devfs_register_device(const char *name, const devfs_operations_t *operations, void *context);
 
 /*
+ * devfs_announce_registrations:
+ *
+ * Whether devfs_register_device() logs each node it publishes (it does by
+ * default). The devfs self-test turns it off while it registers and drops its
+ * scratch node over and over.
+ */
+void devfs_announce_registrations(bool announce);
+
+/*
  * devfs_unregister_device:
  *
  * Remove `name` from the namespace. Files already open on it are unaffected

@@ -113,7 +113,7 @@ sl_device_register(const char *name, const sl_backend_ops_t *ops, void *context,
 	sl_unlock(&g_sl_lock);
 
 	if (device == 0) return false;
-	SL_LOG("sl_device_register: %s\n", device->name);
+	SL_LOG("%s\n", device->name);
 	*device_out = device;
 	return true;
 }
@@ -145,7 +145,7 @@ sl_display_register(sl_device_t *device, uint32_t index, uint32_t *pixels, uint3
 	sl_unlock(&g_sl_lock);
 
 	if (display == 0) return false;
-	SL_LOG("sl_display_register: %s scanout %u, %ux%u\n", device->name, index, width, height);
+	SL_LOG("%s scanout %u, %ux%u\n", device->name, index, width, height);
 	*display_out = display;
 	return true;
 }
@@ -406,7 +406,7 @@ sl_dump(void)
 	for (uint32_t slot = 0U; slot < SL_DISPLAY_MAX; slot++) {
 		const sl_display_t *display = &g_sl_displays[slot];
 		if (!display->used) continue;
-		SL_LOG("sl_dump: %s scanout %u %ux%u, %llu present(s)\n", display->device->name, display->index,
+		SL_LOG("%s scanout %u %ux%u, %llu present(s)\n", display->device->name, display->index,
 				display->surface.width, display->surface.height, (unsigned long long)display->presents);
 	}
 }

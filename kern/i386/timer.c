@@ -18,6 +18,8 @@
 
 #include <kern/i386/timer.h>
 
+#include <kern/console/console.h>
+
 #include <kern/i386/io.h>
 #include <kern/i386/pic.h>
 
@@ -106,6 +108,18 @@ timer_calibrate(void)
 	outb(PIT_GATE_PORT, gate);
 
 	g_tsc_frequency = elapsed * PIT_FREQUENCY_HZ / PIT_CALIBRATION_COUNT;
+
+	if (g_tsc_frequency != 0ULL) {
+		/* kprintf has no field widths, so pad the kHz remainder by hand. */
+		uint32_t khz = (uint32_t)(g_tsc_frequency / 1000ULL % 1000ULL);
+
+		kprintf("tsc %llu Hz (%llu.%c%c%c MHz), shortest of %u PIT countdowns\n", (unsigned long long)g_tsc_frequency,
+				(unsigned long long)(g_tsc_frequency / 1000000ULL), (char)('0' + khz / 100U),
+				(char)('0' + khz / 10U % 10U), (char)('0' + khz % 10U), (uint32_t)PIT_CALIBRATION_ROUNDS);
+	} else {
+		kprintf("tsc calibration failed\n");
+	}
+
 	return g_tsc_frequency;
 }
 

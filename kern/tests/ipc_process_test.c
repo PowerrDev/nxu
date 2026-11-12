@@ -76,11 +76,11 @@ ipc_process_test(void)
 	}
 
 	if (!ipc_process_test_wait_registry()) {
-		kputln("ipc_process_test: bootstrap registry did not come up in time");
+		kprintf("bootstrap registry did not come up in time\n");
 		goto cleanup;
 	}
 
-	kputln("ipc_process_test: bootstrap registry ready, spawning ipctest_a and ipctest_b");
+	kprintf("bootstrap registry ready, spawning ipctest_a and ipctest_b\n");
 
 	loader_status_t status_a =
 		loader_spawn(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/ipctest_a", "ipctest_a", &proc_a);
@@ -101,17 +101,17 @@ ipc_process_test(void)
 	uint64_t exit_a = 0ULL;
 	uint64_t exit_b = 0ULL;
 	if (!ipc_process_test_wait(proc_kernel(), proc_a->p_ident.pid, &exit_a)) {
-		kputln("ipc_process_test: ipctest_a did not exit in time");
+		kprintf("ipctest_a did not exit in time\n");
 		goto cleanup;
 	}
 
 	if (!ipc_process_test_wait(proc_kernel(), proc_b->p_ident.pid, &exit_b)) {
-		kputln("ipc_process_test: ipctest_b did not exit in time");
+		kprintf("ipctest_b did not exit in time\n");
 		goto cleanup;
 	}
 
 	if (exit_a != 0ULL || exit_b != 0ULL) {
-		kprintf("ipc_process_test: nonzero exit status (a=%llu b=%llu)\n", (unsigned long long)exit_a,
+		kprintf("nonzero exit status (a=%llu b=%llu)\n", (unsigned long long)exit_a,
 				(unsigned long long)exit_b);
 		goto cleanup;
 	}
@@ -127,7 +127,7 @@ cleanup:
 	 */
 	if (!passed) return false;
 
-	kputln("ipc_process_test: two-process bootstrap register/lookup round trip passed (spawn, discover by name, port "
+	kprintf("two-process bootstrap register/lookup round trip passed (spawn, discover by name, port \n"
 		   "transfer, reply, reap)");
 	return true;
 }

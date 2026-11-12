@@ -274,7 +274,7 @@ prompt(const char *path, bool recursive)
 	}
 
 	memcpy(saved, d->framebuffer, bytes);
-	kputln("sap: confirmation requested");
+	kprintf("confirmation requested\n");
 
 	keyboard_set_secure(true);
 
@@ -418,7 +418,7 @@ prompt(const char *path, bool recursive)
 			stage = 1;
 
 			keyboard_flush_keys();
-			kputln("sap: password requested");
+			kprintf("password requested\n");
 			
 			continue;
 		}
@@ -435,7 +435,7 @@ prompt(const char *path, bool recursive)
 				break;
 			}
 
-			kputln("sap: password refused");
+			kprintf("password refused\n");
 			message = status == TEP_ERR_DENIED		  ? "Incorrect password. Try again or press Escape."
 					  : status == TEP_ERR_RETRY_LATER ? "Please wait before trying again, or press Escape."
 													  : "Password verification is unavailable. Press Escape to cancel.";

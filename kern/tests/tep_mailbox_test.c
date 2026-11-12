@@ -26,7 +26,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#define TEP_TEST_LOG(format, ...) kprintf("%s: " format, __func__, ##__VA_ARGS__)
+#define TEP_TEST_LOG(format, ...) kprintf(format, ##__VA_ARGS__)
 
 /*
  * Staged on the scratch disk by tools/test_tep_mailbox.sh: bootd with one
@@ -464,15 +464,15 @@ tep_mailbox_test_run(void)
 
 	if (!tep_mailbox_test_boot()) return false;
 
-	kputln("tep_mailbox_test: protocol checks passed");
+	kprintf("protocol checks passed\n");
 
 	if (!tep_mailbox_test_fail_closed()) return false;
 
-	kputln("tep_mailbox_test: fail-closed check passed");
+	kprintf("fail-closed check passed\n");
 
 	if (!tep_mailbox_test_recovery()) return false;
 
-	kputln("tep_mailbox_test: reconnect passed");
+	kprintf("reconnect passed\n");
 	return true;
 }
 

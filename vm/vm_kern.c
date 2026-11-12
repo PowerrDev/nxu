@@ -257,7 +257,7 @@ vm_kern_allocate(size_t size, vm_kmap_prot_t protection, void **address)
 	NXU_RLOCK_GUARD(&g_vm_kern_lock);
 
 	if (!g_vm_kern.initialized || address == 0) {
-		kprintf("vm_kern_allocate: entry check failed, initialized=%lu address=%lu\n",
+		kprintf("entry check failed, initialized=%lu address=%lu\n",
 				(unsigned long)g_vm_kern.initialized, (unsigned long)(uintptr_t)address);
 		return false;
 	}
@@ -267,28 +267,28 @@ vm_kern_allocate(size_t size, vm_kmap_prot_t protection, void **address)
 	uint64_t page_count;
 
 	if (!vm_kern_size_to_pages(size, &page_count)) {
-		kprintf("vm_kern_allocate: size-to-pages conversion failed for size=%lu\n", (unsigned long)size);
+		kprintf("size-to-pages conversion failed for size=%lu\n", (unsigned long)size);
 		return false;
 	}
 
 	vm_kern_allocation_t *record = vm_kern_find_free_record();
 
 	if (record == 0) {
-		kputln("vm_kern_allocate: no free allocation record");
+		kprintf("no free allocation record\n");
 		return false;
 	}
 
 	uint64_t start_page;
 
 	if (!vm_kern_find_free_run(page_count, &start_page)) {
-		kprintf("vm_kern_allocate: no free run of %lu page(s), used pages %lu, allocation count %lu\n",
+		kprintf("no free run of %lu page(s), used pages %lu, allocation count %lu\n",
 				(unsigned long)page_count, (unsigned long)g_vm_kern.used_pages,
 				(unsigned long)g_vm_kern.allocation_count);
 		return false;
 	}
 
 	if (!vm_kern_reserve_run(start_page, page_count)) {
-		kputln("vm_kern_allocate: reserve run failed");
+		kprintf("reserve run failed\n");
 		return false;
 	}
 
@@ -298,7 +298,7 @@ vm_kern_allocate(size_t size, vm_kmap_prot_t protection, void **address)
 		uint64_t physical_address;
 
 		if (!pmm_allocate_page(&physical_address)) {
-			kprintf("vm_kern_allocate: pmm_allocate_page failed, free %lu, used %lu, total %lu\n",
+			kprintf("pmm_allocate_page failed, free %lu, used %lu, total %lu\n",
 					(unsigned long)pmm_get_free_page_count(), (unsigned long)pmm_get_used_page_count(),
 					(unsigned long)pmm_get_page_count());
 			if (vm_kern_rollback_mappings(start_page, mapped_pages)) {
@@ -311,7 +311,7 @@ vm_kern_allocate(size_t size, vm_kmap_prot_t protection, void **address)
 		uint64_t virtual_address = vm_kern_page_address(start_page + index);
 
 		if (!vm_kmap_map_page(virtual_address, physical_address, VM_KMAP_MEM_NORMAL, protection)) {
-			kputln("vm_kern_allocate: vm_kmap_map_page failed");
+			kprintf("vm_kmap_map_page failed\n");
 			(void)pmm_free_page(physical_address);
 
 			if (vm_kern_rollback_mappings(start_page, mapped_pages)) {
@@ -444,15 +444,15 @@ vm_kern_get_allocation_count(void)
 void
 vm_kern_dump(void)
 {
-	kprintf("vm_kern_dump: range: 0x%llx-0x%llx\n", (unsigned long long)VM_KERN_BASE,
+	kprintf("range: 0x%llx-0x%llx\n", (unsigned long long)VM_KERN_BASE,
 			(unsigned long long)VM_KERN_END);
-	kprintf("vm_kern_dump: free pages: %llu\n", (unsigned long long)(VM_KERN_PAGE_COUNT - g_vm_kern.used_pages));
+	kprintf("free pages: %llu\n", (unsigned long long)(VM_KERN_PAGE_COUNT - g_vm_kern.used_pages));
 
 	if (!kconsole_verbose()) return;
 
-	kprintf("vm_kern_dump: virtual size: %llu bytes\n", (unsigned long long)VM_KERN_SIZE);
-	kprintf("vm_kern_dump: total pages: %llu\n", (unsigned long long)VM_KERN_PAGE_COUNT);
-	kprintf("vm_kern_dump: used pages: %llu\n", (unsigned long long)g_vm_kern.used_pages);
-	kprintf("vm_kern_dump: active allocations: %llu\n", (unsigned long long)g_vm_kern.allocation_count);
-	kprintf("vm_kern_dump: allocation record limit: %llu\n", (unsigned long long)VM_KERN_MAX_ALLOCATIONS);
+	kprintf("virtual size: %llu bytes\n", (unsigned long long)VM_KERN_SIZE);
+	kprintf("total pages: %llu\n", (unsigned long long)VM_KERN_PAGE_COUNT);
+	kprintf("used pages: %llu\n", (unsigned long long)g_vm_kern.used_pages);
+	kprintf("active allocations: %llu\n", (unsigned long long)g_vm_kern.allocation_count);
+	kprintf("allocation record limit: %llu\n", (unsigned long long)VM_KERN_MAX_ALLOCATIONS);
 }

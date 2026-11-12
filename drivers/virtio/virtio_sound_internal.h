@@ -19,8 +19,8 @@
  * to it. Nothing outside the driver includes this.
  */
 
-/* Every line the driver logs starts with the name of the function that prints it. */
-#define VIRTIO_SND_LOG(format, ...) kprintf("%s: " format, __func__, ##__VA_ARGS__)
+/* kprintf() puts the name of the printing function in front of every line. */
+#define VIRTIO_SND_LOG(format, ...) kprintf(format, ##__VA_ARGS__)
 
 /* Streams the driver keeps information about; QEMU offers at most 10. */
 #define VIRTIO_SND_MAX_STREAMS 16U

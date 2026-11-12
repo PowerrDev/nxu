@@ -665,13 +665,13 @@ x86_vmm_walk(uint64_t *root, uint64_t address, uint64_t *leaf, uint64_t *physica
 bool
 vmm_init(const platform_t *platform)
 {
-	kputln("vmm_init: begin");
+	kprintf("begin\n");
 	if (g_x86_vmm.enabled || platform == 0 || platform->memory_region_count == 0U ||
 		(x86_vmm_read_cr4() & (X86_CR4_PAE | X86_CR4_LA57)) != X86_CR4_PAE || !x86_vmm_enable_nx()) {
-		kputln("vmm_init: mode or NX setup failed");
+		kprintf("mode or NX setup failed\n");
 		return false;
 	}
-	kprintf("vmm_init: CR0 write protection enabled, NX %s\n", x86_vmm_cpu_has_nx() ? "available" : "unavailable");
+	kprintf("CR0 write protection enabled, NX %s\n", x86_vmm_cpu_has_nx() ? "available" : "unavailable");
 
 	uintptr_t root_physical;
 	__asm__ volatile("mov %%cr3, %0" : "=r"(root_physical));
@@ -680,10 +680,10 @@ vmm_init(const platform_t *platform)
 	memset(&g_x86_vmm, 0, sizeof(g_x86_vmm));
 	g_x86_vmm.root_physical = root_physical;
 	if (!x86_vmm_table_from_physical(root_physical, &g_x86_vmm.root)) {
-		kputln("vmm_init: root access failed");
+		kprintf("root access failed\n");
 		return false;
 	}
-	kprintf("vmm_init: adopted root 0x%llx\n", (unsigned long long)root_physical);
+	kprintf("adopted root 0x%llx\n", (unsigned long long)root_physical);
 
 	g_x86_vmm.table_count = 5ULL;
 	g_x86_vmm.nx_enabled = x86_vmm_cpu_has_nx();
@@ -694,13 +694,13 @@ vmm_init(const platform_t *platform)
 
 	if (!x86_vmm_ensure_root_slot(X86_KERNEL_PML4_INDEX(VM_KERN_BASE)) ||
 		!x86_vmm_ensure_root_slot(X86_KERNEL_PML4_INDEX(VM_MMIO_BASE))) {
-		kputln("vmm_init: kernel mapping slots failed");
+		kprintf("kernel mapping slots failed\n");
 		g_x86_vmm.enabled = false;
 		return false;
 	}
 
 	if (g_x86_vmm.nx_enabled) {
-		kputln("vmm_init: applying direct-map permissions");
+		kprintf("applying direct-map permissions\n");
 		uint64_t *direct_pdpt;
 		uint64_t *direct_pd;
 
@@ -716,13 +716,13 @@ vmm_init(const platform_t *platform)
 	}
 
 	if (!x86_vmm_protect_kernel_image()) {
-		kputln("vmm_init: kernel image permission setup failed");
+		kprintf("kernel image permission setup failed\n");
 		g_x86_vmm.enabled = false;
 		return false;
 	}
 
 	__asm__ volatile("mov %0, %%cr3" : : "r"(root_physical) : "memory");
-	kputln("vmm_init: updated page tables activated through CR3");
+	kprintf("updated page tables activated through CR3\n");
 
 	return true;
 }
@@ -1220,7 +1220,7 @@ vmm_get_ttbr1_table_count(void)
 void
 vmm_dump(void)
 {
-	kprintf("vmm_dump: root 0x%llx, tables %llu, NX %s, direct map %llu MiB\n",
+	kprintf("root 0x%llx, tables %llu, NX %s, direct map %llu MiB\n",
 			(unsigned long long)g_x86_vmm.root_physical, (unsigned long long)g_x86_vmm.table_count,
 			g_x86_vmm.nx_enabled ? "on" : "off", (unsigned long long)(VM_DIRECT_MAP_SIZE / (1024ULL * 1024ULL)));
 }
@@ -1233,7 +1233,7 @@ vmm_dump(void)
 void
 vmm_dump_higher_half(void)
 {
-	kprintf("vmm_dump_higher_half: direct map 0x%llx-0x%llx\n", (unsigned long long)VMM_HIGHER_HALF_BASE,
+	kprintf("direct map 0x%llx-0x%llx\n", (unsigned long long)VMM_HIGHER_HALF_BASE,
 			(unsigned long long)(VMM_HIGHER_HALF_BASE + VM_DIRECT_MAP_SIZE - 1ULL));
 }
 

@@ -81,7 +81,7 @@
 void
 ioready_init(ioready_t *ready)
 {
-  kprintf("ioready_init: initializing readiness notification manager\n");
+  kprintf("initializing readiness notification manager\n");
 	if (ready == 0) return;
 
 	ready->lock.value = 0U;
@@ -186,7 +186,7 @@ ioready_attach(ioready_t *ready, ioready_watch_t *watch, uint32_t events, ioread
 void
 ioready_detach(ioready_watch_t *watch)
 {
-  kprintf("ioready_detach: trying to detach watch\n");
+  kprintf("trying to detach watch\n");
 	if (watch == 0) return;
 
 	/*

@@ -28,7 +28,7 @@ boot_system_volume_device(void)
 	if (layout.scheme == BLOCK_LAYOUT_RAW) return disk;
 
 	if (layout.scheme != BLOCK_LAYOUT_GPT) {
-		kputln("boot: system disk needs a raw filesystem or named GPT system partition");
+		kprintf("system disk needs a raw filesystem or named GPT system partition\n");
 		return 0;
 	}
 
@@ -49,7 +49,7 @@ boot_system_volume_device(void)
 	if (systems != 1 || recoveries > 1 ||
 		(recoveries == 1 && system.start_sector < recovery.start_sector + recovery.sector_count &&
 		 recovery.start_sector < system.start_sector + system.sector_count)) {
-		kputln("boot: missing, ambiguous or overlapping system/recovery partitions");
+		kprintf("missing, ambiguous or overlapping system/recovery partitions\n");
 		return 0;
 	}
 
@@ -60,7 +60,7 @@ boot_system_volume_device(void)
 		g_recovery_device = block_partition_device(disk, &recovery);
 		if (g_recovery_device == 0) return 0;
 	}
-	kprintf("boot: selected GPT system volume %s\n", selected->name);
+	kprintf("selected GPT system volume %s\n", selected->name);
 	return selected;
 }
 
@@ -94,19 +94,19 @@ boot_mount_recovery_volume(void)
 	uint32_t index = explicit ? 0 : g_recovery_device->device_id - 1;
 	if (explicit) {
 		if (value[0] == 0) {
-			kputln("recovery: invalid volume index");
+			kprintf("invalid volume index\n");
 			return;
 		}
 
 		for (uint32_t digit = 0; value[digit] != 0; digit++) {
 			if (value[digit] < '0' || value[digit] > '9') {
-				kputln("recovery: invalid volume index");
+				kprintf("invalid volume index\n");
 				return;
 			}
 
 			index = index * 10 + (uint32_t)(value[digit] - '0');
 			if (index >= BLOCK_DEVICE_MAX) {
-				kputln("recovery: invalid volume index");
+				kprintf("invalid volume index\n");
 				return;
 			}
 
@@ -114,14 +114,14 @@ boot_mount_recovery_volume(void)
 	}
 	block_device_t device = block_device_get(index);
 	if (device == 0) {
-		kputln("recovery: configured volume is unavailable");
+		kprintf("configured volume is unavailable\n");
 		return;
 	}
 
 	vfs_mount_info_t info;
 	for (uint32_t mount = 0; vfs_mount_get(mount, &info); mount++) {
 		if (info.device_index == index) {
-			kputln("recovery: configured device is already mounted");
+			kprintf("configured device is already mounted\n");
 			return;
 		}
 
@@ -131,19 +131,19 @@ boot_mount_recovery_volume(void)
 	for (uint32_t path = 0; path < 2; path++) {
 		vfs_status_t status = vfs_mkdir(paths[path]);
 		if (status != VFS_STATUS_OK && status != VFS_STATUS_EXISTS) {
-			kputln("recovery: volume mountpoint creation failed");
+			kprintf("volume mountpoint creation failed\n");
 			return;
 		}
 
 	}
 	vfs_status_t status = vfs_mount("ext4", device, "/Volumes/Recovery");
 	if (status != VFS_STATUS_OK) {
-		kprintf("recovery: volume mount failed: %s\n", vfs_status_name(status));
+		kprintf("volume mount failed: %s\n", vfs_status_name(status));
 		return;
 	}
 
 	g_recovery_mounted = true;
 	/* No updater is running yet: clear an empty lock left by a previous boot. */
 	(void)vfs_rmdir("/Volumes/Recovery/Prepared/.prepare-lock");
-	kputln("recovery: mounted update volume at /Volumes/Recovery");
+	kprintf("mounted update volume at /Volumes/Recovery\n");
 }

@@ -125,8 +125,8 @@ Supply your phase by defining the strong `i386_init_<phase>` and
 ## Style
 
 Match the surrounding code: tabs, `type\nname(...)` or `static type name(...)`
-as the neighbours do, `kprintf` log lines prefixed with the emitting function
-name, no field widths in `kprintf` (unsupported). Commit in the repo's XNU
+as the neighbours do, `kprintf` log lines without a hand-written prefix (the
+macro adds the emitting function's name; see doc/kern/console.md), no field widths in `kprintf` (unsupported). Commit in the repo's XNU
 style: `subsystem/path: imperative summary`, a body explaining what and why,
 several focused commits, ending with
 `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>`.

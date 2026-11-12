@@ -40,7 +40,7 @@ i386_startup_core_test(void)
 	kputln("NXU_CRC32C_Checksum: self-test passed");
 	if (!shm_registry_self_test() || !statistics_self_test()) return false;
 
-	kputln("i386_startup: core self-tests passed");
+	kprintf("core self-tests passed\n");
 	return true;
 }
 
@@ -80,6 +80,6 @@ i386_startup_storage_test(void)
 		return false;
 	}
 
-	kputln("i386_startup: storage self-tests passed (sector read and ext4 directory traversal)");
+	kprintf("storage self-tests passed (sector read and ext4 directory traversal)\n");
 	return true;
 }

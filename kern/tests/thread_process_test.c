@@ -51,7 +51,7 @@ thread_process_test(void)
 
 	uint64_t exit_status = 0ULL;
 	if (!thread_process_test_wait(proc_kernel(), proc->p_ident.pid, &exit_status)) {
-		kputln("thread_process_test: threadtest did not exit in time");
+		kprintf("threadtest did not exit in time\n");
 		return false;
 	}
 
@@ -62,6 +62,6 @@ thread_process_test(void)
 		return false;
 	}
 
-	kputln("thread_process_test: real process spawned its own threads and all ran correctly");
+	kprintf("real process spawned its own threads and all ran correctly\n");
 	return true;
 }

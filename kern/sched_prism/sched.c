@@ -1016,6 +1016,9 @@ sched_bootstrap(task_t kernel_task)
 	g_sched.kernel_task = kernel_task;
 	g_sched.initialized = true;
 
+	kprintf("standard timeslicing quantum is %u tick(s), %u MLFQ levels boosted every %u tick(s)\n",
+			(uint32_t)SCHED_DEFAULT_QUANTUM_TICKS, (uint32_t)SCHED_MLFQ_LEVELS, (uint32_t)SCHED_MLFQ_BOOST_INTERVAL_TICKS);
+
 	return true;
 }
 
@@ -1856,39 +1859,39 @@ void
 sched_dump(void)
 {
 	if (!g_sched.initialized) {
-		kputln("sched_dump: not initialized");
+		kprintf("not initialized\n");
 		return;
 	}
 
 	processor_t processor = current_processor();
 
-	kprintf("sched_dump: cpu: %llu\n", (unsigned long long)processor->cpu_id);
-	kprintf("sched_dump: current tid: %llu\n", (unsigned long long)thread_tid(processor->active_thread));
-	kprintf("sched_dump: idle tid: %llu\n", (unsigned long long)thread_tid(processor->idle_thread));
-	kprintf("sched_dump: run queue count: %llu\n", (unsigned long long)processor->runq.count);
-	kprintf("sched_dump: context switches: %llu\n", (unsigned long long)processor->context_switch_count);
+	kprintf("cpu: %llu\n", (unsigned long long)processor->cpu_id);
+	kprintf("current tid: %llu\n", (unsigned long long)thread_tid(processor->active_thread));
+	kprintf("idle tid: %llu\n", (unsigned long long)thread_tid(processor->idle_thread));
+	kprintf("run queue count: %llu\n", (unsigned long long)processor->runq.count);
+	kprintf("context switches: %llu\n", (unsigned long long)processor->context_switch_count);
 
 	if (!kconsole_verbose()) return;
 
 	if (processor->runq.highq == RUN_QUEUE_NONE) {
-		kverbosef("sched_dump: run queue highq: none\n");
+		kverbosef("run queue highq: none\n");
 	} else {
-		kverbosef("sched_dump: run queue highq: %llu\n", (unsigned long long)processor->runq.highq);
+		kverbosef("run queue highq: %llu\n", (unsigned long long)processor->runq.highq);
 	}
 
-	kverbosef("sched_dump: dispatches: %llu\n", (unsigned long long)processor->dispatch_count);
-	kverbosef("sched_dump: preemptions: %llu\n", (unsigned long long)processor->preemption_count);
-	kverbosef("sched_dump: quantum expirations: %llu\n", (unsigned long long)processor->quantum_expiration_count);
-	kverbosef("sched_dump: default quantum: %llu tick(s)\n", (unsigned long long)SCHED_DEFAULT_QUANTUM_TICKS);
-	kverbosef("sched_dump: MLFQ levels: %llu\n", (unsigned long long)SCHED_MLFQ_LEVELS);
-	kverbosef("sched_dump: MLFQ boost interval: %llu tick(s)\n", (unsigned long long)SCHED_MLFQ_BOOST_INTERVAL_TICKS);
-	kverbosef("sched_dump: MLFQ next boost in: %llu tick(s)\n",
+	kverbosef("dispatches: %llu\n", (unsigned long long)processor->dispatch_count);
+	kverbosef("preemptions: %llu\n", (unsigned long long)processor->preemption_count);
+	kverbosef("quantum expirations: %llu\n", (unsigned long long)processor->quantum_expiration_count);
+	kverbosef("default quantum: %llu tick(s)\n", (unsigned long long)SCHED_DEFAULT_QUANTUM_TICKS);
+	kverbosef("MLFQ levels: %llu\n", (unsigned long long)SCHED_MLFQ_LEVELS);
+	kverbosef("MLFQ boost interval: %llu tick(s)\n", (unsigned long long)SCHED_MLFQ_BOOST_INTERVAL_TICKS);
+	kverbosef("MLFQ next boost in: %llu tick(s)\n",
 			  (unsigned long long)(SCHED_MLFQ_BOOST_INTERVAL_TICKS - processor->boost_ticks));
 
 	if (processor->active_thread != 0 && !thread_is_idle(processor->active_thread)) {
-		kverbosef("sched_dump: active thread MLFQ level: %llu\n",
+		kverbosef("active thread MLFQ level: %llu\n",
 				  (unsigned long long)processor->active_thread->mlfq_level);
-		kverbosef("sched_dump: active thread quantum remaining: %llu\n",
+		kverbosef("active thread quantum remaining: %llu\n",
 				  (unsigned long long)processor->active_thread->quantum_remaining);
 	}
 }

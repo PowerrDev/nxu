@@ -237,9 +237,9 @@ post_test_small_heap(void)
 
 	if (allocation_a == 0 || allocation_b == 0 || allocation_c == 0) return false;
 
-	kverbosef("post_test_small_heap: allocation A at %p\n", allocation_a);
-	kverbosef("post_test_small_heap: allocation B at %p\n", allocation_b);
-	kverbosef("post_test_small_heap: allocation C at %p\n", allocation_c);
+	kverbosef("allocation A at %p\n", allocation_a);
+	kverbosef("allocation B at %p\n", allocation_b);
+	kverbosef("allocation C at %p\n", allocation_c);
 
 	if (!kfree(allocation_b)) return false;
 
@@ -293,7 +293,7 @@ post_test_large_heap(void)
 
 	}
 
-	kverbosef("post_test_large_heap: large allocation at %p\n", large_allocation);
+	kverbosef("large allocation at %p\n", large_allocation);
 
 	heap_dump();
 
@@ -319,29 +319,29 @@ post_fail(const char *message)
 static bool
 post_memory(void)
 {
-	kputln("post_test_vm_kern: testing virtual allocations");
+	kprintf("testing virtual allocations\n");
 
 	if (!post_test_vm_kern()) return post_fail("post_test_vm_kern: allocation test failed");
 
-	kputln("post_test_vm_kern: allocation test passed");
+	kprintf("allocation test passed\n");
 	vm_kern_dump();
 
-	kputln("post_test_small_heap: testing allocation, reuse and free");
+	kprintf("testing allocation, reuse and free\n");
 
 	if (!post_test_small_heap()) {
 		return post_fail("post_test_small_heap: allocation, reuse or free test failed");
 	}
 
-	kputln("post_test_small_heap: allocation, reuse and free tests passed");
+	kprintf("allocation, reuse and free tests passed\n");
 	heap_dump();
 
-	kputln("post_test_large_heap: testing multi-page allocation");
+	kprintf("testing multi-page allocation\n");
 
 	if (!post_test_large_heap()) {
 		return post_fail("post_test_large_heap: multi-page allocation/free test failed");
 	}
 
-	kputln("post_test_large_heap: multi-page allocation/free test passed");
+	kprintf("multi-page allocation/free test passed\n");
 	heap_dump();
 
 	return true;
@@ -397,14 +397,14 @@ post_core(void)
 		return post_fail("sched_validate: bootstrap validation failed");
 	}
 
-	kputln("sched_validate: fixed-priority run queue self-test passed");
-	kputln("sched_validate: MLFQ feedback self-test passed");
+	kprintf("fixed-priority run queue self-test passed\n");
+	kprintf("MLFQ feedback self-test passed\n");
 	sched_dump();
 	thread_dump();
 
 	/* AArch64 scheduler context-switch validation. */
 
-	kputln("kernel_thread_create: testing AArch64 context switching");
+	kprintf("testing AArch64 context switching\n");
 
 	g_sched_context_test_stage = 0U;
 	thread_t context_test_thread;
@@ -438,7 +438,7 @@ post_core(void)
 		return post_fail("sched_validate: post-switch validation failed");
 	}
 
-	kputln("sched_validate: AArch64 context-switch test passed");
+	kprintf("AArch64 context-switch test passed\n");
 
 	/* EL0 exception-vector classification. */
 

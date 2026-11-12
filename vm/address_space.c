@@ -488,7 +488,7 @@ vm_address_space_destroy(vm_address_space_t *space)
 	 * freed: a leak is a bug report, a use-after-free is corruption.
 	 */
 	if (!vm_address_space_quiesce(space)) {
-		kprintf("vm_address_space_destroy: a CPU still has the space loaded; its page tables are leaked\n");
+		kprintf("a CPU still has the space loaded; its page tables are leaked\n");
 		return false;
 	}
 

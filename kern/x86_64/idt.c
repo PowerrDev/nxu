@@ -97,11 +97,11 @@ x86_idt_initialize(void)
 	};
 	__asm__ volatile("lidt %0" : : "m"(descriptor) : "memory");
 
-	kprintf("x86_idt_initialize: installed %u interrupt gates\n", X86_IDT_VECTOR_COUNT);
-	kputln("x86_idt_initialize: vectors 0-31 route to exception diagnostics");
-	kputln("x86_idt_initialize: vectors 32-255 route to unexpected-interrupt handling");
-	kputln("x86_idt_initialize: breakpoint and overflow gates are callable from ring 3");
-	kputln("x86_idt_initialize: double fault, NMI, and machine check use IST stacks");
+	kprintf("installed %u interrupt gates\n", X86_IDT_VECTOR_COUNT);
+	kprintf("vectors 0-31 route to exception diagnostics\n");
+	kprintf("vectors 32-255 route to unexpected-interrupt handling\n");
+	kprintf("breakpoint and overflow gates are callable from ring 3\n");
+	kprintf("double fault, NMI, and machine check use IST stacks\n");
 
 	return true;
 }

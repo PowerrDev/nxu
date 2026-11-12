@@ -166,7 +166,7 @@ trap_print_selector_error(uint32_t err)
 		return;
 	}
 
-	kprintf("    Cause:  selector 0x%x, %s, index %u%s\n", err & 0xFFFFU,
+	IOLog("    Cause:  selector 0x%x, %s, index %u%s\n", err & 0xFFFFU,
 			(err & 2U) != 0U ? "IDT" : ((err & 4U) != 0U ? "LDT" : "GDT"), (err >> 3U) & 0x1FFFU,
 			(err & 1U) != 0U ? ", raised by an external event" : "");
 }
@@ -174,7 +174,7 @@ trap_print_selector_error(uint32_t err)
 static void
 trap_print_page_fault(uint32_t err, uint32_t address)
 {
-	kprintf("    Cause:  %s of 0x%x by %s: %s%s\n",
+	IOLog("    Cause:  %s of 0x%x by %s: %s%s\n",
 			(err & PF_FETCH) != 0U ? "instruction fetch" : ((err & PF_WRITE) != 0U ? "write" : "read"), address,
 			(err & PF_USER) != 0U ? "user code" : "kernel code",
 			(err & PF_PRESENT) != 0U ? "protection violation" : "page not present",
@@ -187,7 +187,7 @@ trap_print_backtrace(uint32_t eip, uint32_t ebp)
 	uintptr_t low = (uintptr_t)i386_boot_stack_bottom;
 	uintptr_t high = (uintptr_t)i386_boot_stack_top;
 
-	kprintf("Backtrace (CPU %u): #0 0x%x", (uint32_t)machine_cpu_id(), eip);
+	IOLog("Backtrace (CPU %u): #0 0x%x", (uint32_t)machine_cpu_id(), eip);
 
 	uintptr_t frame = ebp;
 
@@ -199,7 +199,7 @@ trap_print_backtrace(uint32_t eip, uint32_t ebp)
 
 		if (words[1] == 0U) break;
 
-		kprintf(" #%u 0x%x", depth, words[1]);
+		IOLog(" #%u 0x%x", depth, words[1]);
 
 		if (words[0] <= frame) break;
 
@@ -236,7 +236,7 @@ static void
 panic_print_selector(const char *name, uint32_t value)
 {
 	kputs(name);
-	kprintf(": 0x%x", value & 0xFFFFU);
+	IOLog(": 0x%x", value & 0xFFFFU);
 }
 
 /*
@@ -327,9 +327,9 @@ trap_panic(const x86_saved_state_t *state, uint32_t esp, const char *how)
 	 * For now, "caller" displays the faulting EIP. Later, symbol lookup can
 	 * replace it with a resolved panic caller.
 	 */
-	kprintf("panic(cpu %u caller ", (uint32_t)machine_cpu_id());
+	IOLog("panic(cpu %u caller ", (uint32_t)machine_cpu_id());
 	kputhex32(state->eip);
-	kprintf("): \"%s trap type %u -- %s %u (%s)\"\n", user ? "User" : "Kernel", panic_trap_type(state), how, vector,
+	IOLog("): \"%s trap type %u -- %s %u (%s)\"\n", user ? "User" : "Kernel", panic_trap_type(state), how, vector,
 			trap_exception_name(vector));
 
 	kputln("Debugger message: panic");
@@ -349,12 +349,12 @@ trap_panic(const x86_saved_state_t *state, uint32_t esp, const char *how)
 	kputc('\n');
 	kputln("Exception:");
 
-	kprintf("    Source: %s, at 0x%x:0x%x\n", user ? "user mode (ring 3)" : "kernel mode (ring 0)", state->cs & 0xFFFFU,
+	IOLog("    Source: %s, at 0x%x:0x%x\n", user ? "user mode (ring 3)" : "kernel mode (ring 0)", state->cs & 0xFFFFU,
 			state->eip);
-	kprintf("    Vector: %u (%s)\n", vector, trap_exception_name(vector));
+	IOLog("    Vector: %u (%s)\n", vector, trap_exception_name(vector));
 
 	if (trap_has_error_code(vector)) {
-		kprintf("    Error:  error code 0x%x\n", state->err);
+		IOLog("    Error:  error code 0x%x\n", state->err);
 
 		if (vector == T_INVALID_TSS || vector == T_SEGMENT_NOT_PRESENT || vector == T_STACK_FAULT ||
 			vector == T_GENERAL_PROTECTION) {
@@ -367,8 +367,8 @@ trap_panic(const x86_saved_state_t *state, uint32_t esp, const char *how)
 	kputc('\n');
 	trap_print_backtrace(state->eip, state->ebp);
 	kputln("Kernel Extensions in backtrace: none");
-	kprintf("System uptime: %llu microseconds\n", (unsigned long long)timer_get_microseconds());
-	kprintf("Timer interrupts delivered: %llu\n", (unsigned long long)timer_get_interrupt_count());
+	IOLog("System uptime: %llu microseconds\n", (unsigned long long)timer_get_microseconds());
+	IOLog("Timer interrupts delivered: %llu\n", (unsigned long long)timer_get_interrupt_count());
 	kputln("NXU panic policy: interrupts masked, processor halted after diagnostic emission");
 	kputln("Kernel halted.");
 
@@ -593,7 +593,7 @@ i386_trap_self_test(void)
 void
 i386_trap_test(const char *name)
 {
-	kprintf("i386_trap_test: raising %s\n", name);
+	kprintf("raising %s\n", name);
 
 	if (strcmp(name, "div0") == 0) {
 		uint32_t dividend = 1U;
@@ -618,9 +618,9 @@ i386_trap_test(const char *name)
 		/* An IRQ vector nothing has claimed. */
 		__asm__ volatile("int $33");
 	} else {
-		kprintf("i386_trap_test: unknown test \"%s\"\n", name);
+		kprintf("unknown test \"%s\"\n", name);
 		return;
 	}
 
-	kprintf("i386_trap_test: %s returned unexpectedly\n", name);
+	kprintf("%s returned unexpectedly\n", name);
 }

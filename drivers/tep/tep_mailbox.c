@@ -24,7 +24,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#define TEP_MAILBOX_LOG(format, ...) kprintf("%s: " format, __func__, ##__VA_ARGS__)
+#define TEP_MAILBOX_LOG(format, ...) kprintf(format, ##__VA_ARGS__)
 
 #define TEP_RESPONSE_TIMEOUT_US 500000ULL
 #define TEP_MONITOR_PERIOD_US 1000000ULL

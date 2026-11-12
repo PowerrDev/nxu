@@ -36,6 +36,11 @@ static uint32_t g_kconsole_history_count;
 static uint64_t g_kconsole_history_sequence;
 static bool g_kconsole_line_start = true;
 static bool g_kconsole_timestamp_enabled = true;
+/*
+ * Name of the function whose kprintf() is printing right now; it goes at the
+ * start of every line that call begins. Set and cleared under the console lock.
+ */
+static const char *g_kconsole_prefix;
 static bool g_kconsole_verbose;
 static bool g_kconsole_clock_started;
 static uint64_t g_kconsole_boot_ticks;
@@ -238,6 +243,13 @@ kputc(char character)
 	if (g_kconsole_line_start && character != '\n') {
 		if (g_kconsole_timestamp_enabled) {
 			kconsole_emit_timestamp();
+		}
+
+		if (g_kconsole_prefix != 0) {
+			for (const char *prefix = g_kconsole_prefix; *prefix != '\0'; prefix++)
+				kconsole_emit_raw(*prefix);
+			kconsole_emit_raw(':');
+			kconsole_emit_raw(' ');
 		}
 
 		g_kconsole_line_start = false;
@@ -471,12 +483,63 @@ kvprintf(const char *format, va_list arguments)
 	return written;
 }
 
+/*
+ * Print with the caller's name in front of each line it starts: kprintf() is
+ * a macro handing __func__ in, so a message never spells its own prefix and
+ * the prefix is always the function that actually printed it.
+ */
+static int
+kconsole_vprintf_as(const char *function, const char *format, va_list arguments)
+{
+	NXU_RLOCK_GUARD(&g_kconsole_lock);
+
+	const char *saved = g_kconsole_prefix;
+	g_kconsole_prefix = function;
+	int written = kvprintf(format, arguments);
+	g_kconsole_prefix = saved;
+	return written;
+}
+
 int
-kprintf(const char *format, ...)
+kprintf_from(const char *function, const char *format, ...)
 {
 	va_list arguments;
 	va_start(arguments, format);
-	int written = kvprintf(format, arguments);
+	int written = kconsole_vprintf_as(function, format, arguments);
+	va_end(arguments);
+	return written;
+}
+
+int
+kverbosef_from(const char *function, const char *format, ...)
+{
+	if (!g_kconsole_verbose) return 0;
+
+	va_list arguments;
+	va_start(arguments, format);
+	int written = kconsole_vprintf_as(function, format, arguments);
+	va_end(arguments);
+	return written;
+}
+
+int
+IOLog(const char *format, ...)
+{
+	va_list arguments;
+	va_start(arguments, format);
+	int written = kconsole_vprintf_as(0, format, arguments);
+	va_end(arguments);
+	return written;
+}
+
+int
+IOLogVerbose(const char *format, ...)
+{
+	if (!g_kconsole_verbose) return 0;
+
+	va_list arguments;
+	va_start(arguments, format);
+	int written = kconsole_vprintf_as(0, format, arguments);
 	va_end(arguments);
 	return written;
 }
@@ -501,18 +564,6 @@ kconsole_break_lock(void)
 	g_kconsole_lock.owner = 0U;
 	g_kconsole_lock.depth = 0U;
 	__atomic_store_n(&g_kconsole_lock.lock.value, 0U, __ATOMIC_RELEASE);
-}
-
-int
-kverbosef(const char *format, ...)
-{
-	if (!g_kconsole_verbose) return 0;
-
-	va_list arguments;
-	va_start(arguments, format);
-	int written = kvprintf(format, arguments);
-	va_end(arguments);
-	return written;
 }
 
 bool

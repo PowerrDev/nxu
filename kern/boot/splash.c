@@ -681,18 +681,6 @@ boot_splash_text_putc(char character, void *context)
 	g_text_dirty = true;
 }
 
-/*
- * The replay plays the retained history back over about
- * BOOT_SPLASH_REPLAY_TARGET_MS in BOOT_SPLASH_REPLAY_TARGET_PRESENTS even
- * steps, however long the history is: a short one gets a present per line
- * (visibly scrolling from the very first line), a long one several lines per
- * present. Painting is per present, not per line, so what a step costs does
- * not depend on how many lines it covers.
- */
-#define BOOT_SPLASH_REPLAY_TARGET_PRESENTS 30ULL
-#define BOOT_SPLASH_REPLAY_TARGET_MS 1200ULL
-#define BOOT_SPLASH_REPLAY_MAX_MS 2500ULL
-
 /* Cheap probe: capacity 0 reads nothing but still clamps/advances *cursor. */
 static uint64_t
 boot_splash_history_oldest_cursor(void)
@@ -704,97 +692,29 @@ boot_splash_history_oldest_cursor(void)
 	return cursor;
 }
 
-/* Cheap forward scan (no rendering): total newline count in retained history. */
-static uint64_t
-boot_splash_history_line_count(void)
-{
-	uint64_t cursor = boot_splash_history_oldest_cursor();
-	uint64_t total_lines = 0ULL;
-	char scan_buffer[256];
-	uint64_t scan_read_size;
-
-	for (;;) {
-		if (!kconsole_history_read(&cursor, scan_buffer, sizeof(scan_buffer), &scan_read_size) ||
-			scan_read_size == 0ULL)
-			break;
-		for (uint64_t index = 0ULL; index < scan_read_size; index++) {
-			if (scan_buffer[index] == '\n') total_lines++;
-		}
-	}
-
-	return total_lines;
-}
-
 /*
- * Replay the retained console history from the very first line through the
- * same cell grid live boot output uses, painting and presenting every
- * lines_per_present lines on an even schedule -- so the splash visibly
- * scrolls through the whole boot log seen so far instead of jumping straight
- * to its last screenful. g_text_replaying keeps boot_splash_text_putc() from
- * flushing on its own, so this function alone controls pacing.
- *
- * Bounded by BOOT_SPLASH_REPLAY_MAX_MS as a safety net: if paints and
- * presents run unusually slowly (a loaded or emulated host), the remaining
- * lines are fed into the grid without stepping and one final present catches
- * the screen up, so the replay can never turn into a stall.
+ * Put the log retained so far on the screen in one go, the way a verbose
+ * XNU boot comes up already full of text: every line goes through the same
+ * cell grid live output uses (only the last screenful survives in it), then
+ * one paint and one present. g_text_replaying keeps boot_splash_text_putc()
+ * from presenting per line meanwhile.
  */
 static void
 boot_splash_replay_history(display_device_t *display)
 {
-	uint64_t total_lines = boot_splash_history_line_count();
-	if (total_lines == 0ULL) return;
-
-	uint64_t lines_per_present =
-		(total_lines + BOOT_SPLASH_REPLAY_TARGET_PRESENTS - 1ULL) / BOOT_SPLASH_REPLAY_TARGET_PRESENTS;
 	uint64_t cursor = boot_splash_history_oldest_cursor();
-
-	uint64_t frequency = timer_get_frequency();
-	uint64_t step_ticks =
-		frequency != 0ULL ? (frequency * BOOT_SPLASH_REPLAY_TARGET_MS) / (1000ULL * BOOT_SPLASH_REPLAY_TARGET_PRESENTS)
-						  : 0ULL;
-	uint64_t max_ticks = frequency != 0ULL ? (frequency * BOOT_SPLASH_REPLAY_MAX_MS) / 1000ULL : 0ULL;
-	uint64_t started = timer_get_ticks();
-	uint64_t deadline = started + max_ticks;
-	uint64_t steps = 0ULL;
-
 	char buffer[256];
 	uint64_t read_size;
-	bool animate = true;
-	uint64_t lines_since_present = 0ULL;
 
 	g_text_replaying = true;
 
-	for (;;) {
-		if (!kconsole_history_read(&cursor, buffer, sizeof(buffer), &read_size) || read_size == 0ULL) break;
-
-		for (uint64_t index = 0ULL; index < read_size; index++) {
-			char character = buffer[index];
-			boot_splash_text_filter(character, 0);
-
-			if (character != '\n' || !animate) continue;
-
-			lines_since_present++;
-			if (lines_since_present < lines_per_present) continue;
-
-			lines_since_present = 0ULL;
-
-			boot_splash_text_render();
-			(void)display_present_full(display);
-			steps++;
-
-			if (max_ticks != 0ULL && timer_get_ticks() >= deadline) {
-				animate = false;
-			} else if (step_ticks != 0ULL) {
-				uint64_t next = started + steps * step_ticks;
-				while (timer_get_ticks() < next)
-					ml_cpu_relax();
-			}
-		}
+	while (kconsole_history_read(&cursor, buffer, sizeof(buffer), &read_size) && read_size != 0ULL) {
+		for (uint64_t index = 0ULL; index < read_size; index++)
+			boot_splash_text_filter(buffer[index], 0);
 	}
-	if (!animate || g_text_dirty) {
-		boot_splash_text_render();
-		(void)display_present_full(display);
-	}
+
+	boot_splash_text_render();
+	(void)display_present_full(display);
 
 	g_text_replaying = false;
 	g_text_dirty = false;
@@ -886,10 +806,9 @@ boot_splash_show(display_device_t *display)
 	if (g_text_active && !kconsole_verbose()) g_text_active = false;
 	if (g_text_active) {
 		/*
-		 * Register for live output first (no auto-replay), then walk the
-		 * retained history ourselves so it plays back with visible motion
-		 * -- see boot_splash_replay_history() -- instead of appearing
-		 * already fully scrolled in one instant paint.
+		 * Register for live output first (no auto-replay), then put the
+		 * retained history up ourselves in a single present -- see
+		 * boot_splash_replay_history().
 		 */
 		bool registered = kconsole_register_sink(boot_splash_text_filter, 0, false);
 		if (!registered) {
@@ -916,7 +835,7 @@ boot_splash_show(display_device_t *display)
 
 	if (!display_present_full(display)) return false;
 
-	kprintf("boot_splash_show: shown %ux%u at %ux scale\n", g_boot_splash_width, g_boot_splash_height, g_scale);
+	kprintf("shown %ux%u at %ux scale\n", g_boot_splash_width, g_boot_splash_height, g_scale);
 	return true;
 }
 
@@ -1003,6 +922,6 @@ boot_splash_finish(void)
 			ml_cpu_relax();
 	}
 
-	kputln("boot_splash_finish: progress complete");
+	kprintf("progress complete\n");
 	return true;
 }

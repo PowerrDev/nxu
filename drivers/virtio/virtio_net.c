@@ -262,7 +262,7 @@ virtio_net_attach(const virtio_device_t *transport)
 		!(device->transport.driver_features & VIRTIO_NET_F_MAC)) {
 		goto fail;
 	}
-	kverbosef("VirtIONetFamily: offered features 0x%llx, accepted 0x%llx, DMA mask 0x%llx\n",
+	IOLogVerbose("VirtIONetFamily: offered features 0x%llx, accepted 0x%llx, DMA mask 0x%llx\n",
 			  (unsigned long long)device->transport.device_features,
 			  (unsigned long long)device->transport.driver_features,
 			  (unsigned long long)device->transport.dma.address_mask);
@@ -317,12 +317,12 @@ virtio_net_attach(const virtio_device_t *transport)
 	g_device_count++;
 	(void)virtio_device_irq_attach(&device->transport, virtio_net_irq, device);
 	virtio_device_notify(&device->transport, 0);
-	kprintf("VirtIONetFamily: %s MAC %x:%x:%x:%x:%x:%x (%s)\n", device->interface->info.name, mac[0], mac[1], mac[2],
+	IOLog("VirtIONetFamily: %s MAC %x:%x:%x:%x:%x:%x (%s)\n", device->interface->info.name, mac[0], mac[1], mac[2],
 			mac[3], mac[4], mac[5], transport->ops->name);
 	return true;
 
 fail:
-	kprintf("VirtIONetFamily: attach failed during %s\n", failure_stage);
+	IOLog("VirtIONetFamily: attach failed during %s\n", failure_stage);
 	virtio_device_fail(&device->transport);
 
 	if (virtio_device_reset(&device->transport)) {

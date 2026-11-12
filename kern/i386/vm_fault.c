@@ -55,7 +55,7 @@ vm_fault_describe_tables(uint32_t address)
 	uint32_t cr3 = pmap_current_directory_physical();
 	pmap_entry_t directory_entry = pmap_directory_from_root(cr3)[pmap_directory_index(address)];
 
-	kprintf("i386_trap_page_fault: cr3 0x%x, pde 0x%llx", cr3, (unsigned long long)directory_entry);
+	kprintf("cr3 0x%x, pde 0x%llx", cr3, (unsigned long long)directory_entry);
 
 	if ((directory_entry & PTE_PRESENT) == 0U) {
 		kputln(" (page table absent)");
@@ -69,14 +69,14 @@ vm_fault_describe_tables(uint32_t address)
 
 	pmap_entry_t entry = pmap_table_pointer(directory_entry & PTE_FRAME)[pmap_table_index(address)];
 
-	kprintf(", pte 0x%llx", (unsigned long long)entry);
+	IOLog(", pte 0x%llx", (unsigned long long)entry);
 
 	if ((entry & PTE_PRESENT) == 0U) {
 		kputln(" (page not present)");
 		return;
 	}
 
-	kprintf(" (%s, %s)\n", (entry & PTE_WRITE) != 0U ? "writable" : "read-only",
+	IOLog(" (%s, %s)\n", (entry & PTE_WRITE) != 0U ? "writable" : "read-only",
 			(entry & PTE_USER) != 0U ? "user" : "supervisor");
 }
 
@@ -123,7 +123,7 @@ i386_trap_page_fault(x86_saved_state_t *state)
 	 */
 	if (x86_saved_state_is_user(state)) return false;
 
-	kprintf("i386_trap_page_fault: unresolved fault at 0x%x in %s, eip 0x%x\n", state->cr2,
+	kprintf("unresolved fault at 0x%x in %s, eip 0x%x\n", state->cr2,
 			i386_vm_region_name(state->cr2), state->eip);
 	vm_fault_describe_tables(state->cr2);
 

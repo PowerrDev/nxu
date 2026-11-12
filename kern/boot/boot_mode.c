@@ -90,7 +90,7 @@ boot_mode_poll(void)
 
 		g_boot_mode = BOOT_MODE_TRIAGE_OS;
 		(void)boot_splash_set_status("Loading startup options...");
-		kputln("boot: startup recovery options requested");
+		kprintf("startup recovery options requested\n");
 		return true;
 	}
 

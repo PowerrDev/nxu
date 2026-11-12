@@ -42,34 +42,34 @@ i386_init_threads(const i386_boot_info_t *boot)
 	 * threads-only bring-up) is not a failure.
 	 */
 	if (!proc_bootstrap() || proc_kernel() == 0) {
-		kputln("i386_init_threads: process manager unavailable");
+		kprintf("process manager unavailable\n");
 		return false;
 	}
 
 	if (!thread_bootstrap()) {
-		kputln("i386_init_threads: thread_bootstrap failed");
+		kprintf("thread_bootstrap failed\n");
 		return false;
 	}
 
 	if (!sched_bootstrap(proc_task(proc_kernel()))) {
-		kputln("i386_init_threads: sched_bootstrap failed");
+		kprintf("sched_bootstrap failed\n");
 		return false;
 	}
 
 	if (!sched_validate() || !thread_validate()) {
-		kputln("i386_init_threads: bootstrap validation failed");
+		kprintf("bootstrap validation failed\n");
 		return false;
 	}
 
-	kprintf("i386_init_threads: scheduler up, %u threads (bootstrap tid %llu, idle tid %llu)\n", thread_count(),
+	kprintf("scheduler up, %u threads (bootstrap tid %llu, idle tid %llu)\n", thread_count(),
 			(unsigned long long)thread_tid(sched_bootstrap_thread()),
 			(unsigned long long)thread_tid(sched_idle_thread()));
 
 	if (pic_init != 0) {
 		ml_irq_enable();
-		kputln("i386_init_threads: interrupts enabled");
+		kprintf("interrupts enabled\n");
 	} else {
-		kputln("i386_init_threads: no interrupt controller driver linked, interrupts left disabled");
+		kprintf("no interrupt controller driver linked, interrupts left disabled\n");
 	}
 
 	sched_dump();

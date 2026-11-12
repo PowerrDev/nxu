@@ -78,8 +78,8 @@ run_case selftest 512M "test=vm qemu-exit=1" $STATUS_CLEAN \
 	"vm_test_kernel_mappings: passed" \
 	"vm_test_heap: passed" \
 	"vm_test_address_spaces: passed" \
-	"vm_shm: self-test passed" \
-	"vm_map: self-test passed" \
+	"vm_shm_self_test: self-test passed" \
+	"vm_map_self_test: self-test passed" \
 	"i386_init_vm_selftest: all checks passed" \
 	"i386_init: vm self-test passed"
 

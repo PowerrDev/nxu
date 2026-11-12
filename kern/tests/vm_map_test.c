@@ -167,6 +167,6 @@ cleanup:
 
 	if (!passed) return false;
 
-	kputln("vm_map: self-test passed (region split/shrink/remove, exact page-count deltas)");
+	kprintf("self-test passed (region split/shrink/remove, exact page-count deltas)\n");
 	return true;
 }

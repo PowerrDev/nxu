@@ -37,7 +37,7 @@ spawn_process_test(void)
 		loader_spawn_as(proc_kernel(), SPAWN_PROCESS_TEST_PATH, "spawntest", 0U, NXU_UID_NOBODY, NXU_GID_NOBODY, &proc);
 
 	if (loaded != LOADER_STATUS_OK) {
-		kprintf("spawn_process_test: spawning spawntest failed: %s\n", loader_status_name(loaded));
+		kprintf("spawning spawntest failed: %s\n", loader_status_name(loaded));
 		return false;
 	}
 
@@ -46,17 +46,17 @@ spawn_process_test(void)
 
 	while (!proc_reap(proc_kernel(), proc->p_ident.pid, &status)) {
 		if (timer_get_microseconds() > deadline || !sched_yield()) {
-			kputln("spawn_process_test: spawntest did not exit in time");
+			kprintf("spawntest did not exit in time\n");
 			return false;
 		}
 	}
 
 	if (status != 0ULL) {
-		kprintf("spawn_process_test: spawntest failed with status 0x%llx (check number, or a kill)\n",
+		kprintf("spawntest failed with status 0x%llx (check number, or a kill)\n",
 				(unsigned long long)status);
 		return false;
 	}
 
-	kputln("spawn_process_test: a spawned process starts with its arguments, descriptors, group and mask in place");
+	kprintf("a spawned process starts with its arguments, descriptors, group and mask in place\n");
 	return true;
 }

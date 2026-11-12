@@ -149,11 +149,11 @@ i386_smp_secondary_main(uint32_t cpu_id, processor_t cpu)
 	i386_idt_load_secondary();
 
 	if (!pmap_cpu_protection_valid()) {
-		kprintf("pmap_cpu_protection_valid: CPU%u paging protection validation failed\n", cpu_id);
+		kprintf("CPU%u paging protection validation failed\n", cpu_id);
 		for (;;)
 			cpu_wait_for_interrupt();
 	}
-	kprintf("pmap_cpu_protection_valid: cpu%u: PAE and %s protections validated\n", cpu_id, pmap_nx_enabled() ? "NX" : "write");
+	kprintf("cpu%u: PAE and %s protections validated\n", cpu_id, pmap_nx_enabled() ? "NX" : "write");
 
 	apic_enable_local();
 
@@ -167,7 +167,7 @@ i386_smp_secondary_main(uint32_t cpu_id, processor_t cpu)
 	 */
 	ml_irq_enable();
 
-	kprintf("cpu_init: cpu%u: online\n", cpu_id);
+	kprintf("cpu%u: online\n", cpu_id);
 
 	__atomic_add_fetch(&g_cpu_online, 1U, __ATOMIC_ACQ_REL);
 
@@ -426,19 +426,19 @@ smp_start_cpu(uint32_t cpu_id, uint8_t apic_id_value)
 	processor_t cpu = processor_register(cpu_id, (uint64_t)apic_id_value);
 
 	if (cpu == 0) {
-		kprintf("smp_start_cpu: cannot register CPU%u\n", cpu_id);
+		kprintf("cannot register CPU%u\n", cpu_id);
 		return false;
 	}
 
 	if (!sched_cpu_prepare(cpu_id)) {
-		kprintf("sched_cpu_prepare: cannot create the CPU%u idle thread\n", cpu_id);
+		kprintf("cannot create the CPU%u idle thread\n", cpu_id);
 		return false;
 	}
 
 	void *stack;
 
 	if (!vm_kern_allocate(SMP_STACK_SIZE, VM_KMAP_PROT_READ_WRITE, &stack)) {
-		kprintf("vm_kern_allocate: no memory for the CPU%u boot stack\n", cpu_id);
+		kprintf("no memory for the CPU%u boot stack\n", cpu_id);
 		return false;
 	}
 
@@ -469,7 +469,7 @@ smp_start_cpu(uint32_t cpu_id, uint8_t apic_id_value)
 	params->cpu_id = cpu_id;
 	params->processor_ptr = (uint32_t)(uintptr_t)cpu;
 
-	kprintf("smp_start_cpu: starting CPU%u Local APIC id %u\n", cpu_id, apic_id_value);
+	kprintf("starting CPU%u Local APIC id %u\n", cpu_id, apic_id_value);
 
 	apic_start_cpu(apic_id_value, SMP_TRAMPOLINE_PHYS);
 
@@ -478,7 +478,7 @@ smp_start_cpu(uint32_t cpu_id, uint8_t apic_id_value)
 	while (!processor_is_online(cpu)) {
 		if (__atomic_load_n(&cpu->state, __ATOMIC_ACQUIRE) == PROCESSOR_SHUTDOWN ||
 			timer_get_microseconds() > deadline) {
-			kprintf("smp_start_cpu: CPU%u did not come online\n", cpu_id);
+			kprintf("CPU%u did not come online\n", cpu_id);
 			return false;
 		}
 
@@ -494,12 +494,12 @@ smp_boot_secondaries(void)
 	mp_table_t table;
 
 	if (!mp_table_scan(&table) || table.cpu_count <= 1U) {
-		kputln("smp_boot_secondaries: one CPU (no MP table, or it lists only the boot CPU)");
+		kprintf("one CPU (no MP table, or it lists only the boot CPU)\n");
 		return 1U;
 	}
 
 	if (!apic_init(table.lapic_physical)) {
-		kputln("apic_init: Local APIC unavailable. Staying uniprocessor.");
+		kprintf("Local APIC unavailable. Staying uniprocessor.\n");
 		return 1U;
 	}
 
@@ -511,7 +511,7 @@ smp_boot_secondaries(void)
 		if (table.cpus[index].apic_id == boot_apic_id) boot_index = index;
 	}
 	if (boot_index == table.cpu_count) {
-		kprintf("smp_boot_secondaries: boot CPU Local APIC id %u is not in the MP table\n", boot_apic_id);
+		kprintf("boot CPU Local APIC id %u is not in the MP table\n", boot_apic_id);
 		return 1U;
 	}
 
@@ -522,7 +522,7 @@ smp_boot_secondaries(void)
 		if (index != boot_index) g_cpu_apic_id[g_cpu_total++] = table.cpus[index].apic_id;
 	}
 
-	kprintf("smp_boot_secondaries: boot CPU0 Local APIC id %u, %u CPU(s) in the MP table\n", boot_apic_id, table.cpu_count);
+	kprintf("boot CPU0 Local APIC id %u, %u CPU(s) in the MP table\n", boot_apic_id, table.cpu_count);
 
 	/*
 	 * Copy the trampoline to its fixed physical home and restore PDE[0]'s
@@ -534,7 +534,7 @@ smp_boot_secondaries(void)
 	size_t trampoline_size = (size_t)(i386_smp_trampoline_end - i386_smp_trampoline_start);
 
 	if (trampoline_size > 0x800U) {
-		kputln("smp_boot_secondaries: trampoline is larger than its reserved page allows, staying uniprocessor");
+		kprintf("trampoline is larger than its reserved page allows, staying uniprocessor\n");
 		g_cpu_total = 1U;
 		return 1U;
 	}
@@ -542,7 +542,7 @@ smp_boot_secondaries(void)
 	memcpy(pmap_table_pointer(SMP_TRAMPOLINE_PHYS), i386_smp_trampoline_start, trampoline_size);
 
 	pmap_boot_identity(true);
-  kputln("pmap_boot_identity: boot_identity=true");
+  kprintf("boot_identity=true\n");
 
 	/* The boot CPU takes IPIs too (a secondary queueing work on it, a panic elsewhere). */
 	for (uint32_t cpu = 1U; cpu < g_cpu_total; cpu++) {
@@ -550,17 +550,17 @@ smp_boot_secondaries(void)
 	}
 
 	pmap_boot_identity(false);
-  kputln("pmap_boot_identity: boot_identity=false");
+  kprintf("boot_identity=false\n");
 
 	uint32_t online = smp_online_count();
 
 	if (online == g_cpu_total) {
-		kprintf("smp_start_cpu: %u CPUs online\n", online);
+		kprintf("%u CPUs online\n", online);
 	} else {
-		kprintf("smp_start_cpu: %u of %u CPUs online\n", online, g_cpu_total);
+		kprintf("%u of %u CPUs online\n", online, g_cpu_total);
 	}
 
-	if (online > 1U) kprintf("smp_start_cpu: SMP scheduling enabled, %u run queues\n", online);
+	if (online > 1U) kprintf("SMP scheduling enabled, %u run queues\n", online);
 	return online;
 }
 
@@ -601,10 +601,10 @@ smp_selftest_expected_cpus(const i386_boot_info_t *boot)
 
 	uint32_t online = smp_online_count();
 
-	kprintf("i386_init_smp_selftest: %u CPU(s) online, expecting at least %u\n", online, expected);
+	kprintf("%u CPU(s) online, expecting at least %u\n", online, expected);
 
 	if (online < expected) {
-		kprintf("i386_init_smp_selftest: FAIL only %u of %u expected CPUs online\n", online, expected);
+		kprintf("FAIL only %u of %u expected CPUs online\n", online, expected);
 		return false;
 	}
 
@@ -656,7 +656,7 @@ smp_selftest_ipi_round_trip(void)
 			cpu_relax();
 		}
 
-		kprintf("smp_selftest_ipi_round_trip: IPI round trip to cpu%u %s\n", cpu, seen ? "ok" : "FAILED");
+		kprintf("IPI round trip to cpu%u %s\n", cpu, seen ? "ok" : "FAILED");
 		ok &= seen;
 	}
 
@@ -670,7 +670,7 @@ i386_init_smp_selftest(const i386_boot_info_t *boot)
 
 	ok &= smp_selftest_ipi_round_trip();
 
-	if (ok) kputln("i386_init_smp_selftest: cpu count and IPI round trip ok");
+	if (ok) kprintf("cpu count and IPI round trip ok\n");
 
 	/* The cross-CPU VM subset of kern/tests/smp_test.c: usertlb exercises this
 	 * port's TLB shootdown by mutating a page another CPU still has cached;

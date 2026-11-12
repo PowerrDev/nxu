@@ -65,9 +65,9 @@ platform_discover(const dtb_t *dtb, platform_t *platform)
 	if (boot != 0 && boot->magic == MULTIBOOT_BOOTLOADER_MAGIC) multiboot = boot->multiboot;
 
 	if (i386_memory_map_load == 0) {
-		kputln("platform_discover: memory map unavailable (i386_memory_map_load not linked)");
+		kprintf("memory map unavailable (i386_memory_map_load not linked)\n");
 	} else if (!i386_memory_map_load(platform, multiboot)) {
-		kputln("platform_discover: memory map load failed");
+		kprintf("memory map load failed\n");
 		return false;
 	}
 
@@ -75,7 +75,7 @@ platform_discover(const dtb_t *dtb, platform_t *platform)
 		platform->pci_bus_count = pci_bus_count();
 		platform->pci_device_count = pci_device_count();
 	} else {
-		kputln("platform_discover: no PCI bus");
+		kprintf("no PCI bus\n");
 	}
 
 	return true;
@@ -129,21 +129,21 @@ platform_dump(const platform_t *platform)
 {
 	if (platform == 0) return;
 
-	kprintf("platform_dump: memory regions: %u\n", platform->memory_region_count);
+	kprintf("memory regions: %u\n", platform->memory_region_count);
 
 	for (uint32_t index = 0U; index < platform->memory_region_count; index++) {
-		kprintf("platform_dump: RAM[%u] base: 0x%llx, size: %llu bytes\n", index,
+		kprintf("RAM[%u] base: 0x%llx, size: %llu bytes\n", index,
 				(unsigned long long)platform->memory_regions[index].base,
 				(unsigned long long)platform->memory_regions[index].size);
 	}
 
-	kprintf("platform_dump: UART (COM1) I/O ports 0x%llx-0x%llx\n", (unsigned long long)platform->uart.base,
+	kprintf("UART (COM1) I/O ports 0x%llx-0x%llx\n", (unsigned long long)platform->uart.base,
 			(unsigned long long)(platform->uart.base + platform->uart.size - 1ULL));
 
-	kprintf("platform_dump: RTC (CMOS) I/O ports 0x%llx-0x%llx\n", (unsigned long long)platform->rtc.base,
+	kprintf("RTC (CMOS) I/O ports 0x%llx-0x%llx\n", (unsigned long long)platform->rtc.base,
 			(unsigned long long)(platform->rtc.base + platform->rtc.size - 1ULL));
 
-	kprintf("platform_dump: PCI: %u function(s) on %u bus(es)\n", platform->pci_device_count, platform->pci_bus_count);
+	kprintf("PCI: %u function(s) on %u bus(es)\n", platform->pci_device_count, platform->pci_bus_count);
 
 	if (platform->pci_device_count != 0U) pci_dump();
 }

@@ -68,7 +68,7 @@ windowserver_process_test(void)
 	}
 
 	if (!windowserver_process_test_wait_registry()) {
-		kputln("windowserver_process_test: bootstrap registry did not come up in time");
+		kprintf("bootstrap registry did not come up in time\n");
 		return false;
 	}
 
@@ -91,7 +91,7 @@ windowserver_process_test(void)
 	 */
 	for (uint32_t spin = 0U; spin < WINDOWSERVER_PROCESS_TEST_SERVICE_WAIT_ITERATIONS; spin++) {
 		if (!sched_yield()) {
-			kputln("windowserver_process_test: scheduler dispatch failed while waiting for WindowServer");
+			kprintf("scheduler dispatch failed while waiting for WindowServer\n");
 			return false;
 		}
 
@@ -107,12 +107,12 @@ windowserver_process_test(void)
 
 	uint64_t exit_client = 0ULL;
 	if (!windowserver_process_test_wait(proc_kernel(), proc_client->p_ident.pid, &exit_client)) {
-		kputln("windowserver_process_test: wstest_client did not exit in time");
+		kprintf("wstest_client did not exit in time\n");
 		return false;
 	}
 
 	if (exit_client != 0ULL) {
-		kprintf("windowserver_process_test: wstest_client exited with nonzero status %llu\n",
+		kprintf("wstest_client exited with nonzero status %llu\n",
 				(unsigned long long)exit_client);
 		return false;
 	}
@@ -132,7 +132,7 @@ windowserver_process_test(void)
 		if (!sched_yield()) break;
 	}
 
-	kputln("windowserver_process_test: WindowServer served a real client over NXPC (spawn, discover by name, create "
+	kprintf("WindowServer served a real client over NXPC (spawn, discover by name, create \n"
 		   "window, render, present)");
 	return true;
 }

@@ -125,7 +125,7 @@ check(const char *name, uint32_t size, const char *expected)
 	if (pass) return;
 
 	g_failures++;
-	kprintf("i386_init_userland_selftest: FAIL %s: expected %s, got %s\n", name, expected != 0 ? expected : "accept",
+	kprintf("FAIL %s: expected %s, got %s\n", name, expected != 0 ? expected : "accept",
 			reason != 0 ? reason : "accept");
 }
 
@@ -145,7 +145,7 @@ check_valid_image(void)
 	if (reason != 0 || info.entry != TEST_TEXT_VADDR || info.segment_count != 2U || info.image_low != 0x00401000ULL ||
 		info.image_high != 0x00403000ULL) {
 		g_failures++;
-		kprintf("i386_init_userland_selftest: FAIL decoded fields: entry 0x%x, %u segments, [0x%x, 0x%x)\n",
+		kprintf("FAIL decoded fields: entry 0x%x, %u segments, [0x%x, 0x%x)\n",
 				(uint32_t)info.entry, info.segment_count, (uint32_t)info.image_low, (uint32_t)info.image_high);
 	}
 }
@@ -298,6 +298,6 @@ i386_init_userland_selftest(const i386_boot_info_t *boot)
 	check_segment_rejections();
 	check_segment_kinds();
 
-	kprintf("i386_init_userland_selftest: %u ELF32 image cases, %u failed\n", g_cases, g_failures);
+	kprintf("%u ELF32 image cases, %u failed\n", g_cases, g_failures);
 	return g_failures == 0U;
 }

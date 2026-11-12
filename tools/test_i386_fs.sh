@@ -129,8 +129,8 @@ finish_case
 begin_case write
 boot "fs-test=write qemu-exit=1"
 expect "qemu exit status" status_is $STATUS_CLEAN
-expect "guest reports success" out_has "i386_fs_test: write test passed"
-expect "persistence marker created" out_has "i386_fs_test: persistence marker created"
+expect "guest reports success" out_has "fs_test_write: write test passed"
+expect "persistence marker created" out_has "fs_test_write: persistence marker created"
 expect "host fsck is clean after the guest's writes" fsck_clean
 expect "write-test.bin is byte-identical to the expected image" write_test_matches
 expect "unlinked file is gone from the host's view" file_absent /NXU/delete-me.txt
@@ -141,7 +141,7 @@ finish_case
 begin_case write-again
 boot "fs-test=write qemu-exit=1"
 expect "qemu exit status" status_is $STATUS_CLEAN
-expect "marker recovered from the previous boot" out_has "i386_fs_test: persistence marker recovered from previous boot"
+expect "marker recovered from the previous boot" out_has "fs_test_write: persistence marker recovered from previous boot"
 expect "host fsck is clean" fsck_clean
 expect "write-test.bin unchanged by the second run" write_test_matches
 finish_case
@@ -159,7 +159,7 @@ finish_case
 begin_case journal-verify
 boot "fs-test=journal-verify qemu-exit=1"
 expect "qemu exit status" status_is $STATUS_CLEAN
-expect "guest saw the recovered transaction" out_has "i386_fs_test: committed crash-test transaction recovered"
+expect "guest saw the recovered transaction" out_has "fs_test_journal_verify: committed crash-test transaction recovered"
 expect "needs_recovery cleared by the replay" no_recovery_needed
 expect "host fsck is clean after recovery" fsck_clean
 expect "host reads the recovered content" file_is /NXU/journal-recovery.txt "$JOURNAL_MESSAGE"

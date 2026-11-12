@@ -80,6 +80,7 @@ mouse_attach(uint32_t device_id)
 	if (!g_mouse.initialized || g_mouse.present || device_id == 0U) return false;
 	g_mouse.device_id = device_id;
 	g_mouse.present = true;
+	kprintf("input device %u is the system mouse\n", device_id);
 	return true;
 }
 

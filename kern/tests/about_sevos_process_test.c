@@ -69,7 +69,7 @@ about_sevos_process_test(void)
 	}
 
 	if (!about_sevos_process_test_wait_registry()) {
-		kputln("about_sevos_process_test: bootstrap registry did not come up in time");
+		kprintf("bootstrap registry did not come up in time\n");
 		return false;
 	}
 
@@ -84,7 +84,7 @@ about_sevos_process_test(void)
 
 	for (uint32_t spin = 0U; spin < ABOUT_SEVOS_PROCESS_TEST_SERVICE_WAIT_ITERATIONS; spin++) {
 		if (!sched_yield()) {
-			kputln("about_sevos_process_test: scheduler dispatch failed while waiting for WindowServer");
+			kprintf("scheduler dispatch failed while waiting for WindowServer\n");
 			return false;
 		}
 
@@ -100,12 +100,12 @@ about_sevos_process_test(void)
 
 	uint64_t exit_about = 0ULL;
 	if (!about_sevos_process_test_wait(proc_kernel(), proc_about->p_ident.pid, &exit_about)) {
-		kputln("about_sevos_process_test: about_sevos_service did not exit in time");
+		kprintf("about_sevos_service did not exit in time\n");
 		return false;
 	}
 
 	if (exit_about != 0ULL) {
-		kprintf("about_sevos_process_test: about_sevos_service exited with nonzero status %llu\n",
+		kprintf("about_sevos_service exited with nonzero status %llu\n",
 				(unsigned long long)exit_about);
 		return false;
 	}
@@ -123,7 +123,7 @@ about_sevos_process_test(void)
 		if (!sched_yield()) break;
 	}
 
-	kputln("about_sevos_process_test: About sevOS served as a real process over NXPC (spawn, discover by name, "
+	kprintf("About sevOS served as a real process over NXPC (spawn, discover by name, \n"
 		   "shared-memory render, present)");
 	return true;
 }

@@ -20,7 +20,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define UI_LOGIN_LOG(format, ...) kprintf("%s: " format, __func__, ##__VA_ARGS__)
+#define UI_LOGIN_LOG(format, ...) kprintf(format, ##__VA_ARGS__)
 
 uint64_t
 ui_service_keyboard_capability(void)

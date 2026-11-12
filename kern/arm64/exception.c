@@ -579,7 +579,7 @@ exception_handle_user_fault(arm64_exception_frame_t *frame)
 	name[0] = '\0';
 	(void)proc_get_name(proc, name, sizeof(name));
 
-	kprintf("exception_handle_user_fault: pid %u (%s) killed by %s, pc 0x%llx, far 0x%llx, esr 0x%llx\n",
+	kprintf("pid %u (%s) killed by %s, pc 0x%llx, far 0x%llx, esr 0x%llx\n",
 			(uint32_t)proc_selfpid(), name, exception_signal_name(signal), (unsigned long long)frame->elr,
 			(unsigned long long)frame->far, (unsigned long long)frame->esr);
 
@@ -777,8 +777,8 @@ exception_dispatch(arm64_exception_frame_t *frame)
 
 	kputc('\n');
 	kputln("Kernel Extensions in backtrace: none");
-	kprintf("System uptime: %llu microseconds\n", (unsigned long long)timer_get_microseconds());
-	kprintf("Timer interrupts delivered: %llu\n", (unsigned long long)timer_get_interrupt_count());
+	IOLog("System uptime: %llu microseconds\n", (unsigned long long)timer_get_microseconds());
+	IOLog("Timer interrupts delivered: %llu\n", (unsigned long long)timer_get_interrupt_count());
 	kputln("NXU panic policy: interrupts masked, processor halted after diagnostic emission");
 	kputln("Kernel halted.");
 

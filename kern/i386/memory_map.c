@@ -233,12 +233,12 @@ i386_memory_map_dump(const platform_t *platform)
 	for (uint32_t index = 0U; index < platform->memory_region_count; index++) {
 		const platform_region_t *region = &platform->memory_regions[index];
 
-		kprintf("i386_memory_map_dump: region %u: 0x%llx-0x%llx (%llu KiB)\n", index, region->base,
+		kprintf("region %u: 0x%llx-0x%llx (%llu KiB)\n", index, region->base,
 				region->base + region->size, region->size / 1024ULL);
 		total += region->size;
 	}
 
-	kprintf("i386_memory_map_dump: %u region(s), %llu KiB usable\n", platform->memory_region_count, total / 1024ULL);
+	kprintf("%u region(s), %llu KiB usable\n", platform->memory_region_count, total / 1024ULL);
 }
 
 static uint32_t

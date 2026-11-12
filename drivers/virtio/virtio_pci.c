@@ -113,24 +113,24 @@ virtio_pci_irq_attach(virtio_device_t *device, irq_handler_t handler, void *cont
 	uint8_t line = device->pci.interrupt_line;
 
 	if (line >= 16U) {
-		kprintf("virtio_pci_irq_attach: no usable interrupt line (%u), polling\n", (unsigned int)line);
+		kprintf("no usable interrupt line (%u), polling\n", (unsigned int)line);
 		return true;
 	}
 
 	if (!irq_register(line, handler, context)) {
-		kprintf("virtio_pci_irq_attach: irq_register(%u) refused, polling\n", (unsigned int)line);
+		kprintf("irq_register(%u) refused, polling\n", (unsigned int)line);
 		return true;
 	}
 
 	if (pic_set_level_triggered != 0 && !pic_set_level_triggered(line, true)) {
-		kprintf("virtio_pci_irq_attach: line %u stays edge triggered\n", (unsigned int)line);
+		kprintf("line %u stays edge triggered\n", (unsigned int)line);
 	}
 
 	if (pic_unmask != 0) pic_unmask(line);
 
 	g_virtio_pci_irq_bound++;
 	device->irq_bound = true;
-	kprintf("virtio_pci_irq_attach: handler chained on IRQ %u\n", (unsigned int)line);
+	kprintf("handler chained on IRQ %u\n", (unsigned int)line);
 	return true;
 }
 
@@ -731,7 +731,7 @@ virtio_pci_probe(const pci_device_t *pci, virtio_device_t *device)
 		const pci_bar_t *bar = &pci->bars[0];
 
 		if (!bar->valid || !bar->io || bar->base == 0ULL || bar->base > 0xFFFFULL) {
-			kprintf("virtio_pci_probe: legacy device %x:%x has no I/O BAR0\n", (unsigned int)pci->vendor_id,
+			kprintf("legacy device %x:%x has no I/O BAR0\n", (unsigned int)pci->vendor_id,
 					(unsigned int)pci->device_id);
 			return false;
 		}
@@ -791,7 +791,7 @@ virtio_pci_attach_early(uint32_t device_id, const virtio_probe_policy_t *policy)
 
 		kputs("virtio_pci_attach_early: ");
 		pci_print_location(pci);
-		kprintf(" device ID %u via %s, irq line %u\n", device.device_id, device.ops->name,
+		IOLog(" device ID %u via %s, irq line %u\n", device.device_id, device.ops->name,
 				(unsigned int)pci->interrupt_line);
 
 		g_virtio_pci_early[g_virtio_pci_early_count++] = pci;
@@ -817,7 +817,7 @@ virtio_pci_scan(const platform_t *platform, const virtio_probe_policy_t *policy)
 
 		kputs("virtio_pci_scan: ");
 		pci_print_location(pci);
-		kprintf(" device ID %u via %s, irq line %u\n", device.device_id, device.ops->name,
+		IOLog(" device ID %u via %s, irq line %u\n", device.device_id, device.ops->name,
 				(unsigned int)pci->interrupt_line);
 
 		if (!virtio_bind_device(&device, policy)) return false;

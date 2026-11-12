@@ -193,10 +193,10 @@ i386_gdt_init(void)
 		: "m"(g_gdt_pointer[0])
 		: "eax", "memory");
 
-	kprintf("i386_gdt_init: found %u descriptors at address %p.\n", GDT_ENTRY_COUNT, (void *)g_gdt[0]);
+	kprintf("found %u descriptors at address %p.\n", GDT_ENTRY_COUNT, (void *)g_gdt[0]);
 
-	kprintf("i386_gdt_init: main tss at address %p\n", (void *)&g_main_tss[0]);
-	kprintf("i386_gdt_init: double fault tss %p\n", (void *)&g_double_fault_tss[0]);
+	kprintf("main tss at address %p\n", (void *)&g_main_tss[0]);
+	kprintf("double fault tss %p\n", (void *)&g_double_fault_tss[0]);
 }
 
 void

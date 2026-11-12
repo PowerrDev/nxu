@@ -6,9 +6,9 @@
 # repository, `make image`) in two QEMUs whose serial1 ports listen on Unix
 # sockets, joined by that repository's tools/mailbox_link.py. Then:
 #
-#   1. waits for "tep_mailbox_test: protocol checks passed";
-#   2. stops tepOS and waits for "tep_mailbox_test: fail-closed check passed";
-#   3. restarts tepOS and waits for "tep_mailbox_test: passed" (up to a
+#   1. waits for "tep_mailbox_test_run: protocol checks passed";
+#   2. stops tepOS and waits for "tep_mailbox_test_run: fail-closed check passed";
+#   3. restarts tepOS and waits for "tep_mailbox_test_run: passed" (up to a
 #      minute of it is tepOS's passcode delay running out).
 #
 # Like tools/check.sh it builds against a scratch disk, so the tracked
@@ -141,15 +141,15 @@ start_tepos 1 || exit 1
 python3 "$TEP_DIR/tools/mailbox_link.py" --nxu "$NXU_SOCK" --tepos "$TEP_SOCK" 2>"$SCRATCH/link.log" &
 link_pid=$!
 
-wait_for "tep_mailbox_test: protocol checks passed" 180 || exit 1
+wait_for "tep_mailbox_test_run: protocol checks passed" 180 || exit 1
 echo "test_tep_mailbox: protocol checks passed; stopping tepOS"
 stop_tepos
 
-wait_for "tep_mailbox_test: fail-closed check passed" 60 || exit 1
+wait_for "tep_mailbox_test_run: fail-closed check passed" 60 || exit 1
 echo "test_tep_mailbox: fail-closed check passed; restarting tepOS"
 start_tepos 2 || exit 1
 
-wait_for "tep_mailbox_test: passed" 180 || exit 1
+wait_for "tep_mailbox_test_run: passed" 180 || exit 1
 
 # A QEMU that aborted would still have let earlier phases pass: check both are clean.
 if grep -v "terminating on signal" "$SCRATCH/nxu.stderr" "$TEP_LOG".*.stderr | grep -q .; then

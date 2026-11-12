@@ -383,16 +383,16 @@ cache_data_line_size(void)
 void
 cache_dump(void)
 {
-	kprintf("cache: instruction cache: %s\n", cache_instruction_enabled() ? "enabled" : "disabled");
-	kprintf("cache: data cache: %s\n", cache_data_enabled() ? "enabled" : "disabled");
+	kprintf("instruction cache: %s\n", cache_instruction_enabled() ? "enabled" : "disabled");
+	kprintf("data cache: %s\n", cache_data_enabled() ? "enabled" : "disabled");
 
 	if (!kconsole_verbose()) return;
 
-	kprintf("cache: CLIDR_EL1: %p\n", (void *)g_cache.clidr);
-	kprintf("cache: CTR_EL0: %p\n", (void *)g_cache.ctr);
-	kprintf("cache: instruction line size: %llu bytes\n", (unsigned long long)g_cache.instruction_line_size);
-	kprintf("cache: data line size: %llu bytes\n", (unsigned long long)g_cache.data_line_size);
-	kprintf("cache: SCTLR_EL1: %p\n", (void *)cache_read_sctlr());
+	kprintf("CLIDR_EL1: %p\n", (void *)g_cache.clidr);
+	kprintf("CTR_EL0: %p\n", (void *)g_cache.ctr);
+	kprintf("instruction line size: %llu bytes\n", (unsigned long long)g_cache.instruction_line_size);
+	kprintf("data line size: %llu bytes\n", (unsigned long long)g_cache.data_line_size);
+	kprintf("SCTLR_EL1: %p\n", (void *)cache_read_sctlr());
 }
 
 void

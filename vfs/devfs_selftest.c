@@ -119,7 +119,7 @@ static const devfs_operations_t g_selftest_cloner_ops = {.open = selftest_cloner
 static bool
 selftest_fail(const char *what)
 {
-	kprintf("devfs_self_test: FAILED: %s\n", what);
+	kprintf_for(devfs_self_test, "FAILED: %s\n", what);
 	return false;
 }
 
@@ -139,8 +139,20 @@ selftest_attributes_are(uint32_t uid, uint32_t gid, uint32_t mode)
 	return match;
 }
 
+static bool devfs_self_test_run(void);
+
 bool
 devfs_self_test(void)
+{
+	devfs_announce_registrations(false);
+	bool passed = devfs_self_test_run();
+	devfs_announce_registrations(true);
+	if (passed) kprintf("passed\n");
+	return passed;
+}
+
+static bool
+devfs_self_test_run(void)
 {
 	uint32_t baseline = devfs_device_count();
 	vnode_t vnode;
@@ -238,6 +250,5 @@ devfs_self_test(void)
 
 	if (devfs_device_count() != baseline) return selftest_fail("device count after the test");
 
-	kputln("devfs_self_test: passed");
 	return true;
 }

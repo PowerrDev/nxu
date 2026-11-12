@@ -216,7 +216,7 @@ acpi_scan(mp_table_t *table)
 				table->cpu_count < MP_TABLE_MAX_CPUS) {
 				table->cpus[table->cpu_count++].apic_id = (uint8_t)apic_id;
 			} else if ((flags & ACPI_MADT_LOCAL_APIC_ENABLED) != 0U && apic_id > 255U) {
-				kprintf("NxuACPIPlatform: x2APIC id=%u exceeds this kernel's xAPIC support\n", apic_id);
+				IOLog("NxuACPIPlatform: x2APIC id=%u exceeds this kernel's xAPIC support\n", apic_id);
 			}
 		}
 
@@ -233,11 +233,11 @@ acpi_scan(mp_table_t *table)
 
 	table->lapic_physical = lapic_physical;
 
-	kprintf("NxuACPIPlatform: MADT lists %u CPU(s), Local APIC at phys 0x%x\n", table->cpu_count,
+	IOLog("NxuACPIPlatform: MADT lists %u CPU(s), Local APIC at phys 0x%x\n", table->cpu_count,
 			table->lapic_physical);
 
 	for (uint32_t index = 0U; index < table->cpu_count; index++) {
-		kprintf("NxuACPIPlatform: processor apic_id=%u\n", table->cpus[index].apic_id);
+		IOLog("NxuACPIPlatform: processor apic_id=%u\n", table->cpus[index].apic_id);
 	}
 
 	/*
@@ -264,33 +264,33 @@ mp_table_scan(mp_table_t *table)
 	const mp_floating_pointer_t *floating_pointer = mp_find_floating_pointer();
 
 	if (floating_pointer == 0) {
-		kputln("mp_table_scan: no MP floating pointer structure found");
+		kprintf("no MP floating pointer structure found\n");
 		return false;
 	}
 
-	kprintf("mp_table_scan: floating pointer at phys 0x%x, spec 1.%u\n",
+	kprintf("floating pointer at phys 0x%x, spec 1.%u\n",
 			(uint32_t)((uintptr_t)floating_pointer - VMM_HIGHER_HALF_BASE), floating_pointer->spec_rev);
 
 	if (floating_pointer->feature[0] != 0U || floating_pointer->config_physical == 0U) {
 		/* MP 1.1's "default configuration" case: no config table to read the real topology from. */
-		kputln("mp_table_scan: default configuration (no MP configuration table), treating as uniprocessor");
+		kprintf("default configuration (no MP configuration table), treating as uniprocessor\n");
 		return false;
 	}
 
 	const mp_config_header_t *header = (const mp_config_header_t *)mp_direct_checked(floating_pointer->config_physical);
 
 	if (header == 0 || memcmp(header->signature, "PCMP", 4U) != 0) {
-		kputln("mp_table_scan: MP configuration table outside the direct map or signature mismatch");
+		kprintf("MP configuration table outside the direct map or signature mismatch\n");
 		return false;
 	}
 
 	if (header->length < (uint16_t)sizeof(*header) || header->length > (uint16_t)MP_CONFIG_LENGTH_MAX) {
-		kputln("mp_table_scan: MP configuration table implausible length");
+		kprintf("MP configuration table implausible length\n");
 		return false;
 	}
 
 	if (mp_checksum(header, header->length) != 0U) {
-		kputln("mp_table_scan: MP configuration table checksum mismatch");
+		kprintf("MP configuration table checksum mismatch\n");
 		return false;
 	}
 
@@ -327,10 +327,10 @@ mp_table_scan(mp_table_t *table)
 
 	}
 
-	kprintf("mp_table_scan: %u CPU(s), Local APIC at phys 0x%x\n", table->cpu_count, table->lapic_physical);
+	kprintf("%u CPU(s), Local APIC at phys 0x%x\n", table->cpu_count, table->lapic_physical);
 
 	for (uint32_t index = 0U; index < table->cpu_count; index++) {
-		kprintf("NxuACPIPlatform: processor apic_id=%u%s\n", table->cpus[index].apic_id,
+		IOLog("NxuACPIPlatform: processor apic_id=%u%s\n", table->cpus[index].apic_id,
 				table->cpus[index].is_bsp ? " (BSP)" : "");
 	}
 

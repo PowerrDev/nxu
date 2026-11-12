@@ -310,7 +310,7 @@ pmap_init(void)
 	if (g_pmap.initialized) return false;
 
 	if (!pmap_cpu_protection_valid()) {
-		kputln("pmap_init: paging, write protect or PAE is not enabled");
+		kprintf("paging, write protect or PAE is not enabled\n");
 		return false;
 	}
 
@@ -319,14 +319,14 @@ pmap_init(void)
 	g_pmap.directory_physical = (uint32_t)((uintptr_t)i386_boot_pdpt - VMM_HIGHER_HALF_BASE);
 
 	if (pmap_current_directory_physical() != g_pmap.directory_physical) {
-		kputln("pmap_init: CR3 is not the boot page directory");
+		kprintf("CR3 is not the boot page directory\n");
 		return false;
 	}
 
 	/* The boot mapping must be exactly the direct map: user half empty. */
 	for (uint32_t index = 0U; index < PMAP_KERNEL_FIRST_PDE; index++) {
 		if (directory[index] != 0U) {
-			kprintf("pmap_init: stray boot mapping in PDE %u\n", index);
+			kprintf("stray boot mapping in PDE %u\n", index);
 			directory[index] = 0U;
 		}
 	}
@@ -379,7 +379,7 @@ pmap_init(void)
 
 	g_pmap.initialized = true;
 
-	kprintf("pmap_init: kernel directory at phys 0x%x, image %u slice(s), %u table page(s), direct map 0x%x-0x%x\n",
+	kprintf("kernel directory at phys 0x%x, image %u slice(s), %u table page(s), direct map 0x%x-0x%x\n",
 			g_pmap.directory_physical, image_slices, g_pmap.table_count, (uint32_t)VMM_HIGHER_HALF_BASE,
 			(uint32_t)(VMM_HIGHER_HALF_BASE + VM_DIRECT_MAP_SIZE));
 
@@ -516,12 +516,12 @@ pmap_mmio_pages_in_use(void)
 void
 pmap_dump(void)
 {
-	kprintf("pmap: PAE enabled, NX %s, root pages %u\n", pmap_nx_enabled() ? "enabled" : "unavailable",
+	kprintf("PAE enabled, NX %s, root pages %u\n", pmap_nx_enabled() ? "enabled" : "unavailable",
 			PMAP_ROOT_PAGES);
-	kprintf("pmap: kernel directory phys 0x%x, %u kernel table page(s), mmio window 0x%x-0x%x, %u page(s) in use\n",
+	kprintf("kernel directory phys 0x%x, %u kernel table page(s), mmio window 0x%x-0x%x, %u page(s) in use\n",
 			pmap_kernel_directory_physical(), g_pmap.table_count, (uint32_t)VM_MMIO_BASE,
 			(uint32_t)(VM_MMIO_BASE + (uint32_t)VM_MMIO_SIZE - 1U), g_pmap.mmio_pages_in_use);
-	kprintf("pmap: cr0=0x%x cr3=0x%x cr4=0x%x, image 0x%x-0x%x (text 0x%x, data 0x%x)\n", pmap_read_cr0(),
+	kprintf("cr0=0x%x cr3=0x%x cr4=0x%x, image 0x%x-0x%x (text 0x%x, data 0x%x)\n", pmap_read_cr0(),
 			pmap_read_cr3(), pmap_read_cr4(), (uint32_t)(uintptr_t)__kernel_start, (uint32_t)(uintptr_t)__kernel_end,
 			(uint32_t)(uintptr_t)__text_start, (uint32_t)(uintptr_t)__data_start);
 }

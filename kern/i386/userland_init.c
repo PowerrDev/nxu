@@ -92,11 +92,11 @@ userland_run_process_test(const char *name)
 	else if (strcmp(name, "spawn") == 0)
 		ok = spawn_process_test();
 	else {
-		kprintf("i386_init_userland: unknown process-test \"%s\"\n", name);
+		kprintf("unknown process-test \"%s\"\n", name);
 		return false;
 	}
 
-	kprintf("i386_init_userland: %s process test %s\n", name, ok ? "passed" : "FAILED");
+	kprintf("%s process test %s\n", name, ok ? "passed" : "FAILED");
 	return ok;
 }
 
@@ -107,27 +107,27 @@ userland_spawn_bootd(void)
 	bool recovery = boot_mode_is_triage_os();
 	const char *path = recovery ? boot_update_recovery_program() : USERLAND_BOOTD_PATH;
 	const char *name = recovery ? "triageOS" : "bootd";
-	kprintf("i386_init_userland: loading %s as PID 1\n", path);
+	kprintf("loading %s as PID 1\n", path);
 
 	loader_status_t status = loader_spawn(proc_kernel(), path, name, &g_boot_process);
 
 	if (status != LOADER_STATUS_OK && !recovery) {
-		kprintf("i386_init_userland: primary bootd unavailable: %s\n", loader_status_name(status));
+		kprintf("primary bootd unavailable: %s\n", loader_status_name(status));
 		status = loader_spawn(proc_kernel(), USERLAND_BOOTD_RECOVERY_PATH, "bootd", &g_boot_process);
 	}
 
 	if (status != LOADER_STATUS_OK || g_boot_process == 0) {
-		kprintf("i386_init_userland: PID 1 launch failed: %s\n", loader_status_name(status));
+		kprintf("PID 1 launch failed: %s\n", loader_status_name(status));
 		g_boot_process = 0;
 		return false;
 	}
 
 	if (g_boot_process->p_ident.pid != 1U) {
-		kprintf("i386_init_userland: bootd received PID %u, expected 1\n", (unsigned)g_boot_process->p_ident.pid);
+		kprintf("bootd received PID %u, expected 1\n", (unsigned)g_boot_process->p_ident.pid);
 		return false;
 	}
 
-	kprintf("i386_init_userland: bootd PID %u ready for scheduler dispatch\n", (unsigned)g_boot_process->p_ident.pid);
+	kprintf("bootd PID %u ready for scheduler dispatch\n", (unsigned)g_boot_process->p_ident.pid);
 	boot_update_watch_start();
 	return true;
 }
@@ -155,12 +155,12 @@ i386_init_userland(const i386_boot_info_t *boot)
 	bool selected_present = i386_boot_arg("test", selected, sizeof(selected));
 
 	if (selected_present && strcmp(selected, "userland") != 0 && strcmp(selected, "desktop") != 0) {
-		kputln("i386_init_userland: self-test run for another phase, userland launch skipped");
+		kprintf("self-test run for another phase, userland launch skipped\n");
 		return true;
 	}
 
 	if (block_device_count() == 0U) {
-		kputln("i386_init_userland: no block device, staying in kernel-only mode");
+		kprintf("no block device, staying in kernel-only mode\n");
 		return true;
 	}
 
@@ -191,27 +191,27 @@ i386_init_userland(const i386_boot_info_t *boot)
 
 		bool list_ok = btrfs_list_run(&list_request);
 
-		kprintf("i386_init_userland: btrfs list %s\n", list_ok ? "done" : "FAILED");
+		kprintf("btrfs list %s\n", list_ok ? "done" : "FAILED");
 		return list_ok;
 	}
 
 	if (!net_start()) {
-		kputln("network: worker initialization failed");
+		kprintf("worker initialization failed\n");
 		return false;
 	}
 
 	boot_mode_init();
 
-	kputln("i386_init_userland: mounting disk0 at /Volumes/mainOS");
+	kprintf("mounting disk0 at /Volumes/mainOS\n");
 
 	vfs_status_t mount_status = vfs_mount("ext4", boot_system_volume_device(), "/Volumes/mainOS");
 
 	if (mount_status != VFS_STATUS_OK) {
-		kprintf("i386_init_userland: ext4 mount failed: %s\n", vfs_status_name(mount_status));
+		kprintf("ext4 mount failed: %s\n", vfs_status_name(mount_status));
 		boot_mount_recovery_volume();
 		if (boot_recovery_volume_available()) {
 			boot_mode_force_recovery();
-			kputln("boot: system mount failed; starting the recovery partition");
+			kprintf("system mount failed; starting the recovery partition\n");
 			return userland_spawn_bootd();
 		}
 
@@ -222,7 +222,7 @@ i386_init_userland(const i386_boot_info_t *boot)
 	if (!boot_update_install()) return false;
 
 	if (!boot_update_is_active() && i386_startup_tests_enabled() && !i386_startup_storage_test()) {
-		kputln("i386_startup: storage self-tests failed");
+		kprintf("storage self-tests failed\n");
 		return false;
 	}
 
@@ -249,7 +249,7 @@ i386_init_userland(const i386_boot_info_t *boot)
 	if (i386_boot_arg("sound-test", sound_arg, sizeof(sound_arg))) {
 		bool sound_ok = sound_test_run();
 
-		kprintf("i386_init_userland: sound-test %s\n", sound_ok ? "passed" : "FAILED");
+		kprintf("sound-test %s\n", sound_ok ? "passed" : "FAILED");
 		return sound_ok;
 	}
 
@@ -259,7 +259,7 @@ i386_init_userland(const i386_boot_info_t *boot)
 	if (i386_boot_arg("fs-test", fs_mode, sizeof(fs_mode))) {
 		bool fs_ok = i386_fs_test_run(fs_mode);
 
-		kprintf("i386_init_userland: fs-test %s %s\n", fs_mode, fs_ok ? "passed" : "FAILED");
+		kprintf("fs-test %s %s\n", fs_mode, fs_ok ? "passed" : "FAILED");
 		return fs_ok;
 	}
 
@@ -273,13 +273,13 @@ i386_init_userland(const i386_boot_info_t *boot)
 	if (i386_boot_arg("btrfs-test", btrfs_spec, sizeof(btrfs_spec))) {
 		bool btrfs_ok = btrfs_selftest_run(btrfs_spec);
 
-		kprintf("i386_init_userland: btrfs-test %s\n", btrfs_ok ? "passed" : "FAILED");
+		kprintf("btrfs-test %s\n", btrfs_ok ? "passed" : "FAILED");
 		return btrfs_ok;
 	}
 
 	/* Recovery selection uses raw input before any desktop service owns it. */
 	if (!boot_mode_is_triage_os() && keyboard_is_present()) {
-		kputln("i386_init_userland: hold Shift+R for recovery (3 seconds)");
+		kprintf("hold Shift+R for recovery (3 seconds)\n");
 		uint64_t deadline = timer_get_microseconds() + 3000000ULL;
 		while (timer_get_microseconds() < deadline && !boot_mode_is_triage_os()) {
 			virtio_input_service();
@@ -317,7 +317,7 @@ i386_init_userland(const i386_boot_info_t *boot)
 		}
 
 		if (!userland_spawn_bootd())
-			kputln("i386_init_userland: the desktop starts without bootd, so without the Dock");
+			kprintf("the desktop starts without bootd, so without the Dock\n");
 
 		/*
 		 * The boot chime, as on arm64: the display is about to show the
@@ -328,7 +328,7 @@ i386_init_userland(const i386_boot_info_t *boot)
 		boot_chime_start();
 
 		if (!windowserver_bootstrap()) {
-			kputln("i386_init_userland: WindowServer bootstrap failed");
+			kprintf("WindowServer bootstrap failed\n");
 			return false;
 		}
 
@@ -377,13 +377,13 @@ i386_init_run(const i386_boot_info_t *boot)
 
 	for (;;) {
 		if (!sched_yield()) {
-			kputln("i386_init_run: userspace dispatch failed");
+			kprintf("userspace dispatch failed\n");
 			return false;
 		}
 
 		if (limit_us != 0ULL && timer_get_microseconds() - start_us >= limit_us) break;
 	}
 
-	kputln("i386_init_run: run time elapsed, leaving the scheduler");
+	kprintf("run time elapsed, leaving the scheduler\n");
 	return true;
 }

@@ -144,25 +144,25 @@ x86_read_cr8(void)
 static void
 x86_trap_error_description(uint64_t error, uintptr_t fault_address)
 {
-	kprintf("x86_trap_handler: page address 0x%llx\n", (unsigned long long)fault_address);
-	kprintf("x86_trap_handler: access %s by %s code\n",
+	kprintf("page address 0x%llx\n", (unsigned long long)fault_address);
+	kprintf("access %s by %s code\n",
 			(error & X86_PF_INSTRUCTION) != 0ULL ? "instruction fetch" :
 			((error & X86_PF_WRITE) != 0ULL ? "write" : "read"),
 			(error & X86_PF_USER) != 0ULL ? "user" : "supervisor");
-	kprintf("x86_trap_handler: page status %s\n",
+	kprintf("page status %s\n",
 			(error & X86_PF_PRESENT) != 0ULL ? "protection violation" : "not present");
 
 	if ((error & X86_PF_RESERVED) != 0ULL) {
-		kputln("x86_trap_handler: reserved paging-structure bit was set");
+		kprintf("reserved paging-structure bit was set\n");
 	}
 	if ((error & X86_PF_PROTECTION_KEY) != 0ULL) {
-		kputln("x86_trap_handler: protection-key violation");
+		kprintf("protection-key violation\n");
 	}
 	if ((error & X86_PF_SHADOW_STACK) != 0ULL) {
-		kputln("x86_trap_handler: shadow-stack access violation");
+		kprintf("shadow-stack access violation\n");
 	}
 	if ((error & X86_PF_SGX) != 0ULL) {
-		kputln("x86_trap_handler: SGX access violation");
+		kprintf("SGX access violation\n");
 	}
 }
 
@@ -176,14 +176,14 @@ static void
 x86_trap_selector_description(uint64_t error)
 {
 	if ((error & 0xFFFCULL) == 0ULL) {
-		kputln("x86_trap_handler: selector fault has no selector index");
+		kprintf("selector fault has no selector index\n");
 		return;
 	}
 
-	kprintf("x86_trap_handler: selector index %llu in %s\n",
+	kprintf("selector index %llu in %s\n",
 			(unsigned long long)((error >> 3U) & 0x1FFFULL),
 			(error & 0x02ULL) != 0ULL ? "IDT" : ((error & 0x04ULL) != 0ULL ? "LDT" : "GDT"));
-	kprintf("x86_trap_handler: selector fault %s\n",
+	kprintf("selector fault %s\n",
 			(error & 0x01ULL) != 0ULL ? "was raised by an external event" : "was raised internally");
 }
 
@@ -213,7 +213,7 @@ x86_trap_print_flags(uint64_t flags)
 			continue;
 		}
 
-		kprintf("%s%s", first ? "" : " ", names[index].name);
+		IOLog("%s%s", first ? "" : " ", names[index].name);
 		first = false;
 	}
 	kputc(']');
@@ -248,17 +248,17 @@ x86_trap_panic(const x86_trap_frame_t *frame, uintptr_t fault_address)
 	g_x86_trap_panicking = true;
 
 	kputc('\n');
-	kprintf("x86_trap_handler: fatal vector %llu %s\n", (unsigned long long)frame->vector,
+	kprintf("fatal vector %llu %s\n", (unsigned long long)frame->vector,
 			x86_trap_name(frame->vector));
-	kprintf("x86_trap_handler: RIP 0x%016llx CS 0x%llx RFLAGS 0x%016llx ",
+	kprintf("RIP 0x%016llx CS 0x%llx RFLAGS 0x%016llx ",
 			(unsigned long long)frame->rip, (unsigned long long)frame->cs, (unsigned long long)frame->rflags);
 	x86_trap_print_flags(frame->rflags);
 	kputc('\n');
-	kprintf("x86_trap_handler: RSP 0x%016llx SS 0x%llx\n", (unsigned long long)frame->rsp,
+	kprintf("RSP 0x%016llx SS 0x%llx\n", (unsigned long long)frame->rsp,
 			(unsigned long long)frame->ss);
 
 	if (x86_trap_has_error_code(frame->vector)) {
-		kprintf("x86_trap_handler: error code 0x%016llx\n", (unsigned long long)frame->error_code);
+		kprintf("error code 0x%016llx\n", (unsigned long long)frame->error_code);
 	}
 	if (frame->vector == X86_TRAP_PAGE_FAULT) {
 		x86_trap_error_description(frame->error_code, fault_address);
@@ -266,22 +266,22 @@ x86_trap_panic(const x86_trap_frame_t *frame, uintptr_t fault_address)
 		x86_trap_selector_description(frame->error_code);
 	}
 
-	kprintf("x86_trap_handler: RAX 0x%016llx RBX 0x%016llx RCX 0x%016llx RDX 0x%016llx\n",
+	kprintf("RAX 0x%016llx RBX 0x%016llx RCX 0x%016llx RDX 0x%016llx\n",
 			(unsigned long long)frame->rax, (unsigned long long)frame->rbx, (unsigned long long)frame->rcx,
 			(unsigned long long)frame->rdx);
-	kprintf("x86_trap_handler: RSI 0x%016llx RDI 0x%016llx RBP 0x%016llx\n",
+	kprintf("RSI 0x%016llx RDI 0x%016llx RBP 0x%016llx\n",
 			(unsigned long long)frame->rsi, (unsigned long long)frame->rdi, (unsigned long long)frame->rbp);
-	kprintf("x86_trap_handler: R8  0x%016llx R9  0x%016llx R10 0x%016llx R11 0x%016llx\n",
+	kprintf("R8  0x%016llx R9  0x%016llx R10 0x%016llx R11 0x%016llx\n",
 			(unsigned long long)frame->r8, (unsigned long long)frame->r9, (unsigned long long)frame->r10,
 			(unsigned long long)frame->r11);
-	kprintf("x86_trap_handler: R12 0x%016llx R13 0x%016llx R14 0x%016llx R15 0x%016llx\n",
+	kprintf("R12 0x%016llx R13 0x%016llx R14 0x%016llx R15 0x%016llx\n",
 			(unsigned long long)frame->r12, (unsigned long long)frame->r13, (unsigned long long)frame->r14,
 			(unsigned long long)frame->r15);
-	kprintf("x86_trap_handler: CR0 0x%016llx CR2 0x%016llx CR3 0x%016llx CR4 0x%016llx CR8 0x%llx\n",
+	kprintf("CR0 0x%016llx CR2 0x%016llx CR3 0x%016llx CR4 0x%016llx CR8 0x%llx\n",
 			(unsigned long long)x86_read_cr0(), (unsigned long long)fault_address,
 			(unsigned long long)x86_read_cr3(), (unsigned long long)x86_read_cr4(),
 			(unsigned long long)x86_read_cr8());
-	kputln("x86_trap_handler: system halted");
+	kprintf("system halted\n");
 
 	x86_trap_halt();
 }
@@ -303,7 +303,7 @@ x86_trap_handler(x86_trap_frame_t *frame)
 
 	if (frame->vector == X86_TRAP_BREAKPOINT) {
 		g_x86_breakpoint_count++;
-		kprintf("x86_trap_handler: breakpoint %llu at 0x%llx\n",
+		kprintf("breakpoint %llu at 0x%llx\n",
 				(unsigned long long)g_x86_breakpoint_count, (unsigned long long)frame->rip);
 		return;
 	}

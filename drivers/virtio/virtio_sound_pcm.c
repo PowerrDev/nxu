@@ -298,7 +298,7 @@ virtio_snd_stream_op(virtio_snd_device_t *device, virtio_snd_pcm_op_t op)
 		return error;
 	}
 
-	kverbosef("virtio_snd_stream_op: stream %u: %s, %s to %s\n", stream, virtio_snd_pcm_op_name(op),
+	kverbosef("stream %u: %s, %s to %s\n", stream, virtio_snd_pcm_op_name(op),
 			  virtio_snd_pcm_state_name(playback->state), virtio_snd_pcm_state_name(next));
 	playback->state = next;
 	return VIRTIO_SND_E_NONE;
@@ -478,7 +478,7 @@ virtio_snd_start(virtio_snd_device_t *device)
 
 	if (error == VIRTIO_SND_E_NONE) {
 		device->playback.start_us = timer_get_microseconds();
-		kverbosef("virtio_snd_start: stream %u started with %u period(s) queued\n", device->playback_stream,
+		kverbosef("stream %u started with %u period(s) queued\n", device->playback_stream,
 				  device->playback.queued);
 	}
 

@@ -63,22 +63,22 @@ socket_process_test(void)
 	uint64_t exit_client = 0ULL;
 
 	if (!socket_process_test_wait(proc_kernel(), proc_server->p_ident.pid, &exit_server)) {
-		kputln("socket_process_test: sockettest_server did not exit in time");
+		kprintf("sockettest_server did not exit in time\n");
 		return false;
 	}
 
 	if (!socket_process_test_wait(proc_kernel(), proc_client->p_ident.pid, &exit_client)) {
-		kputln("socket_process_test: sockettest_client did not exit in time");
+		kprintf("sockettest_client did not exit in time\n");
 		return false;
 	}
 
 	if (exit_server != 0ULL || exit_client != 0ULL) {
-		kprintf("socket_process_test: nonzero exit status (server=%llu client=%llu)\n", (unsigned long long)exit_server,
+		kprintf("nonzero exit status (server=%llu client=%llu)\n", (unsigned long long)exit_server,
 				(unsigned long long)exit_client);
 		return false;
 	}
 
-	kputln("socket_process_test: two-process streaming socket round trip passed (listen, connect, accept, stream > "
+	kprintf("two-process streaming socket round trip passed (listen, connect, accept, stream > \n"
 		   "4096 bytes, reply, reap)");
 	return true;
 }

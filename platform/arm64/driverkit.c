@@ -104,8 +104,8 @@ driverkit_init(driverkit_config_t *config)
 	if (config == 0) return false;
 
 	gic_init();
-	kputln("kern_init: GICv3 initialized");
-	kprintf("IOPlatformCPU: cpu0 MPIDR 0x%llx, GICv3 redistributor 0, enabled\n",
+	kprintf("GICv3 initialized\n");
+	IOLog("IOPlatformCPU: cpu0 MPIDR 0x%llx, GICv3 redistributor 0, enabled\n",
 			(unsigned long long)arm64_read_mpidr_el1());
 	(void)ioreg_add(ioreg_family_platform(), "IOPlatformCPU", "IOPlatformCPU");
 
@@ -116,7 +116,7 @@ driverkit_init(driverkit_config_t *config)
 	if (!input_init()) return driverkit_fail("input: core initialization failed");
 	kputln("IOHIDSystem: input core online");
 
-  kputln("keyboard_init: initializating keyboard.");
+  kprintf("initializating keyboard.\n");
 	if (!keyboard_init()) return driverkit_fail("keyboard: initialization failed");
 	kputln("IOHIDSystem: keyboard driver matched");
 
@@ -124,19 +124,19 @@ driverkit_init(driverkit_config_t *config)
 	kputln("IOBootMode: recovery key watch armed");
 	(void)ioreg_add(ioreg_family_platform(), "IOBootMode", "IOBootMode");
 
-  kputln("mouse_init: initializating mouse.");
+  kprintf("initializating mouse.\n");
 	if (!mouse_init()) return driverkit_fail("VirtIOMouseFamily: initialization failed");
 	kputln("IOHIDSystem: mouse driver matched");
 
-  kputln("block_device_init: initializating block device.");
+  kprintf("initializating block device.\n");
 	if (!block_device_init()) return driverkit_fail("VirtIOBlockFamily: initialization failed");
 	kputln("IOStorageFamily: block device core online");
 
-  kputln("display_init: initializating display.");
+  kprintf("initializating display.\n");
 	if (!display_init()) return driverkit_fail("IODisplayFamily: core initialization failed");
 	kputln("IOGraphicsFamily: display core online");
 
-  kputln("rtc_init: initializating real-time clock.");
+  kprintf("initializating real-time clock.\n");
 	if (!rtc_init()) return driverkit_fail("rtc_init: initialization failed");
 	kputln("IORTC: real-time clock online");
 	(void)ioreg_add(ioreg_family_platform(), "IORTC", "IORTC");
@@ -167,7 +167,7 @@ driverkit_init(driverkit_config_t *config)
 	if (config->block_enabled && block_device_count() == 0U)
 		return driverkit_fail("VirtIOBlockFamily: VirtIO block device not found");
 
-	if (!config->input_enabled) kputln("input: disabled by boot-args");
+	if (!config->input_enabled) kprintf("disabled by boot-args\n");
 	if (!config->block_enabled) kputln("VirtIOBlockFamily: disabled by boot-args");
 	if (!config->gpu_enabled) kputln("DriverKitDisplayFamily: VirtIO GPU disabled by boot-args");
 	if (!config->sound_enabled) kputln("DriverKitAudioFamily: VirtIO Sound disabled by boot-args");

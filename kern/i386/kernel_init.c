@@ -36,30 +36,30 @@ static const char g_kernel_test_message[] = "NXU i386 ramfs round trip";
 bool
 i386_init_kernel(const i386_boot_info_t *boot)
 {
-  kputln("heap_init: initializing heap");
+  kprintf("initializing heap\n");
 
   /* The VM phase leaves the heap to this phase. A second init is harmless on i386. */
 	if (!heap_init()) {
-		kputln("heap_init: failed to initialize heap");
+		kprintf_for(heap_init, "failed to initialize heap\n");
 		return false;
 	}
 
-	kputln("heap_init: kernel heap ready");
+	kprintf("kernel heap ready\n");
 	heap_dump();
 
-  kputln("nvram_bootstrap_bootargs: initializing nvram_bootstrap_bootargs");
+  kprintf("initializing nvram_bootstrap_bootargs\n");
 	/*
 	 * x86 has no device tree: the Multiboot command line is the boot-args
 	 * source. An empty line is still a valid (empty) boot-args view.
 	 */
 	if (!nvram_bootstrap_bootargs(boot->cmdline != 0 ? boot->cmdline : "")) {
-		kputln("nvram_bootstrap_bootargs: nvram_bootstrap_bootargs failed");
+		kprintf("nvram_bootstrap_bootargs failed\n");
 		return false;
 	}
 
-  kputln("boot_args_init: initializing boot args");
+  kprintf("initializing boot args\n");
 	if (!boot_args_init()) {
-		kputln("boot_args_init: boot_args_init failed");
+		kprintf("boot_args_init failed\n");
 		return false;
 	}
 
@@ -69,56 +69,56 @@ i386_init_kernel(const i386_boot_info_t *boot)
 	 */
 	(void)i386_init_display(boot);
 
-  kputln("nxu_acpi_discover: discovering ACPI");
+  kprintf("discovering ACPI\n");
 	nxu_acpi_discover(boot);
 
-  kputln("ipc_init: initializing XPC");
+  kprintf("initializing XPC\n");
 	ipc_init();
-	kputln("ipc_init: NXPC kernel transport ready");
+	kprintf("NXPC kernel transport ready\n");
 
-  kputln("proc_bootstrap: bootstrapping process manager");
+  kprintf("bootstrapping process manager\n");
 	if (!proc_bootstrap() || proc_kernel() == 0) {
-		kputln("proc_bootstrap: process manager unavailable");
+		kprintf("process manager unavailable\n");
 		return false;
 	}
 
-	kprintf("proc_bootstrap: process manager ready, kernel PID %u\n", (unsigned)proc_kernel()->p_ident.pid);
+	kprintf("process manager ready, kernel PID %u\n", (unsigned)proc_kernel()->p_ident.pid);
 
-  kputln("vfs_init: initializing virtual filesystem");
-  kputln("ramfs_register: registering ram filesystem");
-  kputln("ext4_register: registering ext4");
-  kputln("devfs_register: registering devfs");
+  kprintf("initializing virtual filesystem\n");
+  kprintf("registering ram filesystem\n");
+  kprintf("registering ext4\n");
+  kprintf("registering devfs\n");
 	if (!vfs_init() || !ramfs_register() || !ext4_register() || !devfs_register()) {
-		kputln("vfs_init: vfs registration failed");
+		kprintf("vfs registration failed\n");
 		return false;
 	}
 
 	vfs_status_t status = vfs_mount("ramfs", 0, "/");
 
 	if (status != VFS_STATUS_OK) {
-		kprintf("vfs_init: root ramfs mount failed: %s\n", vfs_status_name(status));
+		kprintf("root ramfs mount failed: %s\n", vfs_status_name(status));
 		return false;
 	}
 
-  kputln("vfs_mkdir: creating volumes directory");
+  kprintf("creating volumes directory\n");
 	status = vfs_mkdir("/Volumes");
 
-  kputln("vfs_mkdir: creating root directory");
+  kprintf("creating root directory\n");
 	if (status == VFS_STATUS_OK) status = vfs_mkdir("/Volumes/mainOS");
 
 	if (status != VFS_STATUS_OK) {
-		kprintf("vfs_mkdir: /Volumes/mainOS mountpoint creation failed: %s\n", vfs_status_name(status));
+		kprintf("/Volumes/mainOS mountpoint creation failed: %s\n", vfs_status_name(status));
 		return false;
 	}
 
-  kputln("vfs_mount: mounting devfs at /dev");
+  kprintf("mounting devfs at /dev\n");
 	if (vfs_mkdir("/dev") != VFS_STATUS_OK || vfs_mount("devfs", 0, "/dev") != VFS_STATUS_OK) {
-		kputln("vfs_mount: devfs mount at /dev failed");
+		kprintf("devfs mount at /dev failed\n");
 		return false;
 	}
 
-	kputln("vfs_mount: ramfs mounted at /, /Volumes/mainOS mountpoint created");
-	kputln("vfs_mount: devfs mounted at /dev");
+	kprintf("ramfs mounted at /, /Volumes/mainOS mountpoint created\n");
+	kprintf("devfs mounted at /dev\n");
 
 	if (!devfs_self_test()) return false;
 	vfs_dump();
@@ -163,32 +163,32 @@ i386_init_kernel_selftest(const i386_boot_info_t *boot)
 	bool ok = true;
 
 	if (!ipc_self_test()) {
-		kputln("ipc_self_test: FAIL NXPC transport self-test");
+		kprintf("FAIL NXPC transport self-test\n");
 		ok = false;
 	}
 
 	if (!ipc_space_self_test()) {
-		kputln("ipc_space_self_test: FAIL per-process name table self-test");
+		kprintf("FAIL per-process name table self-test\n");
 		ok = false;
 	}
 
 	if (!kernel_test_ramfs()) {
-		kputln("kernel_test_ramfs: FAIL ramfs write/read round trip");
+		kprintf("FAIL ramfs write/read round trip\n");
 		ok = false;
 	}
 
 	/* The boot-args view must be the Multiboot command line we were given. */
 	if (boot->cmdline != 0 && (strlen(boot_args_raw()) < strlen(boot->cmdline) ||
 							   memcmp(boot_args_raw(), boot->cmdline, strlen(boot->cmdline)) != 0)) {
-		kputln("boot_args_raw: FAIL boot-args do not carry the command line");
+		kprintf("FAIL boot-args do not carry the command line\n");
 		ok = false;
 	}
 
 	if (ok) {
-    kputln("ipc_self_test: XPC ok");
+    kprintf("XPC ok\n");
     kputln("ipc_space_self_test name tables ok");
-    kputln("kernel_test_ramfs: ramfs ok");
-    kputln("boot_args_raw: boot-args ok");
+    kprintf("ramfs ok\n");
+    kprintf("boot-args ok\n");
   } 
 
 	return ok;

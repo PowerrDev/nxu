@@ -398,7 +398,7 @@ btrfs_mount_op(filesystem_t filesystem, block_device_t device, mount_t mount)
 	data->fs = btrfs_fs_open_devices(&env, data->reader, data->device_count, &open_options, &status);
 	if (data->fs == 0) {
 		btrfs_destroy_mount(data);
-		kprintf("btrfs_mount_op: mount refused: %s\n", btrfs_status_name(status));
+		kprintf("mount refused: %s\n", btrfs_status_name(status));
 		return btrfs_mount_fail(status);
 	}
 
@@ -409,7 +409,7 @@ btrfs_mount_op(filesystem_t filesystem, block_device_t device, mount_t mount)
 	if (status == BTRFS_OK) status = btrfs_inode_read(data->fs, &subvol.tree, subvol.item.root_dirid, &root_inode);
 	if (status == BTRFS_OK && btrfs_inode_type(root_inode.item.mode) != BTRFS_S_IFDIR) status = BTRFS_ERR_CORRUPT;
 	if (status != BTRFS_OK) {
-		kprintf("btrfs_mount_op: cannot read the root directory: %s\n", btrfs_status_name(status));
+		kprintf("cannot read the root directory: %s\n", btrfs_status_name(status));
 		btrfs_destroy_mount(data);
 		return btrfs_mount_fail(status);
 	}
@@ -754,7 +754,7 @@ btrfs_dump(void)
 
 		if (data == 0 || !data->active) continue;
 
-		kprintf("btrfs_dump: mount %s, device %s, %u devices, %u resident vnodes\n", data->mount->m_path,
+		kprintf("mount %s, device %s, %u devices, %u resident vnodes\n", data->mount->m_path,
 				data->device->name, data->device_count, data->node_count);
 		btrfs_fs_describe(data->fs);
 	}

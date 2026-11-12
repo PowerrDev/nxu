@@ -148,6 +148,14 @@ devfs_activate_locked(devfs_node_t *node)
 			   devfs_node_id(node), node);
 }
 
+static bool g_devfs_announce = true;
+
+void
+devfs_announce_registrations(bool announce)
+{
+	g_devfs_announce = announce;
+}
+
 bool
 devfs_register_device(const char *name, const devfs_operations_t *operations, void *context)
 {
@@ -174,6 +182,9 @@ devfs_register_device(const char *name, const devfs_operations_t *operations, vo
 	}
 
 	nxu_spin_unlock(&g_devfs_lock);
+
+	if (node != 0 && g_devfs_announce) kprintf("/dev/%s registered\n", name);
+
 	return node != 0;
 }
 

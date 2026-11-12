@@ -58,7 +58,7 @@ sl_zalloc(size_t count, size_t size)
 
 #define SL_ALLOC(size) malloc(size)
 #define SL_FREE(pointer) free(pointer)
-#define SL_LOG(...) ((void)fprintf(stderr, __VA_ARGS__))
+#define SL_LOG(format, ...) ((void)fprintf(stderr, "%s: " format, __func__, ##__VA_ARGS__))
 #define SL_YIELD() (false)
 
 #elif defined(SL_USERLAND)

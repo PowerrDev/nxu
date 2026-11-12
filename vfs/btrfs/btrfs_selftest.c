@@ -91,7 +91,7 @@ static void
 st_fail(selftest_t *t, const char *path, const char *what, uint64_t got, uint64_t want)
 {
 	t->failures++;
-	kprintf("btrfs_selftest: FAIL %s: %s (got %llu, want %llu)\n", path, what, (unsigned long long)got,
+	IOLog("btrfs_selftest: FAIL %s: %s (got %llu, want %llu)\n", path, what, (unsigned long long)got,
 			(unsigned long long)want);
 }
 
@@ -572,7 +572,7 @@ st_run_fixture(const char *token, uint32_t device_index)
 	block_device_t device = block_device_get(device_index);
 
 	if (fixture == 0 || device == 0) {
-		kprintf("btrfs_selftest: FAIL %s: no expected listing or no block device %u\n", token, device_index);
+		IOLog("btrfs_selftest: FAIL %s: no expected listing or no block device %u\n", token, device_index);
 		return false;
 	}
 
@@ -586,7 +586,7 @@ st_run_fixture(const char *token, uint32_t device_index)
 	for (uint32_t index = 0U; index < t->extra_count; index++) {
 		t->extra[index] = block_device_get(device_index + 1U + index);
 		if (t->extra[index] == 0) {
-			kprintf("btrfs_selftest: FAIL %s: no block device %u\n", token, device_index + 1U + index);
+			IOLog("btrfs_selftest: FAIL %s: no block device %u\n", token, device_index + 1U + index);
 			return false;
 		}
 	}
@@ -599,20 +599,20 @@ st_run_fixture(const char *token, uint32_t device_index)
 	t->mount_path[7] = '\0';
 
 	if (t->seen == 0 || t->buffer == 0 || t->linkbuf == 0) {
-		kprintf("btrfs_selftest: FAIL %s: out of memory\n", token);
+		IOLog("btrfs_selftest: FAIL %s: out of memory\n", token);
 		return false;
 	}
 
-	if (span > 1U) kprintf("btrfs_selftest: %s: a filesystem on %u devices\n", token, span);
+	if (span > 1U) IOLog("btrfs_selftest: %s: a filesystem on %u devices\n", token, span);
 
-	kprintf("btrfs_selftest: %s: mounting %s (%llu sectors) at %s%s%s\n", token, device->name,
+	IOLog("btrfs_selftest: %s: mounting %s (%llu sectors) at %s%s%s\n", token, device->name,
 			(unsigned long long)device->sector_count, t->mount_path,
 			noverify ? ", data checksums off" : (verify ? ", data checksums on (explicit)" : ""),
 			ignore_log ? ", log tree ignored" : (subvol != 0ULL ? ", explicit subvolume" : ""));
 
 	vfs_status_t status = vfs_mkdir(t->mount_path);
 	if (status != VFS_STATUS_OK && status != VFS_STATUS_EXISTS) {
-		kprintf("btrfs_selftest: FAIL %s: mkdir %s: %s\n", token, t->mount_path, vfs_status_name(status));
+		IOLog("btrfs_selftest: FAIL %s: mkdir %s: %s\n", token, t->mount_path, vfs_status_name(status));
 		return false;
 	}
 
@@ -624,7 +624,7 @@ st_run_fixture(const char *token, uint32_t device_index)
 
 	status = vfs_mount("btrfs", device, t->mount_path);
 	if (status != VFS_STATUS_OK) {
-		kprintf("btrfs_selftest: FAIL %s: mount: %s (%s)\n", token, vfs_status_name(status),
+		IOLog("btrfs_selftest: FAIL %s: mount: %s (%s)\n", token, vfs_status_name(status),
 				btrfs_last_mount_status_name());
 		return false;
 	}
@@ -673,7 +673,7 @@ st_run_fixture(const char *token, uint32_t device_index)
 		st_fail(t, t->mount_path, "unmount (a leaked vnode reference?)", (uint64_t)status, 0ULL);
 
 	int failures = t->failures;
-	kprintf("btrfs_selftest: %s %s: %u entries, %u files, %llu bytes, %u refusals checked, %u readdir resumes, %d "
+	IOLog("btrfs_selftest: %s %s: %u entries, %u files, %llu bytes, %u refusals checked, %u readdir resumes, %d "
 			"failures\n",
 			failures == 0 ? "PASS" : "FAIL", token, t->entries, t->files, (unsigned long long)t->bytes, t->refusals,
 			t->resumes, failures);
@@ -732,7 +732,7 @@ st_run_refusal(const char *token, uint32_t device_index)
 
 	block_device_t device = block_device_get(device_index);
 	if (!known || device == 0) {
-		kprintf("btrfs_selftest: FAIL !%s: unknown status or no block device %u\n", name, device_index);
+		IOLog("btrfs_selftest: FAIL !%s: unknown status or no block device %u\n", name, device_index);
 		return false;
 	}
 
@@ -740,7 +740,7 @@ st_run_refusal(const char *token, uint32_t device_index)
 	path[6] = (char)('0' + device_index);
 	path[7] = '\0';
 
-	kprintf("btrfs_selftest: !%s: mounting %s, expecting a clean refusal (%s)\n", name, device->name,
+	IOLog("btrfs_selftest: !%s: mounting %s, expecting a clean refusal (%s)\n", name, device->name,
 			btrfs_status_name(expected));
 
 	vfs_status_t status = vfs_mkdir(path);
@@ -756,9 +756,9 @@ st_run_refusal(const char *token, uint32_t device_index)
 
 	if (status == VFS_STATUS_OK) (void)vfs_unmount(path);
 
-	kprintf("btrfs_selftest: %s !%s: vfs status \"%s\", btrfs status \"%s\", mounts %u -> %u\n", ok ? "PASS" : "FAIL",
+	IOLog("btrfs_selftest: %s !%s: vfs status \"%s\", btrfs status \"%s\", mounts %u -> %u\n", ok ? "PASS" : "FAIL",
 			name, vfs_status_name(status), btrfs_last_mount_status_name(), mounts_before, btrfs_mount_count());
-	kputln("btrfs_selftest: kernel still running");
+	IOLog("btrfs_selftest: kernel still running\n");
 	return ok;
 }
 
@@ -783,7 +783,7 @@ btrfs_selftest_run(const char *spec)
 		return false;
 	}
 
-	kprintf("btrfs_selftest: spec \"%s\", %u block devices\n", spec, block_device_count());
+	IOLog("btrfs_selftest: spec \"%s\", %u block devices\n", spec, block_device_count());
 
 	uint32_t device_index = 1U;
 	const char *cursor = spec;
@@ -809,7 +809,7 @@ btrfs_selftest_run(const char *spec)
 	if (g_failures_total == 0)
 		kputs("btrfs_selftest: ALL PASSED\n");
 	else
-		kprintf("btrfs_selftest: FAILED (%d failures)\n", g_failures_total);
+		IOLog("btrfs_selftest: FAILED (%d failures)\n", g_failures_total);
 
 	return g_failures_total == 0;
 }
