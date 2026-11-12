@@ -50,6 +50,7 @@ deviates from that rule in two places; both are recorded in
 - [Architecture](architecture.md) — subsystem boundaries and how the layers fit
   together.
 - [Boot](boot.md) — from QEMU's `-kernel` load to the first C instruction.
+- [NBL](nbl.md) — the NXU Boot Loader: UEFI boot on x64 and AArch64 firmware, and the boot chime it plays.
 - [Initialization](initialization.md) — the full phase-by-phase bring-up
   sequence.
 - [Memory map](memory-map.md) — physical and virtual address layout.

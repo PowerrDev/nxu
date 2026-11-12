@@ -76,13 +76,13 @@ else
 I386_DESKTOP_QEMU := qemu-system-x86_64 -cpu qemu64,phys-bits=32
 endif
 
-# Firmware boots NxuBoot by default. Keep the direct loader for diagnostics.
+# Firmware boots NBL by default. Keep the direct loader for diagnostics.
 I386_BOOT ?= firmware
 ifeq ($(I386_BOOT),direct)
 I386_DESKTOP_BOOT_FLAGS = -kernel $(I386_DESKTOP_KERNEL)
 I386_DESKTOP_APPEND = -append "$(BOOT_ARGS) $(I386_DESKTOP_RECOVERY_ARGS) test=desktop ui.userland=1 virtio-irq=1 log.trace=0 log.stats_ms=0 ui.scale=$(QEMU_UI_SCALE_PERMILLE)"
 else
-I386_DESKTOP_BOOT_FLAGS = -global i440FX-pcihost.pci-hole64-size=0 $(NXUBOOT_QEMU_PCI_FLAGS) -drive if=pflash,format=raw,readonly=on,file="$(NXUBOOT_FIRMWARE)" -drive if=pflash,format=raw,file=$(I386_DESKTOP_BUILD_ROOT)/nxuboot/uefi-vars.fd -drive if=none,format=raw,file=$(I386_DESKTOP_BUILD_ROOT)/nxuboot/nxu-boot.img,id=nxuboot -device qemu-xhci -device usb-storage,drive=nxuboot
+I386_DESKTOP_BOOT_FLAGS = -global i440FX-pcihost.pci-hole64-size=0 $(NBL_QEMU_PCI_FLAGS) -drive if=pflash,format=raw,readonly=on,file="$(NBL_FIRMWARE)" -drive if=pflash,format=raw,file=$(I386_DESKTOP_BUILD_ROOT)/nbl/uefi-vars.fd -drive if=none,format=raw,file=$(I386_DESKTOP_BUILD_ROOT)/nbl/nxu-boot.img,id=nbl -device qemu-xhci -device usb-storage,drive=nbl
 I386_DESKTOP_APPEND =
 endif
 
@@ -123,9 +123,9 @@ ifeq ($(I386_PARTITIONED_DISK),1)
 endif
 
 ifneq ($(I386_BOOT),direct)
-	$(MAKE) nxuboot-image BUILD_ROOT=$(I386_DESKTOP_BUILD_ROOT) UISERVICE=0 WINDOWSERVER=0 I386_GUI_FRAMEWORKS=1 I386_DESKTOP_APPS=1 NXUBOOT_ARGS="$(BOOT_ARGS) $(I386_DESKTOP_RECOVERY_ARGS) test=desktop ui.userland=1 virtio-irq=1 log.trace=0 log.stats_ms=0 ui.scale=$(QEMU_UI_SCALE_PERMILLE)"
-	$(MAKE) nxuboot-check-firmware
-	$(Q)cp "$(NXUBOOT_VARS)" $(I386_DESKTOP_BUILD_ROOT)/nxuboot/uefi-vars.fd
+	$(MAKE) nbl-image BUILD_ROOT=$(I386_DESKTOP_BUILD_ROOT) UISERVICE=0 WINDOWSERVER=0 I386_GUI_FRAMEWORKS=1 I386_DESKTOP_APPS=1 NBL_ARGS="$(BOOT_ARGS) $(I386_DESKTOP_RECOVERY_ARGS) test=desktop ui.userland=1 virtio-irq=1 log.trace=0 log.stats_ms=0 ui.scale=$(QEMU_UI_SCALE_PERMILLE)"
+	$(MAKE) nbl-check-firmware
+	$(Q)cp "$(NBL_VARS)" $(I386_DESKTOP_BUILD_ROOT)/nbl/uefi-vars.fd
 endif
 
 	$(I386_TEP_WRAPPER) $(I386_DESKTOP_QEMU) -M pc -smp $(I386_DESKTOP_SMP) \

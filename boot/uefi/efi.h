@@ -1,3 +1,13 @@
+/*
+ * Copyright (c) 2026 NXU Project. All rights reserved.
+ */
+/*
+ * File:        boot/uefi/efi.h
+ *
+ * The slice of the UEFI ABI that NBL uses: the tables, the boot services and
+ * the file, graphics and loaded-image protocols, laid out as the firmware
+ * defines them for 64-bit platforms.
+ */
 #ifndef NXU_EFI_H
 #define NXU_EFI_H
 
@@ -73,17 +83,20 @@ typedef struct {
 	status (*exit_boot_services)(handle, uintn);
 
 	void *get_next_monotonic_count;
-	void *stall;
+
+	status (*stall)(uintn);
 
 	status (*set_watchdog_timer)(uintn, uint64_t, uintn, char16 *);
 
-	void *connect_controller;
+	status (*connect_controller)(handle, handle *, void *, uint8_t);
+
 	void *disconnect_controller;
 	void *open_protocol;
 	void *close_protocol;
 	void *open_protocol_information;
 	void *protocols_per_handle;
-	void *locate_handle_buffer;
+
+	status (*locate_handle_buffer)(uint32_t, guid *, void *, uintn *, handle **);
 
 	status (*locate_protocol)(guid *, void *, void **);
 } boot_services;

@@ -4,7 +4,7 @@ The i386 kernel inventories firmware tables and walks the AML namespace during
 its kernel boot phase, after the heap is available and before secondary CPUs
 start. Every message from the subsystem uses `NxuACPIPlatform:`.
 
-NxuBoot supplies the firmware's RSDP from the UEFI configuration tables. Legacy
+NBL supplies the firmware's RSDP from the UEFI configuration tables. Legacy
 Multiboot boots scan the EBDA and BIOS ROM search areas instead. uACPI validates
 the RSDP, selects XSDT/RSDT, and installs referenced tables, including DSDT and
 SSDTs. Checksums and signatures are enforced. The inventory includes unknown

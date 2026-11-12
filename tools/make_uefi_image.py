@@ -12,7 +12,7 @@ START = 2048
 SECTORS = 131072
 
 
-def build_image(loader, kernel, bootargs):
+def build_image(loader, kernel, bootargs, loader_name="BOOTX64.EFI", chime=None):
     fat_sectors = 1
     while True:
         clusters = SECTORS - 32 - 2 * fat_sectors
@@ -23,7 +23,7 @@ def build_image(loader, kernel, bootargs):
     assert clusters >= 65525
     volume = bytearray(SECTORS * SECTOR)
     boot = bytearray(SECTOR)
-    boot[:11] = b"\xeb\x58\x90NXUBOOT "
+    boot[:11] = b"\xeb\x58\x90NBL     "
     struct.pack_into("<HBHBHHBHHHII", boot, 11, 512, 1, 32, 2, 0, 0, 0xF8, 0, 63, 255, START, SECTORS)
     struct.pack_into("<IHHIHH", boot, 36, fat_sectors, 0, 0, 2, 1, 6)
     boot[64] = 0x80
@@ -85,10 +85,14 @@ def build_image(loader, kernel, bootargs):
     root_data = entry(b"EFI        ", efi, directory=True) + entry(b"NXU        ", nxu, directory=True)
     volume[data_start : data_start + len(root_data)] = root_data
     directory(efi, 0, [entry(b"BOOT       ", boot_dir, directory=True)])
-    directory(boot_dir, efi, [entry(b"BOOTX64 EFI", loader_cluster, len(loader))])
-    directory(
-        nxu, 0, [entry(b"KERNEL  ELF", kernel_cluster, len(kernel)), entry(b"BOOTARGSTXT", args_cluster, len(args))]
-    )
+    stem, _, extension = loader_name.upper().partition(".")
+    assert 0 < len(stem) <= 8 and len(extension) <= 3, "The loader needs an 8.3 name"
+    directory(boot_dir, efi, [entry(f"{stem:<8}{extension:<3}".encode(), loader_cluster, len(loader))])
+    nxu_entries = [entry(b"KERNEL  ELF", kernel_cluster, len(kernel)), entry(b"BOOTARGSTXT", args_cluster, len(args))]
+    if chime:
+        # The sound NBL plays while it loads the kernel.
+        nxu_entries.append(entry(b"CHIME   WAV", allocate(chime), len(chime)))
+    directory(nxu, 0, nxu_entries)
     for copy_index in range(2):
         offset = (32 + copy_index * fat_sectors) * 512
         volume[offset : offset + len(fat)] = fat
@@ -145,11 +149,19 @@ def main():
     for name in ["loader", "kernel", "output"]:
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--bootargs", default="test=desktop ui.userland=1 virtio-irq=1")
+    parser.add_argument("--loader-name", default="BOOTX64.EFI", help="the firmware's removable-media name for the loader")
+    parser.add_argument("--chime", type=Path, help="a WAV file NBL plays as the boot chime")
     args = parser.parse_args()
-    image = build_image(args.loader.read_bytes(), args.kernel.read_bytes(), args.bootargs)
+    image = build_image(
+        args.loader.read_bytes(),
+        args.kernel.read_bytes(),
+        args.bootargs,
+        args.loader_name,
+        args.chime.read_bytes() if args.chime else None,
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_bytes(image)
-    print(f"NxuBoot: GPT/FAT32 boot image: {args.output} ({len(image)//1024//1024} MiB)")
+    print(f"NBL: GPT/FAT32 boot image: {args.output} ({len(image)//1024//1024} MiB)")
 
 
 if __name__ == "__main__":

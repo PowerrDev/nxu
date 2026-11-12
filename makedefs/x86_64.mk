@@ -51,7 +51,7 @@ X86_64_OBJECTS := \
 	$(X86_64_C_SOURCES:%.c=$(X86_64_BUILD)/%.o) \
 	$(X86_64_ASM_SOURCES:%.S=$(X86_64_BUILD)/%.o)
 
-.PHONY: x86_64 nxuboot-image-x86_64 run-x86_64 run-x86_64-firmware
+.PHONY: x86_64 nbl-image-x86_64 run-x86_64 run-x86_64-firmware
 
 -include $(X86_64_OBJECTS:%.o=%.d)
 
@@ -60,16 +60,16 @@ $(eval $(call NXU_ARCH_RULES,x86_64,X86_64))
 
 x86_64: $(X86_64_KERNEL)
 
-nxuboot-image-x86_64: $(NXUBOOT_EFI) $(X86_64_KERNEL)
-	$(Q)python3 tools/make_uefi_image.py --loader $(NXUBOOT_EFI) --kernel $(X86_64_KERNEL) \
-		--output $(NXUBOOT_DIR)/nxu-x86_64-boot.img --bootargs "$(NXUBOOT_ARGS)"
+nbl-image-x86_64: $(NBL_EFI) $(X86_64_KERNEL)
+	$(Q)python3 tools/make_uefi_image.py --loader $(NBL_EFI) --kernel $(X86_64_KERNEL) \
+		--output $(NBL_DIR)/nxu-x86_64-boot.img $(NBL_CHIME_FLAG) --bootargs "$(NBL_ARGS)"
 
-run-x86_64-firmware: nxuboot-image-x86_64 nxuboot-check-firmware
-	$(Q)cp "$(NXUBOOT_VARS)" $(NXUBOOT_DIR)/uefi-vars-x86_64.fd
+run-x86_64-firmware: nbl-image-x86_64 nbl-check-firmware
+	$(Q)cp "$(NBL_VARS)" $(NBL_DIR)/uefi-vars-x86_64.fd
 	$(Q)qemu-system-x86_64 -machine q35 -cpu qemu64 -m 512M -smp 1 \
-		-drive if=pflash,format=raw,readonly=on,file="$(NXUBOOT_FIRMWARE)" \
-		-drive if=pflash,format=raw,file=$(NXUBOOT_DIR)/uefi-vars-x86_64.fd \
-		-drive if=none,format=raw,file=$(NXUBOOT_DIR)/nxu-x86_64-boot.img,id=nxuboot \
-		-device qemu-xhci -device usb-storage,drive=nxuboot -serial stdio
+		-drive if=pflash,format=raw,readonly=on,file="$(NBL_FIRMWARE)" \
+		-drive if=pflash,format=raw,file=$(NBL_DIR)/uefi-vars-x86_64.fd \
+		-drive if=none,format=raw,file=$(NBL_DIR)/nxu-x86_64-boot.img,id=nbl \
+		-device qemu-xhci -device usb-storage,drive=nbl -serial stdio
 
 run-x86_64: run-x86_64-firmware

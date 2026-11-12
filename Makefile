@@ -1609,6 +1609,7 @@ boot-audio:
 include makedefs/tests.mk
 
 include makedefs/i386.mk
+include makedefs/nbl.mk
 include makedefs/x86_64.mk
 
 include makedefs/MakeInc.help

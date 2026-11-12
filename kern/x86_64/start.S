@@ -4,7 +4,7 @@
 /*
  * File:        kern/x86_64/start.S
  *
- * Native x86-64 kernel entry used by NxuBoot after ExitBootServices.
+ * Native x86-64 kernel entry used by NBL after ExitBootServices.
  */
 
 .section .text.boot, "ax"

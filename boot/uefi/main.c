@@ -4,31 +4,32 @@
 /*
  * File:        boot/uefi/main.c
  *
- * Loads either the i386 Multiboot kernel or the native x86-64 kernel and
- * passes its architecture-specific handoff after ExitBootServices.
+ * NBL's entry point and the services its architecture back ends share: read
+ * the kernel, the boot arguments and the boot chime from the boot volume,
+ * place the kernel, take the display, start the chime and hand over.
  */
 
-#include "efi.h"
-#include <boot/handoff.h>
-
-#include <stdbool.h>
+#include "nbl.h"
 
 static guid loaded_guid = {0x5b1b31a1, 0x9562, 0x11d2, {0x8e, 0x3f, 0, 0xa0, 0xc9, 0x69, 0x72, 0x3b}};
 static guid fs_guid = {0x964e5b22, 0x6459, 0x11d2, {0x8e, 0x39, 0, 0xa0, 0xc9, 0x69, 0x72, 0x3b}};
 static guid file_info_guid = {0x9576e92, 0x6d3f, 0x11d2, {0x8e, 0x39, 0, 0xa0, 0xc9, 0x69, 0x72, 0x3b}};
+
 static guid gop_guid = {0x9042a9de, 0x23dc, 0x4a38, {0x96, 0xfb, 0x7a, 0xde, 0xd0, 0x80, 0x51, 0x6a}};
-static guid acpi2_guid = {0x8868e871, 0xe4f1, 0x11d3, {0xbc, 0x22, 0, 0x80, 0xc7, 0x3c, 0x88, 0x81}};
-static guid acpi1_guid = {0xeb9d2d30, 0x2d88, 0x11d3, {0x9a, 0x16, 0, 0x90, 0x27, 0x3f, 0xc1, 0x4d}};
-static boot_services *bs;
-static system_table *st;
+
+boot_services *bs;
+system_table *st;
+
+/* The linker wants this from any image that touches floating point (the WAV reader converts float samples). */
+int _fltused;
 
 /*
- * Routine:     copy
+ * Routine:     nbl_copy
  * Purpose:
  *              Copy a bounded byte range without relying on a UEFI C runtime.
  */
-static void
-copy(void *d, const void *s, uintn n)
+void
+nbl_copy(void *d, const void *s, uintn n)
 {
 	uint8_t *a = d;
 	const uint8_t *b = s;
@@ -39,12 +40,12 @@ copy(void *d, const void *s, uintn n)
 }
 
 /*
- * Routine:     zero
+ * Routine:     nbl_zero
  * Purpose:
  *              Clear a memory range used for a kernel image or boot handoff.
  */
-static void
-zero(void *d, uintn n)
+void
+nbl_zero(void *d, uintn n)
 {
 	uint8_t *a = d;
 
@@ -53,13 +54,33 @@ zero(void *d, uintn n)
 	}
 }
 
+/* The compiler may still ask for these by name when it copies or clears a structure. */
+void *
+memcpy(void *d, const void *s, size_t n)
+{
+	nbl_copy(d, s, n);
+	return d;
+}
+
+void *
+memset(void *d, int value, size_t n)
+{
+	uint8_t *a = d;
+
+	while (n--) {
+		*a++ = (uint8_t)value;
+	}
+
+	return d;
+}
+
 /*
- * Routine:     equal
+ * Routine:     nbl_equal
  * Purpose:
  *              Compare fixed-size firmware identifiers without libc support.
  */
-static int
-equal(const void *a, const void *b, uintn n)
+int
+nbl_equal(const void *a, const void *b, uintn n)
 {
 	const uint8_t *x = a, *y = b;
 
@@ -72,25 +93,82 @@ equal(const void *a, const void *b, uintn n)
 	return 1;
 }
 
-/*
- * Routine:     log_line
- * Purpose:
- *              Send a UTF-16 status line to the UEFI console before handoff.
- */
-static void
-log_line(char16 *message)
+uintn
+nbl_length(const char *string)
 {
-	st->console_out->output(st->console_out, message);
+	uintn length = 0;
+
+	while (string[length]) {
+		length++;
+	}
+
+	return length;
 }
 
 /*
- * Routine:     read_file
+ * Routine:     nbl_log
+ * Purpose:
+ *              Send one status line to the UEFI console before handoff. The
+ *              console takes UTF-16; the messages are ASCII.
+ */
+void
+nbl_log(const char *message)
+{
+	char16 line[160];
+	uintn length = 0;
+
+	while (message[length] && length < 156) {
+		line[length] = (uint8_t)message[length];
+		length++;
+	}
+
+	line[length++] = '\r';
+	line[length++] = '\n';
+	line[length] = 0;
+	st->console_out->output(st->console_out, line);
+}
+
+void
+nbl_log_hex(const char *label, uint64_t value)
+{
+	char line[150];
+	uintn length = 0;
+
+	while (label[length] && length < 120) {
+		line[length] = label[length];
+		length++;
+	}
+
+	line[length++] = '0';
+	line[length++] = 'x';
+	for (int shift = 60; shift >= 0; shift -= 4) {
+		line[length++] = "0123456789abcdef"[(value >> shift) & 15];
+	}
+
+	line[length] = 0;
+	nbl_log(line);
+}
+
+void *
+nbl_config_table(const guid *vendor)
+{
+	for (uintn i = 0; i < st->table_count; i++) {
+		if (nbl_equal(&st->tables[i].vendor, vendor, sizeof(guid))) {
+			return st->tables[i].table;
+		}
+	}
+
+	return 0;
+}
+
+/*
+ * Routine:     nbl_read_file
  * Purpose:
  *              Read one bounded file from the EFI system partition using the
  *              filesystem protocol attached to this loader image.
  */
-static status
-read_file(handle image, char16 *path, void **out, uintn *size)
+status
+nbl_read_file(handle image, char16 *path, void **out, uintn *size)
 {
 	loaded_image *loaded = 0;
 	filesystem *fs = 0;
@@ -128,7 +206,7 @@ read_file(handle image, char16 *path, void **out, uintn *size)
 
 	uint64_t length;
 
-	copy(&length, info + 8, 8);
+	nbl_copy(&length, info + 8, 8);
 	if (!length || length > 64 * 1024 * 1024) {
 		f->close(f);
 		return EFI_LOAD_ERROR;
@@ -143,492 +221,240 @@ read_file(handle image, char16 *path, void **out, uintn *size)
 		if (!EFI_ERROR(s) && read_size != *size) {
 			s = EFI_LOAD_ERROR;
 		}
+
+		if (EFI_ERROR(s)) {
+			bs->free_pool(*out);
+			*out = 0;
+		}
 	}
 
 	f->close(f);
 	return s;
 }
 
-struct __attribute__((packed)) elf_header {
-	uint8_t ident[16];
-	uint16_t type;
-	uint16_t machine;
-	uint32_t version;
-	uint32_t entry;
-	uint32_t phoff;
-	uint32_t shoff;
-	uint32_t flags;
-	uint16_t ehsize;
-	uint16_t phsize;
-	uint16_t phcount;
-	uint16_t shsize;
-	uint16_t shcount;
-	uint16_t shstr;
-};
-
-struct elf_program {
-	uint32_t type;
-	uint32_t offset;
-	uint32_t vaddr;
-	uint32_t paddr;
-	uint32_t filesz;
-	uint32_t memsz;
-	uint32_t flags;
-	uint32_t align;
-};
-
-struct __attribute__((packed)) elf64_header {
-	uint8_t ident[16];
-	uint16_t type;
-	uint16_t machine;
-	uint32_t version;
-	uint64_t entry;
-	uint64_t phoff;
-	uint64_t shoff;
-	uint32_t flags;
-	uint16_t ehsize;
-	uint16_t phsize;
-	uint16_t phcount;
-	uint16_t shsize;
-	uint16_t shcount;
-	uint16_t shstr;
-};
-
-struct __attribute__((packed)) elf64_program {
-	uint32_t type;
-	uint32_t flags;
-	uint64_t offset;
-	uint64_t vaddr;
-	uint64_t paddr;
-	uint64_t filesz;
-	uint64_t memsz;
-	uint64_t align;
-};
-
-struct __attribute__((packed)) nxu_boot_i386_memory_map_entry {
-	uint32_t size;
-	uint64_t address;
-	uint64_t length;
-	uint32_t type;
-};
-
-_Static_assert(sizeof(struct nxu_boot_i386_memory_map_entry) == 24U, "i386 Multiboot memory-map entry layout");
-
-/*
- * Routine:     load_kernel
- * Purpose:
- *              Load the existing ELF32 kernel at its physical addresses for
- *              the established long-mode-to-i386 transition.
- */
-static status
-load_kernel(const uint8_t *data, uintn size, uint32_t *entry)
+bool
+nbl_bootarg_present(const char *arguments, const char *word)
 {
-	if (size < sizeof(struct elf_header)) {
-		return EFI_LOAD_ERROR;
-	}
+	uintn length = nbl_length(word);
 
-	const struct elf_header *h = (const void *)data;
-
-	if (!equal(h->ident, "\177ELF\1\1\1", 7) || h->type != 2 || h->machine != 3 || h->version != 1 ||
-		h->phsize != sizeof(struct elf_program) || !h->phcount || h->phcount > 64) {
-		return EFI_LOAD_ERROR;
-	}
-
-	if (h->phoff > size || (uintn)h->phcount * h->phsize > size - h->phoff) {
-		return EFI_LOAD_ERROR;
-	}
-
-	uint32_t low = 0xffffffff, high = 0;
-	int executable_entry = 0;
-
-	for (unsigned i = 0; i < h->phcount; i++) {
-		const struct elf_program *p = (const void *)(data + h->phoff + i * h->phsize);
-
-		if (p->type != 1) {
-			continue;
+	for (const char *cursor = arguments; *cursor;) {
+		while (*cursor == ' ' || *cursor == '\t') {
+			cursor++;
 		}
 
-		if (p->filesz > p->memsz || p->offset > size || p->filesz > size - p->offset || p->paddr < 0x100000 ||
-			p->paddr >= 0x28000000 || p->memsz > 0x28000000 - p->paddr) {
-			return EFI_LOAD_ERROR;
+		const char *start = cursor;
+
+		while (*cursor && *cursor != ' ' && *cursor != '\t') {
+			cursor++;
 		}
 
-		if ((p->flags & 1) && h->entry >= p->paddr && h->entry - p->paddr < p->memsz) {
-			executable_entry = 1;
-		}
-
-		if (p->paddr < low) {
-			low = p->paddr;
-		}
-
-		if (p->paddr + p->memsz > high) {
-			high = p->paddr + p->memsz;
+		if ((uintn)(cursor - start) == length && nbl_equal(start, word, length)) {
+			return true;
 		}
 	}
 
-	if (!executable_entry || high <= low) {
-		return EFI_LOAD_ERROR;
-	}
-
-	low &= ~4095U;
-	high = (high + 4095U) & ~4095U;
-
-	uint64_t address = low;
-	status s = bs->allocate_pages(2, 2, (high - low) / 4096, &address);
-
-	if (EFI_ERROR(s)) {
-		return s;
-	}
-
-	zero((void *)(uintptr_t)low, high - low);
-	for (unsigned i = 0; i < h->phcount; i++) {
-		const struct elf_program *p = (const void *)(data + h->phoff + i * h->phsize);
-
-		if (p->type == 1) {
-			copy((void *)(uintptr_t)p->paddr, data + p->offset, p->filesz);
-		}
-	}
-
-	*entry = h->entry;
-	return 0;
+	return false;
 }
 
 /*
- * Routine:     load_kernel64
+ * Routine:     read_bootargs
  * Purpose:
- *              Load a low-memory ELF64 kernel that runs directly in the
- *              firmware's current long mode after boot services exit.
+ *              The optional \NXU\bootargs.txt as one line of text; an empty
+ *              line when the file is absent.
  */
-static status
-load_kernel64(const uint8_t *data, uintn size, uint64_t *entry)
+static void
+read_bootargs(handle image, char *arguments)
 {
-	if (size < sizeof(struct elf64_header)) {
-		return EFI_LOAD_ERROR;
+	void *text = 0;
+	uintn size = 0;
+
+	arguments[0] = 0;
+	if (EFI_ERROR(nbl_read_file(image, (char16 *)u"\\NXU\\bootargs.txt", &text, &size))) {
+		return;
 	}
 
-	const struct elf64_header *header = (const void *)data;
-	if (!equal(header->ident, "\177ELF\2\1\1", 7) || header->type != 2 || header->machine != 62 ||
-		header->version != 1 || header->phsize != sizeof(struct elf64_program) || header->phcount == 0 ||
-		header->phcount > 64) {
-		return EFI_LOAD_ERROR;
+	if (size > NBL_BOOTARGS_MAX - 1) {
+		size = NBL_BOOTARGS_MAX - 1;
 	}
 
-	if (header->phoff > size || (uint64_t)header->phcount * header->phsize > size - header->phoff) {
-		return EFI_LOAD_ERROR;
-	}
-
-	uint64_t low = UINT64_MAX;
-	uint64_t high = 0;
-	bool executable_entry = false;
-
-	for (uint32_t index = 0; index < header->phcount; index++) {
-		const struct elf64_program *program = (const void *)(data + header->phoff + index * header->phsize);
-		if (program->type != 1) {
-			continue;
-		}
-
-		if (program->filesz > program->memsz || program->offset > size || program->filesz > size - program->offset ||
-			program->paddr < 0x100000 || program->paddr >= 0x40000000 || program->memsz > 0x40000000 - program->paddr) {
-			return EFI_LOAD_ERROR;
-		}
-
-		if ((program->flags & 1U) != 0U && header->entry >= program->paddr &&
-			header->entry - program->paddr < program->memsz) {
-			executable_entry = true;
-		}
-
-		if (program->paddr < low) {
-			low = program->paddr;
-		}
-
-		if (program->paddr + program->memsz > high) {
-			high = program->paddr + program->memsz;
+	nbl_copy(arguments, text, size);
+	for (uintn i = 0; i < size; i++) {
+		if (arguments[i] == '\n' || arguments[i] == '\r') {
+			arguments[i] = ' ';
 		}
 	}
 
-	if (!executable_entry || high <= low) {
-		return EFI_LOAD_ERROR;
+	/* The image builder ends the file with a newline; the kernel wants no trailing blank. */
+	while (size && arguments[size - 1] == ' ') {
+		size--;
 	}
 
-	low &= ~4095ULL;
-	if (high > UINT64_MAX - 4095ULL) {
-		return EFI_LOAD_ERROR;
-	}
-
-	high = (high + 4095ULL) & ~4095ULL;
-
-	uint64_t address = low;
-	status result = bs->allocate_pages(2, 2, (high - low) / 4096, &address);
-	if (EFI_ERROR(result)) {
-		return result;
-	}
-
-	zero((void *)(uintptr_t)low, high - low);
-	for (uint32_t index = 0; index < header->phcount; index++) {
-		const struct elf64_program *program = (const void *)(data + header->phoff + index * header->phsize);
-
-		if (program->type != 1) {
-			continue;
-		}
-
-		copy((void *)(uintptr_t)program->paddr, data + program->offset, program->filesz);
-	}
-
-	*entry = header->entry;
-	return 0;
+	arguments[size] = 0;
+	bs->free_pool(text);
 }
 
-extern uint8_t nxu_transition_start[], nxu_transition_end[], nxu_transition_entry[], nxu_transition_info[],
-	nxu_transition_stack[];
+/*
+ * Routine:     display_start
+ * Purpose:
+ *              Take over the display the firmware initialized: true when
+ *              there is one with an active mode. A linear 32-bit framebuffer
+ *              is cleared to black, so the screen is the loader's from the
+ *              moment the chime sounds. The chime is only played with a
+ *              display up; without one it is left to the kernel, which plays
+ *              it when its own display output starts.
+ */
+static bool
+display_start(void)
+{
+	gop *graphics = 0;
+
+	if (EFI_ERROR(bs->locate_protocol(&gop_guid, 0, (void **)&graphics)) || !graphics) {
+		/*
+		 * A firmware that boots straight from its boot order connects only
+		 * the boot device. Have it bind its drivers to every controller,
+		 * the display's among them, and look again.
+		 */
+		handle *handles = 0;
+		uintn count = 0;
+
+		if (!EFI_ERROR(bs->locate_handle_buffer(0, 0, 0, &count, &handles))) {
+			for (uintn i = 0; i < count; i++) {
+				(void)bs->connect_controller(handles[i], 0, 0, 1);
+			}
+
+			bs->free_pool(handles);
+		}
+
+		graphics = 0;
+		if (EFI_ERROR(bs->locate_protocol(&gop_guid, 0, (void **)&graphics))) {
+			return false;
+		}
+	}
+
+	if (!graphics || !graphics->mode || !graphics->mode->info || !graphics->mode->info->width ||
+		!graphics->mode->info->height) {
+		return false;
+	}
+
+	gop_mode *mode = graphics->mode;
+
+	/* Formats 0 and 1 are RGB and BGR in 32 bits; anything else has no framebuffer to write. */
+	if (mode->info->format < 2 && mode->framebuffer) {
+		volatile uint32_t *pixels = (volatile uint32_t *)(uintptr_t)mode->framebuffer;
+		uintn count = (uintn)mode->info->pixels_per_line * mode->info->height;
+
+		if (count > mode->framebuffer_size / 4) {
+			count = mode->framebuffer_size / 4;
+		}
+
+		for (uintn i = 0; i < count; i++) {
+			pixels[i] = 0;
+		}
+	}
+
+	return true;
+}
+
+/*
+ * Routine:     announce_chime
+ * Purpose:
+ *              Tell the kernel how long the chime the loader started runs,
+ *              as the first boot argument, where a kernel that keeps only
+ *              the head of a long line still finds it.
+ */
+static void
+announce_chime(char *arguments, uint32_t milliseconds)
+{
+	char word[40];
+	uintn length = 0;
+
+	for (const char *name = NBL_CHIME_BOOTARG; *name; name++) {
+		word[length++] = *name;
+	}
+
+	word[length++] = '=';
+
+	char digits[10];
+	uintn count = 0;
+
+	do {
+		digits[count++] = (char)('0' + milliseconds % 10);
+		milliseconds /= 10;
+	} while (milliseconds);
+
+	while (count) {
+		word[length++] = digits[--count];
+	}
+
+	uintn used = nbl_length(arguments);
+
+	if (used) {
+		word[length++] = ' ';
+	}
+
+	/* Too long a line loses its tail rather than the announcement. */
+	if (used + length > NBL_BOOTARGS_MAX - 1) {
+		used = NBL_BOOTARGS_MAX - 1 - length;
+	}
+
+	for (uintn i = used; i > 0; i--) {
+		arguments[i - 1 + length] = arguments[i - 1];
+	}
+
+	nbl_copy(arguments, word, length);
+	arguments[used + length] = 0;
+}
 
 /*
  * Routine:     efi_main
  * Purpose:
- *              Load the selected NXU ELF image, collect firmware handoff data,
- *              exit boot services, and transfer control to its entry point.
+ *              Load the NXU kernel for this firmware's architecture, start
+ *              the boot chime and transfer control to the kernel.
  */
 status
 efi_main(handle image, system_table *system)
 {
+	static char arguments[NBL_BOOTARGS_MAX];
+
 	st = system;
 	bs = system->boot;
 	(void)bs->set_watchdog_timer(0, 0, 0, 0);
-	log_line((char16 *)u"efi_main: preparing kernel handoff\r\n");
+	nbl_log("efi_main: NBL preparing kernel handoff");
 
 	void *kernel = 0;
 	uintn kernel_size = 0;
-	status s = read_file(image, (char16 *)u"\\NXU\\kernel.elf", &kernel, &kernel_size);
+	status s = nbl_read_file(image, (char16 *)u"\\NXU\\kernel.elf", &kernel, &kernel_size);
 
 	if (EFI_ERROR(s)) {
-		log_line((char16 *)u"efi_main: cannot read kernel image\r\n");
+		nbl_log("efi_main: cannot read kernel image");
 		return s;
 	}
 
-	bool kernel64 = kernel_size > 4 && ((const uint8_t *)kernel)[4] == 2;
-	uint32_t entry32 = 0;
-	uint64_t entry64 = 0;
-
-	if (kernel64) {
-		s = load_kernel64(kernel, kernel_size, &entry64);
-	} else {
-		s = load_kernel(kernel, kernel_size, &entry32);
-		entry64 = entry32;
-	}
-
+	/* The kernel's fixed load range is claimed first, so nothing allocated below can land in it. */
+	s = nbl_arch_load(kernel, kernel_size);
 	bs->free_pool(kernel);
 	if (EFI_ERROR(s)) {
-		log_line((char16 *)u"efi_main: kernel image is invalid or cannot be loaded\r\n");
+		nbl_log("efi_main: kernel image is invalid or cannot be loaded");
 		return s;
 	}
 
-	uint64_t handoff = 0x27ffffff;
+	read_bootargs(image, arguments);
 
-	/* Keep the Multiboot handoff and transition code below the direct-map limit. */
-	s = bs->allocate_pages(1, 1, 32, &handoff);
-	if (EFI_ERROR(s)) {
-		return s;
-	}
+	if (nbl_bootarg_present(arguments, "-no-chime") || nbl_bootarg_present(arguments, "-no-sound")) {
+		nbl_log("efi_main: boot chime disabled by the boot arguments");
+	} else if (!display_start()) {
+		nbl_log("efi_main: no display: the boot chime is left to the kernel");
+	} else {
+		nbl_log("efi_main: display initialized");
 
-	uint8_t *info = (void *)(uintptr_t)handoff;
+		uint32_t milliseconds = nbl_chime_play(image);
 
-	zero(info, 32 * 4096);
-
-	uint32_t *fields = (void *)info;
-
-	fields[0] = (1U << 6) | NXU_BOOT_FIRMWARE_FLAG;
-
-	struct nxu_boot_firmware *fw = (void *)(info + NXU_BOOT_FIRMWARE_OFFSET);
-
-	*fw = (struct nxu_boot_firmware){NXU_BOOT_FIRMWARE_MAGIC, 1, sizeof(*fw), 0};
-
-	/* Prefer the ACPI 2.0 configuration table, falling back to ACPI 1.0. */
-	for (uintn i = 0; i < st->table_count; i++) {
-		if (equal(&st->tables[i].vendor, &acpi2_guid, sizeof(guid))) {
-			fw->rsdp = (uint64_t)(uintptr_t)st->tables[i].table;
+		if (milliseconds) {
+			announce_chime(arguments, milliseconds);
 		}
 	}
 
-	if (!fw->rsdp) {
-		for (uintn i = 0; i < st->table_count; i++) {
-			if (equal(&st->tables[i].vendor, &acpi1_guid, sizeof(guid))) {
-				fw->rsdp = (uint64_t)(uintptr_t)st->tables[i].table;
-			}
-		}
-	}
-
-	/* Describe the GOP framebuffer using the Multiboot video fields. */
-	gop *graphics = 0;
-
-	if (!EFI_ERROR(bs->locate_protocol(&gop_guid, 0, (void **)&graphics)) && graphics->mode && graphics->mode->info &&
-		graphics->mode->info->format < 2) {
-		gop_mode *m = graphics->mode;
-
-		fields[0] |= 1U << 12;
-		copy(info + 88, &m->framebuffer, 8);
-		fields[24] = m->info->pixels_per_line * 4;
-		fields[25] = m->info->width;
-		fields[26] = m->info->height;
-		info[108] = 32;
-		info[109] = 1;
-		info[110] = m->info->format == 0 ? 0 : 16;
-		info[111] = 8;
-		info[112] = 8;
-		info[113] = 8;
-		info[114] = m->info->format == 0 ? 16 : 0;
-		info[115] = 8;
-		log_line((char16 *)u"efi_main: GOP framebuffer discovered\r\n");
-	}
-
-	/* Copy optional boot arguments into the handoff allocation. */
-	void *args = 0;
-	uintn args_size = 0;
-	uint64_t bootargs = 0;
-	uint8_t *args_target = kernel64 ? info + 512 : info + 256;
-
-	if (!EFI_ERROR(read_file(image, (char16 *)u"\\NXU\\bootargs.txt", &args, &args_size))) {
-		if (args_size > 2047) {
-			args_size = 2047;
-		}
-
-		copy(args_target, args, args_size);
-		for (uintn i = 0; i < args_size; i++) {
-			if (args_target[i] == '\n' || args_target[i] == '\r') {
-				args_target[i] = ' ';
-			}
-		}
-
-		args_target[args_size] = 0;
-		bootargs = handoff + (kernel64 ? 512 : 256);
-
-		if (!kernel64) {
-			fields[4] = (uint32_t)handoff + 256;
-			fields[0] |= 1U << 2;
-		}
-
-		bs->free_pool(args);
-	}
-
-	uint8_t *trampoline = info + 4096;
-
-	if (!kernel64) {
-		/* Patch the copied long-mode-to-i386 transition with this boot's addresses. */
-		uintn trampoline_size = nxu_transition_end - nxu_transition_start;
-
-		if (trampoline_size > 4096) {
-			return EFI_LOAD_ERROR;
-		}
-
-		copy(trampoline, nxu_transition_start, trampoline_size);
-		*(uint32_t *)(trampoline + (nxu_transition_entry - nxu_transition_start)) = entry32;
-		*(uint32_t *)(trampoline + (nxu_transition_info - nxu_transition_start)) = (uint32_t)handoff;
-		*(uint32_t *)(trampoline + (nxu_transition_stack - nxu_transition_start)) =
-			(uint32_t)handoff + 32 * 4096 - 16;
-	}
-
-	/* Allocate map storage before acquiring the final ExitBootServices key. */
-	uintn map_size = 0, key = 0, descriptor_size = 0;
-	uint32_t descriptor_version = 0;
-
-	s = bs->get_memory_map(&map_size, 0, &key, &descriptor_size, &descriptor_version);
-	if (s != EFI_BUFFER_TOO_SMALL || !descriptor_size) {
-		return EFI_LOAD_ERROR;
-	}
-
-	map_size += descriptor_size * 32;
-
-	void *map = 0;
-
-	s = bs->allocate_pool(2, map_size, &map);
-	if (EFI_ERROR(s)) {
-		return s;
-	}
-
-	uintn capacity = map_size;
-
-	log_line(kernel64 ? (char16 *)u"efi_main: entering x86-64 kernel\r\n" :
-		(char16 *)u"efi_main: entering i386 kernel\r\n");
-
-	/* A stale map key requires a fresh map; do not allocate inside this loop. */
-	for (unsigned attempt = 0; attempt < 3; attempt++) {
-		map_size = capacity;
-		s = bs->get_memory_map(&map_size, map, &key, &descriptor_size, &descriptor_version);
-		if (EFI_ERROR(s)) {
-			return s;
-		}
-
-		if (descriptor_size < sizeof(memory_descriptor) || map_size % descriptor_size) {
-			return EFI_LOAD_ERROR;
-		}
-
-		uintn count = map_size / descriptor_size;
-
-		uintn converted_entry_size = kernel64 ? sizeof(struct nxu_boot_memory_map_entry)
-														 : sizeof(struct nxu_boot_i386_memory_map_entry);
-		if (count * converted_entry_size > 24 * 4096) {
-			return EFI_LOAD_ERROR;
-		}
-
-		if (kernel64) {
-			struct nxu_boot_memory_map_entry *target = (void *)(info + 8192);
-
-			for (uintn i = 0; i < count; i++) {
-				memory_descriptor *d = (void *)((uint8_t *)map + i * descriptor_size);
-				uint32_t type = d->type == 7 || d->type == 3 || d->type == 4 ? 1 : d->type == 9 ? 3 : d->type == 10 ? 4 : 2;
-
-				target[i] = (struct nxu_boot_memory_map_entry){.size = sizeof(*target),
-																	 .address = d->physical,
-																	 .length = d->pages * 4096,
-																	 .type = type};
-			}
-		} else {
-			struct nxu_boot_i386_memory_map_entry *target = (void *)(info + 8192);
-
-			for (uintn i = 0; i < count; i++) {
-				memory_descriptor *d = (void *)((uint8_t *)map + i * descriptor_size);
-				uint32_t type = d->type == 7 || d->type == 3 || d->type == 4 ? 1 : d->type == 9 ? 3 : d->type == 10 ? 4 : 2;
-
-				target[i] = (struct nxu_boot_i386_memory_map_entry){20, d->physical, d->pages * 4096, type};
-			}
-		}
-
-		fields[11] = count * converted_entry_size;
-		fields[12] = (uint32_t)handoff + 8192;
-		s = bs->exit_boot_services(image, key);
-		if (!EFI_ERROR(s)) {
-			break;
-		}
-
-		if (s != EFI_INVALID_PARAMETER) {
-			return s;
-		}
-	}
-
-	if (EFI_ERROR(s)) {
-		return s;
-	}
-
-	if (kernel64) {
-		struct nxu_boot_x86_64 *xboot = (void *)(info + 256);
-
-		*xboot = (struct nxu_boot_x86_64){
-			NXU_BOOT_X86_64_MAGIC,
-			NXU_BOOT_X86_64_VERSION,
-			sizeof(*xboot),
-			0,
-			fw->rsdp,
-			(uint64_t)(uintptr_t)(info + 8192),
-			fields[11],
-			sizeof(struct nxu_boot_memory_map_entry),
-			bootargs,
-			handoff + 32 * 4096 - 16,
-		};
-
-		typedef void (*x86_entry_t)(const struct nxu_boot_x86_64 *, uint64_t) __attribute__((sysv_abi));
-
-		((x86_entry_t)(uintptr_t)entry64)(xboot, xboot->stack_top);
-		__builtin_unreachable();
-	}
-
-	((void (*)(void))(uintptr_t)trampoline)();
-	__builtin_unreachable();
+	s = nbl_arch_enter(image, arguments);
+	nbl_log("efi_main: kernel handoff failed");
+	return s;
 }

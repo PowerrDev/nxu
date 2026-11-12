@@ -41,7 +41,7 @@ _Static_assert(sizeof(struct nxu_boot_memory_map_entry) == 32U, "NXU boot memory
 #define NXU_BOOT_X86_64_MAGIC 0x4E585536U
 #define NXU_BOOT_X86_64_VERSION 1U
 
-/* Passed in RDI by NxuBoot after ExitBootServices and before kernel startup. */
+/* Passed in RDI by NBL after ExitBootServices and before kernel startup. */
 struct __attribute__((packed)) nxu_boot_x86_64 {
 	uint32_t magic;
 	uint32_t version;
