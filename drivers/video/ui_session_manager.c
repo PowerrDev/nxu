@@ -262,7 +262,7 @@ ui_bridge_syscall_connect(uint64_t user_info)
 	}
 
 	sched_kick_sleepers();
-	kprintf("com.nxu.UISessionManager: %s (pid %u) connected as %s %u\n", info->name,
+	kprintf("com.iokit.sessionManager.driver: %s.app (pid %u) connected as %s %u\n", info->name,
 			(unsigned int)current_proc()->p_ident.pid, info->kind == NXU_UI_KIND_DOCK ? "dock" : "app",
 			(unsigned int)result);
 	return result;
@@ -516,7 +516,8 @@ ui_bridge_session_begin(uint32_t scale_permille, uint32_t screen_width, uint32_t
 								   .menubar_height = menubar_height};
 	__atomic_store_n(&g_session_running, true, __ATOMIC_RELEASE);
 	waitq_wake_all(&g_session_wait);
-	kprintf("com.nxu.UISessionManager: apps may connect (%ux%u at %u permille)\n", screen_width, screen_height,
+	kprintf("com.iokit.sessionManager.driver: CoreGraphics.framework: data has loaded successfully\n");
+  kprintf("com.iokit.sessionManager.driver: CoreGraphics.framework: detected screen resolution. %ux%u at %u permille\n", screen_width, screen_height,
 			scale_permille);
 }
 

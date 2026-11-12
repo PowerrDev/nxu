@@ -70,10 +70,14 @@ apic_init(uint32_t physical_address)
 {
 	void *virtual_address;
 
+  kputln("apic_init: checking for APIC MMIO window...");
+
 	if (!pmap_map_mmio((uint64_t)physical_address, APIC_MMIO_SIZE, &virtual_address)) {
 		kputln("apic_init: cannot map the Local APIC MMIO window");
 		return false;
 	}
+
+  kputln("apic_init: initializing APIC");
 
 	g_apic_base = (volatile uint8_t *)virtual_address;
 

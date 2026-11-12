@@ -116,6 +116,7 @@ driverkit_init(driverkit_config_t *config)
 	if (!input_init()) return driverkit_fail("input: core initialization failed");
 	kputln("IOHIDSystem: input core online");
 
+  kputln("keyboard_init: initializating keyboard.");
 	if (!keyboard_init()) return driverkit_fail("keyboard: initialization failed");
 	kputln("IOHIDSystem: keyboard driver matched");
 
@@ -123,15 +124,19 @@ driverkit_init(driverkit_config_t *config)
 	kputln("IOBootMode: recovery key watch armed");
 	(void)ioreg_add(ioreg_family_platform(), "IOBootMode", "IOBootMode");
 
+  kputln("mouse_init: initializating mouse.");
 	if (!mouse_init()) return driverkit_fail("VirtIOMouseFamily: initialization failed");
 	kputln("IOHIDSystem: mouse driver matched");
 
+  kputln("block_device_init: initializating block device.");
 	if (!block_device_init()) return driverkit_fail("VirtIOBlockFamily: initialization failed");
 	kputln("IOStorageFamily: block device core online");
 
+  kputln("display_init: initializating display.");
 	if (!display_init()) return driverkit_fail("IODisplayFamily: core initialization failed");
 	kputln("IOGraphicsFamily: display core online");
 
+  kputln("rtc_init: initializating real-time clock.");
 	if (!rtc_init()) return driverkit_fail("rtc_init: initialization failed");
 	kputln("IORTC: real-time clock online");
 	(void)ioreg_add(ioreg_family_platform(), "IORTC", "IORTC");
@@ -183,7 +188,6 @@ driverkit_init(driverkit_config_t *config)
 	 * in the common case.
 	 */
 	driverkit_show_splash_if_needed();
-	ioreg_dump();
 
 	return true;
 }

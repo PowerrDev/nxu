@@ -1,7 +1,6 @@
-/* Userland desktop host. DesktopService owns UI policy; WindowServer owns scanout. */
 #include <CoreGraphics.h>
-#include <drivers/video/ui_service_pointer.h>
 #include <DesktopService.h>
+#include <drivers/video/ui_service_pointer.h>
 #include <nxu/runtime.h>
 #include <nxu/string.h>
 #include <nxu/syscall.h>
@@ -214,7 +213,7 @@ main(void)
 		.get_activity = DesktopServiceGetActivity,
 	};
 
-	static const char ready[] = "desktop: dynamic host ready\n";
+	static const char ready[] = "com.butterscotch.desktopd: CoreGraphics.framework: host capabilities evaluated, ready.\n";
 	(void)nxu_write(1, ready, sizeof(ready) - 1);
 
 	uint32_t status = DesktopServiceRun(&host);
