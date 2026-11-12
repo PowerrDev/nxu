@@ -82,7 +82,8 @@ process_control_test_run(bool exclusive)
 
 	proc_t proc = 0;
 	loader_status_t loaded =
-		loader_spawn_caps(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/proctest", "proctest", 0U, &proc);
+		loader_spawn_as(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/proctest", "proctest", 0U,
+						NXU_UID_NOBODY, NXU_GID_NOBODY, &proc);
 	if (loaded != LOADER_STATUS_OK) {
 		kputs("process_control_test: spawning proctest failed: ");
 		kputln(loader_status_name(loaded));

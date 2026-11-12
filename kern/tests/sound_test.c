@@ -187,12 +187,17 @@ sound_test_thread(void *parameter)
  * Start the user program playsound (it plays the boot chime when it is
  * given no file), holding exactly `caps`, and wait for it. True when it
  * exits with `expected`. Its own report goes to the console as it runs.
+ *
+ * It runs as an ordinary user, not as root: a child of the kernel process
+ * would inherit root, and root holds every capability, so `caps` would decide
+ * nothing.
  */
 static bool
 sound_test_run_playsound(uint32_t caps, uint64_t expected, const char *what)
 {
 	proc_t proc = 0;
-	loader_status_t loaded = loader_spawn_caps(proc_kernel(), SOUND_TEST_PLAYSOUND_PATH, "playsound", caps, &proc);
+	loader_status_t loaded = loader_spawn_as(proc_kernel(), SOUND_TEST_PLAYSOUND_PATH, "playsound", caps,
+											 NXU_UID_NOBODY, NXU_GID_NOBODY, &proc);
 
 	if (loaded != LOADER_STATUS_OK) {
 		SOUND_TEST_LOG("FAILED: %s: playsound could not be started: %s\n", what, loader_status_name(loaded));
