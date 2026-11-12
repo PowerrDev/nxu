@@ -102,41 +102,41 @@ run_case ram-1G 1024M "test=vm qemu-exit=1" $STATUS_CLEAN \
 run_case fault-execute-data 512M "test=vm vm-fault=execute-data qemu-exit=1" $STATUS_PANIC \
 	"hardware execute protection enabled (PAE + NX)" \
 	"i386_execute_selftest: passed" \
-	"cause: instruction fetch of 0xe8000000 by kernel code: protection violation" \
-	"panic: halting"
+	"Cause:  instruction fetch of 0xe8000000 by kernel code: protection violation" \
+	"Kernel halted."
 
 run_case fault-write-ro 512M "test=vm vm-fault=write-ro qemu-exit=1" $STATUS_PANIC \
 	"i386_init_vm_selftest: all checks passed" \
 	"i386_trap_page_fault: unresolved fault at 0xe" \
 	"in vm_kern arena" \
 	"(read-only, supervisor)" \
-	"panic: unhandled exception 14 (#PF Page Fault)" \
-	"cause: write of 0xe8000000 by kernel code: protection violation" \
-	"panic: halting"
+	"unhandled exception 14 (#PF Page Fault)" \
+	"Cause:  write of 0xe8000000 by kernel code: protection violation" \
+	"Kernel halted."
 
 run_case fault-write-text 512M "test=vm vm-fault=write-text qemu-exit=1" $STATUS_PANIC \
 	"in kernel text" \
 	"(read-only, supervisor)" \
-	"panic: unhandled exception 14 (#PF Page Fault)" \
-	"cause: write of 0xc0101000 by kernel code: protection violation"
+	"unhandled exception 14 (#PF Page Fault)" \
+	"Cause:  write of 0xc0101000 by kernel code: protection violation"
 
 run_case fault-null 512M "test=vm vm-fault=null qemu-exit=1" $STATUS_PANIC \
 	"in null guard page" \
-	"panic: unhandled exception 14 (#PF Page Fault)" \
-	"cause: read of 0x0 by kernel code: page not present"
+	"unhandled exception 14 (#PF Page Fault)" \
+	"Cause:  read of 0x0 by kernel code: page not present"
 
 run_case fault-unmapped 512M "test=vm vm-fault=unmapped qemu-exit=1" $STATUS_PANIC \
 	"in vm_kern arena" \
-	"cause: read of 0xf7ffc000 by kernel code: page not present"
+	"Cause:  read of 0xf7ffc000 by kernel code: page not present"
 
 run_case fault-user-null 512M "test=vm vm-fault=user-null qemu-exit=1" $STATUS_PANIC \
 	"in null guard page" \
-	"cause: read of 0x10 by kernel code: page not present"
+	"Cause:  read of 0x10 by kernel code: page not present"
 
 run_case fault-user-ro 512M "test=vm vm-fault=user-ro qemu-exit=1" $STATUS_PANIC \
 	"in user space" \
 	"(read-only, user)" \
-	"cause: write of 0x401000 by kernel code: protection violation"
+	"Cause:  write of 0x401000 by kernel code: protection violation"
 
 printf '\n%d case(s), %d failure(s)\n' "$count" "$failures"
 

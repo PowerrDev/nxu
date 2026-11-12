@@ -118,7 +118,7 @@ run_case selftest "test=interrupts qemu-exit=1" $STATUS_CLEAN \
 
 run_case unclaimed "trap-test=irq qemu-exit=1" $STATUS_PANIC \
 	"i386_trap_irq: no handler for IRQ 1" \
-	"panic: unexpected interrupt vector 33 (hardware interrupt)"
+	"unexpected interrupt vector 33 (hardware interrupt)"
 
 printf '\n%d case(s), %d failure(s)\n' "$count" "$failures"
 

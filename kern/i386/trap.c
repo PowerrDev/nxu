@@ -17,6 +17,8 @@
 #include <kern/i386/smp.h>
 
 #include <kern/console/console.h>
+#include <kern/logging/version.h>
+#include <kern/machine/timer.h>
 #include <kern/process/statistics.h>
 #include <string.h>
 
@@ -160,11 +162,11 @@ static void
 trap_print_selector_error(uint32_t err)
 {
 	if (err == 0U) {
-		kputln("  cause: not selector-related (error code 0)");
+		kputln("    Cause:  not selector-related (error code 0)");
 		return;
 	}
 
-	kprintf("  cause: selector 0x%x, %s, index %u%s\n", err & 0xFFFFU,
+	kprintf("    Cause:  selector 0x%x, %s, index %u%s\n", err & 0xFFFFU,
 			(err & 2U) != 0U ? "IDT" : ((err & 4U) != 0U ? "LDT" : "GDT"), (err >> 3U) & 0x1FFFU,
 			(err & 1U) != 0U ? ", raised by an external event" : "");
 }
@@ -172,7 +174,7 @@ trap_print_selector_error(uint32_t err)
 static void
 trap_print_page_fault(uint32_t err, uint32_t address)
 {
-	kprintf("  cause: %s of 0x%x by %s: %s%s\n",
+	kprintf("    Cause:  %s of 0x%x by %s: %s%s\n",
 			(err & PF_FETCH) != 0U ? "instruction fetch" : ((err & PF_WRITE) != 0U ? "write" : "read"), address,
 			(err & PF_USER) != 0U ? "user code" : "kernel code",
 			(err & PF_PRESENT) != 0U ? "protection violation" : "page not present",
@@ -185,7 +187,7 @@ trap_print_backtrace(uint32_t eip, uint32_t ebp)
 	uintptr_t low = (uintptr_t)i386_boot_stack_bottom;
 	uintptr_t high = (uintptr_t)i386_boot_stack_top;
 
-	kprintf("  backtrace: #0 0x%x", eip);
+	kprintf("Backtrace (CPU %u): #0 0x%x", (uint32_t)machine_cpu_id(), eip);
 
 	uintptr_t frame = ebp;
 
@@ -208,59 +210,60 @@ trap_print_backtrace(uint32_t eip, uint32_t ebp)
 }
 
 /*
- * Print the full fault report and stop the machine. `esp` is passed
- * separately because where the interrupted stack pointer lives depends on
- * the path (frame layout for an ordinary trap, saved TSS for #DF).
+ * These are NXU panic categories, the ones the arm64 panic report uses, not
+ * vector numbers: 1 an undefined instruction, 2 a fault fetching an
+ * instruction, 3 a fault on data, 0 anything else.
  */
-static void trap_panic(const x86_saved_state_t *state, uint32_t esp, const char *how) __attribute__((noreturn));
+static uint32_t
+panic_trap_type(const x86_saved_state_t *state)
+{
+	if (state->trapno == T_INVALID_OPCODE) return 1U;
+
+	if (state->trapno == T_PAGE_FAULT) return (state->err & PF_FETCH) != 0U ? 2U : 3U;
+
+	return 0U;
+}
 
 static void
-trap_panic(const x86_saved_state_t *state, uint32_t esp, const char *how)
+panic_print_register(const char *name, uint32_t value)
 {
-	if (g_in_panic) trap_halt();
-	g_in_panic = true;
+	kputs(name);
+	kputs(": ");
+	kputhex32(value);
+}
 
-	uint32_t vector = state->trapno;
+static void
+panic_print_selector(const char *name, uint32_t value)
+{
+	kputs(name);
+	kprintf(": 0x%x", value & 0xFFFFU);
+}
 
-	kputc('\n');
-	kprintf("panic: %s %u (%s) at 0x%x:0x%x%s\n", how, vector, trap_exception_name(vector), state->cs & 0xFFFFU,
-			state->eip, x86_saved_state_is_user(state) ? " (user mode)" : "");
+/*
+ * The interrupted context, the way the arm64 report lays out its thread
+ * state. `esp` is passed separately because where the interrupted stack
+ * pointer lives depends on the path (frame layout for an ordinary trap, saved
+ * TSS for #DF).
+ */
+static void
+panic_print_thread_state(const x86_saved_state_t *state, uint32_t esp)
+{
+	kputln("i386 Thread State (32-bit):");
 
-	if (trap_has_error_code(vector)) {
-		kprintf("  error code 0x%x\n", state->err);
-
-		if (vector == T_INVALID_TSS || vector == T_SEGMENT_NOT_PRESENT || vector == T_STACK_FAULT ||
-			vector == T_GENERAL_PROTECTION) {
-			trap_print_selector_error(state->err);
-		} else if (vector == T_PAGE_FAULT) {
-			trap_print_page_fault(state->err, state->cr2);
-		}
-	}
-
-	kprintf("  eax=");
-	kputhex32(state->eax);
-	kputs(" ebx=");
-	kputhex32(state->ebx);
-	kputs(" ecx=");
-	kputhex32(state->ecx);
-	kputs(" edx=");
-	kputhex32(state->edx);
-	kputc('\n');
-
-	kputs("  esi=");
-	kputhex32(state->esi);
-	kputs(" edi=");
-	kputhex32(state->edi);
-	kputs(" ebp=");
-	kputhex32(state->ebp);
-	kputs(" esp=");
-	kputhex32(esp);
+	panic_print_register("    eax", state->eax);
+	panic_print_register("   ebx", state->ebx);
+	panic_print_register("   ecx", state->ecx);
+	panic_print_register("   edx", state->edx);
 	kputc('\n');
 
-	kputs("  eip=");
-	kputhex32(state->eip);
-	kputs(" efl=");
-	kputhex32(state->efl);
+	panic_print_register("    esi", state->esi);
+	panic_print_register("   edi", state->edi);
+	panic_print_register("   ebp", state->ebp);
+	panic_print_register("   esp", esp);
+	kputc('\n');
+
+	panic_print_register("    eip", state->eip);
+	panic_print_register("   efl", state->efl);
 	trap_print_flags(state->efl);
 	kputc('\n');
 
@@ -271,21 +274,103 @@ trap_panic(const x86_saved_state_t *state, uint32_t esp, const char *how)
 		__asm__ volatile("movl %%ss, %0" : "=r"(ss));
 	}
 
-	kprintf("  cs=0x%x ss=0x%x ds=0x%x es=0x%x fs=0x%x gs=0x%x\n", state->cs & 0xFFFFU, ss & 0xFFFFU,
-			state->ds & 0xFFFFU, state->es & 0xFFFFU, state->fs & 0xFFFFU, state->gs & 0xFFFFU);
-
-	kputs("  cr0=");
-	kputhex32(trap_read_cr0());
-	kputs(" cr2=");
-	kputhex32(state->cr2);
-	kputs(" cr3=");
-	kputhex32(trap_read_cr3());
-	kputs(" cr4=");
-	kputhex32(trap_read_cr4());
+	panic_print_selector("     cs", state->cs);
+	panic_print_selector("   ss", ss);
+	panic_print_selector("   ds", state->ds);
+	panic_print_selector("   es", state->es);
+	panic_print_selector("   fs", state->fs);
+	panic_print_selector("   gs", state->gs);
 	kputc('\n');
 
+	panic_print_register("    cr0", trap_read_cr0());
+	panic_print_register("   cr2", state->cr2);
+	panic_print_register("   cr3", trap_read_cr3());
+	panic_print_register("   cr4", trap_read_cr4());
+	kputc('\n');
+}
+
+/* Absent from a build without the SMP area; a single CPU has nobody to stop. */
+extern void smp_stop_other_cpus(void) __attribute__((weak));
+
+/*
+ * trap_panic
+ *
+ * The full panic report, then the machine stops. The same report, section
+ * for section, as the arm64 panic (kern/arm64/exception.c): who panicked and
+ * where, the system's version, the interrupted thread state, what the CPU
+ * said about the exception, a backtrace, and how long the system had run.
+ *
+ * It has to work from the first trap gate on: nothing here needs the heap,
+ * the scheduler or a lock (the console's is broken open once the other CPUs
+ * are stopped), and a second fault inside it halts at once.
+ */
+static void trap_panic(const x86_saved_state_t *state, uint32_t esp, const char *how) __attribute__((noreturn));
+
+static void
+trap_panic(const x86_saved_state_t *state, uint32_t esp, const char *how)
+{
+	/*
+	 * Never recursively panic. If the panic path itself faults, or a second
+	 * CPU gets here, stop instead of nesting reports.
+	 */
+	if (__atomic_exchange_n(&g_in_panic, true, __ATOMIC_ACQ_REL)) trap_halt();
+
+	/* The first CPU to panic reports alone: the others stop before they scribble on the console. */
+	if (smp_stop_other_cpus != 0) smp_stop_other_cpus();
+
+	uint32_t vector = state->trapno;
+	bool user = x86_saved_state_is_user(state);
+
+	kputc('\n');
+
+	/*
+	 * For now, "caller" displays the faulting EIP. Later, symbol lookup can
+	 * replace it with a resolved panic caller.
+	 */
+	kprintf("panic(cpu %u caller ", (uint32_t)machine_cpu_id());
+	kputhex32(state->eip);
+	kprintf("): \"%s trap type %u -- %s %u (%s)\"\n", user ? "User" : "Kernel", panic_trap_type(state), how, vector,
+			trap_exception_name(vector));
+
+	kputln("Debugger message: panic");
+
+	kputs("OS version: ");
+	kputs(NXU_KERNEL_NAME);
+	kputc(' ');
+	kputln(NXU_VERSION);
+
+	kputs("Kernel version: ");
+	kputln(NXU_KERNEL_VERSION);
+
+	kputc('\n');
+
+	panic_print_thread_state(state, esp);
+
+	kputc('\n');
+	kputln("Exception:");
+
+	kprintf("    Source: %s, at 0x%x:0x%x\n", user ? "user mode (ring 3)" : "kernel mode (ring 0)", state->cs & 0xFFFFU,
+			state->eip);
+	kprintf("    Vector: %u (%s)\n", vector, trap_exception_name(vector));
+
+	if (trap_has_error_code(vector)) {
+		kprintf("    Error:  error code 0x%x\n", state->err);
+
+		if (vector == T_INVALID_TSS || vector == T_SEGMENT_NOT_PRESENT || vector == T_STACK_FAULT ||
+			vector == T_GENERAL_PROTECTION) {
+			trap_print_selector_error(state->err);
+		} else if (vector == T_PAGE_FAULT) {
+			trap_print_page_fault(state->err, state->cr2);
+		}
+	}
+
+	kputc('\n');
 	trap_print_backtrace(state->eip, state->ebp);
-	kputln("panic: halting");
+	kputln("Kernel Extensions in backtrace: none");
+	kprintf("System uptime: %llu microseconds\n", (unsigned long long)timer_get_microseconds());
+	kprintf("Timer interrupts delivered: %llu\n", (unsigned long long)timer_get_interrupt_count());
+	kputln("NXU panic policy: interrupts masked, processor halted after diagnostic emission");
+	kputln("Kernel halted.");
 
 	trap_halt();
 }

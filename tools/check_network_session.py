@@ -345,7 +345,7 @@ def main():
                     if options.terminal:
                         test_terminal(process, serial, scratch)
                     return
-                if "shell-session: FAILED" in text or "panic:" in text:
+                if "shell-session: FAILED" in text or "panic(" in text:
                     raise AssertionError(text[-6000:])
                 time.sleep(0.1)
             raise AssertionError(f"Shell session timeout; see {serial}")

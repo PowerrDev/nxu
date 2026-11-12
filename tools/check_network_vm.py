@@ -110,7 +110,7 @@ def main():
                         break
                     if (
                         ("net_test: case" in text and "failed" in text)
-                        or "panic:" in text
+                        or "panic(" in text
                         or "Kernel halted." in text
                         or process.poll() is not None
                     ):

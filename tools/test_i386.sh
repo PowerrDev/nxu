@@ -59,32 +59,32 @@ run_case selftest "qemu-exit=1" $STATUS_CLEAN \
 	"trap self-test passed"
 
 run_case div0 "trap-test=div0" $STATUS_PANIC \
-	"panic: unhandled exception 0 (#DE Divide Error)" \
-	"backtrace: #0" \
-	"panic: halting"
+	"unhandled exception 0 (#DE Divide Error)" \
+	"Backtrace (CPU 0): #0" \
+	"Kernel halted."
 
 run_case ud2 "trap-test=ud2" $STATUS_PANIC \
-	"panic: unhandled exception 6 (#UD Invalid Opcode)"
+	"unhandled exception 6 (#UD Invalid Opcode)"
 
 run_case gp "trap-test=gp" $STATUS_PANIC \
-	"panic: unhandled exception 13 (#GP General Protection Fault)" \
+	"unhandled exception 13 (#GP General Protection Fault)" \
 	"error code 0x1238" \
-	"cause: selector 0x1238, GDT, index 583"
+	"Cause:  selector 0x1238, GDT, index 583"
 
 run_case np "trap-test=np" $STATUS_PANIC \
-	"panic: unhandled exception 11 (#NP Segment Not Present)" \
-	"cause: selector 0x38, GDT, index 7"
+	"unhandled exception 11 (#NP Segment Not Present)" \
+	"Cause:  selector 0x38, GDT, index 7"
 
 run_case df "trap-test=df" $STATUS_PANIC \
-	"panic: unhandled exception 8 (#DF Double Fault)" \
-	"ss=0x10"
+	"unhandled exception 8 (#DF Double Fault)" \
+	"ss: 0x10"
 
 run_case vector "trap-test=vector" $STATUS_PANIC \
 	"(#GP General Protection Fault)" \
-	"cause: selector 0x40a, IDT, index 129"
+	"Cause:  selector 0x40a, IDT, index 129"
 
 run_case irq "trap-test=irq" $STATUS_PANIC \
-	"panic: unexpected interrupt vector 33 (hardware interrupt)"
+	"unexpected interrupt vector 33 (hardware interrupt)"
 
 printf '\n%d case(s), %d failure(s)\n' "$count" "$failures"
 
