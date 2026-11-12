@@ -25,6 +25,25 @@ typedef struct virtio_snd_device virtio_snd_device_t;
 bool virtio_snd_attach(const virtio_device_t *transport);
 
 /*
+ * virtio_snd_attach_pending:
+ *
+ * True while a sound device was found but is not attached yet, because the
+ * boot loader's chime is still playing on it (kern/boot/boot_chime.h). The
+ * attach, which resets the device, runs in a kernel thread once the chime is
+ * over; until then there is no /dev/audio0.
+ */
+bool virtio_snd_attach_pending(void);
+
+/*
+ * virtio_snd_attach_deferred_start:
+ *
+ * Start the thread of a pending deferred attach, for a boot that scans its
+ * buses before the scheduler exists (arm64): call it once threads can be
+ * created. Does nothing when no attach is pending or its thread already runs.
+ */
+void virtio_snd_attach_deferred_start(void);
+
+/*
  * virtio_snd_probe:
  *
  * Report the outcome of the bus scan: how many sound devices were bound, or

@@ -25,12 +25,21 @@
  *                      interrupts free periods
  *
  * `-no-chime` on the boot command line turns it off.
+ *
+ * A boot through NBL does not play the chime here at all. The loader plays
+ * it on the sound device before the kernel is entered and leaves it sounding
+ * (boot/uefi/chime.c), and says so with the boot argument nbl.chime=<length
+ * in milliseconds>. The kernel then plays none, and the sound driver leaves
+ * the device alone until the loader's chime is over: resetting it sooner
+ * would cut the sound, and the device still owes the loader's queue its
+ * completions.
  */
 
 #ifndef NXU_KERN_BOOT_BOOT_CHIME_H
 #define NXU_KERN_BOOT_BOOT_CHIME_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #define BOOT_CHIME_MP3_PATH "/Volumes/mainOS/System/Library/Resources/Audio/Boot_Audio.mp3"
 #define BOOT_CHIME_WAV_PATH "/Volumes/mainOS/System/Library/Resources/Audio/Boot_Audio.wav"
@@ -47,6 +56,19 @@ typedef enum {
 
 /* Where the boot chime thread is; for a test that must wait for the sound device to be free. */
 boot_chime_state_t boot_chime_state(void);
+
+/* True when the boot loader played the chime: the kernel plays none. */
+bool boot_chime_loader_played(void);
+
+/*
+ * boot_chime_loader_remaining_us:
+ *
+ * How much longer the sound device belongs to the loader's chime, in
+ * microseconds; 0 once it is over, or when the loader played none. The time
+ * is counted from the first call, which the sound driver makes during the
+ * bus scan: later than the chime really started, so never too short.
+ */
+uint64_t boot_chime_loader_remaining_us(void);
 
 /*
  * boot_chime_play:

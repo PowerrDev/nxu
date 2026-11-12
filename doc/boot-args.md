@@ -44,7 +44,10 @@ is read-only.
 - `-no-input` prevents VirtIO keyboard/mouse attachment.
 - `-no-block` prevents VirtIO block attachment and therefore disk userspace.
 - `-no-sound` prevents VirtIO Sound attachment.
-- `-no-chime` keeps the boot chime from playing (see
+- `nbl.chime=<milliseconds>` is written by NBL, not by hand: the loader played the
+  boot chime and this is its length. The kernel plays none and leaves the sound
+  device alone until it is over (see [NBL](nbl.md)).
+- `-no-chime` keeps the boot chime from playing, in NBL and in the kernel (see
   [VirtIO Sound](drivers/virtio-sound.md)).
 - `-no-logd` prevents `bootd` from starting `logd`.
 - `-no-patchd` prevents `bootd` from starting `patchd`.

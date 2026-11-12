@@ -200,6 +200,31 @@ played by interrupt; what delays it after the first frame is the boot splash's
 on QEMU with TCG it starts about 4 s after display output started. `-no-chime`
 turns it off.
 
+### A boot through NBL
+
+All of the above is the direct boot. Through firmware the loader plays the chime
+([NBL](../nbl.md)): it queues the whole sound on this device before the kernel is
+entered and passes `nbl.chime=<milliseconds>`. The kernel then plays none
+(`boot_chime_loader_read` logs it), and the driver must not reset a device that
+is still playing:
+
+1. `virtio_snd_attach()` finds the device during the bus scan, sees the chime is
+   still running (`boot_chime_loader_remaining_us()`), keeps the transport and
+   logs `attach deferred for N ms`. Nothing is written to the device.
+2. A kernel thread sleeps until the chime's length plus 500 ms have passed, then
+   runs the normal attach. Where the bus is scanned before the scheduler exists
+   (arm64), `virtio_snd_attach_deferred_start()` starts that thread right after
+   scheduler bring-up; the i386 scan starts it itself. The boot never waits.
+3. After the reset the driver sends STOP and RELEASE for the playback stream: the
+   specification ends a stream at reset, but QEMU keeps the host voice behind it
+   open and running. `/dev/audio0` is registered after that.
+
+Until step 3 there is no `/dev/audio0`; `virtio_snd_attach_pending()` says so, and
+`boot_chime_state()` reports `BOOT_CHIME_PLAYING` for that time, which is what the
+sound tests wait on. Resetting the device while the loader's queue still holds
+buffers leaves QEMU's device broken until the next reset (it completes them into a
+queue that no longer exists), which is the other reason for the wait.
+
 ## Logging
 
 Every line starts with the name of the function that prints it. One fact per line at

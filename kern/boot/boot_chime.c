@@ -33,6 +33,19 @@
 /* Frames converted and written at a time. */
 #define BOOT_CHIME_CHUNK_FRAMES 2048U
 
+/* The boot argument NBL passes when it played the chime: its length in milliseconds. */
+#define BOOT_CHIME_LOADER_ARG "nbl.chime"
+
+/* No boot sound is longer than this; a longer claim is cut to it rather than believed. */
+#define BOOT_CHIME_LOADER_MAX_MS 30000U
+
+/* What the host still holds in its own buffer after the device has taken the last sample. */
+#define BOOT_CHIME_LOADER_MARGIN_US 500000ULL
+
+static bool g_boot_chime_loader_read;
+static uint32_t g_boot_chime_loader_ms;
+static uint64_t g_boot_chime_loader_until_us;
+
 static bool g_boot_chime_armed;
 static bool g_boot_chime_started;
 static volatile boot_chime_state_t g_boot_chime_state = BOOT_CHIME_IDLE;
@@ -44,10 +57,62 @@ boot_chime_ms(uint64_t microseconds)
 	return microseconds / 1000ULL;
 }
 
+/* Read what the loader said about the chime, once, and note when the device becomes free. */
+static void
+boot_chime_loader_read(void)
+{
+	if (g_boot_chime_loader_read) return;
+
+	g_boot_chime_loader_read = true;
+
+	char value[16];
+
+	if (!boot_arg_value(BOOT_CHIME_LOADER_ARG, value, sizeof(value))) return;
+
+	uint32_t milliseconds = 0U;
+
+	for (uint32_t index = 0U; value[index] >= '0' && value[index] <= '9'; index++) {
+		milliseconds = milliseconds * 10U + (uint32_t)(value[index] - '0');
+
+		if (milliseconds > BOOT_CHIME_LOADER_MAX_MS) {
+			milliseconds = BOOT_CHIME_LOADER_MAX_MS;
+			break;
+		}
+	}
+
+	if (milliseconds == 0U) return;
+
+	g_boot_chime_loader_ms = milliseconds;
+	g_boot_chime_loader_until_us =
+		timer_get_microseconds() + (uint64_t)milliseconds * 1000ULL + BOOT_CHIME_LOADER_MARGIN_US;
+	BOOT_CHIME_LOG("the boot loader played the boot chime (%u ms): the kernel plays none\n", milliseconds);
+}
+
+bool
+boot_chime_loader_played(void)
+{
+	boot_chime_loader_read();
+	return g_boot_chime_loader_ms != 0U;
+}
+
+uint64_t
+boot_chime_loader_remaining_us(void)
+{
+	boot_chime_loader_read();
+
+	if (g_boot_chime_loader_ms == 0U) return 0ULL;
+
+	uint64_t now = timer_get_microseconds();
+
+	return now < g_boot_chime_loader_until_us ? g_boot_chime_loader_until_us - now : 0ULL;
+}
+
 void
 boot_chime_arm(void)
 {
 	if (g_boot_chime_armed) return;
+
+	if (boot_chime_loader_played()) return;
 
 	if (boot_arg_present("-no-chime")) {
 		BOOT_CHIME_LOG("boot chime disabled by -no-chime\n");
@@ -153,8 +218,11 @@ boot_chime_wait_ready(void)
 
 		if (device && file) return true;
 
-		/* The bus scan is over by now: with no sound device attached, waiting will not make one appear. */
-		if (!device && virtio_snd_device_count() == 0U) {
+		/*
+		 * The bus scan is over by now: with no sound device attached, waiting will not make one appear,
+		 * unless it is only waiting for the loader's chime to end.
+		 */
+		if (!device && virtio_snd_device_count() == 0U && !virtio_snd_attach_pending()) {
 			BOOT_CHIME_LOG("no VirtIO Sound device: the boot chime is skipped\n");
 			return false;
 		}
@@ -331,6 +399,9 @@ boot_chime_thread(void *parameter)
 boot_chime_state_t
 boot_chime_state(void)
 {
+	/* The loader's chime has the device until the sound driver has attached to it. */
+	if (boot_chime_loader_played()) return virtio_snd_attach_pending() ? BOOT_CHIME_PLAYING : BOOT_CHIME_PLAYED;
+
 	return g_boot_chime_state;
 }
 
@@ -338,6 +409,8 @@ void
 boot_chime_start(void)
 {
 	if (g_boot_chime_started) return;
+
+	if (boot_chime_loader_played()) return;
 
 	if (!g_boot_chime_armed) {
 		BOOT_CHIME_LOG("boot chime not started: it was not armed (no display output, or -no-chime)\n");

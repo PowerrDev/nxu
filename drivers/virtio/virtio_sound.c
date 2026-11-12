@@ -1,9 +1,13 @@
 #include <drivers/virtio/virtio_sound.h>
 
 #include <drivers/virtio/virtio_sound_internal.h>
+#include <kern/boot/boot_chime.h>
 #include <kern/machine/barrier.h>
 #include <kern/machine/machine_routines.h>
 #include <kern/machine/timer.h>
+#include <kern/process/proc.h>
+#include <kern/process/thread.h>
+#include <kern/sched_prism/sched.h>
 #include <vm/dma.h>
 #include <vm/pmm.h>
 #include <vm/vmm.h>
@@ -19,6 +23,11 @@
 
 static virtio_snd_device_t g_virtio_snd_devices[VIRTIO_SND_MAX_DEVICES];
 static uint32_t g_virtio_snd_device_count;
+
+/* The device the bus scan found while the boot loader's chime was still playing on it. */
+static virtio_device_t g_virtio_snd_deferred;
+static volatile bool g_virtio_snd_deferred_pending;
+static bool g_virtio_snd_deferred_spawned;
 
 /* ---- DMA memory -------------------------------------------------------- */
 
@@ -580,11 +589,16 @@ virtio_snd_bring_up(virtio_snd_device_t *device)
 	return true;
 }
 
-bool
-virtio_snd_attach(const virtio_device_t *transport)
+/*
+ * virtio_snd_attach_now:
+ *
+ * Reset the device and bring the driver up on it. after_loader says the boot
+ * loader played its chime on the device: the stream it started is then
+ * stopped and released before anything can open the device.
+ */
+static bool
+virtio_snd_attach_now(const virtio_device_t *transport, bool after_loader)
 {
-	if (transport == 0 || transport->device_id != VIRTIO_DEVICE_ID_SOUND) return false;
-
 	if (g_virtio_snd_device_count >= VIRTIO_SND_MAX_DEVICES) {
 		VIRTIO_SND_LOG("a VirtIO Sound device is already attached, ignoring this one\n");
 		return false;
@@ -616,6 +630,20 @@ virtio_snd_attach(const virtio_device_t *transport)
 	virtio_snd_probe_streams(device);
 	virtio_snd_probe_chmaps(device);
 
+	/*
+	 * The loader started the playback stream and left without stopping it. A
+	 * reset ends a stream by the specification, but QEMU keeps the one behind
+	 * it running (its host voice stays open and active), so say STOP and
+	 * RELEASE outright. A device that did end the stream answers BAD_MSG,
+	 * which changes nothing: the driver's own stream state starts from
+	 * scratch either way.
+	 */
+	if (after_loader && device->playback_stream != VIRTIO_SND_NO_STREAM) {
+		(void)virtio_snd_pcm_request(device, VIRTIO_SND_R_PCM_STOP, device->playback_stream);
+		(void)virtio_snd_pcm_request(device, VIRTIO_SND_R_PCM_RELEASE, device->playback_stream);
+		VIRTIO_SND_LOG("stream %u: the boot loader's stream is stopped and released\n", device->playback_stream);
+	}
+
 	device->ioreg_family = ioreg_add(ioreg_family_audio(), "VirtIOSoundFamily", "VirtIOSoundFamily");
 	device->ioreg_node = ioreg_add(device->ioreg_family, "Audio0", "VirtIOSoundDevice");
 	VIRTIO_SND_LOG("registered Audio0 under DriverKitAudioFamily in the I/O registry\n");
@@ -627,9 +655,104 @@ virtio_snd_attach(const virtio_device_t *transport)
 	return true;
 }
 
+/*
+ * virtio_snd_deferred_thread:
+ *
+ * The attach the bus scan put off: sleep until the loader's chime is over,
+ * then take the device.
+ */
+static void
+virtio_snd_deferred_thread(void *parameter)
+{
+	(void)parameter;
+
+	for (uint64_t remaining; (remaining = boot_chime_loader_remaining_us()) != 0ULL;) {
+		if (!sched_sleep_us(remaining)) break;
+	}
+
+	VIRTIO_SND_LOG("the boot loader's chime is over: attaching\n");
+
+	bool attached = virtio_snd_attach_now(&g_virtio_snd_deferred, true);
+
+	if (!attached) VIRTIO_SND_LOG("the deferred attach failed, there is no sound device\n");
+
+	ioreg_set_driver_state(g_virtio_snd_deferred.registry_id, attached ? IOREG_STATE_ACTIVE : IOREG_STATE_FAILED,
+						   "VirtIOSoundDriver");
+	g_virtio_snd_deferred_pending = false;
+}
+
+/* Start the thread that finishes the deferred attach; false before the scheduler can take one. */
+static bool
+virtio_snd_deferred_spawn(void)
+{
+	thread_t thread;
+
+	if (proc_kernel() == 0) return false;
+
+	if (!kernel_thread_create(proc_task(proc_kernel()), virtio_snd_deferred_thread, 0, &thread) ||
+		!sched_thread_start(thread))
+		return false;
+
+	g_virtio_snd_deferred_spawned = true;
+	return true;
+}
+
+bool
+virtio_snd_attach(const virtio_device_t *transport)
+{
+	if (transport == 0 || transport->device_id != VIRTIO_DEVICE_ID_SOUND) return false;
+
+	uint64_t remaining = boot_chime_loader_remaining_us();
+
+	if (remaining == 0ULL || g_virtio_snd_deferred_pending) return virtio_snd_attach_now(transport, false);
+
+	/*
+	 * The boot loader left its chime playing on this device, from queues in
+	 * memory it reserved. A reset now would cut the sound short and strand
+	 * the completions the device still owes those queues, so the device is
+	 * not touched until the chime is over. The wait is a thread's, never the
+	 * boot's: where the bus is scanned before the scheduler exists, the
+	 * thread is started by virtio_snd_attach_deferred_start.
+	 */
+	g_virtio_snd_deferred = *transport;
+	g_virtio_snd_deferred_pending = true;
+
+	VIRTIO_SND_LOG("VirtIO Sound device found, playing the boot loader's chime\n");
+	VIRTIO_SND_LOG("attach deferred for %llu ms, until the chime is over\n", (unsigned long long)(remaining / 1000ULL));
+	(void)virtio_snd_deferred_spawn();
+	return true;
+}
+
+void
+virtio_snd_attach_deferred_start(void)
+{
+	if (!g_virtio_snd_deferred_pending || g_virtio_snd_deferred_spawned) return;
+
+	if (virtio_snd_deferred_spawn()) return;
+
+	/* No thread to wait in: wait here, the chime is short. */
+	VIRTIO_SND_LOG("no thread for the deferred attach: waiting for the boot loader's chime\n");
+
+	while (boot_chime_loader_remaining_us() != 0ULL) {
+	}
+
+	virtio_snd_deferred_thread(0);
+}
+
+bool
+virtio_snd_attach_pending(void)
+{
+	return g_virtio_snd_deferred_pending;
+}
+
 void
 virtio_snd_probe(void)
 {
+	if (g_virtio_snd_deferred_pending) {
+		VIRTIO_SND_LOG("1 VirtIO Sound device waits for the boot loader's chime to end\n");
+		return;
+	}
+
 	if (g_virtio_snd_device_count == 0U) {
 		VIRTIO_SND_LOG("no VirtIO Sound device\n");
 		return;

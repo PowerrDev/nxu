@@ -28,6 +28,7 @@
 #include <kern/arm64/transition.h>
 #include <drivers/virtio/virtio.h>
 #include <drivers/virtio/virtio_input.h>
+#include <drivers/virtio/virtio_sound.h>
 #include <drivers/video/display.h>
 #include <drivers/video/ui_service_host.h>
 #include <drivers/block/block_device.h>
@@ -895,6 +896,9 @@ kern_init_higher_half(void)
 	kern_init_processes();
 	kern_init_filesystem();
 	kern_init_scheduler();
+
+	/* A sound device still playing the boot loader's chime is attached by a thread, now that there can be one. */
+	virtio_snd_attach_deferred_start();
 
 	if (!net_start()) {
 		kern_fail("network: worker initialization failed");

@@ -154,8 +154,11 @@ sound_test_thread(void *parameter)
 {
 	(void)parameter;
 
-	/* The device is exclusive: the boot chime's thread has it until it is done. */
-	while (g_sound_test_shared && boot_chime_state() == BOOT_CHIME_PLAYING) {
+	/*
+	 * The device is exclusive: the boot chime's thread has it until it is done, and after a boot through NBL
+	 * the loader's chime has it until the sound driver attaches.
+	 */
+	while ((g_sound_test_shared || boot_chime_loader_played()) && boot_chime_state() == BOOT_CHIME_PLAYING) {
 		if (!sched_yield()) break;
 	}
 

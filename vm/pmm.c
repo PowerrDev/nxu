@@ -235,6 +235,39 @@ pmm_reserve_range(uint64_t start, uint64_t size)
 
 #if defined(__aarch64__)
 
+/* Big-endian 64-bit field of the Device Tree's memory reservation block. */
+static uint64_t
+pmm_dtb_read_be64(const uint8_t *bytes)
+{
+	uint64_t value = 0ULL;
+
+	for (uint32_t index = 0U; index < 8U; index++)
+		value = (value << 8U) | bytes[index];
+
+	return value;
+}
+
+/*
+ * pmm_dtb_reservation:
+ *
+ * Entry `index` of the Device Tree's memory reservation block: memory the
+ * boot loader or the firmware still uses (NBL lists what its boot chime is
+ * playing from). False at the terminating entry or the end of the blob.
+ */
+static bool
+pmm_dtb_reservation(const dtb_t *dtb, uint32_t index, uint64_t *start, uint64_t *size)
+{
+	const uint8_t *blob_end = (const uint8_t *)dtb->base + dtb->total_size;
+	const uint8_t *entry = dtb->memory_reservations + (uint64_t)index * 16ULL;
+
+	if (dtb->memory_reservations == 0 || entry + 16U > blob_end) return false;
+
+	*start = pmm_dtb_read_be64(entry);
+	*size = pmm_dtb_read_be64(entry + 8U);
+
+	return *start != 0ULL || *size != 0ULL;
+}
+
 static bool
 pmm_find_bitmap_location(uint64_t kernel_end, uint64_t bitmap_storage_bytes, const dtb_t *dtb, uint64_t *bitmap_address)
 {
@@ -264,6 +297,35 @@ pmm_find_bitmap_location(uint64_t kernel_end, uint64_t bitmap_storage_bytes, con
 
 		if (!pmm_add(candidate, bitmap_storage_bytes, &candidate_end)) {
 			return false;
+		}
+	}
+
+	/*
+	 * Step past reserved memory too. Each step only moves the candidate up,
+	 * so a pass over the entries with no overlap ends the search.
+	 */
+	for (bool moved = true; moved;) {
+		uint64_t reserved_start;
+		uint64_t reserved_size;
+
+		moved = false;
+
+		for (uint32_t index = 0U; pmm_dtb_reservation(dtb, index, &reserved_start, &reserved_size); index++) {
+			uint64_t reserved_end;
+
+			if (!pmm_add(reserved_start, reserved_size, &reserved_end)) reserved_end = UINT64_MAX;
+
+			if (!pmm_ranges_overlap(candidate, candidate_end, reserved_start, reserved_end) &&
+				!pmm_ranges_overlap(candidate, candidate_end, dtb_start, dtb_end))
+				continue;
+
+			uint64_t past = pmm_ranges_overlap(candidate, candidate_end, dtb_start, dtb_end) ? dtb_end : reserved_end;
+
+			if (!pmm_align_up(past, PMM_PAGE_SIZE, &candidate)) return false;
+
+			if (!pmm_add(candidate, bitmap_storage_bytes, &candidate_end)) return false;
+
+			moved = true;
 		}
 	}
 
@@ -352,6 +414,14 @@ pmm_init(const platform_t *platform, const dtb_t *dtb)
 	pmm_reserve_range(bitmap_address, g_pmm.bitmap_storage_bytes);
 
 	pmm_reserve_range((uint64_t)dtb->base, dtb->total_size);
+
+	/* What the Device Tree's memory reservation block names stays out of the allocator. */
+	uint64_t reserved_start;
+	uint64_t reserved_size;
+
+	for (uint32_t index = 0U; pmm_dtb_reservation(dtb, index, &reserved_start, &reserved_size); index++) {
+		pmm_reserve_range(reserved_start, reserved_size);
+	}
 
 	/*
 	 * Bits beyond the final real page must never be allocated.

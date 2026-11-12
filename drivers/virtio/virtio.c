@@ -147,7 +147,9 @@ virtio_bind_device(const virtio_device_t *device, const virtio_probe_policy_t *p
 		}
 
 		g_virtio_sound_count++;
-		ioreg_set_driver_state(device->registry_id, IOREG_STATE_ACTIVE, driver_name);
+
+		/* A device still playing the boot loader's chime becomes active when its deferred attach has run. */
+		if (!virtio_snd_attach_pending()) ioreg_set_driver_state(device->registry_id, IOREG_STATE_ACTIVE, driver_name);
 		return true;
 	}
 
