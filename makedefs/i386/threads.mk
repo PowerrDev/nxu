@@ -30,6 +30,7 @@ I386_THREADS_STANDINS ?= 1
 I386_C_SOURCES += \
     kern/i386/thread.c \
     kern/i386/syscall_trap.c \
+    kern/i386/user.c \
     kern/i386/threads_init.c \
     kern/i386/threads_selftest.c \
     kern/process/proc.c \

@@ -44,6 +44,7 @@
 #include <kern/sched_prism/sched.h>
 #include <kern/sched_prism/waitq.h>
 #include <kern/tests/ipc_process_test.h>
+#include <kern/tests/signal_process_test.h>
 #include <kern/tests/socket_process_test.h>
 #include <kern/tests/spawn_process_test.h>
 #include <kern/tests/sound_test.h>
@@ -86,6 +87,8 @@ userland_run_process_test(const char *name)
 		ok = thread_process_test();
 	else if (strcmp(name, "socket") == 0)
 		ok = socket_process_test();
+	else if (strcmp(name, "signal") == 0)
+		ok = signal_process_test();
 	else if (strcmp(name, "spawn") == 0)
 		ok = spawn_process_test();
 	else {

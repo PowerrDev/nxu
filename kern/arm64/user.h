@@ -30,6 +30,7 @@
 #include <stdint.h>
 
 #define MACHINE_USER_CONTEXT 1
+#define MACHINE_USER_SIGNALS 1
 
 bool machine_user_fork_state(machine_thread_t *child);
 bool machine_user_exec_state(uint64_t entry, uint64_t stack, uint64_t argc, uint64_t argv);

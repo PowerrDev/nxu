@@ -460,7 +460,7 @@ syscall_setsid(void)
 	return status == PGRP_STATUS_OK ? syscall_return(sid) : syscall_error(syscall_pgrp_error(status));
 }
 
-#if MACHINE_USER_CONTEXT
+#if MACHINE_USER_SIGNALS
 
 static syscall_result_t
 syscall_signal_result(signal_send_result_t result)
@@ -482,7 +482,7 @@ syscall_signal_result(signal_send_result_t result)
 static syscall_result_t
 syscall_kill(uint64_t pid, uint64_t signal)
 {
-#if MACHINE_USER_CONTEXT
+#if MACHINE_USER_SIGNALS
 	if (pid > PROC_PID_MAX || signal >= NXU_NSIG) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
 	return syscall_signal_result(signal_send(current_proc(), (proc_id_t)pid, (uint32_t)signal));
@@ -497,7 +497,7 @@ syscall_kill(uint64_t pid, uint64_t signal)
 static syscall_result_t
 syscall_killpg(uint64_t pgid, uint64_t signal)
 {
-#if MACHINE_USER_CONTEXT
+#if MACHINE_USER_SIGNALS
 	if (pgid > PROC_PID_MAX || signal >= NXU_NSIG) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
 	return syscall_signal_result(signal_send_group(current_proc(), (proc_id_t)pgid, (uint32_t)signal));
@@ -515,7 +515,7 @@ syscall_killpg(uint64_t pgid, uint64_t signal)
 static syscall_result_t
 syscall_sigaction(uint64_t signal, uint64_t user_action, uint64_t user_old_action)
 {
-#if MACHINE_USER_CONTEXT
+#if MACHINE_USER_SIGNALS
 	if (!signal_valid((uint32_t)signal) || signal >= NXU_NSIG) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
 	proc_t proc = current_proc();
@@ -551,7 +551,7 @@ syscall_sigaction(uint64_t signal, uint64_t user_action, uint64_t user_old_actio
 static syscall_result_t
 syscall_sigprocmask(uint64_t how, uint64_t set)
 {
-#if MACHINE_USER_CONTEXT
+#if MACHINE_USER_SIGNALS
 	thread_t thread = current_thread();
 	if (thread == 0) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
@@ -588,7 +588,7 @@ syscall_sigprocmask(uint64_t how, uint64_t set)
 static syscall_result_t
 syscall_sigreturn(void)
 {
-#if MACHINE_USER_CONTEXT
+#if MACHINE_USER_SIGNALS
 	uint32_t saved_mask;
 
 	if (!machine_user_signal_pop(&saved_mask)) {
@@ -3174,6 +3174,14 @@ syscall_dispatch_inner(const syscall_request_t *request)
 	case SYSCALL_UI_SUBMIT:
 		return syscall_from_bridge(ui_bridge_syscall_submit(request->arguments[0], request->arguments[1]));
 	case SYSCALL_UI_CONTROL:
+		/*
+		 * A process that asks to kill itself (Activity Monitor with its own
+		 * row selected) cannot be torn down and then returned into: its
+		 * address space is gone. It leaves the way exit() does instead.
+		 */
+		if (request->arguments[0] == NXU_UI_CONTROL_KILL && (proc_id_t)request->arguments[1] == proc_selfpid())
+			return syscall_exit(NXU_EXIT_KILLED_SIGNAL(NXU_SIGKILL));
+
 		return syscall_from_bridge(ui_bridge_syscall_control(request->arguments[0], request->arguments[1]));
 	case SYSCALL_STATISTICS:
 		return syscall_statistics(request->arguments[0]);

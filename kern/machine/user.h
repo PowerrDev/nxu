@@ -14,8 +14,16 @@
  * returns false when it is not, or when the port cannot do it.
  *
  *   MACHINE_USER_CONTEXT
- *       1 when the port implements all of the below, 0 when it does not
- *       (fork, exec and signals then fail with "not supported").
+ *       1 when the port implements machine_user_fork_state and
+ *       machine_user_exec_state, 0 when it does not (fork and exec then fail
+ *       with "not supported").
+ *
+ *   MACHINE_USER_SIGNALS
+ *       1 when the port implements machine_user_signal_push and
+ *       machine_user_signal_pop and calls signal_take
+ *       (kern/process/signal.h) on its way back to user mode, 0 when it does
+ *       not (the signal system calls then fail with "not supported"). A port
+ *       can have signals without fork and exec.
  *
  *   machine_user_fork_state(child)
  *       Make child resume the way the caller's current trap will: same

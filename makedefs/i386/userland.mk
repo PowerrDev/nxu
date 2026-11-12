@@ -115,6 +115,7 @@ I386_USER_PROGRAMS := \
     credtest \
     suidhelper \
     suidtest \
+    sigtest \
     spawntest \
     su \
     sudo \
@@ -221,7 +222,7 @@ $(I386_USER_BUILD)/bootd: $(I386_USER_COMMON_OBJECTS) $(I386_USER_COREFOUNDATION
 
 	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
 
-$(I386_USER_BUILD)/logd $(I386_USER_BUILD)/threadtest $(I386_USER_BUILD)/top $(I386_USER_BUILD)/sockettest_server $(I386_USER_BUILD)/sockettest_client $(I386_USER_BUILD)/whoami $(I386_USER_BUILD)/id $(I386_USER_BUILD)/stat $(I386_USER_BUILD)/chmod $(I386_USER_BUILD)/chown $(I386_USER_BUILD)/credtest $(I386_USER_BUILD)/suidhelper $(I386_USER_BUILD)/suidtest $(I386_USER_BUILD)/spawntest: $(I386_USER_BUILD)/%: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/$(I386_USER_DAEMON_DIR)/%.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
+$(I386_USER_BUILD)/logd $(I386_USER_BUILD)/threadtest $(I386_USER_BUILD)/top $(I386_USER_BUILD)/sockettest_server $(I386_USER_BUILD)/sockettest_client $(I386_USER_BUILD)/whoami $(I386_USER_BUILD)/id $(I386_USER_BUILD)/stat $(I386_USER_BUILD)/chmod $(I386_USER_BUILD)/chown $(I386_USER_BUILD)/credtest $(I386_USER_BUILD)/suidhelper $(I386_USER_BUILD)/suidtest $(I386_USER_BUILD)/sigtest $(I386_USER_BUILD)/spawntest: $(I386_USER_BUILD)/%: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/$(I386_USER_DAEMON_DIR)/%.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
 
 	@mkdir -p $(dir $@)
 
@@ -325,7 +326,7 @@ $(I386_USER_STAMP): $(I386_USER_BINARIES) $(I386_USER_PLISTS) $(I386_DISK_STATIC
 
 	$(Q)cp $(I386_USER_BUILD)/nzh $(I386_USER_BUILD)/ping $(I386_USER_BUILD)/ifconfig $(I386_USER_BUILD)/terminaltest $(I386_USER_BUILD)/kpanic $(I386_DISKROOT)/System/Library/CoreServices/
 
-	$(Q)cp $(I386_USER_BUILD)/whoami $(I386_USER_BUILD)/id $(I386_USER_BUILD)/stat $(I386_USER_BUILD)/chmod $(I386_USER_BUILD)/chown $(I386_USER_BUILD)/credtest $(I386_USER_BUILD)/suidhelper $(I386_USER_BUILD)/suidtest $(I386_USER_BUILD)/spawntest $(I386_USER_BUILD)/su $(I386_USER_BUILD)/sudo $(I386_USER_BUILD)/passwd $(I386_DISKROOT)/System/Library/CoreServices/
+	$(Q)cp $(I386_USER_BUILD)/whoami $(I386_USER_BUILD)/id $(I386_USER_BUILD)/stat $(I386_USER_BUILD)/chmod $(I386_USER_BUILD)/chown $(I386_USER_BUILD)/credtest $(I386_USER_BUILD)/suidhelper $(I386_USER_BUILD)/suidtest $(I386_USER_BUILD)/sigtest $(I386_USER_BUILD)/spawntest $(I386_USER_BUILD)/su $(I386_USER_BUILD)/sudo $(I386_USER_BUILD)/passwd $(I386_DISKROOT)/System/Library/CoreServices/
 
 	$(Q)chmod 4755 $(I386_DISKROOT)/System/Library/CoreServices/su $(I386_DISKROOT)/System/Library/CoreServices/sudo $(I386_DISKROOT)/System/Library/CoreServices/passwd
 

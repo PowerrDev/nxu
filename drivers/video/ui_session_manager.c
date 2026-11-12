@@ -461,9 +461,12 @@ ui_bridge_control_kill(uint32_t pid)
 {
 	if (pid == PROC_PID_KERNEL) return -NXU_SYS_E_INVALID_ARGUMENT;
 
-#if MACHINE_USER_CONTEXT
+	/*
+	 * SIGKILL from the kernel ends the target outright (proc_exit); nothing
+	 * is delivered to user mode, so this works on every port, with or
+	 * without MACHINE_USER_CONTEXT.
+	 */
 	(void)signal_send(proc_kernel(), pid, NXU_SIGKILL);
-#endif
 	return 0;
 }
 
@@ -726,7 +729,7 @@ ui_bridge_terminate(uint32_t index)
 
 	if (connection == 0) return;
 
-#if MACHINE_USER_CONTEXT
+#if MACHINE_USER_SIGNALS
 	(void)signal_send(proc_kernel(), connection->owner.pid, NXU_SIGKILL);
 #endif
 }

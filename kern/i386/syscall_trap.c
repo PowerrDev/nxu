@@ -12,8 +12,8 @@
  *                             syscall_dispatch -> eax
  *   i386_trap_user_exception  a processor exception taken in ring 3
  *                             terminates the offending process
- *   i386_trap_exit            preempt on the way back to the interrupted
- *                             context
+ *   i386_trap_exit            take pending signals and preempt on the way
+ *                             back to the interrupted context
  *
  * See syscall_trap.h for the user ABI.
  */
@@ -25,7 +25,9 @@
 #include <kern/i386/trap.h>
 
 #include <kern/console/console.h>
+#include <kern/i386/user.h>
 #include <kern/process/proc.h>
+#include <kern/process/signal.h>
 #include <kern/process/thread.h>
 #include <kern/sched_prism/sched.h>
 #include <kern/syscall/syscall.h>
@@ -95,11 +97,22 @@ i386_trap_syscall(x86_saved_state_t *state)
 
 	i386_syscall_request_from_state(state, &request);
 
+	/* sigreturn rewrites the frame it was called from; this is how it finds it. */
+	machine_thread_t *machine = i386_thread_current_machine();
+
+	if (machine != 0) machine->user_frame = state;
+
 	syscall_result_t result = syscall_dispatch(&request);
+
+	if (machine != 0) machine->user_frame = 0;
 
 	switch (result.action) {
 	case SYSCALL_ACTION_RETURN:
 		state->eax = (uint32_t)result.value;
+		return;
+
+	case SYSCALL_ACTION_KEEP_FRAME:
+		/* The call replaced the whole frame (sigreturn): eax is part of what it restored. */
 		return;
 
 	case SYSCALL_ACTION_EXIT:
@@ -203,14 +216,84 @@ i386_trap_user_exception(x86_saved_state_t *state)
 	 * Terminate the whole process as SYS_exit would, then unwind this
 	 * thread's ring 3 excursion. The status marks it as a kernel kill.
 	 */
-	if (!proc_exit_current(I386_USER_FAULT_STATUS_BASE | state->trapno)) return false;
+	if (!proc_exit_current(I386_USER_FAULT_STATUS_BASE | state->trapno)) {
+		/*
+		 * A process that is already on its way out (killed while this thread
+		 * was in ring 3) has nothing left to terminate, and its fault is no
+		 * reason to stop the machine: unwind the thread as for any exit.
+		 * Anything else that cannot be terminated stays a panic.
+		 */
+		if ((proc->p_flag & PROC_FLAG_EXITING) == 0U && proc->p_stat != PROC_STATE_ZOMBIE) return false;
+	}
 
 	return i386_trap_user_terminate(state);
+}
+
+/*
+ * i386_deliver_pending_signals
+ *
+ * The frame is about to resume in ring 3: act on the thread's signals first.
+ * signal_take parks the thread while its process is stopped and does
+ * everything that needs no user context; what is left is building a handler
+ * frame, or ending the process. One handler at a time: the rest wait for the
+ * handler's sigreturn, which comes back through here.
+ */
+static void
+i386_deliver_pending_signals(x86_saved_state_t *state)
+{
+	proc_t proc = current_proc();
+	thread_t thread = current_thread();
+	machine_thread_t *machine = i386_thread_current_machine();
+
+	if (proc == 0 || proc == proc_kernel() || thread == 0 || machine == 0 || !thread_is_active(thread) ||
+		(proc->p_flag & PROC_FLAG_EXITING) != 0U) {
+		return;
+	}
+
+	uint32_t signal;
+	nxu_sigaction_t action;
+	uint32_t terminate_with;
+
+	switch (signal_take(proc, thread, &signal, &action)) {
+	case SIGNAL_TAKE_NONE:
+		return;
+	case SIGNAL_TAKE_HANDLER: {
+		uint32_t previous_mask = thread->sig_blocked;
+
+		machine->user_frame = state;
+
+		bool pushed = machine_user_signal_push(action.handler, action.restorer, signal, previous_mask);
+
+		machine->user_frame = 0;
+
+		if (pushed) {
+			thread->sig_blocked = signal_blocked_mask_for_handler(previous_mask, signal, &action);
+			return;
+		}
+
+		/* No room for the handler frame (stack overflow, bad stack). */
+		terminate_with = NXU_SIGSEGV;
+		break;
+	}
+	default:
+		terminate_with = signal;
+		break;
+	}
+
+	if (proc_exit_current(NXU_EXIT_KILLED_SIGNAL(terminate_with))) (void)i386_trap_user_terminate(state);
 }
 
 void
 i386_trap_exit(x86_saved_state_t *state)
 {
+	/*
+	 * Every way back to ring 3 passes here, system call or interrupt, so a
+	 * signal posted to a thread that is running user code is acted on at the
+	 * next interrupt it takes. A frame that was just redirected into the
+	 * kernel (the process exited) is no longer a user frame and is skipped.
+	 */
+	if (x86_saved_state_is_user(state)) i386_deliver_pending_signals(state);
+
 	/*
 	 * Interrupts are masked here (every vector is an interrupt gate). As on
 	 * arm64, a switch is only safe when the interrupted context holds no

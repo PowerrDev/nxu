@@ -106,6 +106,18 @@ The model is deliberately small; `kern/process/signal.h` is the reference.
   directed signals, `siginfo`, alternate signal stacks, and floating-point state
   in the frame (userland is built `-mgeneral-regs-only`).
 
+### Per architecture
+
+| | arm64 | i386 |
+| --- | --- | --- |
+| Handlers, `sigreturn`, masks | yes | yes (`kern/i386/user.c`) |
+| Stop, continue, `killpg`, wait options | yes | yes |
+| A fault in user code becomes a signal a handler can catch | yes | no: the process is ended directly |
+| `fork`, `exec` | yes | no |
+
+A port declares the first two rows with `MACHINE_USER_SIGNALS` and the last
+with `MACHINE_USER_CONTEXT` (`kern/machine/user.h`).
+
 ## Sleeping: wait queues
 
 `kern/sched_prism/waitq.{c,h}` is the one way a thread sleeps until something

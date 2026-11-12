@@ -93,6 +93,10 @@ run_case process-ipc yes "process-test=ipc qemu-exit=1" $STATUS_CLEAN \
 run_case process-socket yes "process-test=socket qemu-exit=1" $STATUS_CLEAN \
   "socket_process_test: two-process streaming socket round trip passed"
 
+run_case process-signal yes "process-test=signal qemu-exit=1" $STATUS_CLEAN \
+  "sigtest: handlers, masks, stop, continue and kill all worked" \
+  "signal_process_test: signal handlers, stop, continue and kill work between spawned processes"
+
 run_case process-spawn yes "process-test=spawn qemu-exit=1" $STATUS_CLEAN \
   "spawntest: arguments, descriptors, groups, sessions and masks were all in place at the start" \
   "spawn_process_test: a spawned process starts with its arguments, descriptors, group and mask in place"

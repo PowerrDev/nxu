@@ -49,6 +49,8 @@
  * sp is the saved kernel stack pointer of a thread that is not running.
  * The registers themselves sit on that stack; see context_switch.S.
  */
+struct x86_saved_state32;
+
 typedef struct {
 	uint32_t sp;
 } i386_kernel_context_t;
@@ -76,12 +78,16 @@ typedef struct {
  * esp0            stack the CPU switches to on a trap from ring 3
  * user_kernel_sp  where machine_thread_enter_user() parked the kernel
  *                 context it will resume when the user program has exited
+ * user_frame      the saved state of the trap from ring 3 this thread is
+ *                 handling, while it is handling one; what signal delivery
+ *                 and sigreturn rewrite (kern/i386/user.c). 0 otherwise.
  */
 typedef struct machine_thread {
 	i386_kernel_context_t context;
 	i386_user_state_t user;
 	uint32_t esp0;
 	uint32_t user_kernel_sp;
+	struct x86_saved_state32 *user_frame;
 } machine_thread_t;
 
 /* transition.S and context_switch.S hard-code these offsets. */

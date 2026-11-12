@@ -801,14 +801,33 @@ nxu_sigprocmask(uint32_t how, uint32_t set)
 	return nxu_syscall2(NXU_SYS_SIGPROCMASK, how, set);
 }
 
+/*
+ * Where a signal handler returns to. The kernel enters a handler as a cdecl
+ * call whose return address is this routine; all it does is hand control back
+ * to the kernel with sigreturn, which restores what the handler interrupted
+ * and so never returns here.
+ */
+void nxu_sigreturn_trampoline(void);
+
+__asm__(".text\n"
+		".global nxu_sigreturn_trampoline\n"
+		".type nxu_sigreturn_trampoline, @function\n"
+		"nxu_sigreturn_trampoline:\n"
+		"	movl $56, %eax\n"
+		"	int $0x80\n"
+		"	ud2\n"
+		".size nxu_sigreturn_trampoline, . - nxu_sigreturn_trampoline\n");
+
+_Static_assert(NXU_SYS_SIGRETURN == 56ULL, "nxu_sigreturn_trampoline hard-codes the sigreturn number");
+
 int64_t
 nxu_signal(uint32_t signal, void (*handler)(int))
 {
-	/* User signal frames are not implemented on i386 yet. Default/ignore
-	 * dispositions still work, including Runtime's fatal SIGABRT path. */
-	if ((uintptr_t)handler > NXU_SIG_IGN) return -NXU_SYS_E_NOT_SUPPORTED;
+	nxu_sigaction_t action = {.handler = (uintptr_t)handler,
+							  .restorer = (uintptr_t)handler > NXU_SIG_IGN ? (uintptr_t)nxu_sigreturn_trampoline : 0U,
+							  .mask = 0U,
+							  .flags = 0U};
 
-	nxu_sigaction_t action = {.handler = (uintptr_t)handler};
 	return nxu_sigaction(signal, &action, 0);
 }
 
