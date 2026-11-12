@@ -120,14 +120,17 @@ typedef struct {
 
 	/*
 	 * Optional, for device nodes. open runs when a file is opened on the
-	 * vnode and may refuse it (exclusive devices, missing privileges);
+	 * vnode and may refuse it (exclusive devices, missing privileges). It
+	 * may also redirect the open: a cloning device stores a different vnode
+	 * in *opened, with a reference for the caller, and the file is opened
+	 * on that vnode instead (and later closed on it, not on this one).
 	 * close runs once, when the last reference to that open file goes.
 	 * ioctl carries a device-specific request: command encodes the
 	 * direction and size of argument (NXU_IOC_* in syscall_defs.h), which is
 	 * a kernel buffer of that size. A vnode without them answers
 	 * NOT_SUPPORTED to ioctl and opens and closes freely.
 	 */
-	vfs_status_t (*open)(vnode_t vnode, uint32_t flags);
+	vfs_status_t (*open)(vnode_t vnode, uint32_t flags, vnode_t *opened);
 	void (*close)(vnode_t vnode, uint32_t flags);
 	vfs_status_t (*ioctl)(vnode_t vnode, uint32_t command, void *argument);
 	vfs_status_t (*rmdir)(vnode_t directory, const char *name);
@@ -212,7 +215,7 @@ vfs_status_t vnode_setattr(vnode_t vnode, const vnode_attr_t *attr, uint32_t whi
 struct ucred;
 vfs_status_t vnode_access(vnode_t vnode, const struct ucred *cred, uint32_t want);
 vfs_status_t vnode_readlink(vnode_t vnode, char *buffer, uint64_t capacity, uint64_t *length);
-vfs_status_t vnode_open(vnode_t vnode, uint32_t flags);
+vfs_status_t vnode_open(vnode_t vnode, uint32_t flags, vnode_t *opened);
 void vnode_close(vnode_t vnode, uint32_t flags);
 vfs_status_t vnode_ioctl(vnode_t vnode, uint32_t command, void *argument);
 

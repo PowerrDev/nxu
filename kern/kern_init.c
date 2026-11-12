@@ -688,6 +688,8 @@ kern_init_filesystem(void)
 		kern_fail("IOVirtualFSDriver: devfs mount at /dev failed");
 
 	kputln("IOVirtualFSDriver mounted devfs at /dev");
+
+	if (!devfs_self_test()) kern_fail("IOVirtualFSDriver: devfs self-test failed");
 }
 
 /*

@@ -42,6 +42,7 @@ I386_C_SOURCES += \
     libk/mp3.c \
     libk/wav.c \
     vfs/devfs.c \
+    vfs/devfs_selftest.c \
     vfs/ext4.c \
     vfs/file.c \
     vfs/jbd2.c \

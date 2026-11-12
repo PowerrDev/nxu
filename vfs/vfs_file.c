@@ -34,10 +34,18 @@ vfs_open(filedesc_t filedesc, const char *path, uint32_t flags, uint32_t *descri
 	}
 
 	/* A device node may refuse the open (it is exclusive, or the caller lacks a privilege). */
-	status = vnode_open(vnode, flags);
+	vnode_t opened;
+
+	status = vnode_open(vnode, flags, &opened);
 	if (status != VFS_STATUS_OK) {
 		vnode_rele(vnode);
 		return status;
+	}
+
+	/* A cloning device opened a device of its own making: the file refers to that one. */
+	if (opened != 0) {
+		vnode_rele(vnode);
+		vnode = opened;
 	}
 
 	file_t file;

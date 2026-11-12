@@ -85,8 +85,10 @@ virtio_snd_dev_params_to_abi(const virtio_snd_params_t *params, nxu_audio_params
 }
 
 static vfs_status_t
-virtio_snd_dev_open(void *context, uint32_t flags)
+virtio_snd_dev_open(void *context, uint32_t flags, devfs_clone_t *clone)
 {
+	(void)clone;
+
 	virtio_snd_device_t *device = context;
 
 	/* The kernel itself (the boot chime, the tests) is always allowed; anyone else needs the capability. */

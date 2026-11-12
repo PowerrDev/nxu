@@ -257,15 +257,25 @@ vnode_readlink(vnode_t vnode, char *buffer, uint64_t capacity, uint64_t *length)
  *
  * Tell a vnode that a file is being opened on it. Only device vnodes have
  * anything to say; for every other kind the open always goes ahead.
+ *
+ * *opened is 0 on return unless the vnode redirected the open, in which case
+ * it is the vnode to open instead, with a reference the caller now owns. A
+ * failed open leaves it 0.
  */
 vfs_status_t
-vnode_open(vnode_t vnode, uint32_t flags)
+vnode_open(vnode_t vnode, uint32_t flags, vnode_t *opened)
 {
-	if (vnode == 0 || !vnode->v_active) return VFS_STATUS_INVALID;
+	if (opened != 0) *opened = 0;
+
+	if (vnode == 0 || opened == 0 || !vnode->v_active) return VFS_STATUS_INVALID;
 
 	if (vnode->v_ops == 0 || vnode->v_ops->open == 0) return VFS_STATUS_OK;
 
-	return vnode->v_ops->open(vnode, flags);
+	vfs_status_t status = vnode->v_ops->open(vnode, flags, opened);
+
+	if (status != VFS_STATUS_OK) *opened = 0;
+
+	return status;
 }
 
 void

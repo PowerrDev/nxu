@@ -444,6 +444,7 @@ C_SOURCES := \
     vfs/btrfs/btrfs_vfs.c \
     vfs/btrfs/btrfs_zlib.c \
     vfs/devfs.c \
+    vfs/devfs_selftest.c \
     vfs/btrfs/btrfs_zstd.c \
     vfs/ext4.c \
     vfs/jbd2.c \

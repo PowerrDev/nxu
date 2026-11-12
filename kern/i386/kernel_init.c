@@ -119,6 +119,8 @@ i386_init_kernel(const i386_boot_info_t *boot)
 
 	kputln("vfs_mount: ramfs mounted at /, /Volumes/mainOS mountpoint created");
 	kputln("vfs_mount: devfs mounted at /dev");
+
+	if (!devfs_self_test()) return false;
 	vfs_dump();
 	return true;
 }
