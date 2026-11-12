@@ -5,8 +5,9 @@
  * File:        platform/i386/devices_init.c
  *
  * The devices area's boot phases: i386_init_platform() discovers the machine
- * (memory map, PCI, RTC) and i386_init_drivers() brings up the VirtIO-PCI
- * block and input drivers. Each has a self-test hook, run by the boot argument
+ * (memory map, PCI, RTC), i386_init_display() brings the screen up as soon as
+ * the heap exists, and i386_init_drivers() brings up the VirtIO-PCI block and
+ * input drivers. Each has a self-test hook, run by the boot argument
  * "test=platform" / "test=drivers".
  *
  * Boot arguments read here:
@@ -257,6 +258,53 @@ devices_show_boot_splash(void)
 	if (!boot_splash_show(display_primary())) kputln("i386_init_drivers: boot splash unavailable");
 }
 
+/* "virtio-irq=1": the VirtIO drivers interrupt instead of being polled. Decided once, before the first one attaches. */
+static void
+devices_select_virtio_irq_mode(void)
+{
+	static bool selected;
+
+	if (selected) return;
+
+	selected = true;
+
+	if (devices_arg_or("virtio-irq", 0ULL) != 0ULL) {
+		virtio_pci_set_irq_mode(true);
+		kputln("i386_init_drivers: VirtIO interrupts enabled (PCI INTx via irq_register)");
+	} else {
+		kputln("i386_init_drivers: VirtIO polling (no interrupts)");
+	}
+}
+
+/*
+ * i386_init_display
+ *
+ * The display, ahead of everything else that is a driver: called from the
+ * kernel phase the moment the heap exists, which is all the VirtIO-GPU driver
+ * and the boot splash still lacked (PCI was enumerated by the platform phase,
+ * DMA memory came with the VM phase). The screen then shows the splash and
+ * the boot log through the rest of the kernel's bring-up, its self-tests, the
+ * scheduler and the other CPUs, instead of first lighting up when the boot is
+ * nearly over. A machine with no VirtIO display falls back to the firmware's
+ * framebuffer here too. Never a reason to stop the boot: with no display at
+ * all the drivers phase simply finds none.
+ */
+bool
+i386_init_display(const i386_boot_info_t *boot)
+{
+	if (platform_get() == 0 || !display_init()) return true;
+
+	devices_select_virtio_irq_mode();
+
+	virtio_probe_policy_t policy = {.gpu = true, .on_gpu_ready = devices_show_boot_splash};
+
+	(void)virtio_pci_attach_early(VIRTIO_DEVICE_ID_GPU, &policy);
+
+	if (!display_primary() && firmware_display_init(boot)) devices_show_boot_splash();
+
+	return true;
+}
+
 bool
 i386_init_drivers(const i386_boot_info_t *boot)
 {
@@ -284,13 +332,9 @@ i386_init_drivers(const i386_boot_info_t *boot)
 		return false;
 	}
 
-	if (devices_arg_or("virtio-irq", 0ULL) != 0ULL) {
-		virtio_pci_set_irq_mode(true);
-		kputln("i386_init_drivers: VirtIO interrupts enabled (PCI INTx via irq_register)");
-	} else {
-		kputln("i386_init_drivers: VirtIO polling (no interrupts)");
-	}
+	devices_select_virtio_irq_mode();
 
+	/* The display is normally up already (i386_init_display); the scan binds everything else. */
 	virtio_probe_policy_t policy = {.input = true,
 									.block = true,
 									.gpu = true,
@@ -319,7 +363,6 @@ i386_init_drivers(const i386_boot_info_t *boot)
 	 * With it, tepOS checks bootd against its signed manifest: reported, never waited for or enforced.
 	 */
 	virtio_dump();
-	ioreg_dump();
 	block_device_dump();
 	display_dump();
 

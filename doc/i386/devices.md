@@ -10,6 +10,13 @@ port as a whole.
   fills `platform_t` (COM1 and CMOS I/O port ranges, the Multiboot memory map
   through the VM area's `i386_memory_map_load()`, PCI counts), dumps it and the
   PCI table to the boot log, and brings up the CMOS RTC.
+* `i386_init_display()`: the screen, ahead of every other driver. It is not a
+  phase of its own: the kernel phase calls it the moment the heap exists, which
+  is all the VirtIO-GPU driver and the boot splash still lacked. It binds the
+  GPU functions with `virtio_pci_attach_early()` (the later bus scan passes over
+  them) and falls back to the firmware's framebuffer, so the splash and the boot
+  log are on screen through the rest of the kernel's bring-up, its self-tests,
+  the scheduler and the other CPUs.
 * `i386_init_drivers()`: input, block and display cores, then `virtio_init()`,
   which scans the (empty) MMIO list and then the VirtIO-PCI scanner registered
   with `virtio_bus_register()`. The GPU class driver is enabled in the probe

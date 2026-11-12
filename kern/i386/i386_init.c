@@ -176,6 +176,7 @@ I386_WEAK_PHASE(i386_init_kernel)
 I386_WEAK_PHASE(i386_init_threads)
 I386_WEAK_PHASE(i386_init_smp)
 I386_WEAK_PHASE(i386_init_drivers)
+I386_WEAK_PHASE(i386_init_display)
 I386_WEAK_PHASE(i386_init_userland)
 I386_WEAK_PHASE(i386_init_run)
 

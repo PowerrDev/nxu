@@ -40,6 +40,16 @@ bool virtio_pci_probe(const pci_device_t *pci, virtio_device_t *device);
  */
 bool virtio_pci_scan(const platform_t *platform, const virtio_probe_policy_t *policy);
 
+/*
+ * virtio_pci_attach_early:
+ *
+ * Bind the class driver of every VirtIO-PCI function of one device type now,
+ * ahead of the bus scan: the display, so the screen comes up as soon as the
+ * kernel can drive it instead of with the rest of the drivers. The functions
+ * bound here are remembered, and virtio_pci_scan passes over them.
+ */
+bool virtio_pci_attach_early(uint32_t device_id, const virtio_probe_policy_t *policy);
+
 /* Register virtio_pci_scan with virtio_init(). Call before virtio_init(). */
 bool virtio_pci_register(void);
 

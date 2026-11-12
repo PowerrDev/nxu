@@ -72,6 +72,9 @@ bool i386_init_kernel(const i386_boot_info_t *boot);
 bool i386_init_threads(const i386_boot_info_t *boot);
 bool i386_init_smp(const i386_boot_info_t *boot);
 bool i386_init_drivers(const i386_boot_info_t *boot);
+
+/* Not a phase of its own: the kernel phase calls it once the heap is up, so the screen is on early. */
+bool i386_init_display(const i386_boot_info_t *boot);
 bool i386_init_userland(const i386_boot_info_t *boot);
 
 /*

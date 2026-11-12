@@ -758,6 +758,50 @@ virtio_pci_probe(const pci_device_t *pci, virtio_device_t *device)
 	return true;
 }
 
+/* Functions virtio_pci_attach_early already bound; the bus scan leaves them alone. */
+#define VIRTIO_PCI_EARLY_MAX 4U
+
+static const pci_device_t *g_virtio_pci_early[VIRTIO_PCI_EARLY_MAX];
+static uint32_t g_virtio_pci_early_count;
+
+static bool
+virtio_pci_bound_early(const pci_device_t *pci)
+{
+	for (uint32_t index = 0U; index < g_virtio_pci_early_count; index++) {
+		if (g_virtio_pci_early[index] == pci) return true;
+	}
+
+	return false;
+}
+
+bool
+virtio_pci_attach_early(uint32_t device_id, const virtio_probe_policy_t *policy)
+{
+	if (policy == 0) return false;
+
+	for (uint32_t index = 0U; index < pci_device_count(); index++) {
+		const pci_device_t *pci = pci_device_at(index);
+		virtio_device_t device;
+
+		if (pci->vendor_id != VIRTIO_PCI_VENDOR_ID || virtio_pci_bound_early(pci)) continue;
+
+		if (g_virtio_pci_early_count >= VIRTIO_PCI_EARLY_MAX) break;
+
+		if (!virtio_pci_probe(pci, &device) || device.device_id != device_id) continue;
+
+		kputs("virtio_pci_attach_early: ");
+		pci_print_location(pci);
+		kprintf(" device ID %u via %s, irq line %u\n", device.device_id, device.ops->name,
+				(unsigned int)pci->interrupt_line);
+
+		g_virtio_pci_early[g_virtio_pci_early_count++] = pci;
+
+		if (!virtio_bind_device(&device, policy)) return false;
+	}
+
+	return true;
+}
+
 bool
 virtio_pci_scan(const platform_t *platform, const virtio_probe_policy_t *policy)
 {
@@ -766,6 +810,8 @@ virtio_pci_scan(const platform_t *platform, const virtio_probe_policy_t *policy)
 	for (uint32_t index = 0U; index < pci_device_count(); index++) {
 		const pci_device_t *pci = pci_device_at(index);
 		virtio_device_t device;
+
+		if (virtio_pci_bound_early(pci)) continue;
 
 		if (!virtio_pci_probe(pci, &device)) continue;
 

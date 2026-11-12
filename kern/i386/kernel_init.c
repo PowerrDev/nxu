@@ -59,6 +59,12 @@ i386_init_kernel(const i386_boot_info_t *boot)
 		return false;
 	}
 
+	/*
+	 * The heap and the boot arguments are all the display still needed: bring
+	 * the screen up now, so the rest of the boot is visible on it.
+	 */
+	(void)i386_init_display(boot);
+
 	nxu_acpi_discover(boot);
 
 	ipc_init();
