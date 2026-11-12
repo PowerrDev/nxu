@@ -121,6 +121,10 @@
 /* wait with options (NXU_WAIT_*), and a signal to every member of a process group. */
 #define NXU_SYS_WAIT_OPTIONS 105ULL
 #define NXU_SYS_KILLPG 106ULL
+/* Start a program with arguments, descriptors, a process group and a signal mask of the caller's choosing. */
+#define NXU_SYS_SPAWN_ATTR 107ULL
+/* Two connected stream sockets, one descriptor each. */
+#define NXU_SYS_SOCKETPAIR 108ULL
 #include <kern/syscall/net_defs.h>
 #include <kern/syscall/dyrld_defs.h>
 #include <kern/syscall/crash_defs.h>
@@ -239,9 +243,79 @@ typedef struct {
 	uint32_t flags;
 } nxu_sigaction_t;
 
-/* exec accepts at most this many argv strings, this many bytes in all. */
+/* exec and spawn accept at most this many argv strings, this many bytes in all. */
 #define NXU_EXEC_ARGV_MAX 16U
 #define NXU_EXEC_ARGV_BYTES 1024U
+
+/*
+ * spawn_attr: everything a new process is to start with, applied by the
+ * kernel before the process can run. There is no window in which the child
+ * exists without its descriptors, outside its process group or with the wrong
+ * signal mask, so the parent never has to fix a child up after starting it
+ * (which, without fork, it could not do race-free anyway).
+ *
+ *   flags
+ *     NXU_SPAWN_SETPGROUP   put the child in process group `pgid`, which must
+ *                           exist in the caller's session; pgid 0 means a new
+ *                           group named after the child. Without it the child
+ *                           is in the caller's group.
+ *     NXU_SPAWN_SETSID      the child leads a new session and a new group in
+ *                           it. Not together with NXU_SPAWN_SETPGROUP.
+ *     NXU_SPAWN_SETSIGMASK  the child's first thread starts with `sigmask`
+ *                           blocked. Without it nothing is blocked.
+ *
+ *   caps
+ *     The capabilities the child holds (NXU_CAP_*), a subset of the caller's.
+ *
+ *   arguments / arguments_size / argc
+ *     argc NUL-terminated strings packed back to back, arguments_size bytes
+ *     in all, at most NXU_EXEC_ARGV_MAX strings and NXU_EXEC_ARGV_BYTES bytes.
+ *     The child's main() receives them as argc and argv.
+ *
+ *   name
+ *     The process name (a string of fewer than 32 bytes), or 0 for the last
+ *     path component of the program.
+ *
+ *   descriptors / descriptor_count
+ *     The child's descriptors: descriptors[i].child in the child refers to
+ *     the open file descriptors[i].parent refers to in the caller, shared as
+ *     after a fork. Nothing else is inherited; a child with no entry for 0,
+ *     1 or 2 has no standard input, output or error of its own.
+ *
+ * A new process always starts with every signal disposition at its default;
+ * dispositions are not inherited across spawn.
+ *
+ * The layout is the same on every architecture: fixed-width fields, user
+ * addresses as 64-bit values, no padding. `size` is sizeof(nxu_spawn_attr_t)
+ * as the caller was built, so the structure can grow.
+ */
+#define NXU_SPAWN_SETPGROUP (1U << 0U)
+#define NXU_SPAWN_SETSID (1U << 1U)
+#define NXU_SPAWN_SETSIGMASK (1U << 2U)
+#define NXU_SPAWN_FLAGS_ALL (NXU_SPAWN_SETPGROUP | NXU_SPAWN_SETSID | NXU_SPAWN_SETSIGMASK)
+
+#define NXU_SPAWN_FD_MAX 8U
+
+typedef struct {
+	uint32_t child;
+	uint32_t parent;
+} nxu_spawn_fd_t;
+
+typedef struct {
+	uint32_t size;
+	uint32_t flags;
+	uint32_t caps;
+	uint32_t pgid;
+	uint32_t sigmask;
+	uint32_t argc;
+	uint32_t arguments_size;
+	uint32_t descriptor_count;
+	uint64_t arguments;
+	uint64_t name;
+	nxu_spawn_fd_t descriptors[NXU_SPAWN_FD_MAX];
+} nxu_spawn_attr_t;
+
+_Static_assert(sizeof(nxu_spawn_attr_t) == 112U, "nxu_spawn_attr_t is ABI: its layout must not change");
 
 /* Mirrors vm_user_protection_t (vm/address_space.h) numerically. */
 #define NXU_MMAP_PROT_READ_WRITE 0U

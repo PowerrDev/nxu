@@ -518,6 +518,7 @@ USER_C_SOURCES := \
     frameworks/lib/syscall.c \
     frameworks/lib/string.c \
     frameworks/lib/thread.c \
+    frameworks/lib/spawn_io.c \
     frameworks/CoreFoundation.framework/lib/plist/plist.c \
     frameworks/CoreFoundation.framework/lib/service/service_config.c \
     frameworks/CoreFoundation.framework/lib/service/bootstrap_client.c \
@@ -551,6 +552,7 @@ USER_C_SOURCES := \
     frameworks/BootDaemons.framework/credtest.c \
     frameworks/BootDaemons.framework/suidhelper.c \
     frameworks/BootDaemons.framework/suidtest.c \
+    frameworks/BootDaemons.framework/spawntest.c \
     frameworks/BootDaemons.framework/su.c \
     frameworks/BootDaemons.framework/sudo.c \
     frameworks/BootDaemons.framework/passwd.c \
@@ -580,6 +582,7 @@ USER_COMMON_OBJECTS := \
     $(USER_BUILD)/frameworks/lib/syscall.o \
     $(USER_BUILD)/frameworks/lib/string.o \
     $(USER_BUILD)/frameworks/lib/thread.o \
+    $(USER_BUILD)/frameworks/lib/spawn_io.o \
     $(USER_BUILD)/frameworks/lib/pwdb.o
 
 
@@ -642,6 +645,7 @@ USER_DAEMONS := \
     $(USER_BUILD)/credtest \
     $(USER_BUILD)/suidhelper \
     $(USER_BUILD)/suidtest \
+    $(USER_BUILD)/spawntest \
     $(USER_BUILD)/su \
     $(USER_BUILD)/sudo \
     $(USER_BUILD)/passwd \
@@ -1089,6 +1093,12 @@ $(USER_BUILD)/suidhelper: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDa
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 
+$(USER_BUILD)/spawntest: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/spawntest.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
 $(USER_BUILD)/suidtest: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/suidtest.o
 
 	$(QUIET_PRINT) "LD" "$@"
@@ -1249,6 +1259,8 @@ $(USER_STAGE_STAMP): frameworks/Terminal.framework/Info.plist tools/UI/Icons/Ter
 	$(Q)cp $(USER_BUILD)/suidhelper $(DISK_ROOT)/System/Library/CoreServices/suidhelper
 
 	$(Q)cp $(USER_BUILD)/suidtest $(DISK_ROOT)/System/Library/CoreServices/suidtest
+
+	$(Q)cp $(USER_BUILD)/spawntest $(DISK_ROOT)/System/Library/CoreServices/spawntest
 
 	$(Q)cp $(USER_BUILD)/su $(DISK_ROOT)/System/Library/CoreServices/su
 

@@ -195,6 +195,27 @@ read) and `privtest` (a granted parent uses what it holds and is refused the
 rest; a child gets exactly the subset passed; `fork` and `exec` keep the set)
 cover it.
 
+## Spawn with attributes
+
+`nxu_spawn_attr(path, &attr)` starts a program with everything it is to begin
+with already in place: its arguments, the descriptors it inherits (each named
+as "this number in the child is that open file of mine"), its process group
+(the caller's, a new one, an existing one of the caller's session) or a new
+session, and its signal mask. The kernel applies all of it while the process
+is an embryo that cannot run, with group placement decided in the critical
+section that makes it visible, and starts it only afterwards; a request that
+cannot be honoured leaves no process behind. This is what a parent needs on a
+port without `fork`, where nothing can be adjusted between creating a child
+and running it, and it closes the usual races on a port that has `fork` too.
+
+Every process starts with its stack pointer at `argc`, with `argv` in the
+words above it, whether spawned or reached by `exec`; the entry stubs in
+`frameworks/crt0.S` and `frameworks/crt0_i386.S` pass them to `main`.
+
+`nxu_spawn_io(path, argv, &stream)` builds on it: the child's standard input,
+output and error are one end of a socket pair (`nxu_socketpair`) and the caller
+keeps the other.
+
 ## `fork`
 
 `proc_fork()` makes a child that is a copy of the caller.

@@ -129,6 +129,18 @@ nxu_spawn_caps(const char *path, const char *name, uint64_t caps)
 }
 
 int64_t
+nxu_spawn_attr(const char *path, const nxu_spawn_attr_t *attr)
+{
+	return nxu_syscall2(NXU_SYS_SPAWN_ATTR, (uint64_t)path, (uint64_t)attr);
+}
+
+int64_t
+nxu_socketpair(uint32_t descriptors[2])
+{
+	return nxu_syscall1(NXU_SYS_SOCKETPAIR, (uint64_t)descriptors);
+}
+
+int64_t
 nxu_get_caps(void)
 {
 	return nxu_syscall0(NXU_SYS_GET_CAPS);

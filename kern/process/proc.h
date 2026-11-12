@@ -273,6 +273,18 @@ bool proc_mark_running(proc_t proc);
 
 
 bool proc_exit(proc_t proc, uint64_t status);
+
+/*
+ * proc_abort_embryo
+ *
+ * Take apart a process that was created but never started (it is still
+ * PROC_STATE_EMBRYO): its unstarted thread and address space, its
+ * descriptors and ports, its place in its group and under its parent, and
+ * its slot. Nothing remains to wait for: an embryo has no exit status, and
+ * to its parent it never existed. False if proc is not an embryo. This is how
+ * a spawn that fails part-way leaves no half-made process behind.
+ */
+bool proc_abort_embryo(proc_t proc);
 bool proc_exit_current(uint64_t status);
 
 typedef enum { PROC_WAIT_REAPED, PROC_WAIT_CHANGED, PROC_WAIT_NOT_YET, PROC_WAIT_NO_CHILD } proc_wait_result_t;

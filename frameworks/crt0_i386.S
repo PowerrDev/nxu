@@ -1,9 +1,14 @@
 /*
- * i386 process entry. The loader starts a process at _start with
- * esp = VM_USER_STACK_TOP (16-byte aligned, one past the top of the stack
- * mapping), every general register zero and no arguments. Normal userland
- * builds bootstrap shell arguments and stdio over a local socket before
- * calling main; fixture builds keep the original zero-argument entry.
+ * i386 process entry. The loader starts every process at _start with esp
+ * pointing at its arguments, laid out in 32-bit words:
+ *
+ *     esp ->  argc
+ *             argv[0] ... argv[argc - 1]
+ *             0
+ *
+ * and every general register but eax zero. A process started without
+ * arguments finds argc 0. main is declared main(uint64_t argc, const char
+ * *const *argv), so argc is passed as two words.
  *
  * NXU_SYS_EXIT is 1, status in ebx (see frameworks/lib/syscall_i386.c for the
  * whole convention). exit does not return; the trailing loop is only there so
@@ -14,23 +19,13 @@
 .type _start, @function
 _start:
 	xorl %ebp, %ebp
+	movl (%esp), %eax
+	leal 4(%esp), %edx
 	andl $-16, %esp
-#if defined(NXU_SPAWN_IO_ENTRY)
-	/* Bootstrap argv and redirected stdio for shell-spawned programs. */
-	subl $16, %esp
-	leal 12(%esp), %eax
-	movl %eax, (%esp)
-	call nxu_spawn_io_start
-	movl 12(%esp), %ecx
-	movl %eax, (%esp)
-	movl %edx, 4(%esp)
-	movl %ecx, 8(%esp)
-#else
 	subl $4, %esp
+	pushl %edx
 	pushl $0
-	pushl $0
-	pushl $0
-#endif
+	pushl %eax
 	call main
 	addl $16, %esp
 	movl %eax, %ebx

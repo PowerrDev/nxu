@@ -54,6 +54,21 @@ int64_t nxu_spawn(const char *path, const char *name);
  * node does not need NXU_CAP_FS_WRITE).
  */
 int64_t nxu_spawn_caps(const char *path, const char *name, uint64_t caps);
+
+/*
+ * Start the program at path as `attr` says: with arguments, with chosen
+ * descriptors of the caller's as its own, in a chosen process group or a new
+ * session, with a chosen signal mask. All of it is in place before the child
+ * runs its first instruction. See nxu_spawn_attr_t in
+ * kern/syscall/syscall_defs.h. Returns the child's pid. Errors beyond
+ * nxu_spawn's: -NXU_SYS_E_DENIED (the process group does not exist in the
+ * caller's session), -NXU_SYS_E_BAD_FD (a descriptor to inherit is not open,
+ * or the same child descriptor is named twice).
+ */
+int64_t nxu_spawn_attr(const char *path, const nxu_spawn_attr_t *attr);
+
+/* Two connected stream sockets; their descriptors are stored in descriptors[0] and [1]. */
+int64_t nxu_socketpair(uint32_t descriptors[2]);
 int64_t nxu_get_caps(void);
 
 /*

@@ -23,7 +23,8 @@ typedef enum {
 	LOADER_STATUS_NO_MEMORY,
 	LOADER_STATUS_IO_ERROR,
 	LOADER_STATUS_PROCESS_ERROR,
-	LOADER_STATUS_BUSY
+	LOADER_STATUS_BUSY,
+	LOADER_STATUS_DENIED
 } loader_status_t;
 
 /*
@@ -45,6 +46,18 @@ loader_status_t loader_spawn(proc_t parent, const char *path, const char *name, 
 loader_status_t loader_spawn_caps(proc_t parent, const char *path, const char *name, uint32_t caps, proc_t *result);
 
 /*
+ * As loader_spawn_caps, but the child starts as user `uid` and group `gid`
+ * (real, effective and saved; no supplementary groups) instead of with its
+ * parent's credentials. Like the capabilities, they are in place before its
+ * thread becomes runnable. For the kernel starting a process that must not be
+ * root: a child of the kernel process would otherwise inherit root, and root
+ * holds every capability whatever `caps` says. A setuid or setgid executable
+ * still takes its file's identity.
+ */
+loader_status_t loader_spawn_as(proc_t parent, const char *path, const char *name, uint32_t caps, uint32_t uid,
+								uint32_t gid, proc_t *result);
+
+/*
  * argv for loader_exec: argc NUL-terminated strings packed back to back in
  * strings, length bytes in all (terminators included).
  */
@@ -53,6 +66,62 @@ typedef struct {
 	uint32_t length;
 	char strings[NXU_EXEC_ARGV_BYTES];
 } loader_exec_args_t;
+
+/*
+ * loader_spawn_request_t
+ *
+ * Everything a process is to start with. loader_spawn_request applies all of
+ * it while the process is still an embryo -- created and visible, but with no
+ * thread that can run -- and only then starts it. If any part cannot be
+ * applied the embryo is taken apart again and no process results, so a
+ * process is never seen running half configured.
+ *
+ * name
+ *     The process name.
+ *
+ * caps
+ *     Its capabilities, or LOADER_CAPS_DEFAULT.
+ *
+ * args
+ *     Its arguments, or 0 for none (argc 0).
+ *
+ * group
+ *     Its process group and session (kern/process/proc.h). Applied inside
+ *     proc_create_user_in, in the critical section that makes it visible.
+ *
+ * set_sigmask / sigmask
+ *     The signal mask its first thread starts with.
+ *
+ * descriptors / descriptor_count
+ *     Its descriptors: each `child` number refers, in the new process, to the
+ *     open file the `parent` number refers to in the parent.
+ *
+ * set_identity / uid / gid
+ *     Start it as this user and group instead of with the parent's
+ *     credentials. For kernel callers; the spawn system call never sets it.
+ */
+typedef struct {
+	const char *name;
+	uint32_t caps;
+	const loader_exec_args_t *args;
+	proc_group_t group;
+	bool set_sigmask;
+	uint32_t sigmask;
+	uint32_t descriptor_count;
+	nxu_spawn_fd_t descriptors[NXU_SPAWN_FD_MAX];
+	bool set_identity;
+	uint32_t uid;
+	uint32_t gid;
+} loader_spawn_request_t;
+
+/*
+ * Load the executable at path and start it as a child of parent, configured
+ * as `request` says. LOADER_STATUS_DENIED: the process group to join does not
+ * exist in the parent's session. LOADER_STATUS_INVALID: a descriptor named in
+ * the request is not open in the parent, or is named twice for the child.
+ */
+loader_status_t loader_spawn_request(proc_t parent, const char *path, const loader_spawn_request_t *request,
+									 proc_t *result);
 
 /*
  * Replace the running program of proc, in place, with the static executable

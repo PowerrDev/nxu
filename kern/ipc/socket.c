@@ -251,6 +251,45 @@ socket_reference(socket_t s)
 }
 
 bool
+socket_pair(socket_t *first, socket_t *second)
+{
+	if (first != 0) *first = SOCKET_NULL;
+	if (second != 0) *second = SOCKET_NULL;
+
+	if (first == 0 || second == 0) return false;
+
+	socket_t a;
+	socket_t b;
+
+	if (!socket_create(&a)) return false;
+
+	if (!socket_create(&b)) {
+		socket_release_internal(a);
+		return false;
+	}
+
+	if (!socket_ring_alloc(a) || !socket_ring_alloc(b)) {
+		socket_release_internal(a);
+		socket_release_internal(b);
+		return false;
+	}
+
+	/* Nobody else can see either end yet, so no lock: this is the state socket_accept leaves a pair in. */
+	a->peer = b;
+	a->state = SOCKET_STATE_CONNECTED;
+	b->peer = a;
+	b->state = SOCKET_STATE_CONNECTED;
+
+	/* The peer-link references, one each way. */
+	(void)socket_reference(a);
+	(void)socket_reference(b);
+
+	*first = a;
+	*second = b;
+	return true;
+}
+
+bool
 socket_listen(socket_t s, const char *name, uint32_t backlog)
 {
 	if (s == SOCKET_NULL || name == 0) return false;

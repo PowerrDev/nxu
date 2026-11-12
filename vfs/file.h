@@ -95,6 +95,17 @@ void file_rele(file_t file);
 vfs_status_t filedesc_install(filedesc_t filedesc, file_t file, uint32_t *descriptor);
 vfs_status_t filedesc_dup2(filedesc_t filedesc, uint32_t source, uint32_t destination);
 
+/*
+ * filedesc_install_at
+ *
+ * Install file at exactly `descriptor`, which must be free (BUSY otherwise),
+ * taking over the caller's reference to it. This is how a new process is
+ * given its inherited descriptors, standard input, output and error included,
+ * before it runs: descriptors 0 to 2 are never handed out by
+ * filedesc_install.
+ */
+vfs_status_t filedesc_install_at(filedesc_t filedesc, file_t file, uint32_t descriptor);
+
 vfs_status_t filedesc_get(filedesc_t filedesc, uint32_t descriptor, file_t *result);
 vfs_status_t filedesc_remove(filedesc_t filedesc, uint32_t descriptor, file_t *result);
 

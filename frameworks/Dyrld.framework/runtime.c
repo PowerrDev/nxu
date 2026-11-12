@@ -478,6 +478,38 @@ initialize(uint32_t index)
 	return true;
 }
 
+/*
+ * dyr_enter
+ *
+ * Leave the runtime for good: set the stack pointer to `arguments` (the
+ * argc/argv block) and jump to `entry`. Not a call: the application starts on
+ * the stack a process starts on, with nothing of ours beneath it.
+ */
+__attribute__((noreturn)) void dyr_enter(uintptr_t entry, uintptr_t arguments);
+
+#if defined(__aarch64__)
+__asm__(".text\n"
+		".global dyr_enter\n"
+		".type dyr_enter, %function\n"
+		"dyr_enter:\n"
+		"	mov sp, x1\n"
+		"	mov x30, #0\n"
+		"	br x0\n"
+		".size dyr_enter, . - dyr_enter\n");
+#elif defined(__i386__)
+__asm__(".text\n"
+		".global dyr_enter\n"
+		".type dyr_enter, @function\n"
+		"dyr_enter:\n"
+		"	movl 4(%esp), %eax\n"
+		"	movl 8(%esp), %esp\n"
+		"	xorl %ebp, %ebp\n"
+		"	jmp *%eax\n"
+		".size dyr_enter, . - dyr_enter\n");
+#else
+#error "dyr_enter: unsupported target architecture"
+#endif
+
 int
 main(uint64_t argc, char **argv)
 {
@@ -500,10 +532,15 @@ main(uint64_t argc, char **argv)
 
 	if (!initialize(0)) goto failed;
 
-	/* Each application's _start receives the same register arguments as a
-	 * static executable. It owns main(), termination and any C runtime setup. */
-	((void (*)(uint64_t, char **))(uintptr_t)g_images[0].mapped.entry)(argc, argv);
-	return 0;
+	/*
+	 * The application's _start is entered exactly as the kernel enters a
+	 * static executable's: with the stack pointer at argc, argv above it. That
+	 * block is the one the kernel built for this process and handed to us; argc
+	 * sits in the word below argv[0]. _start owns main(), termination and any C
+	 * runtime setup, and never returns here.
+	 */
+	(void)argc;
+	dyr_enter((uintptr_t)g_images[0].mapped.entry, (uintptr_t)argv - sizeof(uintptr_t));
 
 failed:
 	(void)nxu_write(2, "dyrld: ", 7);

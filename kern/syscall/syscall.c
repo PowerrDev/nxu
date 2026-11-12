@@ -879,6 +879,137 @@ syscall_spawn(uint64_t user_path, uint64_t user_name, uint64_t caps)
 	return syscall_return(child->p_ident.pid);
 }
 
+/* The last component of path: what a process is called when its creator did not name it. */
+static const char *
+syscall_path_leaf(const char *path)
+{
+	const char *leaf = path;
+
+	for (const char *cursor = path; *cursor != '\0'; cursor++) {
+		if (*cursor == '/' && cursor[1] != '\0') leaf = cursor + 1;
+	}
+
+	return leaf;
+}
+
+/*
+ * spawn_attr: start the program at path as `attr` (nxu_spawn_attr_t) says.
+ * Everything in it is checked here and applied by the loader before the child
+ * can run; see the ABI comment in syscall_defs.h. Returns the child's pid.
+ */
+static syscall_result_t
+syscall_spawn_attr(uint64_t user_path, uint64_t user_attr)
+{
+	nxu_spawn_attr_t attr;
+
+	if (!vm_copy_from_user(&attr, user_attr, sizeof(attr))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
+	if (attr.size != sizeof(attr) || (attr.flags & ~NXU_SPAWN_FLAGS_ALL) != 0U ||
+		(attr.flags & (NXU_SPAWN_SETPGROUP | NXU_SPAWN_SETSID)) == (NXU_SPAWN_SETPGROUP | NXU_SPAWN_SETSID) ||
+		attr.caps > NXU_CAP_ALL || attr.pgid > PROC_PID_MAX || attr.argc > NXU_EXEC_ARGV_MAX ||
+		attr.arguments_size > NXU_EXEC_ARGV_BYTES || attr.descriptor_count > NXU_SPAWN_FD_MAX ||
+		(attr.argc == 0U) != (attr.arguments_size == 0U)) {
+		return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	}
+
+	/* A parent can pass on only what it holds, as for spawn. */
+	if (!syscall_has_caps(attr.caps)) return syscall_error(SYSCALL_ERROR_DENIED);
+
+	for (uint32_t index = 0U; index < attr.descriptor_count; index++) {
+		if (attr.descriptors[index].child >= VFS_FD_MAX || attr.descriptors[index].parent >= VFS_FD_MAX)
+			return syscall_error(SYSCALL_ERROR_BAD_FD);
+	}
+
+	char path[VFS_PATH_MAX];
+	char name[PROC_NAME_MAX];
+
+	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
+	if (attr.name != 0ULL) {
+		if (!vm_copy_string_from_user(name, attr.name, sizeof(name))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	} else {
+		const char *leaf = syscall_path_leaf(path);
+		uint32_t length = 0U;
+
+		while (leaf[length] != '\0' && length + 1U < sizeof(name)) {
+			name[length] = leaf[length];
+			length++;
+		}
+
+		name[length] = '\0';
+	}
+
+	/* Too large for the kernel stack next to the path buffers. */
+	loader_exec_args_t *args = kmalloc(sizeof(*args));
+
+	if (args == 0) return syscall_error(SYSCALL_ERROR_NO_MEMORY);
+
+	args->argc = attr.argc;
+	args->length = attr.arguments_size;
+
+	bool arguments_ok = attr.arguments_size == 0U || vm_copy_from_user(args->strings, attr.arguments, attr.arguments_size);
+
+	/* Exactly argc strings, the last of them terminated: the loader walks them by their terminators. */
+	if (arguments_ok && attr.arguments_size != 0U) {
+		uint32_t terminators = 0U;
+
+		for (uint32_t index = 0U; index < attr.arguments_size; index++) {
+			if (args->strings[index] == '\0') terminators++;
+		}
+
+		arguments_ok = terminators == attr.argc && args->strings[attr.arguments_size - 1U] == '\0';
+
+		if (!arguments_ok) {
+			(void)kfree(args);
+			return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+		}
+	}
+
+	if (!arguments_ok) {
+		(void)kfree(args);
+		return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	}
+
+	loader_spawn_request_t request = {.name = name,
+									  .caps = attr.caps,
+									  .args = args,
+									  .set_sigmask = (attr.flags & NXU_SPAWN_SETSIGMASK) != 0U,
+									  .sigmask = attr.sigmask,
+									  .descriptor_count = attr.descriptor_count};
+
+	if ((attr.flags & NXU_SPAWN_SETSID) != 0U) {
+		request.group.mode = PROC_GROUP_NEW_SESSION;
+	} else if ((attr.flags & NXU_SPAWN_SETPGROUP) != 0U) {
+		request.group.mode = attr.pgid == 0U ? PROC_GROUP_NEW : PROC_GROUP_JOIN;
+		request.group.pgid = attr.pgid;
+	} else {
+		request.group.mode = PROC_GROUP_INHERIT;
+	}
+
+	for (uint32_t index = 0U; index < attr.descriptor_count; index++)
+		request.descriptors[index] = attr.descriptors[index];
+
+	proc_t child = 0;
+	loader_status_t status = loader_spawn_request(current_proc(), path, &request, &child);
+
+	(void)kfree(args);
+
+	switch (status) {
+	case LOADER_STATUS_OK:
+		return child != 0 ? syscall_return(child->p_ident.pid) : syscall_error(SYSCALL_ERROR_IO);
+	case LOADER_STATUS_NOT_FOUND:
+		return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+	case LOADER_STATUS_NO_MEMORY:
+		return syscall_error(SYSCALL_ERROR_NO_MEMORY);
+	case LOADER_STATUS_DENIED:
+		return syscall_error(SYSCALL_ERROR_DENIED);
+	case LOADER_STATUS_INVALID:
+		return syscall_error(SYSCALL_ERROR_BAD_FD);
+	default:
+		return syscall_error(SYSCALL_ERROR_IO);
+	}
+}
+
 static syscall_result_t
 syscall_crash(uint64_t operation, uint64_t argument)
 {
@@ -2445,6 +2576,52 @@ syscall_socket_install(socket_t socket)
 	return syscall_return(descriptor);
 }
 
+/*
+ * socketpair: two connected stream sockets, their descriptors stored in the
+ * two 32-bit words at user_descriptors. What a parent hands one end of to a
+ * child as its standard input and output while keeping the other.
+ */
+static syscall_result_t
+syscall_socketpair(uint64_t user_descriptors)
+{
+	socket_t ends[2];
+
+	if (!socket_pair(&ends[0], &ends[1])) return syscall_error(SYSCALL_ERROR_NO_MEMORY);
+
+	uint32_t descriptors[2] = {0U, 0U};
+	uint32_t installed = 0U;
+
+	for (; installed < 2U; installed++) {
+		file_t file;
+
+		if (file_alloc_socket(ends[installed], &file) != VFS_STATUS_OK) break;
+
+		if (filedesc_install(&current_proc()->p_fd, file, &descriptors[installed]) != VFS_STATUS_OK) {
+			/* The file owns the socket now; releasing it closes that end. */
+			file_rele(file);
+			ends[installed] = SOCKET_NULL;
+			break;
+		}
+	}
+
+	bool ok = installed == 2U && vm_copy_to_user(user_descriptors, descriptors, sizeof(descriptors));
+
+	if (!ok) {
+		/* Undo whatever was made: installed ends through their descriptors, the rest directly. */
+		for (uint32_t index = 0U; index < 2U; index++) {
+			if (index < installed) {
+				(void)vfs_close(&current_proc()->p_fd, descriptors[index]);
+			} else if (ends[index] != SOCKET_NULL) {
+				socket_close(ends[index]);
+			}
+		}
+
+		return syscall_error(installed == 2U ? SYSCALL_ERROR_BAD_ADDRESS : SYSCALL_ERROR_NO_SPACE);
+	}
+
+	return syscall_return(0ULL);
+}
+
 static syscall_result_t
 syscall_socket_listen(uint64_t user_name, uint64_t backlog)
 {
@@ -2818,6 +2995,10 @@ syscall_dispatch_inner(const syscall_request_t *request)
 		return syscall_wait_options(request->arguments[0], request->arguments[1], request->arguments[2]);
 	case SYSCALL_KILLPG:
 		return syscall_killpg(request->arguments[0], request->arguments[1]);
+	case SYSCALL_SPAWN_ATTR:
+		return syscall_spawn_attr(request->arguments[0], request->arguments[1]);
+	case SYSCALL_SOCKETPAIR:
+		return syscall_socketpair(request->arguments[0]);
 	case SYSCALL_EXIT:
 		return syscall_exit(request->arguments[0]);
 	case SYSCALL_WRITE:

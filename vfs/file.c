@@ -266,6 +266,29 @@ filedesc_install(filedesc_t filedesc, file_t file, uint32_t *descriptor)
 	return VFS_STATUS_NO_SPACE;
 }
 
+vfs_status_t
+filedesc_install_at(filedesc_t filedesc, file_t file, uint32_t descriptor)
+{
+	if (filedesc == 0 || file == 0 || !file->f_active) return VFS_STATUS_INVALID;
+	if (descriptor >= VFS_FD_MAX) return VFS_STATUS_BAD_FD;
+
+	filedesc_lock(filedesc);
+
+	if (filedesc->fd_ofiles[descriptor] != 0) {
+		filedesc_unlock(filedesc);
+		return VFS_STATUS_BUSY;
+	}
+
+	filedesc->fd_ofiles[descriptor] = file;
+	filedesc->fd_open_count++;
+
+	while (filedesc->fd_freefile < VFS_FD_MAX && filedesc->fd_ofiles[filedesc->fd_freefile] != 0)
+		filedesc->fd_freefile++;
+
+	filedesc_unlock(filedesc);
+	return VFS_STATUS_OK;
+}
+
 /* Duplicate under one table lock; release the replaced file after unlocking. */
 vfs_status_t
 filedesc_dup2(filedesc_t filedesc, uint32_t source, uint32_t destination)

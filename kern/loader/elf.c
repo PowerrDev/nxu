@@ -377,6 +377,13 @@ loader_discard_process(proc_t parent, proc_t proc)
 {
 	if (parent == 0 || proc == 0) return;
 
+	/*
+	 * A process that never ran is simply taken apart. (proc_exit refuses an
+	 * embryo: there is no thread to stop and no status to leave.) The other
+	 * arm is for a process that was started and could not be kept.
+	 */
+	if (proc_abort_embryo(proc)) return;
+
 	proc_id_t pid = proc->p_ident.pid;
 	(void)proc_exit(proc, 127ULL);
 	uint64_t status;
@@ -478,8 +485,11 @@ loader_interpreter(vnode_t vnode, const loader_segment_t *programs, uint32_t cou
 	return pie && found != 1 ? LOADER_STATUS_BAD_FORMAT : LOADER_STATUS_OK;
 }
 
-static loader_status_t loader_spawn_internal(proc_t parent, const char *path, const char *name, uint32_t caps,
+static loader_status_t loader_spawn_internal(proc_t parent, const char *path, const loader_spawn_request_t *request,
 											 const char *dynamic_main, proc_t *result);
+static loader_status_t loader_stack_write(vm_address_space_t *map, uint64_t address, const void *data, uint64_t size);
+static loader_status_t loader_build_stack_args(vm_address_space_t *map, const loader_exec_args_t *args,
+											   uint64_t *out_sp, uint64_t *out_argv);
 
 loader_status_t
 loader_spawn(proc_t parent, const char *path, const char *name, proc_t *result)
@@ -490,16 +500,92 @@ loader_spawn(proc_t parent, const char *path, const char *name, proc_t *result)
 loader_status_t
 loader_spawn_caps(proc_t parent, const char *path, const char *name, uint32_t caps, proc_t *result)
 {
-	return loader_spawn_internal(parent, path, name, caps, 0, result);
+	loader_spawn_request_t request = {.name = name, .caps = caps};
+
+	return loader_spawn_internal(parent, path, &request, 0, result);
+}
+
+loader_status_t
+loader_spawn_as(proc_t parent, const char *path, const char *name, uint32_t caps, uint32_t uid, uint32_t gid,
+				proc_t *result)
+{
+	loader_spawn_request_t request = {.name = name, .caps = caps, .set_identity = true, .uid = uid, .gid = gid};
+
+	return loader_spawn_internal(parent, path, &request, 0, result);
+}
+
+loader_status_t
+loader_spawn_request(proc_t parent, const char *path, const loader_spawn_request_t *request, proc_t *result)
+{
+	if (request == 0 || request->descriptor_count > NXU_SPAWN_FD_MAX) return LOADER_STATUS_INVALID;
+
+	return loader_spawn_internal(parent, path, request, 0, result);
+}
+
+/*
+ * loader_configure_process
+ *
+ * Give the embryo `proc` what `request` says it starts with and what could not
+ * be decided when it was created: its arguments, laid out on its stack with
+ * its first thread pointed at them, its signal mask, and its descriptors.
+ * Nothing here is visible to the process until it is started, and nothing
+ * else can reach its descriptor table or its thread: it has never run.
+ */
+static loader_status_t
+loader_configure_process(proc_t parent, proc_t proc, const loader_spawn_request_t *request, uint64_t entry)
+{
+	static const loader_exec_args_t no_arguments;
+
+	vm_address_space_t *map = proc_vm_map(proc);
+	thread_t thread = task_first_thread_ref(proc_task(proc));
+
+	if (map == 0 || thread == 0) {
+		if (thread != 0) thread_deallocate(thread);
+
+		return LOADER_STATUS_PROCESS_ERROR;
+	}
+
+	const loader_exec_args_t *args = request->args != 0 ? request->args : &no_arguments;
+	uint64_t stack_pointer = 0ULL;
+	uint64_t argv_address = 0ULL;
+	loader_status_t status = loader_build_stack_args(map, args, &stack_pointer, &argv_address);
+
+	/* The program's entry stub finds argc and argv at its initial stack pointer. */
+	if (status == LOADER_STATUS_OK && !machine_thread_set_user_state(&thread->machine, entry, stack_pointer, args->argc))
+		status = LOADER_STATUS_PROCESS_ERROR;
+
+	if (status == LOADER_STATUS_OK && request->set_sigmask) thread->sig_blocked = signal_sanitize_mask(request->sigmask);
+
+	thread_deallocate(thread);
+
+	for (uint32_t index = 0U; status == LOADER_STATUS_OK && index < request->descriptor_count; index++) {
+		file_t file;
+
+		if (filedesc_get(&parent->p_fd, request->descriptors[index].parent, &file) != VFS_STATUS_OK) {
+			status = LOADER_STATUS_INVALID;
+			break;
+		}
+
+		/* The reference filedesc_get took becomes the child's. */
+		if (filedesc_install_at(&proc->p_fd, file, request->descriptors[index].child) != VFS_STATUS_OK) {
+			file_rele(file);
+			status = LOADER_STATUS_INVALID;
+		}
+	}
+
+	return status;
 }
 
 static loader_status_t
-loader_spawn_internal(proc_t parent, const char *path, const char *name, uint32_t caps, const char *dynamic_main,
+loader_spawn_internal(proc_t parent, const char *path, const loader_spawn_request_t *request, const char *dynamic_main,
 					  proc_t *result)
 {
 	if (result != 0) *result = 0;
 
-	if (parent == 0 || path == 0 || name == 0 || result == 0) return LOADER_STATUS_INVALID;
+	if (parent == 0 || path == 0 || request == 0 || request->name == 0 || result == 0) return LOADER_STATUS_INVALID;
+
+	const char *name = request->name;
+	uint32_t caps = request->caps;
 
 	vnode_t vnode;
 	vfs_status_t lookup_status = vfs_lookup(path, &vnode);
@@ -582,7 +668,7 @@ loader_spawn_internal(proc_t parent, const char *path, const char *name, uint32_
 
 	if (loader_is_pie(&header)) {
 		vnode_rele(vnode);
-		return loader_spawn_internal(parent, "/Volumes/mainOS" NXU_DYRLD_INTERPRETER, name, caps, path, result);
+		return loader_spawn_internal(parent, "/Volumes/mainOS" NXU_DYRLD_INTERPRETER, request, path, result);
 	}
 
 	bool loadable = false;
@@ -609,12 +695,26 @@ loader_spawn_internal(proc_t parent, const char *path, const char *name, uint32_
 	}
 
 	proc_t proc;
-	if (!proc_create_user(parent, name, header.entry, LOADER_USER_STACK_TOP, &proc)) {
+	proc_create_result_t created =
+		proc_create_user_in(parent, name, header.entry, LOADER_USER_STACK_TOP, &request->group, &proc);
+
+	if (created != PROC_CREATE_OK) {
 		vnode_rele(vnode);
-		return LOADER_STATUS_PROCESS_ERROR;
+		return created == PROC_CREATE_GROUP_DENIED ? LOADER_STATUS_DENIED : LOADER_STATUS_PROCESS_ERROR;
 	}
 
 	if (caps != LOADER_CAPS_DEFAULT) proc_set_caps(proc, caps);
+
+	/* Before setuid-exec below, so an executable that asks for its owner's identity still gets it. */
+	if (request->set_identity) {
+		struct ucred *child_cred = proc_ucred(proc);
+
+		if (child_cred != 0) {
+			child_cred->cr_ruid = child_cred->cr_uid = child_cred->cr_svuid = request->uid;
+			child_cred->cr_rgid = child_cred->cr_gid = child_cred->cr_svgid = request->gid;
+			child_cred->cr_ngroups = 0U;
+		}
+	}
 
 	/*
 	 * Apply setuid/setgid-exec: the new process's effective and saved IDs
@@ -652,6 +752,8 @@ loader_spawn_internal(proc_t parent, const char *path, const char *name, uint32_
 		status = loader_place_segment(vnode, path, vnode->v_size, map, &programs[index], &identity);
 	}
 	if (status == LOADER_STATUS_OK) status = loader_map_stack(map);
+
+	if (status == LOADER_STATUS_OK) status = loader_configure_process(parent, proc, request, header.entry);
 
 	if (status == LOADER_STATUS_OK) {
 		vm_user_page_mapping_t entry_mapping;
@@ -700,12 +802,10 @@ loader_spawn_internal(proc_t parent, const char *path, const char *name, uint32_
 	return LOADER_STATUS_OK;
 }
 
-#if !LOADER_ELF_WIDEN
-
 /*
  * loader_stack_write
  *
- * Copy data onto the new program's stack. The stack is only reserved (see
+ * Copy data onto a new program's stack. The stack is only reserved (see
  * loader_map_stack), so each page is first faulted in through the same
  * resolver the program's own first touch would use, then written through
  * the kernel's direct map -- the new space is not the active one.
@@ -740,52 +840,74 @@ loader_stack_write(vm_address_space_t *map, uint64_t address, const void *data, 
 	return LOADER_STATUS_OK;
 }
 
+/* A pointer as the program being loaded stores one: 32 bits for an ELF32 image, 64 for an ELF64 one. */
+#if LOADER_ELF_WIDEN
+typedef uint32_t loader_user_word_t;
+#else
+typedef uint64_t loader_user_word_t;
+#endif
+
 /*
  * loader_build_stack_args
  *
- * Lay argv out at the top of the new stack and return the initial stack
- * pointer and the address of argv[0]:
+ * Lay argc and argv out at the top of the new stack, in the program's own
+ * word size, and return the initial stack pointer and the address of argv[0]:
  *
  *     top   +-----------------------+
  *           | argument strings      |
  *           +-----------------------+
  *           | argv[argc] = NULL     |
  *           | argv[argc-1] ...      |
- *           | argv[0]               |  <- argv (x1)
+ *           | argv[0]               |  <- argv
+ *           | argc                  |
  *     sp -> +-----------------------+  (16-byte aligned)
+ *
+ * This is what every program finds at its first instruction, whether it was
+ * spawned or reached by exec, and whether or not it was given arguments
+ * (argc is then 0): the entry stub reads argc from the stack pointer and
+ * takes argv to be the word above it.
  */
 static loader_status_t
 loader_build_stack_args(vm_address_space_t *map, const loader_exec_args_t *args, uint64_t *out_sp, uint64_t *out_argv)
 {
+	if (args->argc > NXU_EXEC_ARGV_MAX || args->length > NXU_EXEC_ARGV_BYTES) return LOADER_STATUS_INVALID;
+
 	uint64_t strings_base = (LOADER_USER_STACK_TOP - args->length) & ~0xFULL;
-	uint64_t array_size = ((uint64_t)args->argc + 1ULL) * sizeof(uint64_t);
+	uint64_t array_size = ((uint64_t)args->argc + 2ULL) * sizeof(loader_user_word_t);
 	uint64_t array_base = (strings_base - array_size) & ~0xFULL;
 
 	if (array_base < LOADER_USER_STACK_BASE) return LOADER_STATUS_BAD_FORMAT;
 
-	uint64_t pointers[NXU_EXEC_ARGV_MAX + 1U];
+	/* words[0] is argc, words[1 .. argc] are argv, words[argc + 1] ends it. */
+	loader_user_word_t words[NXU_EXEC_ARGV_MAX + 2U];
 	uint32_t offset = 0U;
 
+	words[0] = (loader_user_word_t)args->argc;
+
 	for (uint32_t index = 0U; index < args->argc; index++) {
-		pointers[index] = strings_base + offset;
+		words[index + 1U] = (loader_user_word_t)(strings_base + offset);
 
 		while (offset < args->length && args->strings[offset] != '\0')
 			offset++;
 		offset++;
 	}
 
-	pointers[args->argc] = 0ULL;
+	words[args->argc + 1U] = 0U;
 
-	loader_status_t status = loader_stack_write(map, strings_base, args->strings, args->length);
+	loader_status_t status = LOADER_STATUS_OK;
+
+	if (args->length != 0U) status = loader_stack_write(map, strings_base, args->strings, args->length);
 	if (status != LOADER_STATUS_OK) return status;
 
-	status = loader_stack_write(map, array_base, pointers, array_size);
+	status = loader_stack_write(map, array_base, words, array_size);
 	if (status != LOADER_STATUS_OK) return status;
 
 	*out_sp = array_base;
-	*out_argv = array_base;
+	*out_argv = array_base + sizeof(loader_user_word_t);
 	return LOADER_STATUS_OK;
 }
+
+#if !LOADER_ELF_WIDEN
 
 static void
 loader_discard_space(vm_address_space_t *space)

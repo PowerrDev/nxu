@@ -45,6 +45,7 @@
 #include <kern/sched_prism/waitq.h>
 #include <kern/tests/ipc_process_test.h>
 #include <kern/tests/socket_process_test.h>
+#include <kern/tests/spawn_process_test.h>
 #include <kern/tests/sound_test.h>
 #include <kern/tests/thread_process_test.h>
 #include <vfs/btrfs/btrfs_list.h>
@@ -85,6 +86,8 @@ userland_run_process_test(const char *name)
 		ok = thread_process_test();
 	else if (strcmp(name, "socket") == 0)
 		ok = socket_process_test();
+	else if (strcmp(name, "spawn") == 0)
+		ok = spawn_process_test();
 	else {
 		kprintf("i386_init_userland: unknown process-test \"%s\"\n", name);
 		return false;

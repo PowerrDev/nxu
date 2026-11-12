@@ -973,6 +973,59 @@ proc_exit(proc_t proc, uint64_t status)
 }
 
 bool
+proc_abort_embryo(proc_t proc)
+{
+	if (proc == 0) return false;
+
+	/* As proc_exit: closing descriptors reaches the VFS, which is boot-CPU code. */
+	sched_bind_boot_cpu();
+
+	proc_lock(&g_proc_lock);
+
+	bool embryo = proc != g_kernproc && proc->p_stat == PROC_STATE_EMBRYO && (proc->p_flag & PROC_FLAG_EXITING) == 0U;
+
+	/* Claimed, so that nothing signals it or takes a new reference while it is being dismantled. */
+	if (embryo) proc->p_flag |= PROC_FLAG_EXITING;
+
+	proc_unlock(&g_proc_lock);
+
+	if (!embryo) {
+		sched_unbind_boot_cpu();
+		return false;
+	}
+
+	/* Its one thread never ran, so there is nothing to wait off a CPU; this frees the address space too. */
+	(void)task_terminate(&proc->p_task);
+
+	filedesc_close_all(&proc->p_fd);
+	ipc_space_close_all(&proc->p_ipc);
+
+	pgrp_reclaim_t reclaim = {0};
+
+	proc_lock(&g_proc_lock);
+
+	pgrp_leave_locked(proc, &reclaim);
+	proc_child_remove_locked(proc);
+	proc_all_remove_locked(proc);
+
+	if (g_proc_count != 0U) g_proc_count--;
+
+	proc->p_stat = PROC_STATE_DEAD;
+
+	/* The residency reference. Anyone who took another before the claim keeps the slot until they drop it. */
+	if (proc->p_refcount != 0U) proc->p_refcount--;
+
+	if (proc->p_refcount == 0U) proc_release_slot_locked(proc);
+
+	proc_unlock(&g_proc_lock);
+
+	pgrp_reclaim(&reclaim);
+
+	sched_unbind_boot_cpu();
+	return true;
+}
+
+bool
 proc_exit_current(uint64_t status)
 {
 	proc_t proc = current_proc();

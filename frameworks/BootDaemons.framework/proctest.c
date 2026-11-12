@@ -768,6 +768,17 @@ main(void)
 	}
 
 	/*
+	 * What a spawned process starts with has a test program of its own, which
+	 * spawns itself; here it only has to be run and believed.
+	 */
+	{
+		int64_t pid = nxu_spawn_caps("/Volumes/mainOS/System/Library/CoreServices/spawntest", "spawntest", 0U);
+		if (pid <= 0) return fail(270, "could not spawn spawntest");
+		if (nxu_wait((uint64_t)pid, &status) != pid) return fail(271, "spawntest was not reaped");
+		if (status != 0ULL) return fail(272, "spawntest failed (its own output says which check)");
+	}
+
+	/*
 	 * 19. Capabilities. The kernel started us, not bootd, so we hold none: the
 	 * calls that change the system are refused, and reading still works.
 	 * (privtest.c covers a process that was granted some.)

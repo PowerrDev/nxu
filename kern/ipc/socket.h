@@ -40,6 +40,14 @@ bool socket_create(socket_t *result);
 bool socket_reference(socket_t socket);
 
 /*
+ * Makes two connected ends at once, with no name and no listener: what
+ * socket_connect and socket_accept would have produced. Each end is handed
+ * back with one reference, as from socket_create. False, with neither made,
+ * if memory runs out.
+ */
+bool socket_pair(socket_t *first, socket_t *second);
+
+/*
  * Registers socket as the listener for name (a NUL-terminated string of at
  * most SOCKET_NAME_MAX bytes). Fails if a listener is already registered
  * under that name. backlog is clamped to SOCKET_BACKLOG_MAX.
