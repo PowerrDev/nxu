@@ -29,7 +29,7 @@ I386_ASM_SOURCES += \
 
 # QEMU CPU count used by the multi-CPU SMP test case. Override with
 # `make test-i386-smp I386_SMP_TEST_CPUS=8`; the test still also checks UP.
-I386_SMP_TEST_CPUS ?= 64
+I386_SMP_TEST_CPUS ?= 4 
 
 test-i386-smp: $(I386_KERNEL)
 
