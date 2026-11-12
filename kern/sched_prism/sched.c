@@ -170,6 +170,12 @@ sched_sleep_us(uint64_t microseconds)
 	return true;
 }
 
+bool
+sched_is_ticking(void)
+{
+	return __atomic_load_n(&g_sched_ticking, __ATOMIC_ACQUIRE);
+}
+
 uint32_t
 sched_kick_sequence(void)
 {
@@ -1314,6 +1320,9 @@ sched_thread_terminate(thread_t thread)
 	 * queue: a sleeping thread must leave its wait queue first. */
 	(void)waitq_remove(thread);
 
+	/* And the list of timed waiters, which would otherwise keep pointing at it after it is reclaimed. */
+	waitq_timer_cancel(thread);
+
 	/*
 	 * A queued thread has to be off its queue before it can terminate, and
 	 * another CPU's balancer can put it on a different queue between the two
@@ -1560,6 +1569,9 @@ sched_tick(void)
 	if (processor->cpu_id == 0U && __atomic_load_n(&g_sched_kick_sleepers, __ATOMIC_ACQUIRE) != 0U) {
 		waitq_wake_all(&g_sched_kick_queue);
 	}
+
+	/* Waits with a deadline (waitq_block_deadline) are ended here too. */
+	if (processor->cpu_id == 0U) waitq_timer_tick(timer_get_microseconds());
 
 	if (processor->ticks % SCHED_BALANCE_INTERVAL_TICKS == 0U) sched_balance(processor);
 

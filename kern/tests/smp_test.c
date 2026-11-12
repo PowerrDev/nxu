@@ -17,6 +17,8 @@
 
 #include <kern/console/console.h>
 #include <kern/cpuset.h>
+#include <kern/ioready.h>
+#include <kern/ipc/socket.h>
 #include <kern/lock.h>
 #include <kern/machine/cpu.h>
 #include <kern/machine/machine_routines.h>
@@ -1489,6 +1491,418 @@ test_cow_race(void)
 	return check(pmm_get_free_page_count() + 8ULL >= free_before, name, "pages were leaked");
 }
 
+/* ---- waits with a deadline --------------------------------------------- */
+
+#define TIMED_RACE_SLEEPERS 3U
+#define TIMED_RACE_ROUNDS 400U
+
+typedef enum { TIMED_PLAIN, TIMED_INTERRUPTIBLE, TIMED_STALE_SEQ, TIMED_RACE } timed_mode_t;
+
+static struct {
+	waitq_t queue;
+	volatile uint32_t mode;
+	volatile uint64_t timeout_us;
+	volatile uint32_t asleep;	/* set just before the sleeper blocks */
+	volatile uint32_t done;
+	volatile uint32_t result;	/* waitq_result_t of the single-sleeper cases */
+	volatile uint64_t elapsed_us;
+	volatile uint32_t stop;
+	volatile uint32_t woken;
+	volatile uint32_t timed_out;
+	volatile uint32_t interrupted;
+} g_timed;
+
+static void
+timed_sleeper(void *argument)
+{
+	(void)argument;
+
+	uint32_t mode = g_timed.mode;
+	uint32_t seq = waitq_seq(&g_timed.queue);
+
+	/* A wakeup after the sequence was taken: the wait below must not sleep at all. */
+	if (mode == TIMED_STALE_SEQ) waitq_wake_all(&g_timed.queue);
+
+	uint64_t started = now_us();
+
+	__atomic_store_n(&g_timed.asleep, 1U, __ATOMIC_RELEASE);
+
+	waitq_result_t result =
+		waitq_block_deadline(&g_timed.queue, seq, mode == TIMED_INTERRUPTIBLE, started + g_timed.timeout_us);
+
+	g_timed.elapsed_us = now_us() - started;
+	g_timed.result = (uint32_t)result;
+	__atomic_add_fetch(&g_timed.done, 1U, __ATOMIC_ACQ_REL);
+}
+
+/* Sleeps again and again with deadlines of a tick or two while timed_race_waker wakes the queue at random. */
+static void
+timed_race_sleeper(void *argument)
+{
+	uint32_t me = (uint32_t)(uintptr_t)argument;
+
+	for (uint32_t round = 0U; round < TIMED_RACE_ROUNDS; round++) {
+		uint32_t seq = waitq_seq(&g_timed.queue);
+		uint64_t deadline = now_us() + 500ULL + (uint64_t)((round * 7U + me * 13U) % 5U) * 700ULL;
+
+		switch (waitq_block_deadline(&g_timed.queue, seq, false, deadline)) {
+		case WAITQ_WOKEN:
+			__atomic_add_fetch(&g_timed.woken, 1U, __ATOMIC_ACQ_REL);
+			break;
+		case WAITQ_TIMED_OUT:
+			__atomic_add_fetch(&g_timed.timed_out, 1U, __ATOMIC_ACQ_REL);
+			break;
+		default:
+			__atomic_add_fetch(&g_timed.interrupted, 1U, __ATOMIC_ACQ_REL);
+			break;
+		}
+	}
+
+	__atomic_add_fetch(&g_timed.done, 1U, __ATOMIC_ACQ_REL);
+}
+
+static void
+timed_race_waker(void *argument)
+{
+	(void)argument;
+
+	uint32_t spin = 0U;
+
+	while (__atomic_load_n(&g_timed.stop, __ATOMIC_ACQUIRE) == 0U) {
+		waitq_wake_all(&g_timed.queue);
+
+		/* Uneven gaps, so wakeups land before, at and after the sleepers' deadlines. */
+		uint64_t gap = now_us() + 100ULL + (uint64_t)(spin++ % 7U) * 300ULL;
+
+		while (now_us() < gap)
+			cpu_relax();
+
+		if ((spin & 15U) == 0U) (void)sched_yield();
+	}
+
+	__atomic_add_fetch(&g_timed.done, 1U, __ATOMIC_ACQ_REL);
+}
+
+/* Start one sleeper in `mode` and wait until it is about to block. */
+static bool
+timed_start(uint32_t mode, uint64_t timeout_us, const nxu_cpuset_t *affinity)
+{
+	memset((void *)&g_timed, 0, sizeof(g_timed));
+	waitq_init(&g_timed.queue);
+	g_timed.mode = mode;
+	g_timed.timeout_us = timeout_us;
+
+	return spawn(timed_sleeper, 0, affinity, false) && wait_for(&g_timed.asleep, 1U, 5000000ULL);
+}
+
+static bool
+test_timed_wait(void)
+{
+	const char *name = "timedwait";
+	nxu_cpuset_t set;
+
+	cpus_only(&set, g_ncpu > 1U ? 1U : 0U);
+
+	/* (a) nothing wakes it: the deadline does, and not early. */
+	if (!check(timed_start(TIMED_PLAIN, 30000ULL, &set), name, "could not start the sleeper")) return false;
+
+	bool finished = wait_for(&g_timed.done, 1U, 5000000ULL);
+
+	release_threads();
+
+	if (!check(finished, name, "a wait with a deadline never ended")) return false;
+	if (!check(g_timed.result == WAITQ_TIMED_OUT, name, "an unwoken wait did not report a timeout")) return false;
+	if (!check(g_timed.elapsed_us >= 30000ULL, name, "a wait timed out before its deadline")) return false;
+	if (!check(g_timed.elapsed_us < 1000000ULL, name, "a wait timed out far too late")) return false;
+
+	/* (b) a wakeup before the deadline ends it at once and is reported as one. */
+	if (!check(timed_start(TIMED_PLAIN, 10000000ULL, &set), name, "could not start the sleeper")) return false;
+
+	pause_us(20000ULL);
+	waitq_wake_all(&g_timed.queue);
+	finished = wait_for(&g_timed.done, 1U, 5000000ULL);
+	release_threads();
+
+	if (!check(finished && g_timed.result == WAITQ_WOKEN, name, "a wakeup did not end a timed wait")) return false;
+	if (!check(g_timed.elapsed_us < 5000000ULL, name, "a woken wait still waited for its deadline")) return false;
+
+	/* (c) a deadline already past does not sleep. */
+	if (!check(timed_start(TIMED_PLAIN, 0ULL, &set), name, "could not start the sleeper")) return false;
+
+	finished = wait_for(&g_timed.done, 1U, 5000000ULL);
+	release_threads();
+
+	if (!check(finished && g_timed.result == WAITQ_TIMED_OUT, name, "a past deadline was not a timeout")) return false;
+
+	/* (d) a wakeup since the sequence was taken: look again, do not sleep. */
+	if (!check(timed_start(TIMED_STALE_SEQ, 10000000ULL, &set), name, "could not start the sleeper")) return false;
+
+	finished = wait_for(&g_timed.done, 1U, 5000000ULL);
+	release_threads();
+
+	if (!check(finished && g_timed.result == WAITQ_WOKEN, name, "a moved sequence did not prevent the sleep"))
+		return false;
+
+	/* (e) interruption (what a signal does) ends it and is told apart from both other outcomes. */
+	if (!check(timed_start(TIMED_INTERRUPTIBLE, 10000000ULL, &set), name, "could not start the sleeper")) return false;
+
+	uint64_t deadline = now_us() + 5000000ULL;
+
+	while (!waitq_interrupt(g_threads[0]) && now_us() < deadline)
+		(void)sched_yield();
+
+	finished = wait_for(&g_timed.done, 1U, 5000000ULL);
+	release_threads();
+
+	if (!check(finished && g_timed.result == WAITQ_INTERRUPTED, name, "an interrupted timed wait was not reported"))
+		return false;
+
+	if (!check(waitq_timer_waiters() == 0U, name, "a finished wait left its deadline armed")) return false;
+
+	/* (f) wakeups and deadlines racing on several CPUs: every wait ends, as one or the other. */
+	memset((void *)&g_timed, 0, sizeof(g_timed));
+	waitq_init(&g_timed.queue);
+
+	for (uint32_t index = 0U; index < TIMED_RACE_SLEEPERS; index++) {
+		cpus_only(&set, index % g_ncpu);
+
+		if (!check(spawn(timed_race_sleeper, (void *)(uintptr_t)index, &set, true), name, "could not start a racer"))
+			return false;
+	}
+
+	cpus_only(&set, g_ncpu - 1U);
+
+	if (!check(spawn(timed_race_waker, 0, &set, true), name, "could not start the waker")) return false;
+
+	finished = wait_for(&g_timed.done, TIMED_RACE_SLEEPERS, 60000000ULL);
+	__atomic_store_n(&g_timed.stop, 1U, __ATOMIC_RELEASE);
+	finished = wait_for(&g_timed.done, TIMED_RACE_SLEEPERS + 1U, 5000000ULL) && finished;
+	release_threads();
+
+	kprintf("smp_test: %s: race: %u woken, %u timed out\n", name, g_timed.woken, g_timed.timed_out);
+
+	if (!check(finished, name, "a racing timed wait never ended (lost wakeup and lost deadline)")) return false;
+	if (!check(g_timed.interrupted == 0U, name, "an uninterruptible wait reported an interruption")) return false;
+	if (!check(g_timed.woken + g_timed.timed_out == TIMED_RACE_SLEEPERS * TIMED_RACE_ROUNDS, name,
+			   "a racing wait ended without an outcome"))
+		return false;
+	if (!check(g_timed.woken != 0U && g_timed.timed_out != 0U, name, "the race did not produce both outcomes"))
+		return false;
+	if (!check(g_timed.queue.head == 0 && waitq_timer_waiters() == 0U, name, "the race left a thread queued or armed"))
+		return false;
+
+	/* (g) a thread terminated in the middle of a timed wait leaves the queue and the timer behind it. */
+	if (!check(timed_start(TIMED_PLAIN, 150000ULL, &set), name, "could not start the sleeper")) return false;
+
+	deadline = now_us() + 5000000ULL;
+
+	while (g_timed.queue.head == 0 && now_us() < deadline)
+		(void)sched_yield();
+
+	if (!check(g_timed.queue.head != 0 && waitq_timer_waiters() == 1U, name, "the sleeper is not in a timed wait"))
+		return false;
+
+	bool terminated = sched_thread_terminate(g_threads[0]);
+
+	if (!check(terminated, name, "could not terminate a thread in a timed wait")) return false;
+	if (!check(g_timed.queue.head == 0 && waitq_timer_waiters() == 0U, name,
+			   "a terminated thread stayed on its queue or kept its deadline"))
+		return false;
+
+	/* Well past the dead thread's deadline: the tick must have nothing left to wake. */
+	pause_us(400000ULL);
+	release_threads();
+
+	return check(g_timed.done == 0U, name, "a terminated thread ran again");
+}
+
+/* ---- readiness notification -------------------------------------------- */
+
+static struct {
+	ioready_t ready;
+	volatile uint32_t notified;
+	volatile uint32_t last_events;
+	volatile uint32_t kicked;
+	volatile uint32_t asleep;
+	volatile uint64_t slept_us;
+	volatile uint32_t connected;
+	socket_t client;
+} g_ior;
+
+static void
+ioready_test_notify(ioready_watch_t *watch, uint32_t events)
+{
+	(void)watch;
+
+	g_ior.last_events = events;
+	__atomic_add_fetch(&g_ior.notified, 1U, __ATOMIC_ACQ_REL);
+}
+
+/* Sleeps the way the event-wait system call does; any post must wake it. */
+static void
+ioready_kick_sleeper(void *argument)
+{
+	(void)argument;
+
+	uint32_t kicks = sched_kick_sequence();
+	uint64_t started = now_us();
+
+	__atomic_store_n(&g_ior.asleep, 1U, __ATOMIC_RELEASE);
+	(void)sched_sleep_until_kicked_seq(10000000ULL, kicks, false);
+
+	g_ior.slept_us = now_us() - started;
+	__atomic_store_n(&g_ior.kicked, 1U, __ATOMIC_RELEASE);
+}
+
+static void
+ioready_connector(void *argument)
+{
+	(void)argument;
+
+	socket_t client = SOCKET_NULL;
+
+	if (socket_connect("com.nxu.smp-test.ioready", true, &client)) g_ior.client = client;
+
+	__atomic_store_n(&g_ior.connected, 1U, __ATOMIC_RELEASE);
+}
+
+/* The readiness level of a socket, or 0xFFFFFFFF if it cannot be asked. */
+static uint32_t
+socket_level(socket_t socket, ioready_t **source)
+{
+	uint32_t ready = 0U;
+
+	return socket_poll(socket, &ready, source) ? ready : UINT32_MAX;
+}
+
+static bool
+test_ioready(void)
+{
+	const char *name = "ioready";
+	ioready_watch_t watch;
+	nxu_cpuset_t set;
+
+	memset((void *)&g_ior, 0, sizeof(g_ior));
+	memset(&watch, 0, sizeof(watch));
+	ioready_init(&g_ior.ready);
+
+	/* A watch hears what it asked for, plus hangup and error, and nothing once detached. */
+	ioready_attach(&g_ior.ready, &watch, IOREADY_READ, ioready_test_notify, 0);
+	ioready_post(&g_ior.ready, IOREADY_WRITE);
+
+	if (!check(g_ior.notified == 0U && ioready_watch_fired(&watch) == 0U, name, "a watch heard an event it did not ask for"))
+		return false;
+
+	ioready_post(&g_ior.ready, IOREADY_READ | IOREADY_WRITE);
+
+	if (!check(g_ior.notified == 1U && g_ior.last_events == IOREADY_READ, name, "a watch missed its event")) return false;
+
+	ioready_post(&g_ior.ready, IOREADY_ERROR);
+
+	if (!check(g_ior.notified == 2U && ioready_watch_fired(&watch) == (IOREADY_READ | IOREADY_ERROR), name,
+			   "an error did not reach a watch that did not ask for it"))
+		return false;
+
+	ioready_detach(&watch);
+	ioready_detach(&watch);
+	ioready_post(&g_ior.ready, IOREADY_READ);
+
+	if (!check(g_ior.notified == 2U, name, "a detached watch was still notified")) return false;
+
+	/* An object torn down under a watch detaches it and says so. */
+	ioready_attach(&g_ior.ready, &watch, IOREADY_WRITE, ioready_test_notify, 0);
+	ioready_destroy(&g_ior.ready);
+
+	if (!check(g_ior.notified == 3U && ioready_watch_fired(&watch) == IOREADY_HANGUP && watch.source == 0, name,
+			   "destroying a watched notifier did not hang the watch up"))
+		return false;
+
+	ioready_detach(&watch);
+
+	if (!check(g_ior.ready.watches == 0, name, "a destroyed notifier still has watches")) return false;
+
+	/* Any post wakes a thread sleeping for events, with no watch attached at all. */
+	cpus_only(&set, g_ncpu > 1U ? 1U : 0U);
+
+	if (!check(spawn(ioready_kick_sleeper, 0, &set, false), name, "could not start the event sleeper")) return false;
+	if (!check(wait_for(&g_ior.asleep, 1U, 5000000ULL), name, "the event sleeper did not start")) return false;
+
+	pause_us(20000ULL);
+	ioready_post(&g_ior.ready, IOREADY_READ);
+
+	bool kicked = wait_for(&g_ior.kicked, 1U, 5000000ULL);
+
+	release_threads();
+
+	if (!check(kicked && g_ior.slept_us < 5000000ULL, name, "a post did not wake a thread waiting for events"))
+		return false;
+
+	/* Sockets: the level and the edges of a listener and of a connected pair. */
+	socket_t listener = SOCKET_NULL;
+	socket_t server = SOCKET_NULL;
+	ioready_t *source = 0;
+
+	if (!check(socket_create(&listener) && socket_listen(listener, "com.nxu.smp-test.ioready", 1U), name,
+			   "could not listen"))
+		return false;
+	if (!check(socket_level(listener, &source) == 0U && source != 0, name, "an idle listener is ready")) return false;
+
+	memset(&watch, 0, sizeof(watch));
+	g_ior.notified = 0U;
+	ioready_attach(source, &watch, IOREADY_READ, ioready_test_notify, 0);
+
+	if (!check(spawn(ioready_connector, 0, &set, false), name, "could not start the connector")) return false;
+
+	uint64_t deadline = now_us() + 5000000ULL;
+
+	while (ioready_watch_fired(&watch) == 0U && now_us() < deadline)
+		(void)sched_yield();
+
+	if (!check(ioready_watch_fired(&watch) == IOREADY_READ && socket_level(listener, &source) == IOREADY_READ, name,
+			   "a pending connection did not make the listener readable"))
+		return false;
+
+	ioready_detach(&watch);
+
+	bool accepted = socket_accept(listener, true, &server);
+	bool connected = wait_for(&g_ior.connected, 1U, 5000000ULL);
+
+	release_threads();
+
+	if (!check(accepted && connected && g_ior.client != SOCKET_NULL, name, "the pair did not connect")) return false;
+	if (!check(socket_level(server, &source) == IOREADY_WRITE, name, "a fresh connection is not just writable"))
+		return false;
+
+	memset(&watch, 0, sizeof(watch));
+	ioready_attach(source, &watch, IOREADY_READ, 0, 0);
+
+	if (!check(socket_write(g_ior.client, "abc", 3ULL) == 3, name, "write")) return false;
+	if (!check(ioready_watch_fired(&watch) == IOREADY_READ, name, "arriving bytes were not posted")) return false;
+	if (!check(socket_level(server, &source) == (IOREADY_READ | IOREADY_WRITE), name, "arrived bytes are not readable"))
+		return false;
+
+	char bytes[4];
+
+	if (!check(socket_read_poll(server, bytes, sizeof(bytes)) == 3, name, "read")) return false;
+	if (!check(socket_level(server, &source) == IOREADY_WRITE, name, "a drained socket is still readable")) return false;
+
+	/* The peer closing is a hangup, and makes the socket readable (the read returns end of stream). */
+	socket_close(g_ior.client);
+
+	if (!check((ioready_watch_fired(&watch) & IOREADY_HANGUP) != 0U, name, "the peer closing was not posted"))
+		return false;
+	if (!check(socket_level(server, &source) == (IOREADY_READ | IOREADY_HANGUP), name,
+			   "a socket whose peer closed is not readable and hung up"))
+		return false;
+	if (!check(socket_read_poll(server, bytes, sizeof(bytes)) == 0, name, "no end of stream after the peer closed"))
+		return false;
+
+	ioready_detach(&watch);
+	socket_close(server);
+	socket_close(listener);
+	return true;
+}
+
 /* ---- the suite ---------------------------------------------------------- */
 
 typedef struct {
@@ -1532,7 +1946,8 @@ smp_test_run(void)
 {
 	static const smp_test_case_t cases[] = {
 		{"cpus", test_cpus_online},	 {"pinned", test_pinned_per_cpu}, {"mlfq", test_mlfq_concurrent},
-		{"wakeups", test_ping_pong}, {"seqwait", test_seq_wait},	  {"ipi", test_ipi},
+		{"wakeups", test_ping_pong}, {"seqwait", test_seq_wait},	  {"timedwait", test_timed_wait},
+		{"ioready", test_ioready},	 {"ipi", test_ipi},
 		{"affinity", test_affinity}, {"balance", test_balance},		  {"stress", test_stress},
 		{"memory", test_memory},	 {"usertlb", test_user_tlb},	  {"vmrace", test_fault_vs_unmap},
 		{"cowrace", test_cow_race}};

@@ -51,7 +51,8 @@ I386_C_SOURCES += \
     kern/ipc/ipc_port.c \
     kern/ipc/ipc_space.c \
     kern/ipc/shm_registry.c \
-    kern/ipc/socket.c
+    kern/ipc/socket.c \
+    kern/ioready.c
 
 I386_ASM_SOURCES += \
     kern/i386/context_switch.S \

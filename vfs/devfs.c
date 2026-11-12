@@ -1,6 +1,7 @@
 #include <vfs/devfs.h>
 
 #include <kern/console/console.h>
+#include <kern/ioready.h>
 #include <kern/lock.h>
 #include <kern/syscall/syscall_defs.h>
 #include <vfs/vfs.h>
@@ -69,6 +70,7 @@ static vfs_status_t devfs_setattr(vnode_t vnode, const vnode_attr_t *attr, uint3
 static vfs_status_t devfs_open(vnode_t vnode, uint32_t flags, vnode_t *opened);
 static void devfs_close(vnode_t vnode, uint32_t flags);
 static vfs_status_t devfs_ioctl(vnode_t vnode, uint32_t command, void *argument);
+static vfs_status_t devfs_poll(vnode_t vnode, uint32_t *ready, struct ioready **source);
 
 static const filesystem_operations_t g_devfs_filesystem_ops = {
 	.mount = devfs_mount, .sync = devfs_sync, .unmount = devfs_unmount};
@@ -82,7 +84,8 @@ static const vnode_operations_t g_devfs_device_ops = {.read = devfs_read,
 													  .setattr = devfs_setattr,
 													  .open = devfs_open,
 													  .close = devfs_close,
-													  .ioctl = devfs_ioctl};
+													  .ioctl = devfs_ioctl,
+													  .poll = devfs_poll};
 
 static struct vfs_filesystem g_devfs_filesystem = {
 	.fs_name = "devfs", .fs_ops = &g_devfs_filesystem_ops, .fs_registered = false};
@@ -498,6 +501,21 @@ devfs_ioctl(vnode_t vnode, uint32_t command, void *argument)
 	if (node->operations->ioctl == 0) return VFS_STATUS_NOT_SUPPORTED;
 
 	return node->operations->ioctl(node->context, command, argument);
+}
+
+static vfs_status_t
+devfs_poll(vnode_t vnode, uint32_t *ready, struct ioready **source)
+{
+	devfs_node_t *node = devfs_node(vnode);
+
+	if (node == 0) return VFS_STATUS_INVALID;
+
+	if (node->operations->poll == 0) {
+		*ready = IOREADY_READ | IOREADY_WRITE;
+		return VFS_STATUS_OK;
+	}
+
+	return node->operations->poll(node->context, ready, source);
 }
 
 bool

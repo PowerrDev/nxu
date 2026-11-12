@@ -110,6 +110,63 @@ bool waitq_block_seq(waitq_t *queue, uint32_t seq, bool interruptible);
  */
 bool waitq_block_unlock(waitq_t *queue, bool interruptible, nxu_spinlock_t *guard, uint64_t irq_state);
 
+/*
+ * waitq_block_deadline
+ *
+ * waitq_block_seq that gives up at `deadline` (microseconds on the
+ * timer_get_microseconds clock; WAITQ_NO_DEADLINE waits for ever). Used the
+ * same way, and the three outcomes each mean "leave the queue and decide":
+ *
+ *     for (;;) {
+ *         uint32_t seq = waitq_seq(&queue);
+ *         if (condition()) break;
+ *
+ *         waitq_result_t result = waitq_block_deadline(&queue, seq, true, deadline);
+ *         if (result == WAITQ_INTERRUPTED) return interrupted;
+ *         if (result == WAITQ_TIMED_OUT) return condition() ? done : timed_out;
+ *     }
+ *
+ * WAITQ_WOKEN
+ *     A wakeup arrived, or had already arrived since `seq` was taken: look
+ *     again.
+ *
+ * WAITQ_INTERRUPTED
+ *     A signal cut an interruptible wait short.
+ *
+ * WAITQ_TIMED_OUT
+ *     The deadline passed first. The condition may still have come true at the
+ *     same moment (a wakeup that finds the thread already taken off the queue
+ *     by its deadline wakes nobody), so a caller that must not lose it tests
+ *     the condition once more, as above. A deadline already in the past
+ *     returns this without sleeping.
+ *
+ * Deadlines are checked on the scheduler tick, so a wait ends within a tick or
+ * two after its deadline, never before it. However the wait ends, the thread is
+ * off the queue and no longer has a deadline on return; a thread terminated in
+ * the middle of one leaves both the queue and the list of timed waiters before
+ * it is reclaimed (sched_thread_terminate).
+ */
+typedef enum { WAITQ_WOKEN, WAITQ_INTERRUPTED, WAITQ_TIMED_OUT } waitq_result_t;
+
+#define WAITQ_NO_DEADLINE UINT64_MAX
+
+waitq_result_t waitq_block_deadline(waitq_t *queue, uint32_t seq, bool interruptible, uint64_t deadline);
+
+/*
+ * waitq_timer_tick / waitq_timer_cancel
+ *
+ * The scheduler's half of waitq_block_deadline. waitq_timer_tick ends the wait
+ * of every thread whose deadline is at or before `now`; the scheduler calls it
+ * from the boot CPU's tick. waitq_timer_cancel forgets a thread's deadline;
+ * the scheduler calls it when it terminates a thread, before the thread can be
+ * reclaimed. It returns only once no tick is still looking at the thread.
+ */
+void waitq_timer_tick(uint64_t now);
+void waitq_timer_cancel(thread_t thread);
+
+/* How many threads are sleeping with a deadline right now (diagnostics and tests). */
+uint32_t waitq_timer_waiters(void);
+
 /* Wake the longest-waiting thread / every thread on queue. */
 void waitq_wake_one(waitq_t *queue);
 void waitq_wake_all(waitq_t *queue);

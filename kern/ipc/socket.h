@@ -83,6 +83,17 @@ int64_t socket_read(socket_t socket, void *buffer, uint64_t length);
 int64_t socket_write(socket_t socket, const void *buffer, uint64_t length);
 
 /*
+ * What socket is ready for now, without sleeping (*ready, a mask of IOREADY_*
+ * from kern/ioready.h), and the notifier it posts to when that changes
+ * (*source). A connected end is readable when bytes are waiting or its peer
+ * has closed (a read then returns end of stream), writable when its peer's
+ * ring has room, and hung up once its peer has closed. A listener is readable
+ * when a connection is waiting to be accepted. False if socket is null.
+ */
+struct ioready;
+bool socket_poll(socket_t socket, uint32_t *ready, struct ioready **source);
+
+/*
  * Marks this end closed, wakes anything blocked on it or its peer (which
  * observes EOF/failure from then on), and releases the reference socket
  * came into this call already holding.

@@ -25,10 +25,18 @@
  * has bumped the sequence since; every waker changes the condition under the
  * same lock and then wakes. That closes the window in which a wakeup on another
  * CPU could fall between "the condition is false" and "I am asleep".
+ *
+ * Readiness: every socket owns a notifier (kern/ioready.h) and posts to it
+ * whenever a change could make a waiting read, write or accept go through:
+ * bytes arriving, room appearing, a connection queued, the peer closing. Posts
+ * are made after the socket's lock is dropped. A post is only a hint, so one
+ * made to a socket that closes at the same moment is harmless: the object is
+ * still referenced by whoever posts (its own handle, or the peer link).
  */
 
 #include <kern/ipc/socket.h>
 
+#include <kern/ioready.h>
 #include <kern/lock.h>
 #include <kern/memory/heap.h>
 #include <kern/process/thread.h>
@@ -64,6 +72,9 @@ struct socket {
 
 	/* Threads blocked in connect/accept/read/write on this object. */
 	waitq_t waiters;
+
+	/* Posted to when this object becomes readable, writable or hung up; see socket_poll. */
+	ioready_t ready;
 
 	/* Listening-socket fields. */
 	struct socket *pending_head;
@@ -163,6 +174,8 @@ socket_release_internal(socket_t s)
 	nxu_spin_unlock(&s->lock);
 
 	if (!destroy) return;
+
+	ioready_destroy(&s->ready);
 
 	if (s->ring_data != 0) (void)kfree(s->ring_data);
 	(void)kfree(s);
@@ -325,6 +338,9 @@ socket_connect(const char *name, bool block, socket_t *result)
 	}
 	nxu_spin_unlock(&listener->lock);
 
+	/* The listener has something to accept. */
+	if (has_room) ioready_post(&listener->ready, IOREADY_READ);
+
 	socket_release_internal(listener);
 
 	if (!has_room) {
@@ -454,7 +470,13 @@ socket_read_poll(socket_t socket, void *buffer, uint64_t length)
 		socket_wake_one(socket);
 	}
 
+	socket_t writer = count != 0 ? socket->peer : SOCKET_NULL;
+
 	nxu_spin_unlock(&socket->lock);
+
+	/* Room appeared in this end's ring: its peer can write again. */
+	if (writer != SOCKET_NULL) ioready_post(&writer->ready, IOREADY_WRITE);
+
 	return count;
 }
 
@@ -485,7 +507,12 @@ socket_read(socket_t s, void *buffer, uint64_t length)
 
 	if (read > 0U) socket_wake_one(s);
 
+	socket_t writer = read > 0U ? s->peer : SOCKET_NULL;
+
 	nxu_spin_unlock(&s->lock);
+
+	/* Room appeared in this end's ring: its peer can write again. */
+	if (writer != SOCKET_NULL) ioready_post(&writer->ready, IOREADY_WRITE);
 
 	return (int64_t)read;
 }
@@ -530,9 +557,62 @@ socket_write(socket_t s, const void *buffer, uint64_t length)
 
 	nxu_spin_unlock(&target->lock);
 
+	/* Bytes arrived in the peer's ring: it can read. */
+	if (written > 0ULL) ioready_post(&target->ready, IOREADY_READ);
+
 	if (written > 0ULL) return (int64_t)written;
 
 	return length == 0ULL ? 0 : -1;
+}
+
+bool
+socket_poll(socket_t s, uint32_t *ready, struct ioready **source)
+{
+	if (ready != 0) *ready = 0U;
+	if (source != 0) *source = 0;
+
+	if (s == SOCKET_NULL || ready == 0 || source == 0) return false;
+
+	uint32_t mask = 0U;
+	socket_t peer = SOCKET_NULL;
+
+	nxu_spin_lock(&s->lock);
+
+	switch (s->state) {
+	case SOCKET_STATE_LISTENING:
+		if (s->pending_head != SOCKET_NULL) mask |= IOREADY_READ;
+		break;
+	case SOCKET_STATE_CONNECTED:
+		if (s->ring_count != 0U || s->peer_closed) mask |= IOREADY_READ;
+		if (s->peer_closed) mask |= IOREADY_HANGUP;
+		peer = s->peer_closed ? SOCKET_NULL : s->peer;
+		break;
+	case SOCKET_STATE_CLOSED:
+		mask |= IOREADY_HANGUP;
+		break;
+	default:
+		break;
+	}
+
+	nxu_spin_unlock(&s->lock);
+
+	/*
+	 * Writes go into the peer's ring, so room is the peer's to report. One
+	 * lock at a time, as everywhere in this file; the answer is a snapshot
+	 * either way. The peer link keeps the peer's memory valid while the
+	 * caller holds its own reference to s.
+	 */
+	if (peer != SOCKET_NULL) {
+		nxu_spin_lock(&peer->lock);
+
+		if (peer->state == SOCKET_STATE_CONNECTED && socket_ring_free_space(peer) != 0U) mask |= IOREADY_WRITE;
+
+		nxu_spin_unlock(&peer->lock);
+	}
+
+	*ready = mask;
+	*source = &s->ready;
+	return true;
 }
 
 void
@@ -574,6 +654,8 @@ socket_close(socket_t s)
 			socket_wake_all(pending);
 			nxu_spin_unlock(&pending->lock);
 
+			ioready_post(&pending->ready, IOREADY_HANGUP);
+
 			pending = next;
 		}
 	}
@@ -583,6 +665,9 @@ socket_close(socket_t s)
 		peer->peer_closed = true;
 		socket_wake_all(peer);
 		nxu_spin_unlock(&peer->lock);
+
+		/* The peer's reads now end, and its writes fail. */
+		ioready_post(&peer->ready, IOREADY_READ | IOREADY_HANGUP);
 
 		socket_release_internal(peer);
 	}

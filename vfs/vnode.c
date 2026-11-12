@@ -1,5 +1,6 @@
 #include <vfs/vnode.h>
 
+#include <kern/ioready.h>
 #include <kern/security/ucred.h>
 
 #include <stdbool.h>
@@ -294,4 +295,27 @@ vnode_ioctl(vnode_t vnode, uint32_t command, void *argument)
 	if (vnode->v_ops == 0 || vnode->v_ops->ioctl == 0) return VFS_STATUS_NOT_SUPPORTED;
 
 	return vnode->v_ops->ioctl(vnode, command, argument);
+}
+
+/*
+ * vnode_poll:
+ *
+ * What the vnode is ready for now, and the notifier that posts when that
+ * changes. A vnode with no poll operation never makes a caller wait, so it is
+ * readable and writable and has no notifier.
+ */
+vfs_status_t
+vnode_poll(vnode_t vnode, uint32_t *ready, struct ioready **source)
+{
+	if (ready != 0) *ready = 0U;
+	if (source != 0) *source = 0;
+
+	if (vnode == 0 || ready == 0 || source == 0 || !vnode->v_active) return VFS_STATUS_INVALID;
+
+	if (vnode->v_ops == 0 || vnode->v_ops->poll == 0) {
+		*ready = IOREADY_READ | IOREADY_WRITE;
+		return VFS_STATUS_OK;
+	}
+
+	return vnode->v_ops->poll(vnode, ready, source);
 }

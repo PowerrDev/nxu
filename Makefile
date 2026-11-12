@@ -400,6 +400,7 @@ C_SOURCES := \
     kern/ipc/ipc_space.c \
     kern/ipc/shm_registry.c \
     kern/ipc/socket.c \
+    kern/ioready.c \
     kern/console/display_owner.c \
     kern/tests/ipc_test.c \
     kern/tests/post.c \

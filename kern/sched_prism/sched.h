@@ -187,6 +187,12 @@ bool sched_block_commit(void);
 bool sched_sleep_us(uint64_t microseconds);
 
 /*
+ * True once the boot CPU has taken a scheduler tick. Timed sleeps are ended by
+ * the tick, so before this they wait by yielding instead.
+ */
+bool sched_is_ticking(void);
+
+/*
  * sched_sleep_until_kicked / sched_kick_sleepers
  *
  * sched_sleep_us that also ends at the next sched_kick_sleepers(): for a loop

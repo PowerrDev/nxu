@@ -376,6 +376,20 @@ file_is_stream(file_t file)
 	return type == VNODE_TYPE_CHARACTER || type == VNODE_TYPE_FIFO || type == VNODE_TYPE_SOCKET;
 }
 
+vfs_status_t
+file_poll(file_t file, uint32_t *ready, struct ioready **source)
+{
+	if (ready != 0) *ready = 0U;
+	if (source != 0) *source = 0;
+
+	if (file == 0 || ready == 0 || source == 0 || !file->f_active) return VFS_STATUS_INVALID;
+
+	if (file->f_type == FILE_TYPE_SOCKET)
+		return socket_poll(file->f_socket, ready, source) ? VFS_STATUS_OK : VFS_STATUS_INVALID;
+
+	return vnode_poll(file->f_vnode, ready, source);
+}
+
 /* The I/O flags of one transfer: what the caller asked for this once, plus what the file was opened with. */
 static uint32_t
 file_ioflags(file_t file, uint32_t ioflags)

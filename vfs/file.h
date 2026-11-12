@@ -120,6 +120,16 @@ vfs_status_t file_write(file_t file, const void *buffer, uint64_t size, uint32_t
  */
 bool file_is_stream(file_t file);
 
+/*
+ * file_poll
+ *
+ * What the file is ready for now (*ready, IOREADY_* from kern/ioready.h) and
+ * the notifier that posts when that changes (*source, 0 if it never does).
+ * Never sleeps. The notifier belongs to the object behind the file, so it is
+ * valid for as long as the caller holds its reference to the file.
+ */
+struct ioready;
+vfs_status_t file_poll(file_t file, uint32_t *ready, struct ioready **source);
 vfs_status_t file_seek(file_t file, uint64_t offset);
 vfs_status_t file_ioctl(file_t file, uint32_t command, void *argument);
 

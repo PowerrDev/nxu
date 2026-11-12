@@ -6,6 +6,7 @@
 
 struct mount;
 struct vnode;
+struct ioready;
 
 typedef struct mount *mount_t;
 typedef struct vnode *vnode_t;
@@ -133,6 +134,17 @@ typedef struct {
 	vfs_status_t (*open)(vnode_t vnode, uint32_t flags, vnode_t *opened);
 	void (*close)(vnode_t vnode, uint32_t flags);
 	vfs_status_t (*ioctl)(vnode_t vnode, uint32_t command, void *argument);
+
+	/*
+	 * Optional, for vnodes whose reads or writes can wait. poll reports,
+	 * without sleeping, what the vnode is ready for right now (*ready, a
+	 * mask of IOREADY_* from kern/ioready.h) and which notifier posts when
+	 * that changes (*source, or 0 for a vnode whose readiness never
+	 * changes). A caller that means to sleep attaches a watch to *source
+	 * first and calls poll again after, so no change is missed. A vnode
+	 * without the operation is always ready: its transfers never wait.
+	 */
+	vfs_status_t (*poll)(vnode_t vnode, uint32_t *ready, struct ioready **source);
 	vfs_status_t (*rmdir)(vnode_t directory, const char *name);
 	vfs_status_t (*rmdir_held)(vnode_t directory, const char *name, vnode_t *expected);
 } vnode_operations_t;
@@ -218,5 +230,6 @@ vfs_status_t vnode_readlink(vnode_t vnode, char *buffer, uint64_t capacity, uint
 vfs_status_t vnode_open(vnode_t vnode, uint32_t flags, vnode_t *opened);
 void vnode_close(vnode_t vnode, uint32_t flags);
 vfs_status_t vnode_ioctl(vnode_t vnode, uint32_t command, void *argument);
+vfs_status_t vnode_poll(vnode_t vnode, uint32_t *ready, struct ioready **source);
 
 #endif

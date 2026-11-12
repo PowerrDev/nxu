@@ -227,6 +227,20 @@ struct thread {
 	bool wait_interruptible;
 	bool wait_interrupted;
 
+	/*
+	 * A wait with a deadline (waitq_block_deadline). While wait_timer_armed
+	 * the thread is on the list of timed waiters, linked through
+	 * wait_timer_next/prev, and the scheduler tick ends its wait once
+	 * wait_deadline (microseconds, timer_get_microseconds) has passed, saying
+	 * so in wait_timed_out. All four are protected by the timed-waiter lock
+	 * in kern/sched_prism/waitq.c.
+	 */
+	uint64_t wait_deadline;
+	struct thread *wait_timer_next;
+	struct thread *wait_timer_prev;
+	bool wait_timer_armed;
+	bool wait_timed_out;
+
 	thread_continue_t continuation;
 	void *parameter;
 

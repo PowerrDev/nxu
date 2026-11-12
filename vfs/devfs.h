@@ -61,6 +61,13 @@ typedef struct devfs_operations {
 	vfs_status_t (*read)(void *context, void *buffer, uint64_t size, uint32_t ioflags, uint64_t *read_size);
 	vfs_status_t (*write)(void *context, const void *buffer, uint64_t size, uint32_t ioflags, uint64_t *written_size);
 	vfs_status_t (*ioctl)(void *context, uint32_t command, void *argument);
+	/*
+	 * What the device is ready for now (IOREADY_*, kern/ioready.h) and the
+	 * notifier it posts to when that changes; must not sleep. A device whose
+	 * reads or writes can wait provides it; one that does not is taken to be
+	 * always ready. See the poll operation in vfs/vnode.h.
+	 */
+	vfs_status_t (*poll)(void *context, uint32_t *ready, struct ioready **source);
 } devfs_operations_t;
 
 /*
