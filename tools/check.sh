@@ -132,7 +132,7 @@ run_kernel_test() {
 		-device virtio-blk-device,drive=nxudisk \
 		-device virtio-gpu-device -device virtio-keyboard-device -device virtio-mouse-device \
 		$audio -device virtio-sound-device,audiodev=snd0 \
-		"${network_args[@]}" \
+		${network_args[@]+"${network_args[@]}"} \
 		-serial file:"$serial" -monitor none -no-reboot >/dev/null 2>&1 </dev/null &
 	qpid=$!
 
