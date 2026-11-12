@@ -1,0 +1,820 @@
+# TTY, PTY and termios: audit and plan
+
+Status: **Phase 0 (audit) complete and approved. Phase 1 (infrastructure, M1 to M7) complete. Next: Phase 2, the TTY core.**
+
+This document is the prerequisite audit, dependency report and roadmap for a
+kernel terminal subsystem (TTY core, line discipline, termios, PTYs, job
+control). Phase and milestone numbers live here only, never in source files.
+
+Every finding below was read from the code at `main` (502119a), not inferred
+from names. File and line references are to that revision.
+
+## 1. What exists today
+
+There is no kernel terminal of any kind. What looks like one is this:
+
+- `Terminal.app` (`frameworks/Terminal.framework/terminal.c`) does line editing,
+  history and echo itself and sends whole lines to the shell.
+- The shell's stdio is a **local stream socket** (`kern/ipc/socket.c`). On i386
+  `nxu_spawn_io` (`frameworks/lib/spawn_io_i386.c`) listens on
+  `com.nxu.spawn.<pid>`, spawns the child, and the child's crt0 connects back,
+  reads its **argv** from the socket, then `dup2`s it onto 0/1/2.
+- Ctrl-C is `nxu_kill(shell, SIGINT)` on arm64 and an in-band byte `0x03` on
+  i386 (`terminal.c:531`), which `nzh` polls for (`nzh.c:158`, `:728`).
+- The kernel console (`kern/console/console.c`) is an output-only log sink.
+  The UART (`platform/*/uart.c`) is polled, transmit-only: there is no receive
+  path and no UART interrupt on any architecture.
+
+## 2. Audit findings
+
+### 2.1 VFS, files, descriptors
+
+| Item | State | Evidence |
+| --- | --- | --- |
+| vnode abstraction, refcounts, ops table | READY | `vfs/vnode.h` |
+| `open`/`close`/`ioctl` vnode ops for devices | READY | `vfs/vnode.h:114`, `vfs/vfs_file.c:37` |
+| File objects, shared on fork, `dup2` | READY | `vfs/file.c` |
+| ioctl encoding and copy-in/out | READY | `NXU_IOC*` in `syscall_defs.h`, `syscall_ioctl` |
+| ioctl on descriptors 0-2 | INCOMPLETE | `syscall_ioctl` rejects `descriptor < VFS_FD_FIRST_FILE` (`syscall.c:673`), so `tcgetattr(0)` cannot work |
+| Per-call I/O flags | MISSING | `vnode_read`/`vnode_write` take no flags. `O_NONBLOCK` reaches a device only at `open` (`virtio_sound_dev.c:103`), so it is per device, not per open file |
+| Per-open device state / cloning open | MISSING | `struct file` has no private pointer and `open` cannot substitute a vnode; `/dev/ptmx` cannot hand each opener its own master |
+| Short-read semantics | INCOMPLETE | `syscall_read` loops per 4096-byte chunk until a short count (`syscall.c:588`); a terminal read that returns exactly one full chunk blocks again for more |
+| stdio descriptors | INCOMPLETE | 0-2 are special: never allocated by `filedesc_install`, and `syscall_write` falls back to `kputc` when 1/2 are empty (`syscall.c:540`) |
+| `fcntl`, `dup`, `poll`/`select`, `O_NOCTTY`, `isatty` | MISSING | no such syscalls; `read_poll` is socket-only (`syscall.c:2572`) |
+| Error codes | INCOMPLETE | no "not a terminal" / "no such device" status in `vfs_status_t` |
+| Concurrency | CAVEAT | VFS has no locking; every syscall that reaches it is bound to the boot CPU (`syscall_is_cpu_agnostic`, `syscall.c:2444`). Blocking inside a bound syscall is established practice (sockets, audio) |
+
+### 2.2 Character devices (devfs)
+
+`vfs/devfs.c` is a flat table of at most **8** devices (`DEVFS_DEVICE_MAX`),
+with one registered user (`audio0`).
+
+| Item | State |
+| --- | --- |
+| Name → ops + context registration | READY |
+| Unregistration, node lifetime | MISSING: entries are never removed; vnodes are embedded in the table |
+| Dynamic nodes (one per PTY) | MISSING |
+| Subdirectories (`/dev/pts/`) | MISSING: `devfs_lookup` only accepts the root |
+| Ownership, mode, `getattr` | MISSING: no `getattr`, so `vnode_access` does not enforce anything on devices and `grantpt` has nothing to set |
+| Open flags / caller identity in read, write | MISSING: ops receive only `context` |
+
+### 2.3 Processes
+
+| Item | State | Evidence |
+| --- | --- | --- |
+| proc table, PIDs, idents, refcounts, parent/child tree | READY | `kern/process/proc.c` |
+| Exit, zombie, reap, blocking `wait` | READY | `proc_exit`, `syscall_wait` |
+| Process groups | MISSING | no pgid anywhere in the tree |
+| Sessions, session leaders, controlling terminal | MISSING | |
+| Stop / continue | MISSING | `proc_stop`/`proc_continue` only flip `p_stat`; they have no callers and no scheduler effect |
+| `wait` reporting stopped children | MISSING | |
+| Orphaned process group handling | MISSING | |
+| fork / exec | arm64 only | `MACHINE_USER_CONTEXT` is 0 on i386 (`kern/i386/user.h:21`) |
+| Spawn: argv, descriptor inheritance | MISSING | `loader_spawn_internal` gives the child an empty descriptor table and no argv; the i386 argv path is the spawn_io socket |
+| x86_64 | N/A | `makedefs/x86_64.mk` builds a bare kernel: no VFS, no processes, no scheduler |
+
+### 2.4 Signals
+
+| Item | State | Evidence |
+| --- | --- | --- |
+| Dispositions, pending set, per-thread mask, `sigaction`/`sigprocmask`/`sigreturn` | READY (arm64) | `kern/process/signal.c` |
+| Interrupting interruptible sleeps | READY | `signal_interrupt_sleepers` → `waitq_interrupt` |
+| Handler delivery on return to user | arm64 only | `signal_dequeue` is called only from `kern/arm64/exception.c`. On i386 the `kill`, `sigaction`, `sigprocmask` syscalls are compiled out entirely, and Activity Monitor's Kill is a no-op (`ui_session_manager.c:464`) |
+| `SIGTSTP`, `SIGTTIN`, `SIGTTOU`, `SIGWINCH` | MISSING | not defined |
+| `SIGSTOP` / `SIGCONT` | MISSING | refused (`signal.c:169`) |
+| Default actions | INCOMPLETE | two-valued: terminate, or ignore for `SIGCHLD` |
+| Process-group delivery | MISSING | |
+| Permission model | INCOMPLETE | sender must be an ancestor (`proc_is_inferior`); written before credentials existed |
+| Kernel-originated signals | INCOMPLETE | done by passing `proc_kernel()` as sender |
+| Execution context | CAVEAT | a default-terminate signal runs `proc_exit(target)` synchronously in the sender (`signal.c:201`); that binds to the boot CPU and sleeps, so it cannot run in interrupt context or under a spinlock |
+| `SIGCHLD` | INCOMPLETE | set pending on exit only, and without waking sleepers |
+
+Terminating another process by default action needs no machine support, so
+most of the i386 gap is a gate that is wider than it needs to be. Only
+*handler* delivery needs `machine_user_signal_push/pop` for i386.
+
+### 2.5 Scheduler and synchronization
+
+| Item | State | Evidence |
+| --- | --- | --- |
+| Wait queues, interruptible sleep | READY | `kern/sched_prism/waitq.c` |
+| Lost-wakeup-safe sleep on SMP | READY | `waitq_block_seq`, `waitq_block_unlock` |
+| Terminated threads leave their queue | READY | `sched_thread_terminate` → `waitq_remove` |
+| Spinlocks, irqsave forms | READY | `kern/lock.h` |
+| Sleeping mutex, condition variable | MISSING | none in the kernel; every lock is a spinlock |
+| Timed wait on a specific queue | MISSING | only the global tick queue (`sched_sleep_us`) and the global kick queue exist; `VTIME` and `tcdrain` need a deadline on a per-object wait |
+| Deferred work from interrupt context | MISSING | no work queue or thread call |
+
+### 2.6 Memory
+
+READY. `kmalloc`/`kcalloc`/`kfree` return null on failure. Object lifetime is
+hand-rolled refcount-under-spinlock per object (`socket.c`, `ipc_port.c`); the
+TTY objects follow the same pattern. No special allocator is needed.
+
+### 2.7 Device and console infrastructure
+
+| Item | State |
+| --- | --- |
+| UART transmit | READY (polled) |
+| UART receive, UART interrupts | MISSING on all architectures |
+| Kernel console input | MISSING; the console is a log sink |
+| Keyboard | events go to the UI session (`drivers/input`), not to a text console |
+
+Kernel logging does not depend on any terminal and will not: `kputc` stays as
+it is.
+
+### 2.8 Test infrastructure
+
+READY. Four layers (`doc/testing.md`): boot self-tests, kernel test configs
+(`make test TEST=<id>`), i386 suites (`tools/test_i386*.sh`), and host tests of
+pure code under ASan+UBSan. The line discipline can be written as pure code and
+host-tested the way `tools/btrfs` is.
+
+## 3. Dependency graph
+
+```
+ A. vnode I/O flags ─────────────┐
+ B. cloning open / per-open ─────┤
+ C. devfs: dynamic nodes, attrs ─┼──► TTY core ──► line discipline ──► termios
+ D. stdio 0-2 as ordinary fds ───┤        │
+ E. waitq timed wait ────────────┘        │
+                                          ▼
+ F. pgrp + session (proc) ──┐           PTY ──► Terminal.app / nzh on a PTY
+ G. signals: stop/cont,     ├──► job control ──┘
+    pgrp send, new numbers ─┤
+ H. i386 handler delivery ──┤   (H gates job control on i386 only)
+ I. spawn attributes ───────┘   (argv, fd inheritance, pgrp/session/ctty)
+
+ J. UART receive + deferred input ──► serial / console backends
+```
+
+F must precede G (group delivery needs groups). I depends on D and F. Job
+control depends on F, G, I, and on i386 also H. The PTY needs A, B, C. J is
+independent of everything but the TTY core.
+
+## 4. Architectural risks
+
+1. **i386 is spawn-only.** Unix sets up a job between `fork` and `exec`
+   (`setpgid`, `tcsetpgrp`, reset dispositions, redirect descriptors). With no
+   fork on i386 that must all be expressed as **spawn attributes**, in the
+   manner of `posix_spawn`. This is the largest single prerequisite and it
+   replaces the spawn_io socket relay, including how argv is delivered.
+2. **Signals on i386.** Job control with a shell that catches `SIGINT` and
+   `SIGCHLD` needs real handler delivery on i386 (item H). Without it i386 gets
+   terminal-generated *termination* only.
+3. **Signal generation sleeps.** `signal_send` may run `proc_exit`. The line
+   discipline must therefore post signals from thread context with no TTY
+   spinlock held; input from an interrupt (UART) must be handed to a thread
+   first.
+4. **No sleeping locks.** TTY state is protected by spinlocks, and anything that
+   can block (a driver's output, a signal) is called after they are dropped.
+   This is workable (sockets do it) but constrains the driver interface.
+5. **No `poll`.** Terminal.app multiplexes tabs with `read_poll` plus a frame
+   sleep. The PTY master will support `O_NONBLOCK` and wake the existing kick
+   sequence (`NXU_SYS_EVENT_WAIT`), which matches how UI clients already wait.
+   A general `poll` is out of scope and recorded as a limitation.
+6. **vnode op signature change** (item A) touches ext4, btrfs, ramfs and devfs
+   mechanically.
+7. **The flag day.** Moving Terminal.app and nzh from sockets to a PTY changes
+   crt0, spawn, the shell and the emulator together. It is staged last, behind
+   working kernel tests, with the socket path kept until the PTY path passes.
+
+## 5. Decisions (approved)
+
+- **Device naming: Darwin style.** `/dev/ptmx`, slaves `/dev/ttysNNN`,
+  `/dev/tty`, `/dev/console`. This keeps devfs flat (no directory support
+  needed) and matches NXU's lineage. `ptsname()` hides the name, so a
+  `/dev/pts/` layout stays possible later.
+- **termios ABI: fixed-width.** `tcflag_t` and `speed_t` are `uint32_t`,
+  `cc_t` is `uint8_t`, `NCCS` 20; `struct termios` is 44 bytes with no padding
+  and is identical on arm64 and i386. Requests are `NXU_IOC` group `'t'`.
+- **Signal numbers** continue the existing Linux numbering: `SIGTSTP` 20,
+  `SIGTTIN` 21, `SIGTTOU` 22, `SIGWINCH` 28.
+- **x86_64** has no VFS or processes; the TTY is not linked there. The
+  requirement is only that its build stays green.
+- **Source layout**: `kern/tty/` (`tty.c`, `tty_ioctl.c`, `tty_ldisc.c`,
+  `n_tty.c`, `tty_jobctl.c`, `pty.c`, private `tty_internal.h`), public ABI in
+  `kern/syscall/termios_defs.h` re-exported to userland as
+  `frameworks/include/termios.h`. Fewer, larger files than the suggested tree,
+  matching `kern/ipc/`.
+
+## 6. Design rules that cut across milestones
+
+These three were set as requirements when the plan was approved. Each is a
+structural property, not a convention to remember.
+
+### 6.1 Readiness notification
+
+General `poll`/`select` is out of scope, but nothing built here may have to
+change shape when it arrives. So readiness is a generic mechanism from the
+start, in two halves:
+
+- **A level query.** A vnode operation `poll(vnode, &ready)` reports, without
+  sleeping, which of *readable*, *writable*, *hung up* and *error* hold right
+  now. Sockets answer the same question through the file layer
+  (`file_poll`).
+- **An edge notifier.** Every object that can become ready embeds one
+  `ioready_t` and calls `ioready_post(&object->ready, events)` when it goes
+  from not ready to ready, after dropping its own lock. Interested parties
+  attach to the notifier; producers never know who is listening.
+
+Today the only listener is the kick sequence (`NXU_SYS_EVENT_WAIT`), so a
+Terminal tab sleeping for UI events also wakes when its PTY master becomes
+readable, and then asks with a nonblocking read. A future `poll` attaches one
+waiter record per descriptor to the same notifiers and uses the same level
+query: no driver, PTY or TTY code changes. This is the role `selinfo` and
+`selwakeup` play in XNU.
+
+The notifier landed with M3 (`kern/ioready.h`); the TTY and PTY use it from
+their first version.
+
+### 6.2 Process creation is atomic with respect to execution
+
+A spawned process must already be in its session and process group, hold its
+inherited descriptors, have its controlling terminal and its signal
+dispositions **before its first thread can run on any CPU**. The parent must
+never have to fix a child up after the fact (the classic race in which a
+child runs, or is signalled, before `setpgid` has been applied to it).
+
+The spawn-attributes call therefore does all of it while the child is still
+an embryo: the process is built, configured and validated first; group and
+session membership are entered in the same process-table critical section
+that makes the process visible; only then is its thread made runnable. Any
+failure before that point unwinds completely, so a half-configured process is
+never visible, signalable or runnable. Changing the foreground group to the
+new job is one of the attributes for the same reason.
+
+### 6.3 Terminal code never tears a process down
+
+`signal_send` can run `proc_exit` on its target, which binds to the boot CPU,
+sleeps, and closes descriptors (possibly this very terminal). Calling that
+with a TTY lock held would deadlock or recurse.
+
+Two layers prevent it:
+
+1. **A posting primitive that cannot tear down** (M5). `signal_post` and its
+   process-group form only mark the signal pending and wake interruptible
+   sleepers. They take leaf spinlocks, never sleep, and never call
+   `proc_exit`. A fatal default action is carried out by the *target*, in its
+   own context, when it next crosses the kernel boundary (return to user
+   mode, or an interruptible sleep returning "interrupted"). The synchronous
+   kill-now path stays, but only behind `kill(2)` for a target that may be in
+   an uninterruptible sleep, where the caller is in plain syscall context.
+2. **The TTY never signals under its locks anyway.** Input processing records
+   what must be signalled (which group, which signal), releases every TTY
+   lock, and only then posts. The same applies to hangup and to
+   `SIGTTIN`/`SIGTTOU`.
+
+Process exit reaching back into the terminal (a session leader exiting,
+closing the last descriptor) happens from `proc_exit` with no TTY lock held
+by construction, since no terminal path can be on the stack beneath it.
+
+## 7. Roadmap
+
+Each milestone lands with its tests and leaves all three builds and
+`make check` green.
+
+**Phase 1: infrastructure**
+
+| # | Milestone | Covers | Test |
+| --- | --- | --- | --- |
+| M1 ✅ | vnode read/write I/O flags; stream reads asked once; ioctl on 0-2; `read_poll` on any stream | A, D (part) | existing suites (below) |
+| M2 ✅ | devfs: dynamic register/unregister, 64-slot table, uid/gid/mode + `getattr`/`setattr`, cloning open | B, C | `devfs_self_test` at boot |
+| M3 ✅ | `waitq_block_deadline`; readiness notifier and `poll` operation (6.1) | E | SMP suite: `timedwait`, `ioready` |
+| M4 ✅ | Process groups and sessions: `setpgid`, `getpgid`, `setsid`, `getsid`; inheritance on fork/spawn; lifetime; pid reuse | F | process-control: checks 200-223 |
+| M5 ✅ | Signals: non-tearing `signal_post` (6.3), default-action table, stop and continue, `wait` reports stops, `killpg`, credential-based permission, new numbers, orphaned groups | G | process-control: checks 230-264 |
+| M6 ✅ | i386: `machine_user_signal_push/pop`, delivery on trap return, the signal syscalls enabled | H | `test-i386-boot` case `process-signal` (`sigtest`, 26 checks) |
+| M7 ✅ | Spawn attributes, applied before the child can run (6.2): argv, inherited descriptors, process group or new session, signal mask | I, D | `spawntest` (27 checks): i386 `process-spawn`, arm64 through `proctest` |
+
+### M1 as built
+
+- `vnode_operations_t` `read`/`write` and `devfs_operations_t` `read`/`write`
+  take `ioflags` (`VNODE_IO_NONBLOCK`). `vnode_read_io`/`vnode_write_io` pass
+  them; `vnode_read`/`vnode_write` remain as the no-flags form.
+- `file_read`/`file_write` take per-call flags, added to the file's open
+  flags. `file_is_stream` identifies sockets, character devices and FIFOs.
+- `read` asks a stream once; `write` reports a short count rather than an
+  error when cut off after moving bytes; `ioctl` accepts descriptors 0-2;
+  `read_poll` works on any stream, not only sockets.
+- The "not a terminal" status codes move to Phase 2, where they are first
+  used.
+- No new test: nothing new is reachable yet (the first device that reads is
+  the TTY loopback driver in Phase 2, which tests nonblocking reads). The
+  change is verified by the existing suites that use these paths.
+
+### M2 as built
+
+- `devfs_unregister_device`, `devfs_set_attributes`; slots are free, named or
+  detached, and detached slots are reclaimed lazily (see `doc/vfs/devfs.md`).
+- The vnode `open` operation may redirect the open to another vnode;
+  `devfs_operations_t.open` does so by filling a `devfs_clone_t`.
+- `devfs_self_test` runs at boot on arm64 and i386.
+
+### M3 as built
+
+**Timed waits** (`kern/sched_prism/waitq.h`).
+`waitq_block_deadline(queue, seq, interruptible, deadline)` is
+`waitq_block_seq` with a deadline and three outcomes: `WAITQ_WOKEN`,
+`WAITQ_INTERRUPTED`, `WAITQ_TIMED_OUT`.
+
+- A thread with a deadline is on a global list of timed waiters. The boot
+  CPU's scheduler tick walks it and, for each thread past its deadline, takes
+  the thread off its wait queue and wakes it. As with signals, only whoever
+  unlinks a thread from its queue wakes it, so a deadline and a wakeup racing
+  on two CPUs wake the thread exactly once.
+- The deadline is armed before the thread joins its queue. If it passes in
+  between, the tick finds the thread on no queue, leaves it armed, and ends
+  the sleep on the next tick. A wait never ends before its deadline and ends
+  within a tick or two after it.
+- A wakeup that finds the thread already removed by its deadline wakes
+  nobody, so `WAITQ_TIMED_OUT` means "test the condition once more", which the
+  header's usage pattern shows.
+- Teardown: `sched_thread_terminate` takes the thread off its queue and then
+  calls `waitq_timer_cancel`, which goes through the timed-waiter lock whether
+  or not the thread is armed. The tick holds that lock from choosing a thread
+  to finishing its wakeup, so a thread cannot be reclaimed while a tick is
+  still using it, and the list never points at a dead thread.
+- Lock order: timed-waiter lock, then a queue's lock, then the scheduler's.
+  Nothing takes the timed-waiter lock while holding either of the others.
+- Before the scheduler ticks, a timed wait yields instead of sleeping.
+
+**Readiness** (`kern/ioready.h`), the contract of 6.1.
+
+- `ioready_t` is the notifier an object embeds; `ioready_post` delivers to
+  the attached watches and kicks the event-wait sleepers; `ioready_destroy`
+  hangs up and detaches whatever is still attached.
+- `ioready_watch_t` is a listener: the events it asked for, what has fired,
+  an optional notify routine. Hangup and error are always delivered.
+- The level query is the `poll` operation of `vnode_operations_t` and
+  `devfs_operations_t`, reached through `vnode_poll` and `file_poll`; it
+  returns the ready mask and the notifier to watch. A vnode or device without
+  it is always ready. Sockets answer through `socket_poll`.
+- Sockets post when bytes arrive, room appears, a connection is queued or the
+  peer closes. That makes the mechanism live today: a thread in the
+  event-wait system call now wakes when one of its sockets has something for
+  it, with no change to its code.
+- A future `poll` attaches one watch per descriptor (obtained from
+  `file_poll`), then asks the level, then sleeps on its own wait queue with
+  `waitq_block_deadline`. Nothing in a driver, the TTY or the PTY changes.
+
+Tests: the `timedwait` and `ioready` cases of the SMP suite
+(`kern/tests/smp_test.c`): timeout not early and not late, wakeup before the
+deadline, past deadline, moved sequence, interruption, wakeups racing
+deadlines on several CPUs, and a thread terminated mid-wait; watch delivery,
+masking, detach, destroy, the event-wait kick, and the levels and edges of a
+listener and a connected socket pair.
+
+### M4 as built
+
+`kern/process/pgrp.h` holds the model; the process subsystem owns it and the
+terminal will refer to groups and sessions by ID only.
+
+- Every process is in one group, every group in one session. Groups and
+  sessions are heap objects named by a pid; membership is their only
+  reference count (a group lives while it has members, a session while it has
+  groups), so there is no separate count to get out of step.
+- A child joins its parent's group in the same process-table critical
+  section that makes it visible, for `fork` and for spawn alike (rule 6.2):
+  it is never findable, signalable or runnable outside a group. A process the
+  kernel starts (PID 1, test processes) leads a new session and group
+  instead. The kernel process leads session 0.
+- `setpgid` and `setsid` follow POSIX: caller or its child only, same
+  session, not a session leader, not a child that has called `exec`
+  (`PROC_FLAG_EXECED`), and a new group can only be the one a process names
+  after itself. `setsid` is refused to a group leader.
+- A zombie stays in its group until reaped; a session keeps existing after
+  its leader exits (`s_leader` is cleared at exit). A pid is not reused while
+  a group or session is still named by it.
+- All state is under the process table lock. Memory is allocated before the
+  lock and freed after it.
+- System calls 101-104: `getpgid`, `setpgid`, `getsid`, `setsid`, with
+  userland wrappers on both architectures.
+
+Tests: `proctest` checks 200-223 (arm64, where `fork` exists), placed before
+the capability section so they run regardless of 8.1. They cover leadership
+of a kernel-started process, inheritance, creating and rejoining groups, the
+refusals, a new session and inheritance into it, a parent building a
+two-process job, a group outliving its leader, and a reaped process leaving
+its group. Not covered: the `exec` rule (no test helper stays alive after
+`exec`), and everything on i386, which has no `fork`; i386 gets its coverage
+with spawn attributes in M7.
+
+Moved to M5: orphaned-group detection. It only has an effect on stopped
+processes, which do not exist until M5, so it lands and is tested there.
+
+### M5 as built
+
+The rewritten `kern/process/signal.c`; the model is in `signal.h`.
+
+- **A process acts on its own signals.** `signal_take` is the one place a
+  signal does anything: the machine-dependent return-to-user path calls it,
+  and it parks the thread while the process is stopped, carries out ignore,
+  stop and continue itself, and tells the caller only "run this handler" or
+  "end the process". arm64 calls it now; i386 calls it from M6.
+- **`signal_post` is the non-tearing primitive of 6.3.** It marks a signal
+  pending, wakes interruptible sleepers and kicks running threads. It takes
+  two spinlocks, never sleeps, and has no path to `proc_exit`. The terminal
+  will use it and `signal_post_group` exclusively.
+- **`signal_send` / `signal_send_group`** are `kill(2)` and `killpg(2)`. They
+  alone may end another process synchronously, because a system call handler
+  holds no locks and a target asleep uninterruptibly would otherwise never
+  die. They check permission; `signal_post` does not.
+- **Stop is self-parking**, on a per-process wait queue at the kernel
+  boundary. No scheduler change was needed. A `SIGCONT` counter cancels a
+  stop that a concurrent continue has overtaken.
+- **Orphaned groups** are computed on demand from the parent links (no
+  counters to keep in step): terminal stops are discarded in one, and an exit
+  that orphans a group with stopped members sends it `SIGHUP` then `SIGCONT`.
+- **Permission** follows credentials instead of ancestry. This changes one
+  existing test expectation (check 58: a process may now signal its parent
+  when both run as the same user).
+- New: `SIGTSTP` 20, `SIGTTIN` 21, `SIGTTOU` 22, `SIGWINCH` 28; system calls
+  105 `wait_options` and 106 `killpg`.
+
+Known limits: a thread in an *uninterruptible* kernel sleep acts on a posted
+signal only when that sleep ends (socket reads and writes sleep that way
+today). Cross-user denial of `kill` is not covered by a test, because the
+test program cannot change user. On i386 the signal system calls stay
+disabled until M6.
+
+### M6 as built
+
+- **Gate split.** `MACHINE_USER_CONTEXT` now means fork and exec only;
+  `MACHINE_USER_SIGNALS` covers handler frames and delivery. arm64 sets both;
+  i386 sets signals only. No behaviour change on arm64.
+- **Handler frames** (`kern/i386/user.c`). A handler is entered as a cdecl
+  call nobody made: return address (the restorer), the signal number, then
+  the saved registers, `eip`, `eflags`, `uesp` and the mask, placed so the
+  stack is ABI-aligned at the handler's first instruction. `sigreturn`
+  restores from it, treating every field as untrusted: `eip` and `uesp` must
+  be in user space, and only the flags user code owns are taken back.
+  Segment registers and floating-point state are not saved.
+- **Delivery** (`kern/i386/syscall_trap.c`). `i386_trap_exit`, which every
+  path back to ring 3 already passes through, calls `signal_take` for user
+  frames. So a posted signal is acted on at the target's next system call
+  return or interrupt, and a kick makes that immediate.
+- `kill`, `killpg`, `sigaction`, `sigprocmask` and `sigreturn` are enabled on
+  i386, and the userland library has its sigreturn trampoline. Activity
+  Monitor's Kill and compositor termination use the same gate.
+
+Not done: a processor exception in ring 3 still ends the process directly
+on i386 instead of being turned into `SIGSEGV`/`SIGILL`/`SIGFPE` first, so a
+handler for those cannot run there yet (arm64 does this).
+
+Tests: `sigtest`, a spawn-based program run by the `process-signal` case of
+`test-i386-boot`. In one process: a handler runs once with the right
+argument, registers and stack survive it, the signal is blocked during its
+handler and unblocked after, blocked signals wait, ignored ones vanish,
+`SIGKILL` and `SIGSTOP` cannot be caught. Between a parent and a spawned
+child: stop and its report, a caught signal held while stopped, continue
+through `killpg`, the handler then running, and a default-fatal signal.
+
+### M7 as built
+
+- **`spawn_attr`** (system call 107, `nxu_spawn_attr_t` in
+  `kern/syscall/syscall_defs.h`): arguments, a list of descriptors to
+  inherit (child number ← parent number), a process group to start in (a new
+  one, an existing one, or a new session), and a signal mask. Fixed-width
+  fields, 112 bytes, identical on both architectures.
+- **Rule 6.2 holds by construction.** Group and session placement is an
+  argument of process creation (`proc_create_user_in`): it is decided under
+  the process table lock before the process is on any list, so a refusal has
+  nothing to undo and success makes the process visible already in its
+  group. Arguments, mask and descriptors are applied by
+  `loader_configure_process` while the process is an embryo with no runnable
+  thread. Only then is it started.
+- **A failed spawn leaves nothing.** `proc_abort_embryo` takes a never-run
+  process apart completely. (Before this, a spawn that failed after creation
+  leaked the embryo: `proc_exit` refuses embryos, so
+  `loader_discard_process` did nothing.)
+- **One entry convention.** Every process, spawned or reached by `exec`, on
+  either architecture, starts with its stack pointer at `argc`, `argv`
+  above it, in its own word size; a process given no arguments finds
+  `argc` 0. Both `crt0` stubs read that. The dynamic runtime enters an
+  application the same way (`dyr_enter`) instead of calling its `_start`.
+- **`socketpair`** (system call 108) and `filedesc_install_at`.
+- **`nxu_spawn_io` is now portable** (`frameworks/lib/spawn_io.c`): a socket
+  pair, one end inherited as the child's descriptors 0 to 2, arguments
+  through `spawn_attr`. The connect-back handshake in `crt0`
+  (`spawn_io_i386.c`, `NXU_SPAWN_IO_ENTRY`) is gone, and `su` and `sudo`
+  build on arm64 again.
+- Dispositions are not inherited across spawn (a new process starts with
+  every signal at its default), so there is no "reset to default" attribute.
+- Left for Phase 5, where the terminal exists: making the child's session
+  take a controlling terminal, and putting its group in the foreground, as
+  spawn attributes.
+
+Not runtime-verified: the dynamic runtime's new entry on i386. It is
+verified on arm64 (WindowServer, a dynamically linked service, starts and
+serves), and the i386 build links, but the i386 programs that use it only
+run in the desktop boot, which needs a display.
+
+A disk built before this change holds programs with the old entry stub; they
+start, but without arguments. Rebuild the disk image (for the i386 desktop:
+remove `ssd.img`, `system-template.img` and `disk.img` first).
+
+### Verification state
+
+After M7 (2026-11-12):
+
+- i386: `test-i386-boot` cases `bootd`, `process-thread`, `process-ipc`,
+  `process-socket`, `process-signal` and the new `process-spawn` pass;
+  `test-i386-threads`, `-fs`, `-userland` pass.
+- arm64: `default`, `ipc-process`, `thread-process`, `socket-process` pass.
+  `process-control` passes everything up to check 88 (8.1), now including
+  `exec` with the new stack layout and `spawntest`. `everything` brings the
+  desktop up and fails only on that same check. `smp` and `sound` last
+  passed after M3.
+- Known, unrelated to this work:
+  - `process-control` check 88: see 8.1.
+  - The `smp` row stalls intermittently on unmodified `main` as well: see 8.2.
+  - `test-i386-boot` case `kernel` fails on two missing log lines
+    (`i386_init_kernel: ramfs mounted at /...` and
+    `i386_init_kernel_selftest: ...`): uncommitted edits to
+    `kern/i386/kernel_init.c` renamed those log prefixes. The case passed
+    before those edits.
+  - `test-i386-sound` fails two cases on a missing log line
+    (`virtio_snd_attach: VirtIO Sound device found`). Playback and the
+    recording still verify. The line changed in uncommitted
+    `drivers/virtio/virtio_sound.c` work on the boot loader's chime, which
+    prints a different message on that path; the suite passed before those
+    edits.
+
+**Phase 2: TTY core.** Object, refcount, driver interface, input/output
+queues, open/close/read/write/ioctl through devfs, a loopback test driver.
+
+**Phase 3: line discipline.** Interface plus the default discipline as pure
+code: canonical and raw input, `VMIN`/`VTIME`, echo, special characters, input
+and output flags. Host-tested under ASan.
+
+**Phase 4: termios.** ABI header, `TIOCGETA`/`TIOCSETA[W|F]`, flush, drain,
+flow, window size; userland `tcgetattr` family and `stty`.
+
+**Phase 5: job control.** Controlling terminal, foreground group,
+`TIOCSCTTY`/`TIOCNOTTY`/`TIOC[GS]PGRP`/`TIOCGSID`, `SIGTTIN`/`SIGTTOU`,
+hangup, session-leader exit, `/dev/tty`.
+
+**Phase 6: PTY.** `/dev/ptmx`, slave nodes, lock/grant, hangup on either
+side closing; then Terminal.app and nzh move to it and the password prompt
+stops echoing.
+
+**Phase 7: hardware backends.** UART receive, `/dev/console`, serial TTY.
+
+**Phase 8: hardening.** Lock audit, SMP stress, ABI check on both
+architectures, limitations written down.
+
+## 8. Issues found on the way, tracked separately
+
+Neither is caused by this work and neither is fixed by it. They are recorded
+here so they stay visible.
+
+### 8.1 `unlink` without the write capability goes to SAP (process-control check 88)
+
+**Finding: this is a regression against the documented policy, not an intended
+SAP eligibility.** No implementation or test expectation has been changed.
+
+What the code does (`syscall_unlink`, `kern/syscall/syscall.c`):
+
+```c
+if (sap_protected_path(canonical) || !syscall_has_caps(NXU_CAP_FS_WRITE))
+	status = sap_delete(current_proc(), canonical);
+else
+	status = vfs_unlink(canonical);
+```
+
+So a caller *without* `NXU_CAP_FS_WRITE` is not denied: its request is
+submitted to the Secure Anchor prompt, for any path under `/Volumes/mainOS`.
+
+Evidence that this is not the policy:
+
+- `doc/sap.md` states the policy exactly: "`nxu_sap_delete(path)` explicitly
+  requests authorization. Ordinary `unlink` under `/Volumes/mainOS/System` or
+  `/Volumes/mainOS/Library` also routes through SAP. **Other unlink operations
+  retain the existing filesystem capability checks.**" Only the two protected
+  trees are eligible; everything else is a capability check.
+- The handler implemented exactly that until commit `f2abdf7` ("WIP: userland
+  polish", 2026-11-08), whose diff replaced
+
+  ```c
+  if (sap_protected_path(canonical))
+  	status = sap_delete(...);
+  else {
+  	if (!syscall_has_caps(NXU_CAP_FS_WRITE)) return syscall_error(SYSCALL_ERROR_DENIED);
+  	status = vfs_unlink(canonical);
+  }
+  ```
+
+  with the form above. The change arrived inside an unrelated work-in-progress
+  commit, and neither `doc/sap.md` nor the test was updated with it.
+- Every sibling call still denies at once without the capability: `mkdir`,
+  `rmdir` (which also denies protected paths outright), and `open` for
+  create/truncate/append.
+- The capability model in `kern/syscall/syscall_defs.h` lists `unlink` under
+  `NXU_CAP_FS_WRITE` and describes capabilities as default-deny.
+
+Why the test sees what it sees: the file `proctest` names does not exist, so
+the SAP worker's `vfs_lookup` fails and `unlink` returns "not found" instead
+of "denied". No prompt is shown in that case.
+
+Consequences of the current behaviour, for a file that does exist:
+
+- Any process holding no capabilities at all can raise the trusted,
+  input-capturing system modal at will, and the modal's wording ("could break
+  your entire system") is wrong for an ordinary file.
+- SAP serves one request at a time, so such a process can keep it busy and
+  make legitimate requests fail with `BUSY`.
+- The explicit `nxu_sap_delete` call already exists for a program that wants
+  to ask; routing plain `unlink` there removes the difference between asking
+  and being refused.
+
+Recommendation (not applied): restore the pre-`f2abdf7` branch, so a missing
+capability is an immediate denial and only the protected trees reach SAP. If
+the Terminal's `rm` was the reason for the change (the shell holds no write
+capability), the shell should call `nxu_sap_delete` itself when `unlink` is
+denied and the user asked for it. Check 88 stays as written and stays failing
+until this is decided.
+
+The job-control tests in `proctest` run before the capability section, so
+they do not depend on the outcome.
+
+### 8.2 Intermittent stall of the `smp` test row
+
+The `smp` kernel test sometimes stops making progress, with no failure
+message, in a different existing case each time (`pinned`, `ipi`, `affinity`,
+`stress` have all been seen). It reproduces on unmodified `main` (2 of 5 runs
+on 2026-11-11, QEMU TCG, 8 CPUs online) at about the same rate as on this
+branch, so it predates the branch. The suite's own per-case timeouts do not
+fire, which means the coordinating thread itself stops running: a lost
+wakeup or a scheduler deadlock rather than a slow test.
+
+Not investigated further here. Until it is, a single failed `smp` run is not
+evidence about a change; rerun it. Suggested starting points: capture a stuck
+run with the QEMU monitor (`info registers` on every CPU) to see whether the
+CPUs are idle or spinning on a lock, and check `sched_yield` on the boot CPU,
+which every stalled case has in common through `wait_for`.
+
+## 9. Known limitations accepted up front
+
+- No general `poll`/`select` (risk 5).
+- No fork on i386; job control there is spawn-based.
+- VFS entry remains boot-CPU-bound; the TTY's own locking is SMP-safe, but
+  terminal syscalls do not run in parallel until the VFS does.
+
+## 10. Where to resume
+
+Written 2026-11-12, at the end of Phase 1, so the work can be picked up
+without the conversation that produced it.
+
+### 10.1 State of the tree
+
+- Branch `tty-subsystem`. **Nothing from this project is committed**; all of
+  it is in the working tree, mixed with unrelated in-progress work (boot
+  loader rename, `boot/uefi`, `drivers/virtio` sound, `kern/i386/kernel_init.c`
+  log messages, DiskRoot). Committing needs the two separated.
+- Besides the milestones, the tree carries four small changes made along the
+  way: `tools/check.sh` (an empty-array expansion that stopped QEMU launching
+  under the system bash 3.2), `loader_spawn_as` with the sound and
+  process-control tests started as a non-root user, the verbose boot display
+  (`kern/boot/splash.c`: console only, white text, no time stamp on screen),
+  and three-digit check numbers in `proctest`.
+
+### 10.2 Running the tests on this machine
+
+```sh
+mkdir -p BUILD/check-tmp
+TMPDIR=$PWD/BUILD/check-tmp NXU_CHECK_KEEP=1 make check CHECK_ONLY="<ids>"
+```
+
+- `NXU_CHECK_KEEP=1` keeps the logs; without it they are easy to lose.
+- **Do not edit the tree while a check runs**: each row rebuilds, and a
+  half-made edit fails every row after it.
+- Do not run two checks at once: the emulators starve each other and rows
+  time out.
+- arm64 rows that matter here: `process-control default ipc-process
+  socket-process thread-process smp sound everything`. i386:
+  `test-i386-boot test-i386-threads test-i386-fs test-i386-userland
+  test-i386-devices`. `make test-i386-boot` alone takes about four minutes.
+- Expected failures today, none from this project: `process-control` and
+  `everything` at check 88 (8.1); `test-i386-boot` case `kernel` and two
+  `test-i386-sound` cases (log lines renamed by uncommitted edits); `smp`
+  intermittently (8.2).
+- A verbose boot can be screenshotted headless: `qemu-system-i386 -kernel
+  BUILD/i386/kernel.elf -append "-v run-seconds=20" -vga none -device
+  virtio-gpu-pci -display none -monitor unix:<sock>,server,nowait`, then
+  `screendump` through the monitor socket.
+
+### 10.3 Waiting on a decision
+
+1. **Check 88** (8.1): restore the immediate denial for `unlink` without the
+   write capability, or keep the SAP routing and change the test.
+2. **Signal permission** (M5) changed from "descendants only" to credentials,
+   which flipped check 58. Approved as a roadmap item; confirm or ask for the
+   old rule alongside.
+3. **i386 desktop** has not been run since M7. It needs a rebuilt disk and
+   exercises the dynamic runtime's new entry on i386 and Terminal/nzh on the
+   kernel-backed `nxu_spawn_io`.
+4. Whether to trim Phases 3 and 4 to what the shell and the password prompt
+   need, to reach a working terminal sooner (saves an estimated 600-800
+   lines on the way to Phase 6).
+
+### 10.4 Conventions the user set for this project
+
+- No phase or milestone wording in source files or comments.
+- Comments and file headers in the style of `kern/ipc/*.c`.
+- A new `<subsystem>_init()` prints `"<subsystem>_init: initializing
+  <subsystem>"` on entry and `"<subsystem>_init: initialized <subsystem>
+  successfully"` on success, with `kprintf`. Keep prints out of anything that
+  can run in interrupt context (`ioready_post`).
+- Tests land with the code; unrelated breakage is reported, not silently
+  fixed; root's capability semantics are not bent to suit a test.
+
+### 10.5 Notes for the phases ahead
+
+What Phase 1 built for each, and the choices already made.
+
+**Phase 2, TTY core** (`kern/tty/tty.c`, `tty_ioctl.c`, `tty_internal.h`).
+
+- A `struct tty` is a refcounted heap object with one spinlock (irqsave: a
+  UART interrupt will feed it), an input queue and an output queue, a
+  `termios`, a window size, an `ioready_t`, two wait queues (readers,
+  writers), a driver vtable and a line-discipline vtable.
+- It reaches user space through devfs: `devfs_register_device` with `open`,
+  `close`, `read`, `write`, `ioctl` and `poll`. `read`/`write` honour
+  `VNODE_IO_NONBLOCK`; blocking uses `waitq_block_deadline` with the lock
+  dropped (the socket pattern in `kern/ipc/socket.c`).
+- Driver operations (`open`, `close`, `output`, `configure`, `flow`) are
+  called with the TTY lock dropped. A driver delivers input with one call,
+  `tty_input(tty, bytes, count)`, which may be made from interrupt context
+  only if it does nothing but queue and schedule; signal generation is
+  deferred to thread context (rule 6.3).
+- The first driver is a loopback test driver, exercised by a kernel test.
+- "Not a terminal" and "no such device" status codes are added here
+  (deferred from M1).
+- `tty_init()` is the first function the init-logging convention applies to.
+
+**Phase 3, line discipline** (`tty_ldisc.c`, `n_tty.c`).
+
+- Write the default discipline as pure code over plain buffers, with the
+  TTY-specific parts behind a small callback table (echo out, signal, wake),
+  so it compiles natively and is tested under ASan/UBSan like `tools/btrfs`
+  (`make test-...-host`, listed in `CHECK_HOST_TARGETS`).
+- Canonical input must return one line per read; M1 already made the `read`
+  system call ask a stream exactly once, which is what makes that possible.
+- `VTIME` uses `waitq_block_deadline`.
+
+**Phase 4, termios** (`kern/syscall/termios_defs.h`, re-exported as
+`frameworks/include/termios.h`).
+
+- ABI as decided in section 5: 32-bit flags, 8-bit control characters,
+  `NCCS` 20, 44-byte `struct termios`, requests in `NXU_IOC` group `'t'`.
+  `ioctl` already works on descriptors 0-2.
+- Userland: `tcgetattr`, `tcsetattr` and the rest as thin wrappers, plus
+  `stty`. No libc is introduced.
+
+**Phase 5, job control on the terminal** (`tty_jobctl.c`).
+
+- The TTY stores a session ID and a foreground group ID, not pointers; the
+  process subsystem owns the relationships (`kern/process/pgrp.h`).
+- Signals go out through `signal_post_group` only, after every TTY lock is
+  released. `SIGTTIN`/`SIGTTOU` use `proc_pgrp_is_orphaned` (an orphaned
+  background reader gets an I/O error instead of a stop).
+- Needs: a per-session controlling-terminal reference (add to
+  `struct session`, cleared by `pgrp_leader_exit_locked`'s caller, which
+  must then hang the terminal up from `proc_exit` with no locks held);
+  `/dev/tty`; and two spawn attributes that were deferred from M7 because
+  there was no terminal: take this descriptor as the controlling terminal,
+  and put the child's group in the foreground. Both belong in
+  `nxu_spawn_attr_t` (bump `size`; the kernel already checks it) and are
+  applied in `loader_configure_process`.
+
+**Phase 6, PTY** (`pty.c`).
+
+- `/dev/ptmx` is a cloning device (`devfs_clone_t`, M2): each open makes a
+  master with no name and registers its slave as `/dev/ttysNNN` with
+  `devfs_register_device`, owned by the opener with mode 0620
+  (`devfs_set_attributes`); closing unregisters it.
+- The master's `poll` and `ioready_post` are what let Terminal.app sleep in
+  the event wait and wake on output; it reads with `nxu_read_poll`, which M1
+  generalised from sockets to any stream.
+- The switch-over: `nxu_spawn_io` gains a PTY-backed sibling (the child's
+  0-2 are the slave, new session, controlling terminal, foreground), nzh
+  drops its in-band Ctrl-C byte and its own line reading, and Terminal.app
+  drops local echo and line editing. Keep the socket path until the PTY path
+  passes its tests.
+- Before this phase, make socket sleeps interruptible, or Ctrl-C will not
+  reach a process blocked on a socket until the socket wakes it (M5's known
+  limit).
+
+**Phase 7, hardware backends.**
+
+- The UARTs are transmit-only and polled on every architecture. Receive
+  needs an interrupt (or a polling kernel thread) feeding a ring, and a
+  kernel thread that drains it into `tty_input`, since there is no
+  work-queue and signals must be posted from thread context.
+- `/dev/console` is a TTY over the UART; `kputc` and the kernel log stay
+  independent of it.
+
+**Phase 8, hardening.** Lock-order audit against sections 6.1-6.3, an SMP
+stress case in the `smp` suite, an ABI size check on both architectures, and
+the limitations list brought up to date. Worth doing first: i386 faults as
+signals (M6's gap), so a crash under a shell is reported as a signal.
