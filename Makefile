@@ -388,6 +388,7 @@ C_SOURCES := \
     kern/kern_init.c \
     kern/process/proc.c \
     kern/process/signal.c \
+    kern/process/pgrp.c \
     kern/sched_prism/processor.c \
     kern/sched_prism/run_queue.c \
     kern/sched_prism/waitq.c \

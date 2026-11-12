@@ -14,12 +14,20 @@
 #define PROCTEST_WAIT_SPINS 2000000U
 #define PROCTEST_MMAP_BYTES (16ULL * 1024ULL * 1024ULL)
 #define PROCTEST_EXEC_PATH "/Volumes/mainOS/System/Library/CoreServices/execchild"
+
+/* A pid no process has: the largest valid one, which a boot never reaches. */
+#define PROCTEST_NO_SUCH_PID 99999ULL
 #define PROCTEST_EXEC_STATUS 31
 
 #define SHARED_CHILD_READY 0U
 #define SHARED_PARENT_WROTE 1U
 #define SHARED_RESULT 2U
 #define SHARED_CHILD_ARMED 3U
+
+/* The job-control section's shared words. */
+#define JOB_COUNTER 0U
+#define JOB_PID 1U
+#define JOB_SURVIVED UINT64_MAX
 #define PROCTEST_THREAD_STACK (16ULL * 1024ULL)
 
 static volatile uint64_t g_value = 111ULL;
@@ -41,8 +49,9 @@ static int
 fail(int check, const char *what)
 {
 	say("proctest: FAILED check ");
-	char digits[4] = {(char)('0' + (check / 10)), (char)('0' + (check % 10)), ' ', '\0'};
-	say(digits);
+	char digits[5] = {(char)('0' + (check / 100) % 10), (char)('0' + (check / 10) % 10), (char)('0' + (check % 10)), ' ',
+					  '\0'};
+	say(check >= 100 ? digits : digits + 1);
 	say(what);
 	say("\n");
 	return check;
@@ -350,7 +359,7 @@ main(void)
 		if (wait_child(pid, &status) != pid || status != 55ULL) return fail(55, "SIGSEGV handler did not run");
 	}
 
-	/* 14. Signalling is limited to yourself and your descendants. */
+	/* 14. Who may signal whom follows credentials: the same user may, in either direction; the kernel is never a target. */
 	{
 		if (nxu_kill(0ULL, 0U) != -NXU_SYS_E_DENIED) return fail(56, "signalling the kernel process was allowed");
 
@@ -360,8 +369,8 @@ main(void)
 		if (pid == 0) {
 			int64_t grandchild = nxu_fork();
 			if (grandchild == 0) {
-				/* Our parent is an ancestor, not a descendant. */
-				(void)nxu_exit(nxu_kill((uint64_t)nxu_getppid(), 0U) == -NXU_SYS_E_DENIED ? 0ULL : 1ULL);
+				/* Our parent runs as the same user, so it may be signalled, ancestor or not. */
+				(void)nxu_exit(nxu_kill((uint64_t)nxu_getppid(), 0U) == 0 ? 0ULL : 1ULL);
 			}
 
 			uint64_t grandchild_status = 1ULL;
@@ -370,7 +379,7 @@ main(void)
 		}
 
 		if (wait_child(pid, &status) != pid || status != 0ULL)
-			return fail(58, "a descendant was allowed to signal its ancestor");
+			return fail(58, "a process could not signal its parent, which runs as the same user");
 	}
 
 	/* 15. wait() sleeps until a child exits; ANY takes whichever comes first. */
@@ -485,6 +494,277 @@ main(void)
 
 		if (nxu_wait((uint64_t)pid, &status) != pid || status != 0ULL) return fail(85, "sender failed");
 		(void)nxu_ipc_port_deallocate((uint32_t)port);
+	}
+
+	/*
+	 * Process groups and sessions. The kernel started us, so we lead a session
+	 * and a group of our own, both named after us.
+	 */
+	{
+		int64_t self = nxu_getpid();
+
+		if (nxu_getpgid(0) != self || nxu_getpgid((uint64_t)self) != self) return fail(200, "not the leader of our group");
+		if (nxu_getsid(0) != self) return fail(201, "not the leader of our session");
+		if (nxu_setsid() != -NXU_SYS_E_DENIED) return fail(202, "a group leader started a session");
+		if (nxu_setpgid(0, 0) != -NXU_SYS_E_DENIED) return fail(203, "a session leader changed group");
+		if (nxu_getpgid(PROCTEST_NO_SUCH_PID) != -NXU_SYS_E_NOT_FOUND) return fail(204, "getpgid of no process");
+		if (nxu_getsid(PROCTEST_NO_SUCH_PID) != -NXU_SYS_E_NOT_FOUND) return fail(205, "getsid of no process");
+
+		/* A child starts in its parent's group and session, and can name a group after itself. */
+		int64_t pid = nxu_fork();
+		if (pid < 0) return fail(206, "fork failed");
+
+		if (pid == 0) {
+			int64_t me = nxu_getpid();
+
+			if (nxu_getpgid(0) != self || nxu_getsid(0) != self) (void)nxu_exit(1ULL);
+			if (nxu_setpgid(0, 0) != 0) (void)nxu_exit(2ULL);
+			if (nxu_getpgid(0) != me || nxu_getsid(0) != self) (void)nxu_exit(3ULL);
+
+			/* Again is no change, and still allowed. */
+			if (nxu_setpgid(0, (uint64_t)me) != 0) (void)nxu_exit(4ULL);
+
+			/* Leading a group now, so it cannot start a session; and it can go back to its parent's group. */
+			if (nxu_setsid() != -NXU_SYS_E_DENIED) (void)nxu_exit(5ULL);
+			if (nxu_setpgid(0, (uint64_t)self) != 0 || nxu_getpgid(0) != self) (void)nxu_exit(6ULL);
+
+			/* A group that does not exist can only be one's own. */
+			if (nxu_setpgid(0, PROCTEST_NO_SUCH_PID) != -NXU_SYS_E_DENIED) (void)nxu_exit(7ULL);
+
+			/* Not the caller, not its child: no such process as far as setpgid goes. */
+			if (nxu_setpgid((uint64_t)self, 0) != -NXU_SYS_E_NOT_FOUND) (void)nxu_exit(8ULL);
+
+			(void)nxu_exit(0ULL);
+		}
+
+		if (wait_child(pid, &status) != pid) return fail(207, "group child was not reaped");
+		if (status != 0ULL) return fail(208, "a child could not manage its own group (its exit status says which step)");
+
+		/* A child that starts a session leads it, and is then out of reach of its old group. */
+		pid = nxu_fork();
+		if (pid < 0) return fail(209, "fork failed");
+
+		if (pid == 0) {
+			int64_t me = nxu_getpid();
+
+			if (nxu_setsid() != me) (void)nxu_exit(1ULL);
+			if (nxu_getsid(0) != me || nxu_getpgid(0) != me) (void)nxu_exit(2ULL);
+			if (nxu_setpgid(0, (uint64_t)self) != -NXU_SYS_E_DENIED) (void)nxu_exit(3ULL);
+			if (nxu_setsid() != -NXU_SYS_E_DENIED) (void)nxu_exit(4ULL);
+
+			/* Its own child is born into the new session. */
+			int64_t grandchild = nxu_fork();
+			if (grandchild < 0) (void)nxu_exit(5ULL);
+			if (grandchild == 0) (void)nxu_exit(nxu_getsid(0) == me && nxu_getpgid(0) == me ? 0ULL : 1ULL);
+
+			uint64_t grandchild_status = 0ULL;
+			if (wait_child(grandchild, &grandchild_status) != grandchild || grandchild_status != 0ULL)
+				(void)nxu_exit(6ULL);
+
+			(void)nxu_exit(0ULL);
+		}
+
+		if (wait_child(pid, &status) != pid) return fail(210, "session child was not reaped");
+		if (status != 0ULL) return fail(211, "a child could not start a session (its exit status says which step)");
+
+		/* A parent arranges its children into a job: the first names the group, the second joins it. */
+		int64_t first = nxu_fork();
+		if (first < 0) return fail(212, "fork failed");
+		if (first == 0) {
+			for (;;)
+				(void)nxu_sleep_us(10000ULL);
+		}
+
+		int64_t second = nxu_fork();
+		if (second < 0) return fail(213, "fork failed");
+		if (second == 0) {
+			for (;;)
+				(void)nxu_sleep_us(10000ULL);
+		}
+
+		if (nxu_setpgid((uint64_t)second, (uint64_t)first) != -NXU_SYS_E_DENIED)
+			return fail(214, "a child joined a group that does not exist yet");
+		if (nxu_setpgid((uint64_t)first, (uint64_t)first) != 0) return fail(215, "parent could not start a job");
+		if (nxu_setpgid((uint64_t)second, (uint64_t)first) != 0) return fail(216, "parent could not add to a job");
+		if (nxu_getpgid((uint64_t)first) != first || nxu_getpgid((uint64_t)second) != first)
+			return fail(217, "the job's members are not in its group");
+		if (nxu_getsid((uint64_t)second) != self) return fail(218, "joining a job changed the session");
+
+		/* The group outlives its leader while the other member is in it. */
+		if (nxu_kill((uint64_t)first, NXU_SIGKILL) != 0 || wait_child(first, &status) != first)
+			return fail(219, "could not end the job's leader");
+		if (nxu_getpgid((uint64_t)second) != first) return fail(220, "a group ended with its leader");
+		if (nxu_getpgid((uint64_t)first) != -NXU_SYS_E_NOT_FOUND) return fail(221, "a reaped process still has a group");
+
+		if (nxu_kill((uint64_t)second, NXU_SIGKILL) != 0 || wait_child(second, &status) != second)
+			return fail(222, "could not end the job");
+
+		/* Nothing moved us. */
+		if (nxu_getpgid(0) != self || nxu_getsid(0) != self) return fail(223, "our own group or session changed");
+
+		say("proctest: process groups and sessions ok\n");
+	}
+
+	/*
+	 * Job control: stopping and continuing a process, hearing about it through
+	 * wait, signalling a whole group, and what happens to a stopped job whose
+	 * session has nobody left to resume it.
+	 */
+	{
+		int64_t shared_id = nxu_shm_create(4096ULL);
+		volatile uint64_t *shared = (volatile uint64_t *)nxu_shm_map((uint64_t)shared_id);
+		if (shared_id <= 0 || (int64_t)shared <= 0) return fail(230, "shared memory unavailable");
+
+		shared[JOB_COUNTER] = 0ULL;
+		shared[JOB_PID] = 0ULL;
+
+		int64_t pid = nxu_fork();
+		if (pid < 0) return fail(231, "fork failed");
+		if (pid == 0) {
+			for (;;) {
+				shared[JOB_COUNTER]++;
+				(void)nxu_yield();
+			}
+		}
+
+		if (!wait_flag(&shared[JOB_COUNTER])) return fail(232, "job never ran");
+
+		/* SIGSTOP stops it, and wait says so, once. */
+		if (nxu_kill((uint64_t)pid, NXU_SIGSTOP) != 0) return fail(233, "kill(child, SIGSTOP) failed");
+		if (nxu_wait_options((uint64_t)pid, &status, NXU_WAIT_UNTRACED) != pid) return fail(234, "stop was not reported");
+		if (!NXU_WAIT_WAS_STOPPED(status) || NXU_WAIT_STOPSIG(status) != NXU_SIGSTOP)
+			return fail(235, "status does not record the stop");
+		if (nxu_wait_options((uint64_t)pid, &status, NXU_WAIT_UNTRACED | NXU_WAIT_NOHANG) != -NXU_SYS_E_AGAIN)
+			return fail(236, "a stop was reported twice");
+		if (nxu_waitpid((uint64_t)pid, &status) != -NXU_SYS_E_AGAIN) return fail(237, "a stopped child was reaped");
+
+		/* Stopped means not running: its counter stands still. */
+		uint64_t stood_at = shared[JOB_COUNTER];
+		for (uint32_t index = 0U; index < 200U; index++)
+			(void)nxu_yield();
+		if (shared[JOB_COUNTER] != stood_at) return fail(238, "a stopped process kept running");
+
+		/* SIGCONT sets it going again, and wait says that too. */
+		if (nxu_kill((uint64_t)pid, NXU_SIGCONT) != 0) return fail(239, "kill(child, SIGCONT) failed");
+		if (nxu_wait_options((uint64_t)pid, &status, NXU_WAIT_CONTINUED_OPTION) != pid)
+			return fail(240, "continue was not reported");
+		if (!NXU_WAIT_WAS_CONTINUED(status)) return fail(241, "status does not record the continue");
+
+		bool resumed = false;
+		for (uint32_t spin = 0U; spin < PROCTEST_WAIT_SPINS && !resumed; spin++) {
+			resumed = shared[JOB_COUNTER] != stood_at;
+			(void)nxu_yield();
+		}
+		if (!resumed) return fail(242, "a continued process did not run");
+
+		/*
+		 * A stop from the terminal is not acted on in an orphaned group, and
+		 * ours is one: our parent, the kernel, is in another session.
+		 */
+		if (nxu_kill((uint64_t)pid, NXU_SIGTSTP) != 0) return fail(243, "kill(child, SIGTSTP) failed");
+		stood_at = shared[JOB_COUNTER];
+		resumed = false;
+		for (uint32_t spin = 0U; spin < PROCTEST_WAIT_SPINS && !resumed; spin++) {
+			resumed = shared[JOB_COUNTER] > stood_at + 4ULL;
+			(void)nxu_yield();
+		}
+		if (!resumed) return fail(244, "SIGTSTP stopped a process in an orphaned group");
+
+		/* In a group of its own it has us, in another group of its session, to resume it: now SIGTSTP stops it. */
+		if (nxu_setpgid((uint64_t)pid, (uint64_t)pid) != 0) return fail(245, "could not give the job its own group");
+		if (nxu_kill((uint64_t)pid, NXU_SIGTSTP) != 0) return fail(246, "kill(child, SIGTSTP) failed");
+		if (nxu_wait_options((uint64_t)pid, &status, NXU_WAIT_UNTRACED) != pid || NXU_WAIT_STOPSIG(status) != NXU_SIGTSTP)
+			return fail(247, "SIGTSTP did not stop a job that can be resumed");
+
+		/* SIGKILL ends a stopped process without anyone continuing it. */
+		if (nxu_kill((uint64_t)pid, NXU_SIGKILL) != 0 || wait_child(pid, &status) != pid)
+			return fail(248, "could not kill a stopped process");
+		if (!NXU_EXIT_WAS_KILLED(status) || NXU_EXIT_TERMSIG(status) != NXU_SIGKILL)
+			return fail(249, "status of a killed stopped process");
+
+		/* A signal to a group reaches every member. */
+		int64_t first = nxu_fork();
+		if (first < 0) return fail(250, "fork failed");
+		if (first == 0)
+			for (;;)
+				(void)nxu_yield();
+
+		int64_t second = nxu_fork();
+		if (second < 0) return fail(251, "fork failed");
+		if (second == 0)
+			for (;;)
+				(void)nxu_yield();
+
+		if (nxu_setpgid((uint64_t)first, (uint64_t)first) != 0 || nxu_setpgid((uint64_t)second, (uint64_t)first) != 0)
+			return fail(252, "could not build a two-process job");
+		if (nxu_killpg(PROCTEST_NO_SUCH_PID, NXU_SIGTERM) != -NXU_SYS_E_NOT_FOUND)
+			return fail(253, "killpg of no group");
+		if (nxu_killpg((uint64_t)first, NXU_SIGSTOP) != 0) return fail(254, "killpg(job, SIGSTOP) failed");
+
+		for (uint32_t index = 0U; index < 2U; index++) {
+			int64_t which = nxu_wait_options(NXU_WAIT_ANY, &status, NXU_WAIT_UNTRACED);
+			if ((which != first && which != second) || !NXU_WAIT_WAS_STOPPED(status))
+				return fail(255, "a member of a stopped job was not reported");
+		}
+
+		if (nxu_killpg((uint64_t)first, NXU_SIGCONT) != 0) return fail(256, "killpg(job, SIGCONT) failed");
+
+		for (uint32_t index = 0U; index < 2U; index++) {
+			int64_t which = nxu_wait_options(NXU_WAIT_ANY, &status, NXU_WAIT_CONTINUED_OPTION);
+			if ((which != first && which != second) || !NXU_WAIT_WAS_CONTINUED(status))
+				return fail(257, "a member of a continued job was not reported");
+		}
+
+		if (nxu_killpg((uint64_t)first, NXU_SIGTERM) != 0) return fail(258, "killpg(job, SIGTERM) failed");
+		if (wait_child(first, &status) != first || NXU_EXIT_TERMSIG(status) != NXU_SIGTERM)
+			return fail(259, "first member of the job survived");
+		if (wait_child(second, &status) != second || NXU_EXIT_TERMSIG(status) != NXU_SIGTERM)
+			return fail(260, "second member of the job survived");
+
+		/*
+		 * A stopped job whose only link to its session exits: nobody can resume
+		 * it any more, so it is hung up and continued, and the hangup ends it.
+		 * `leader` plays the shell and `job` its stopped job.
+		 */
+		int64_t leader = nxu_fork();
+		if (leader < 0) return fail(261, "fork failed");
+
+		if (leader == 0) {
+			int64_t job = nxu_fork();
+			if (job < 0) (void)nxu_exit(1ULL);
+
+			if (job == 0) {
+				if (nxu_setpgid(0, 0) != 0) (void)nxu_exit(1ULL);
+				(void)nxu_kill((uint64_t)nxu_getpid(), NXU_SIGSTOP);
+
+				/* Reached only if it is continued without the hangup. */
+				shared[JOB_PID] = JOB_SURVIVED;
+				for (;;)
+					(void)nxu_yield();
+			}
+
+			uint64_t job_status = 0ULL;
+			if (nxu_wait_options((uint64_t)job, &job_status, NXU_WAIT_UNTRACED) != job) (void)nxu_exit(2ULL);
+
+			shared[JOB_PID] = (uint64_t)job;
+			(void)nxu_exit(0ULL);
+		}
+
+		if (wait_child(leader, &status) != leader || status != 0ULL) return fail(262, "the job's leader failed");
+
+		uint64_t job = shared[JOB_PID];
+		bool gone = false;
+
+		/* A process that has exited has no group, reaped or not. */
+		for (uint32_t spin = 0U; spin < PROCTEST_WAIT_SPINS && !gone; spin++) {
+			gone = nxu_getpgid(job) == -NXU_SYS_E_NOT_FOUND;
+			(void)nxu_yield();
+		}
+
+		if (shared[JOB_PID] == JOB_SURVIVED) return fail(263, "an orphaned stopped job was continued but not hung up");
+		if (!gone) return fail(264, "an orphaned stopped job was left stopped");
+
+		say("proctest: job control ok\n");
 	}
 
 	/*

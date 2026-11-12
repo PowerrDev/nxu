@@ -26,9 +26,15 @@
 
 #define PROC_NAME_MAX 32U
 
+/* proc::p_jobevent: a change of state the parent has not collected with wait yet. */
+#define PROC_JOBEVENT_STOPPED (1U << 0U)
+#define PROC_JOBEVENT_CONTINUED (1U << 1U)
+
 typedef uint32_t proc_id_t;
 typedef uint64_t proc_uniqueid_t;
 typedef uint32_t proc_idversion_t;
+
+struct pgrp;
 
 typedef struct proc *proc_t;
 
@@ -48,7 +54,8 @@ typedef enum {
 	PROC_FLAG_EXITING = 1U << 1U,
 	PROC_FLAG_REAPED = 1U << 2U,
 	PROC_FLAG_EXECING = 1U << 3U,
-	PROC_FLAG_TRACED = 1U << 4U
+	PROC_FLAG_TRACED = 1U << 4U,
+	PROC_FLAG_EXECED = 1U << 5U /* has replaced its image with exec at least once */
 } proc_flag_t;
 
 /*
@@ -77,6 +84,12 @@ typedef struct {
  * p_pptr / p_children / p_sibling_*
  *     Intrusive process hierarchy.
  *
+ * p_pgrp / p_pglist_next / p_pglist_prev
+ *     The process group this process belongs to, and its links on that
+ *     group's member list. Set before the process is visible and kept until
+ *     it is reaped. Protected by the process table lock; see
+ *     kern/process/pgrp.h.
+ *
  * p_task
  *     Address space and thread container.
  *
@@ -96,6 +109,15 @@ typedef struct {
  * p_waitq
  *     Threads sleeping in wait() for one of this process's children to exit.
  *     proc_exit wakes it.
+ *
+ * p_stopq / p_stop_signal / p_jobevent / p_cont_seq
+ *     Job control. While the process is stopped (p_stat is
+ *     PROC_STATE_STOPPED) its threads sleep on p_stopq at their return to
+ *     user mode, and p_stop_signal is the signal that stopped it. p_jobevent
+ *     is what its parent has not yet been told through wait: that it stopped,
+ *     or that it was continued (PROC_JOBEVENT_*). The three are protected by
+ *     the process table lock. p_cont_seq counts SIGCONTs and is protected by
+ *     p_siglock. See kern/process/signal.h.
  *
  * p_sigact / p_sigpending
  *     Signal dispositions and the set of signals sent but not yet delivered
@@ -139,6 +161,10 @@ struct proc {
 	proc_t p_sibling_prev;
 	proc_t p_sibling_next;
 
+	struct pgrp *p_pgrp;
+	proc_t p_pglist_next;
+	proc_t p_pglist_prev;
+
 	struct task p_task;
 	struct filedesc p_fd;
 	struct ipc_space p_ipc;
@@ -153,6 +179,10 @@ struct proc {
 	nxu_spinlock_t p_siglock;
 	nxu_sigaction_t p_sigact[NXU_NSIG];
 	waitq_t p_waitq;
+	waitq_t p_stopq;
+	uint32_t p_stop_signal;
+	uint32_t p_jobevent;
+	uint32_t p_cont_seq;
 	uint32_t p_sigpending;
 	uint32_t p_caps;
 
@@ -185,6 +215,40 @@ proc_t proc_initproc(void);
 bool proc_create_user(proc_t parent, const char *name, uint64_t entry, uint64_t stack, proc_t *result);
 
 /*
+ * proc_group_t
+ *
+ * Where a process that is being created goes among process groups and
+ * sessions (kern/process/pgrp.h). The placement is part of creating it: the
+ * process is in its group in the same critical section that makes it visible,
+ * so there is never a moment at which it can be found, signalled or run in
+ * the wrong group, and its creator never has to move it afterwards.
+ */
+typedef enum {
+	PROC_GROUP_INHERIT,	   /* the parent's group */
+	PROC_GROUP_NEW,		   /* a new group in the parent's session, named after the new process */
+	PROC_GROUP_JOIN,	   /* the existing group `pgid` of the parent's session */
+	PROC_GROUP_NEW_SESSION /* a new session and group, both named after the new process */
+} proc_group_mode_t;
+
+typedef struct {
+	proc_group_mode_t mode;
+	proc_id_t pgid;
+} proc_group_t;
+
+typedef enum { PROC_CREATE_OK, PROC_CREATE_FAILED, PROC_CREATE_GROUP_DENIED } proc_create_result_t;
+
+/*
+ * proc_create_user_in
+ *
+ * proc_create_user with the new process placed as `group` says (0: inherit).
+ * PROC_CREATE_GROUP_DENIED means the group to join does not exist or belongs
+ * to another session; nothing was created. A process whose parent is the
+ * kernel process leads a session of its own whatever `group` says.
+ */
+proc_create_result_t proc_create_user_in(proc_t parent, const char *name, uint64_t entry, uint64_t stack,
+										 const proc_group_t *group, proc_t *result);
+
+/*
  * proc_fork
  *
  * Create a child of parent that is a copy of it, as the fork system call
@@ -207,25 +271,32 @@ void proc_rele(proc_t proc);
 bool proc_make_runnable(proc_t proc);
 bool proc_mark_running(proc_t proc);
 
-bool proc_stop(proc_t proc);
-bool proc_continue(proc_t proc);
 
 bool proc_exit(proc_t proc, uint64_t status);
 bool proc_exit_current(uint64_t status);
 
-typedef enum { PROC_WAIT_REAPED, PROC_WAIT_NOT_YET, PROC_WAIT_NO_CHILD } proc_wait_result_t;
+typedef enum { PROC_WAIT_REAPED, PROC_WAIT_CHANGED, PROC_WAIT_NOT_YET, PROC_WAIT_NO_CHILD } proc_wait_result_t;
 
 /*
  * proc_wait_child
  *
  * One non-blocking pass of wait(): reap a zombie child of parent -- the one
  * named by pid, or any of them for PROC_PID_INVALID -- reporting its pid and
- * exit status. PROC_WAIT_NOT_YET means the child (or every child) is still
- * running; PROC_WAIT_NO_CHILD means there is nothing to wait for.
+ * exit status (PROC_WAIT_REAPED). With NXU_WAIT_UNTRACED or
+ * NXU_WAIT_CONTINUED_OPTION in options, a child that has stopped or been
+ * continued since it was last reported is reported instead, once, with a
+ * NXU_WAIT_STOPPED or NXU_WAIT_CONTINUED status, and is not reaped
+ * (PROC_WAIT_CHANGED). An exit is preferred over either. PROC_WAIT_NOT_YET
+ * means there is nothing to report yet; PROC_WAIT_NO_CHILD means there is
+ * nothing to wait for.
  */
-proc_wait_result_t proc_wait_child(proc_t parent, proc_id_t pid, proc_id_t *reaped_pid, uint64_t *status);
+proc_wait_result_t proc_wait_child(proc_t parent, proc_id_t pid, uint32_t options, proc_id_t *reaped_pid,
+								   uint64_t *status);
 
 bool proc_reap(proc_t parent, proc_id_t pid, uint64_t *status);
+
+/* Record that proc has replaced its image with exec (PROC_FLAG_EXECED). */
+void proc_mark_execed(proc_t proc);
 
 bool proc_set_current(proc_t proc);
 proc_t current_proc(void);

@@ -630,44 +630,38 @@ exception_deliver_pending_signals(arm64_exception_frame_t *frame)
 		return;
 	}
 
-	for (;;) {
-		uint32_t signal = signal_dequeue(proc, thread);
+	/*
+	 * signal_take parks the thread while the process is stopped and does
+	 * everything that needs no user context; what is left is building a
+	 * handler frame, or ending the process.
+	 */
+	uint32_t signal;
+	nxu_sigaction_t action;
+	uint32_t terminate_with;
 
-		if (signal == 0U) return;
-
-		nxu_sigaction_t action;
-
-		(void)signal_get_action(proc, signal, &action);
-
-		uint32_t terminate_with = 0U;
-
-		if (signal == NXU_SIGKILL) {
-			terminate_with = NXU_SIGKILL;
-		} else if (action.handler == NXU_SIG_IGN) {
-			continue;
-		} else if (action.handler == NXU_SIG_DFL) {
-			if (signal_default_action(signal) == SIGNAL_DEFAULT_IGNORE) continue;
-
-			terminate_with = signal;
-		} else {
-			uint32_t previous_mask = thread->sig_blocked;
-
-			if (machine_user_signal_push(action.handler, action.restorer, signal, previous_mask)) {
-				thread->sig_blocked = signal_blocked_mask_for_handler(previous_mask, signal, &action);
-				return;
-			}
-
-			/* No room for the handler frame (stack overflow, bad stack). */
-			terminate_with = NXU_SIGSEGV;
-		}
-
-		if (proc_exit_current(NXU_EXIT_KILLED_SIGNAL(terminate_with))) {
-			exception_unwind_to_kernel(frame);
-		}
-
+	switch (signal_take(proc, thread, &signal, &action)) {
+	case SIGNAL_TAKE_NONE:
 		return;
+	case SIGNAL_TAKE_HANDLER: {
+		uint32_t previous_mask = thread->sig_blocked;
+
+		if (machine_user_signal_push(action.handler, action.restorer, signal, previous_mask)) {
+			thread->sig_blocked = signal_blocked_mask_for_handler(previous_mask, signal, &action);
+			return;
+		}
+
+		/* No room for the handler frame (stack overflow, bad stack). */
+		terminate_with = NXU_SIGSEGV;
+		break;
+	}
+	default:
+		terminate_with = signal;
+		break;
 	}
 
+	if (proc_exit_current(NXU_EXIT_KILLED_SIGNAL(terminate_with))) {
+		exception_unwind_to_kernel(frame);
+	}
 }
 
 static void

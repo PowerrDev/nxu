@@ -8,6 +8,8 @@
  */
 #include <kern/console/console.h>
 #include <kern/process/proc.h>
+#include <kern/process/pgrp.h>
+#include <kern/process/proc_internal.h>
 #include <kern/process/crash.h>
 #include <kern/security/sap.h>
 #include <kern/console/display_owner.h>
@@ -67,6 +69,18 @@ static void
 proc_unlock(proc_lock_t *lock)
 {
 	__atomic_store_n(&lock->value, 0U, __ATOMIC_RELEASE);
+}
+
+void
+proc_table_lock(void)
+{
+	proc_lock(&g_proc_lock);
+}
+
+void
+proc_table_unlock(void)
+{
+	proc_unlock(&g_proc_lock);
 }
 
 static void
@@ -137,7 +151,8 @@ proc_pid_in_use_locked(proc_id_t pid)
 		if (g_proc_slots[index].p_ident.pid == pid) return true;
 	}
 
-	return false;
+	/* A group or session can outlive the process it is named after; its name is still taken. */
+	return pgrp_id_in_use_locked(pid);
 }
 
 static proc_id_t
@@ -291,7 +306,7 @@ proc_child_remove_locked(proc_t child)
 	child->p_sibling_next = 0;
 }
 
-static proc_t
+proc_t
 proc_find_live_locked(proc_id_t pid)
 {
 	for (proc_t proc = g_allproc_head; proc != 0; proc = proc->p_list_next) {
@@ -311,13 +326,20 @@ proc_find_zombie_locked(proc_id_t pid)
 	return 0;
 }
 
-static bool
+bool
 proc_reference_locked(proc_t proc)
 {
 	if (proc == 0 || proc->p_refcount == UINT32_MAX) return false;
 
 	proc->p_refcount++;
 	return true;
+}
+
+bool
+proc_is_live_locked(proc_t proc)
+{
+	return proc != 0 && proc->p_stat != PROC_STATE_UNUSED && proc->p_stat != PROC_STATE_ZOMBIE &&
+		   proc->p_stat != PROC_STATE_DEAD && (proc->p_flag & PROC_FLAG_EXITING) == 0U;
 }
 
 static void
@@ -421,6 +443,19 @@ proc_bootstrap(void)
     return false;
 	}
 
+	/* The kernel process leads session 0 and group 0, which no user process can join or name. */
+	struct pgrp *kernel_pgrp;
+	struct session *kernel_session;
+	pgrp_reclaim_t unused = {0};
+
+	if (!pgrp_prepare(&kernel_pgrp, &kernel_session)) {
+		proc_release_slot_locked(kernel_proc);
+		proc_unlock(&g_proc_lock);
+		return false;
+	}
+
+	pgrp_new_session_locked(kernel_proc, kernel_pgrp, kernel_session, &unused);
+
 	proc_all_insert_locked(kernel_proc);
 
 	g_kernproc = kernel_proc;
@@ -456,27 +491,55 @@ proc_initproc(void)
 bool
 proc_create_user(proc_t parent, const char *name, uint64_t entry, uint64_t stack, proc_t *result)
 {
-	if (parent == 0 || result == 0 || entry == 0ULL || stack == 0ULL) return false;
+	return proc_create_user_in(parent, name, entry, stack, 0, result) == PROC_CREATE_OK;
+}
+
+proc_create_result_t
+proc_create_user_in(proc_t parent, const char *name, uint64_t entry, uint64_t stack, const proc_group_t *group,
+					proc_t *result)
+{
+	if (parent == 0 || result == 0 || entry == 0ULL || stack == 0ULL) return PROC_CREATE_FAILED;
 
 	*result = 0;
+
+	/*
+	 * A process the kernel starts has no user-level ancestor whose session it
+	 * could share: it will lead a session and a group of its own. Their memory
+	 * is allocated here, ahead of the lock.
+	 */
+	static const proc_group_t inherit = {.mode = PROC_GROUP_INHERIT};
+	static const proc_group_t lead_session = {.mode = PROC_GROUP_NEW_SESSION};
+
+	if (group == 0) group = &inherit;
+	if (parent == g_kernproc) group = &lead_session;
+
+	struct pgrp *own_pgrp = 0;
+	struct session *own_session = 0;
+	bool wants_pgrp = group->mode == PROC_GROUP_NEW || group->mode == PROC_GROUP_NEW_SESSION;
+
+	if (wants_pgrp && !pgrp_prepare(&own_pgrp, group->mode == PROC_GROUP_NEW_SESSION ? &own_session : 0))
+		return PROC_CREATE_FAILED;
 
 	proc_lock(&g_proc_lock);
 
 	if (!g_proc_initialized) {
 		proc_unlock(&g_proc_lock);
-		return false;
+		pgrp_discard(own_pgrp, own_session);
+		return PROC_CREATE_FAILED;
 	}
 
 	if (parent->p_stat == PROC_STATE_ZOMBIE || parent->p_stat == PROC_STATE_DEAD) {
 		proc_unlock(&g_proc_lock);
-		return false;
+		pgrp_discard(own_pgrp, own_session);
+		return PROC_CREATE_FAILED;
 	}
 
 	proc_t proc = proc_allocate_slot_locked();
 
 	if (proc == 0) {
 		proc_unlock(&g_proc_lock);
-		return false;
+		pgrp_discard(own_pgrp, own_session);
+		return PROC_CREATE_FAILED;
 	}
 
 	proc_id_t pid = proc_allocate_pid_locked();
@@ -484,7 +547,8 @@ proc_create_user(proc_t parent, const char *name, uint64_t entry, uint64_t stack
 	if (pid == PROC_PID_INVALID) {
 		proc_release_slot_locked(proc);
 		proc_unlock(&g_proc_lock);
-		return false;
+		pgrp_discard(own_pgrp, own_session);
+		return PROC_CREATE_FAILED;
 	}
 
 	proc->p_ident.pid = pid;
@@ -507,10 +571,28 @@ proc_create_user(proc_t parent, const char *name, uint64_t entry, uint64_t stack
 
 	proc_copy_name(proc->p_comm, name);
 
-	if (!task_init_user(&proc->p_task, proc->p_ident.uniqueid, proc, entry, stack)) {
+	/*
+	 * Group and session membership is entered in the same critical section
+	 * that makes the process visible, so nothing can find it by pid, signal it
+	 * or run it while it belongs to no group. It is decided first, while a
+	 * refusal still has nothing to undo.
+	 */
+	if (pgrp_place_locked(proc, parent, group, &own_pgrp, &own_session) != PGRP_STATUS_OK) {
 		proc_release_slot_locked(proc);
 		proc_unlock(&g_proc_lock);
-		return false;
+		pgrp_discard(own_pgrp, own_session);
+		return PROC_CREATE_GROUP_DENIED;
+	}
+
+	if (!task_init_user(&proc->p_task, proc->p_ident.uniqueid, proc, entry, stack)) {
+		pgrp_reclaim_t reclaim = {0};
+
+		pgrp_leave_locked(proc, &reclaim);
+		proc_release_slot_locked(proc);
+		proc_unlock(&g_proc_lock);
+		pgrp_reclaim(&reclaim);
+		pgrp_discard(own_pgrp, own_session);
+		return PROC_CREATE_FAILED;
 	}
 
 	proc_child_insert_locked(parent, proc);
@@ -526,7 +608,10 @@ proc_create_user(proc_t parent, const char *name, uint64_t entry, uint64_t stack
 	*result = proc;
 
 	proc_unlock(&g_proc_lock);
-	return true;
+
+	/* Whatever the placement did not use. */
+	pgrp_discard(own_pgrp, own_session);
+	return PROC_CREATE_OK;
 }
 
 bool
@@ -609,6 +694,9 @@ proc_fork(proc_t parent, proc_t *result)
   memcpy(proc->p_dyrld_images, parent->p_dyrld_images, sizeof(proc->p_dyrld_images));
 
   signal_inherit(proc, parent);
+
+	/* In the parent's group and session before it is visible; see proc_create_user. */
+	pgrp_inherit_locked(proc, parent);
 
 	proc_child_insert_locked(parent, proc);
 	proc_all_insert_locked(proc);
@@ -766,40 +854,6 @@ proc_mark_running(proc_t proc)
 	return valid;
 }
 
-bool
-proc_stop(proc_t proc)
-{
-	if (proc == 0) return false;
-
-	proc_lock(&g_proc_lock);
-
-	bool valid = proc->p_stat == PROC_STATE_RUNNING || proc->p_stat == PROC_STATE_RUNNABLE;
-
-	if (valid) {
-		proc->p_stat = PROC_STATE_STOPPED;
-	}
-
-	proc_unlock(&g_proc_lock);
-	return valid;
-}
-
-bool
-proc_continue(proc_t proc)
-{
-	if (proc == 0) return false;
-
-	proc_lock(&g_proc_lock);
-
-	bool valid = proc->p_stat == PROC_STATE_STOPPED;
-
-	if (valid) {
-		proc->p_stat = PROC_STATE_RUNNABLE;
-	}
-
-	proc_unlock(&g_proc_lock);
-	return valid;
-}
-
 /*
  * proc_exit
  *
@@ -870,9 +924,17 @@ proc_exit(proc_t proc, uint64_t status)
 	/* Close owned NXPC name-table references before the proc becomes a zombie. */
 	ipc_space_close_all(&proc->p_ipc);
 
+	proc_id_t orphaned[PROC_MAX];
+
 	proc_lock(&g_proc_lock);
 
+	/* While it is still its children's parent: which groups does its going leave with nobody to resume them? */
+	uint32_t orphaned_count = pgrp_orphaned_by_exit_locked(proc, orphaned, PROC_MAX);
+
 	proc_reparent_children_locked(proc);
+
+	/* A zombie stays in its group until it is reaped, but it leads its session no longer. */
+	pgrp_leader_exit_locked(proc);
 
 	proc_all_remove_locked(proc);
 
@@ -896,6 +958,16 @@ proc_exit(proc_t proc, uint64_t status)
 	 * outside the process lock: waking takes the scheduler's. */
 	if (parent != 0) waitq_wake_all(&parent->p_waitq);
 
+	/*
+	 * Stopped processes in a group nobody can resume any more are told their
+	 * session is gone and set going again, in that order, so each wakes with
+	 * the hangup already waiting for it.
+	 */
+	for (uint32_t index = 0U; index < orphaned_count; index++) {
+		(void)signal_post_group(orphaned[index], NXU_SIGHUP);
+		(void)signal_post_group(orphaned[index], NXU_SIGCONT);
+	}
+
 	sched_unbind_boot_cpu();
 	return true;
 }
@@ -911,7 +983,7 @@ proc_exit_current(uint64_t status)
 }
 
 proc_wait_result_t
-proc_wait_child(proc_t parent, proc_id_t pid, proc_id_t *reaped_pid, uint64_t *status)
+proc_wait_child(proc_t parent, proc_id_t pid, uint32_t options, proc_id_t *reaped_pid, uint64_t *status)
 {
 	if (parent == 0 || reaped_pid == 0) return PROC_WAIT_NO_CHILD;
 
@@ -940,9 +1012,40 @@ proc_wait_child(proc_t parent, proc_id_t pid, proc_id_t *reaped_pid, uint64_t *s
 		zombie = (dead != 0 && dead->p_pptr == parent) ? dead : 0;
 	}
 
+	/* No exit to report: a stop or a continue the parent asked to hear about and has not heard yet. */
+	proc_id_t changed_pid = PROC_PID_INVALID;
+	uint64_t changed_status = 0ULL;
+
+	if (zombie == 0 && has_child && (options & (NXU_WAIT_UNTRACED | NXU_WAIT_CONTINUED_OPTION)) != 0U) {
+		for (proc_t child = parent->p_children; child != 0; child = child->p_sibling_next) {
+			if (!any && child->p_ident.pid != pid) continue;
+
+			if ((options & NXU_WAIT_UNTRACED) != 0U && child->p_stat == PROC_STATE_STOPPED &&
+				(child->p_jobevent & PROC_JOBEVENT_STOPPED) != 0U) {
+				child->p_jobevent &= ~PROC_JOBEVENT_STOPPED;
+				changed_status = NXU_WAIT_STOPPED_SIGNAL(child->p_stop_signal);
+			} else if ((options & NXU_WAIT_CONTINUED_OPTION) != 0U &&
+					   (child->p_jobevent & PROC_JOBEVENT_CONTINUED) != 0U) {
+				child->p_jobevent &= ~PROC_JOBEVENT_CONTINUED;
+				changed_status = NXU_WAIT_CONTINUED;
+			} else {
+				continue;
+			}
+
+			changed_pid = child->p_ident.pid;
+			break;
+		}
+	}
+
 	proc_unlock(&g_proc_lock);
 
 	if (!has_child) return PROC_WAIT_NO_CHILD;
+
+	if (changed_pid != PROC_PID_INVALID) {
+		*reaped_pid = changed_pid;
+		if (status != 0) *status = changed_status;
+		return PROC_WAIT_CHANGED;
+	}
 
 	if (zombie == 0) return PROC_WAIT_NOT_YET;
 
@@ -972,6 +1075,10 @@ proc_reap(proc_t parent, proc_id_t pid, uint64_t *status)
 		*status = proc->p_xstat;
 	}
 
+	pgrp_reclaim_t reclaim = {0};
+
+	pgrp_leave_locked(proc, &reclaim);
+
 	proc_child_remove_locked(proc);
 	proc_zombie_remove_locked(proc);
 
@@ -996,7 +1103,19 @@ proc_reap(proc_t parent, proc_id_t pid, uint64_t *status)
 	}
 
 	proc_unlock(&g_proc_lock);
+
+	pgrp_reclaim(&reclaim);
 	return true;
+}
+
+void
+proc_mark_execed(proc_t proc)
+{
+	if (proc == 0) return;
+
+	proc_lock(&g_proc_lock);
+	proc->p_flag |= PROC_FLAG_EXECED;
+	proc_unlock(&g_proc_lock);
 }
 
 bool

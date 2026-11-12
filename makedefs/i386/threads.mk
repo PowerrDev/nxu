@@ -34,6 +34,7 @@ I386_C_SOURCES += \
     kern/i386/threads_selftest.c \
     kern/process/proc.c \
     kern/process/signal.c \
+    kern/process/pgrp.c \
     kern/process/task.c \
     kern/process/thread.c \
     kern/process/statistics.c \

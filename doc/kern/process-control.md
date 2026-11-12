@@ -52,12 +52,38 @@ The model is deliberately small; `kern/process/signal.h` is the reference.
   it.
 - **Dispositions.** Default, ignore, or a user handler with a *restorer* — a
   tiny routine ending in `sigreturn`, supplied by `nxu_signal()` in libnxu. The
-  default action terminates the process, except `SIGCHLD`, which is ignored.
-  `SIGKILL` cannot be caught, blocked or ignored.
-- **Who may signal whom.** A process may signal itself and its descendants
-  (`proc_is_inferior`). There are no credentials, so this is what keeps an
-  ordinary process from killing PID 1 or a sibling service. The kernel process
-  is never a target. `kill(pid, 0)` only checks existence and permission.
+  default action terminates the process, except: `SIGCHLD` and `SIGWINCH` are
+  ignored; `SIGSTOP`, `SIGTSTP`, `SIGTTIN` and `SIGTTOU` stop the process;
+  `SIGCONT` continues it. `SIGKILL` and `SIGSTOP` cannot be caught, blocked or
+  ignored.
+- **Who may signal whom.** Credentials decide: root may signal anyone; anyone
+  else may signal a process whose real or saved user ID equals the sender's
+  real or effective one; `SIGCONT` may also go to any process in the sender's
+  session. The kernel process is never a target, and PID 1 only takes signals
+  it has installed a handler for. `kill(pid, 0)` only checks existence and
+  permission. `killpg(pgid, signal)` sends to every member of a process group.
+- **A process acts on its own signals.** Whatever a signal does to a process
+  (run a handler, stop it, end it) is done by one of its own threads in
+  `signal_take`, as it is about to return to user mode. Sending is
+  `signal_post`: mark the signal pending, wake interruptible sleepers, kick
+  running threads. `signal_post` never ends or stops anything, never sleeps,
+  and is what kernel code (the terminal) uses. `kill(2)` is the one exception,
+  below.
+- **Stopping and continuing.** A stopped process has every thread parked at its
+  return to user mode, on a per-process wait queue; a thread asleep in the
+  kernel parks when its system call finishes. `SIGCONT` continues a stopped
+  process the moment it is sent, whatever its disposition, and discards pending
+  stop signals; a stop signal discards a pending `SIGCONT`; `SIGKILL` ends a
+  stopped process without continuing it. A counter of `SIGCONT`s closes the
+  race between taking a stop signal and acting on it. The parent is sent
+  `SIGCHLD` and can collect both changes with
+  `nxu_wait_options(pid, &status, NXU_WAIT_UNTRACED | NXU_WAIT_CONTINUED_OPTION)`;
+  `NXU_WAIT_NOHANG` makes that call not sleep.
+- **Orphaned process groups.** A group is orphaned when no member has a parent
+  in another group of the same session: nobody is left who could resume it. A
+  stop asked for from the terminal (`SIGTSTP`, `SIGTTIN`, `SIGTTOU`) is not
+  acted on in such a group, and when an exit orphans a group that has stopped
+  members, they are sent `SIGHUP` and then `SIGCONT`.
 - **When a signal takes effect.** A terminating signal aimed at another process
   ends it immediately: nothing else can be running on the single CPU, so the
   target is either runnable or asleep on a wait queue, and `sched_thread_terminate`
@@ -75,8 +101,7 @@ The model is deliberately small; `kern/process/signal.h` is the reference.
   EL0. A bad frame kills the process with `SIGSEGV`.
 - **`SIGCHLD`.** When a child exits, a parent that installed a handler has the
   signal made pending. A parent that did not pays nothing.
-- **Not implemented:** `SIGSTOP`/`SIGCONT` (refused with `NOT_SUPPORTED`),
-  timers and `SIGALRM`, `sigsuspend`/`pause` (the wait queue it needs exists, the
+- **Not implemented:** timers and `SIGALRM`, `sigsuspend`/`pause` (the wait queue it needs exists, the
   syscall does not), signal queueing (a signal already pending is not counted twice), per-thread
   directed signals, `siginfo`, alternate signal stacks, and floating-point state
   in the frame (userland is built `-mgeneral-regs-only`).
@@ -161,7 +186,7 @@ What this is not:
 - It is not per-file authorization. A process with `FS_WRITE` may write any file.
 - A process cannot shed capabilities it holds; it can only give a child less at
   spawn.
-- Signals still use the descendants-only rule above, not capabilities.
+- Signals follow credentials (above), not capabilities.
 - PID 1 is identified by its PID number, as `ipc_register_bootstrap` already does.
   Nothing reuses it while bootd is alive.
 

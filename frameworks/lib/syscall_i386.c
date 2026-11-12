@@ -735,6 +735,42 @@ nxu_shm_unmap(uint64_t id)
 }
 
 int64_t
+nxu_getpgid(uint64_t pid)
+{
+	return nxu_syscall1(NXU_SYS_GETPGID, pid);
+}
+
+int64_t
+nxu_setpgid(uint64_t pid, uint64_t pgid)
+{
+	return nxu_syscall2(NXU_SYS_SETPGID, pid, pgid);
+}
+
+int64_t
+nxu_getsid(uint64_t pid)
+{
+	return nxu_syscall1(NXU_SYS_GETSID, pid);
+}
+
+int64_t
+nxu_setsid(void)
+{
+	return nxu_syscall0(NXU_SYS_SETSID);
+}
+
+int64_t
+nxu_killpg(uint64_t pgid, uint32_t signal)
+{
+	return nxu_syscall2(NXU_SYS_KILLPG, pgid, signal);
+}
+
+int64_t
+nxu_wait_options(uint64_t pid, uint64_t *status, uint32_t options)
+{
+	return nxu_syscall3(NXU_SYS_WAIT_OPTIONS, pid, (uint64_t)status, options);
+}
+
+int64_t
 nxu_kill(uint64_t pid, uint32_t signal)
 {
 	NXU_REQUIRE_U32(pid);

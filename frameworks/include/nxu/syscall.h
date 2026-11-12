@@ -260,7 +260,32 @@ int64_t nxu_setgroups(uint32_t count, const uint32_t *list);
  */
 int64_t nxu_chmod(const char *path, uint32_t mode);
 int64_t nxu_chown(const char *path, uint32_t uid, uint32_t gid);
+
+/*
+ * Process groups and sessions. A pid of 0 means the calling process; a pgid of
+ * 0 in setpgid means "the group named after that process". getpgid and getsid
+ * return the ID; setpgid returns 0; setsid returns the new session ID. Errors:
+ * -NXU_SYS_E_NOT_FOUND (no such process, or not the caller or its child),
+ * -NXU_SYS_E_DENIED (the move is not allowed: another session, a session
+ * leader, a child that has called exec, a group that does not exist).
+ */
+int64_t nxu_getpgid(uint64_t pid);
+int64_t nxu_setpgid(uint64_t pid, uint64_t pgid);
+int64_t nxu_getsid(uint64_t pid);
+int64_t nxu_setsid(void);
+
 int64_t nxu_kill(uint64_t pid, uint32_t signal);
+
+/* A signal to every member of process group pgid (0: the caller's own group). */
+int64_t nxu_killpg(uint64_t pgid, uint32_t signal);
+
+/*
+ * nxu_wait that can also report a child that stopped or was continued
+ * (options: NXU_WAIT_UNTRACED, NXU_WAIT_CONTINUED_OPTION) and can return
+ * -NXU_SYS_E_AGAIN instead of sleeping (NXU_WAIT_NOHANG). Tell the outcomes
+ * apart with NXU_WAIT_WAS_STOPPED / NXU_WAIT_WAS_CONTINUED on the status.
+ */
+int64_t nxu_wait_options(uint64_t pid, uint64_t *status, uint32_t options);
 int64_t nxu_sigaction(uint32_t signal, const nxu_sigaction_t *action, nxu_sigaction_t *old_action);
 int64_t nxu_sigprocmask(uint32_t how, uint32_t set);
 int64_t nxu_signal(uint32_t signal, void (*handler)(int));

@@ -37,6 +37,7 @@
 #include <kern/logging/version.h>
 #include <kern/memory/heap.h>
 #include <kern/process/proc.h>
+#include <kern/process/pgrp.h>
 #include <kern/process/crash.h>
 #include <kern/security/sap.h>
 #include <drivers/video/ui_service_host.h>
@@ -374,6 +375,8 @@ syscall_exec(uint64_t user_path, uint64_t user_argv)
 
 	switch (status) {
 	case LOADER_STATUS_OK:
+		/* From here on its parent may no longer move it between process groups. */
+		proc_mark_execed(current_proc());
 		return (syscall_result_t){.action = SYSCALL_ACTION_KEEP_FRAME, .value = 0ULL};
 	case LOADER_STATUS_NOT_FOUND:
 		return syscall_error(SYSCALL_ERROR_NOT_FOUND);
@@ -394,27 +397,112 @@ syscall_exec(uint64_t user_path, uint64_t user_argv)
 #endif
 }
 
-static syscall_result_t
-syscall_kill(uint64_t pid, uint64_t signal)
+static syscall_error_t
+syscall_pgrp_error(pgrp_status_t status)
 {
-#if MACHINE_USER_CONTEXT
-	if (pid > PROC_PID_MAX || signal >= NXU_NSIG) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	switch (status) {
+	case PGRP_STATUS_NO_SUCH_PROCESS:
+		return SYSCALL_ERROR_NOT_FOUND;
+	case PGRP_STATUS_DENIED:
+		return SYSCALL_ERROR_DENIED;
+	case PGRP_STATUS_NO_MEMORY:
+		return SYSCALL_ERROR_NO_MEMORY;
+	default:
+		return SYSCALL_ERROR_INVALID_ARGUMENT;
+	}
+}
 
-	switch (signal_send(current_proc(), (proc_id_t)pid, (uint32_t)signal)) {
+/*
+ * getpgid / getsid: the process group or session of a process (0: the caller).
+ * setpgid: move a process (0: the caller) into a group (0: one named after it).
+ * setsid: start a new session. The rules are in kern/process/pgrp.h.
+ */
+static syscall_result_t
+syscall_getpgid(uint64_t pid)
+{
+	proc_id_t pgid = 0U;
+
+	if (pid > PROC_PID_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
+	pgrp_status_t status = proc_getpgid(current_proc(), (proc_id_t)pid, &pgid);
+
+	return status == PGRP_STATUS_OK ? syscall_return(pgid) : syscall_error(syscall_pgrp_error(status));
+}
+
+static syscall_result_t
+syscall_getsid(uint64_t pid)
+{
+	proc_id_t sid = 0U;
+
+	if (pid > PROC_PID_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
+	pgrp_status_t status = proc_getsid(current_proc(), (proc_id_t)pid, &sid);
+
+	return status == PGRP_STATUS_OK ? syscall_return(sid) : syscall_error(syscall_pgrp_error(status));
+}
+
+static syscall_result_t
+syscall_setpgid(uint64_t pid, uint64_t pgid)
+{
+	if (pid > PROC_PID_MAX || pgid > PROC_PID_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
+	pgrp_status_t status = proc_setpgid(current_proc(), (proc_id_t)pid, (proc_id_t)pgid);
+
+	return status == PGRP_STATUS_OK ? syscall_return(0ULL) : syscall_error(syscall_pgrp_error(status));
+}
+
+static syscall_result_t
+syscall_setsid(void)
+{
+	proc_id_t sid = 0U;
+	pgrp_status_t status = proc_setsid(current_proc(), &sid);
+
+	return status == PGRP_STATUS_OK ? syscall_return(sid) : syscall_error(syscall_pgrp_error(status));
+}
+
+#if MACHINE_USER_CONTEXT
+
+static syscall_result_t
+syscall_signal_result(signal_send_result_t result)
+{
+	switch (result) {
 	case SIGNAL_SEND_OK:
 		return syscall_return(0ULL);
 	case SIGNAL_SEND_NO_SUCH_PROCESS:
 		return syscall_error(SYSCALL_ERROR_NOT_FOUND);
 	case SIGNAL_SEND_DENIED:
 		return syscall_error(SYSCALL_ERROR_DENIED);
-	case SIGNAL_SEND_NOT_SUPPORTED:
-		return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
 	default:
 		return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 	}
+}
 
+#endif
+
+static syscall_result_t
+syscall_kill(uint64_t pid, uint64_t signal)
+{
+#if MACHINE_USER_CONTEXT
+	if (pid > PROC_PID_MAX || signal >= NXU_NSIG) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
+	return syscall_signal_result(signal_send(current_proc(), (proc_id_t)pid, (uint32_t)signal));
 #else
 	(void)pid;
+	(void)signal;
+	return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+#endif
+}
+
+/* killpg: a signal to every member of a process group (0: the caller's own). */
+static syscall_result_t
+syscall_killpg(uint64_t pgid, uint64_t signal)
+{
+#if MACHINE_USER_CONTEXT
+	if (pgid > PROC_PID_MAX || signal >= NXU_NSIG) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
+	return syscall_signal_result(signal_send_group(current_proc(), (proc_id_t)pgid, (uint32_t)signal));
+#else
+	(void)pgid;
 	(void)signal;
 	return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
 #endif
@@ -1989,8 +2077,10 @@ syscall_ipc_receive_wait(uint64_t port_name, uint64_t user_buffer, uint64_t capa
  * form (AGAIN while the child runs).
  */
 static syscall_result_t
-syscall_wait(uint64_t pid, uint64_t user_status)
+syscall_wait_options(uint64_t pid, uint64_t user_status, uint64_t options)
 {
+	if ((options & ~(uint64_t)NXU_WAIT_OPTIONS_ALL) != 0ULL) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
 	proc_t self = current_proc();
 	thread_t thread = current_thread();
 	proc_id_t target = pid == (uintptr_t)NXU_WAIT_ANY ? PROC_PID_INVALID : (proc_id_t)pid;
@@ -2004,8 +2094,9 @@ syscall_wait(uint64_t pid, uint64_t user_status)
 		/* Before looking for an exited child: a child exiting on another CPU right after the look moves it. */
 		uint32_t seq = waitq_seq(&self->p_waitq);
 
-		switch (proc_wait_child(self, target, &reaped, &status)) {
+		switch (proc_wait_child(self, target, (uint32_t)options, &reaped, &status)) {
 		case PROC_WAIT_REAPED:
+		case PROC_WAIT_CHANGED:
 			if (user_status != 0ULL && !vm_copy_to_user(user_status, &status, sizeof(status)))
 				return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 			return syscall_return((uint64_t)reaped);
@@ -2017,12 +2108,20 @@ syscall_wait(uint64_t pid, uint64_t user_status)
 			break;
 		}
 
+		if ((options & NXU_WAIT_NOHANG) != 0ULL) return syscall_error(SYSCALL_ERROR_AGAIN);
+
 		/* Never sleep through a signal that is already waiting. */
 		if (signal_pending_for(self, thread) || !waitq_block_seq(&self->p_waitq, seq, true)) {
 			return syscall_error(SYSCALL_ERROR_INTERRUPTED);
 		}
 
 	}
+}
+
+static syscall_result_t
+syscall_wait(uint64_t pid, uint64_t user_status)
+{
+	return syscall_wait_options(pid, user_status, 0ULL);
 }
 
 static syscall_result_t
@@ -2529,6 +2628,12 @@ syscall_is_cpu_agnostic(uint64_t number)
 	case SYSCALL_WAIT:
 	case SYSCALL_WAITPID:
 	case SYSCALL_KILL:
+	case SYSCALL_KILLPG:
+	case SYSCALL_WAIT_OPTIONS:
+	case SYSCALL_GETPGID:
+	case SYSCALL_SETPGID:
+	case SYSCALL_GETSID:
+	case SYSCALL_SETSID:
 	case SYSCALL_SIGACTION:
 	case SYSCALL_SIGPROCMASK:
 	case SYSCALL_SIGRETURN:
@@ -2701,6 +2806,18 @@ syscall_dispatch_inner(const syscall_request_t *request)
 		return syscall_chmod(request->arguments[0], request->arguments[1]);
 	case SYSCALL_CHOWN:
 		return syscall_chown(request->arguments[0], request->arguments[1], request->arguments[2]);
+	case SYSCALL_GETPGID:
+		return syscall_getpgid(request->arguments[0]);
+	case SYSCALL_SETPGID:
+		return syscall_setpgid(request->arguments[0], request->arguments[1]);
+	case SYSCALL_GETSID:
+		return syscall_getsid(request->arguments[0]);
+	case SYSCALL_SETSID:
+		return syscall_setsid();
+	case SYSCALL_WAIT_OPTIONS:
+		return syscall_wait_options(request->arguments[0], request->arguments[1], request->arguments[2]);
+	case SYSCALL_KILLPG:
+		return syscall_killpg(request->arguments[0], request->arguments[1]);
 	case SYSCALL_EXIT:
 		return syscall_exit(request->arguments[0]);
 	case SYSCALL_WRITE:

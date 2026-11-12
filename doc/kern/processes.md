@@ -235,14 +235,38 @@ The current implementation assumes that process-management operations do not sle
 
 As the kernel gains a blocking allocator, scheduler, signals and VFS operations, long operations must be moved outside the global process-list critical section and protected with finer-grained process/task locks.
 
+## Process groups and sessions
+
+Every process belongs to one process group and every group to one session
+(`kern/process/pgrp.h`, `kern/process/pgrp.c`). Both are named by the pid of
+the process that created them and live for as long as they have members.
+
+A child starts in its parent's group, entered in the same critical section
+that makes it visible, so it is never outside a group. A process the kernel
+starts leads a new session and group of its own; PID 1 is the usual case, and
+the kernel process itself leads session 0.
+
+| Call | Effect |
+| --- | --- |
+| `nxu_getpgid(pid)`, `nxu_getsid(pid)` | The group or session ID of a process (0: the caller) |
+| `nxu_setpgid(pid, pgid)` | Move the caller or one of its children into a group of the same session, or into a new group named after it |
+| `nxu_setsid()` | Make the caller the leader of a new session and group; refused to a group leader |
+
+`setpgid` refuses a session leader, a process in another session, a child that
+has called `exec`, and a group that does not exist unless it is the one being
+named after the process. A zombie stays in its group until it is reaped; a
+session survives its leader. A pid is not reused while a group or session is
+still named by it.
+
+The state is protected by the process table lock. Which terminal a session
+controls and which group is in the foreground is terminal state, not process
+state; see [TTY subsystem](../architecture/tty-subsystem.md).
+
 ## Future Integration
 
 The process/task boundary is intended to support later additions without changing process identity:
 
 ```text
-credentials
-process groups
-sessions
 file descriptor tables
 resource limits
 accounting

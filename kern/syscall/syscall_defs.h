@@ -113,12 +113,43 @@
 /* File ownership and mode (kern/security/ucred.h enforcement in the handlers). */
 #define NXU_SYS_CHMOD 99ULL
 #define NXU_SYS_CHOWN 100ULL
+/* Process groups and sessions (kern/process/pgrp.h). A pid of 0 means the caller. */
+#define NXU_SYS_GETPGID 101ULL
+#define NXU_SYS_SETPGID 102ULL
+#define NXU_SYS_GETSID 103ULL
+#define NXU_SYS_SETSID 104ULL
+/* wait with options (NXU_WAIT_*), and a signal to every member of a process group. */
+#define NXU_SYS_WAIT_OPTIONS 105ULL
+#define NXU_SYS_KILLPG 106ULL
 #include <kern/syscall/net_defs.h>
 #include <kern/syscall/dyrld_defs.h>
 #include <kern/syscall/crash_defs.h>
 
 /* wait(): pass as the pid to wait for any child. */
 #define NXU_WAIT_ANY UINT64_MAX
+
+/*
+ * wait_options(): what besides an exit to report, and whether to wait for it.
+ *
+ *   UNTRACED    also report a child that has stopped (once per stop)
+ *   CONTINUED   also report a stopped child that has been continued (once)
+ *   NOHANG      return -NXU_SYS_E_AGAIN instead of sleeping
+ *
+ * A stop or continue is told apart from an exit by the status: an exit status
+ * has neither NXU_WAIT_STOPPED nor NXU_WAIT_CONTINUED set. A stopped child is
+ * not reaped; it can be waited for again.
+ */
+#define NXU_WAIT_UNTRACED (1U << 0U)
+#define NXU_WAIT_CONTINUED_OPTION (1U << 1U)
+#define NXU_WAIT_NOHANG (1U << 2U)
+#define NXU_WAIT_OPTIONS_ALL (NXU_WAIT_UNTRACED | NXU_WAIT_CONTINUED_OPTION | NXU_WAIT_NOHANG)
+
+#define NXU_WAIT_STOPPED 0x100000000ULL
+#define NXU_WAIT_CONTINUED 0x200000000ULL
+#define NXU_WAIT_STOPPED_SIGNAL(signal) (NXU_WAIT_STOPPED | ((uint64_t)(signal) & 0xFFULL))
+#define NXU_WAIT_WAS_STOPPED(status) (((status) & NXU_WAIT_STOPPED) != 0ULL)
+#define NXU_WAIT_WAS_CONTINUED(status) (((status) & NXU_WAIT_CONTINUED) != 0ULL)
+#define NXU_WAIT_STOPSIG(status) ((uint32_t)((status) & 0xFFULL))
 
 /*
  * Capabilities: what a process may do to the system beyond computing and
@@ -171,6 +202,10 @@
 #define NXU_SIGCHLD 17U
 #define NXU_SIGCONT 18U
 #define NXU_SIGSTOP 19U
+#define NXU_SIGTSTP 20U	 /* stop typed at the terminal */
+#define NXU_SIGTTIN 21U	 /* background read from the terminal */
+#define NXU_SIGTTOU 22U	 /* background write to the terminal */
+#define NXU_SIGWINCH 28U /* the terminal's window changed size */
 #define NXU_NSIG 32U
 
 /* sigaction handler values other than a user function address. */
@@ -186,7 +221,10 @@
 #define NXU_SIG_SETMASK 2U
 
 /* Signals that can be neither caught, blocked nor ignored. */
-#define NXU_SIG_UNCATCHABLE_MASK (1U << NXU_SIGKILL)
+#define NXU_SIG_UNCATCHABLE_MASK ((1U << NXU_SIGKILL) | (1U << NXU_SIGSTOP))
+
+/* Signals whose default action stops the process. */
+#define NXU_SIG_STOP_MASK ((1U << NXU_SIGSTOP) | (1U << NXU_SIGTSTP) | (1U << NXU_SIGTTIN) | (1U << NXU_SIGTTOU))
 
 /*
  * sigaction ABI. restorer is the address of a tiny user routine that ends in
