@@ -28,7 +28,10 @@ is read-only.
 
 - Verbose output is disabled by default. `-v` explicitly enables it and is
   passed through to userland services. `log.verbose=1` also enables detail;
-  `log.verbose=0` keeps milestone output only.
+  `log.verbose=0` keeps milestone output only. A verbose boot shows no splash:
+  the display is the console alone, white text scrolling over the whole
+  screen, with the `[ seconds.fraction ]` stamp left off each line (the serial
+  log keeps it).
 - `proc.max=N` requests a process table limit, bounded by available memory and
   the kernel's 256-process storage ceiling. The default scales with configured
   CPUs and available memory.

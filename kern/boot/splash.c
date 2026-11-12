@@ -57,7 +57,7 @@
  */
 #define BOOT_SPLASH_TEXT_CELL_WIDTH FONT8X16_WIDTH
 #define BOOT_SPLASH_TEXT_CELL_HEIGHT FONT8X16_HEIGHT
-#define BOOT_SPLASH_TEXT_COLOR 0x00565660U
+#define BOOT_SPLASH_TEXT_COLOR 0x00FFFFFFU
 
 static display_device_t *g_display;
 static uint64_t g_started_at;
@@ -88,6 +88,27 @@ static uint32_t g_text_cursor_y;
 static bool g_text_active;
 static bool g_text_dirty;
 static bool g_text_replaying;
+
+/*
+ * A verbose boot shows the console and nothing else: no logo, no progress
+ * bar, no status caption, and the log in plain white over the whole screen.
+ * Set by boot_splash_show() once the console sink is registered; while it is
+ * set the header rectangle is empty and the bar and status painters do
+ * nothing, so every caller of them works unchanged.
+ */
+static bool g_text_only;
+
+/*
+ * The serial log stamps each line "[ seconds.fraction ] "; on the display the
+ * stamp is left out. The first characters of each line are held here until
+ * they either complete a stamp, and are dropped, or turn out to be something
+ * else, and are drawn after all.
+ */
+#define BOOT_SPLASH_STAMP_MAX 40U
+
+static char g_text_stamp[BOOT_SPLASH_STAMP_MAX];
+static uint32_t g_text_stamp_length;
+static bool g_text_line_started;
 
 /*
  * The console is a grid of character cells. putc edits the grid and
@@ -201,6 +222,8 @@ boot_splash_status_width(const char *status)
 static bool
 boot_splash_paint_status(void)
 {
+	if (g_text_only) return true;
+
 	if (!g_status_active || g_display == 0) return false;
 
 	uint32_t top;
@@ -268,6 +291,8 @@ boot_splash_set_status(const char *status)
 static bool
 boot_splash_paint_bar(void)
 {
+	if (g_text_only) return true;
+
 	if (g_display == 0) return false;
 
 	uint32_t left;
@@ -298,6 +323,8 @@ boot_splash_paint_bar(void)
 static bool
 boot_splash_draw_bar(void)
 {
+	if (g_text_only) return true;
+
 	if (!g_visible || g_display == 0) return false;
 
 	uint32_t left;
@@ -517,7 +544,7 @@ boot_splash_text_flush(void)
 	 * boot_splash_finish() still has a visible amount left to close out
 	 * once the log actually stops.
 	 */
-	if (g_visible && g_progress < BOOT_SPLASH_LOG_PROGRESS_MAX) {
+	if (g_visible && !g_text_only && g_progress < BOOT_SPLASH_LOG_PROGRESS_MAX) {
 		uint32_t remaining = BOOT_SPLASH_LOG_PROGRESS_MAX - g_progress;
 		uint32_t step = remaining / 16U;
 		g_progress += step != 0U ? step : 1U;
@@ -533,6 +560,82 @@ boot_splash_text_flush(void)
  * everything the serial/UART sink also receives) onto the splash scanout as
  * scrolling monospace text, underneath the logo/bar/status overlay.
  */
+static void boot_splash_text_putc(char character, void *context);
+
+/*
+ * boot_splash_stamp_accepts
+ *
+ * Whether `character` can be the next one of a line's time stamp, given the
+ * `length` characters of it held so far: "[ ", digits, ".", digits, " ] ".
+ * *complete is set when it is the last one.
+ */
+static bool
+boot_splash_stamp_accepts(const char *held, uint32_t length, char character, bool *complete)
+{
+	*complete = false;
+
+	if (length == 0U) return character == '[';
+	if (length == 1U) return character == ' ';
+
+	bool digit = character >= '0' && character <= '9';
+	char previous = held[length - 1U];
+	bool seen_point = false;
+	bool seen_close = false;
+
+	for (uint32_t index = 2U; index < length; index++) {
+		if (held[index] == '.') seen_point = true;
+		if (held[index] == ']') seen_close = true;
+	}
+
+	if (seen_close) {
+		*complete = character == ' ';
+		return *complete;
+	}
+
+	if (!seen_point) return digit || (character == '.' && previous >= '0' && previous <= '9');
+
+	if (previous == ' ') return character == ']';
+
+	return digit || (character == ' ' && previous >= '0' && previous <= '9');
+}
+
+/*
+ * boot_splash_text_filter
+ *
+ * The console sink: everything written to kputc/kprintf arrives here, time
+ * stamps included, and goes on to boot_splash_text_putc without them.
+ */
+static void
+boot_splash_text_filter(char character, void *context)
+{
+	if (!g_text_line_started) {
+		bool complete;
+
+		if (g_text_stamp_length < BOOT_SPLASH_STAMP_MAX &&
+			boot_splash_stamp_accepts(g_text_stamp, g_text_stamp_length, character, &complete)) {
+			g_text_stamp[g_text_stamp_length++] = character;
+
+			if (complete) {
+				g_text_stamp_length = 0U;
+				g_text_line_started = true;
+			}
+
+			return;
+		}
+
+		/* Not a stamp after all: what was held back is part of the line. */
+		for (uint32_t index = 0U; index < g_text_stamp_length; index++)
+			boot_splash_text_putc(g_text_stamp[index], context);
+
+		g_text_stamp_length = 0U;
+		g_text_line_started = true;
+	}
+
+	if (character == '\n') g_text_line_started = false;
+
+	boot_splash_text_putc(character, context);
+}
+
 static void
 boot_splash_text_putc(char character, void *context)
 {
@@ -666,7 +769,7 @@ boot_splash_replay_history(display_device_t *display)
 
 		for (uint64_t index = 0ULL; index < read_size; index++) {
 			char character = buffer[index];
-			boot_splash_text_putc(character, 0);
+			boot_splash_text_filter(character, 0);
 
 			if (character != '\n' || !animate) continue;
 
@@ -741,6 +844,8 @@ boot_splash_text_init(void)
 	memset(g_text_cells, 0, sizeof(g_text_cells));
 	memset(g_text_row_dirty, 0, sizeof(g_text_row_dirty));
 	g_text_dirty = false;
+	g_text_stamp_length = 0U;
+	g_text_line_started = false;
 	g_text_active = g_text_columns != 0U && g_text_rows != 0U;
 }
 
@@ -776,7 +881,7 @@ boot_splash_show(display_device_t *display)
 	g_status_active = false;
 
 	boot_splash_text_init();
-	boot_splash_paint_logo();
+	g_text_only = false;
 
 	if (g_text_active && !kconsole_verbose()) g_text_active = false;
 	if (g_text_active) {
@@ -786,13 +891,23 @@ boot_splash_show(display_device_t *display)
 		 * -- see boot_splash_replay_history() -- instead of appearing
 		 * already fully scrolled in one instant paint.
 		 */
-		bool registered = kconsole_register_sink(boot_splash_text_putc, 0, false);
+		bool registered = kconsole_register_sink(boot_splash_text_filter, 0, false);
 		if (!registered) {
 			g_text_active = false;
 		} else {
+			/* The console has the whole screen: no header for the text to flow around. */
+			g_text_only = true;
+			g_header_left = 0U;
+			g_header_right = 0U;
+			g_header_top = 0U;
+			g_header_bottom = 0U;
+
 			boot_splash_replay_history(display);
 		}
 	}
+
+	/* The logo belongs to the quiet boot only. */
+	if (!g_text_only) boot_splash_paint_logo();
 
 	g_started_at = timer_get_ticks();
 	g_progress = 80U;
@@ -869,9 +984,12 @@ boot_splash_finish(void)
 	 * the completion animation below finishes without further text scrolling.
 	 */
 	if (g_text_active) {
-		kconsole_unregister_sink(boot_splash_text_putc, 0);
+		kconsole_unregister_sink(boot_splash_text_filter, 0);
 		g_text_active = false;
 	}
+
+	/* No bar to close out in a verbose boot. */
+	if (g_text_only) g_progress = BOOT_SPLASH_PROGRESS_MAX;
 
 	while (g_progress < BOOT_SPLASH_PROGRESS_MAX) {
 		uint32_t remaining = BOOT_SPLASH_PROGRESS_MAX - g_progress;
