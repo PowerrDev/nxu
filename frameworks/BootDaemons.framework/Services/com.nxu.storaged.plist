@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//NXU//DTD PLIST 1.0//EN" "http://www.nxu.local/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.nxu.storaged</string>
+
+	<key>Program</key>
+	<string>/Volumes/mainOS/System/Library/CoreServices/storaged</string>
+
+	<key>RunAtLoad</key>
+	<true/>
+
+	<key>KeepAlive</key>
+	<true/>
+
+	<key>AllowStorage</key>
+	<true/>
+
+	<key>DisabledBootArgument</key>
+	<string>-no-storaged</string>
+	<key>ProcessType</key>
+	<string>Utility</string>
+</dict>
+</plist>
