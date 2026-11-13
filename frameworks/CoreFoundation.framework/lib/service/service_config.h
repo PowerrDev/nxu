@@ -25,8 +25,13 @@ typedef struct {
 	bool allow_filesystem_write;
 	bool allow_reset;
 	bool allow_display;
+	bool allow_storage;
 	bool allow_crash_reports;
 	bool allow_crash_notifications;
+
+	/* ProcessType: the quality of service bootd gives the job (NXU_QOS_*;
+	 * absent or "Standard" is NXU_QOS_DEFAULT). */
+	uint32_t qos;
 } service_config_t;
 
 typedef enum {

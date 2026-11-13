@@ -32,6 +32,9 @@ main(void)
 	}
 
 	bootd_log("bootd: userspace service manager started as PID 1\n");
+	/* Like launchd: starting services is what the whole boot waits on, so
+	 * PID 1 runs above the services it starts (they get their ProcessType). */
+	if (nxu_set_qos(0, NXU_QOS_USER_INITIATED) != 0) bootd_log("bootd: could not raise its own quality of service\n");
 	if (!bootd_manager_init(&g_bootd_manager)) {
 		bootd_log("bootd: service discovery failed\n");
 		return 2;

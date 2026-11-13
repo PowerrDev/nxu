@@ -56,6 +56,7 @@ ipc_kmsg_alloc(const void *data, size_t size, ipc_port_t xfer_port, ipc_kmsg_t *
 	kmsg->ikm_sender = (nxu_ipc_peer_t){0};
 	kmsg->ikm_next = IPC_KMSG_NULL;
 	kmsg->ikm_size = size;
+	kmsg->ikm_qos = 0U; /* NXU_QOS_DEFAULT until the sender is known */
 	kmsg->ikm_flags = 0U;
 	kmsg->ikm_xfer_type = xfer_port != IPC_PORT_NULL ? IPC_KMSG_XFER_PORT : IPC_KMSG_XFER_NONE;
 	kmsg->ikm_xfer_port = xfer_port;

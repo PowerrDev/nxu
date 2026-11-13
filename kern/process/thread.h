@@ -180,6 +180,27 @@ struct thread {
 	uint8_t mlfq_level;
 
 	/*
+	 * Raised to the top priority for one short quantum because it waited on a
+	 * run queue too long (the scheduler's starvation guard): its band
+	 * priority comes back the next time it is assigned a level or queued.
+	 */
+	bool qos_promoted;
+
+	/*
+	 * It yielded while it could still run: until it blocks (or changes level)
+	 * it is scheduled no higher than the bottom of the DEFAULT band, so a
+	 * thread that waits by yielding in a loop cannot hold the CPU above
+	 * everything else just because its QoS is high (XNU's yield depression).
+	 * Only a streak of yields counts: one yield between bursts of work that
+	 * then block (WindowServer's loop) is not spinning.
+	 */
+	bool yield_depressed;
+	uint16_t yield_streak;
+
+	/* The run-queue clock (run_queue_clock) when it was last queued. */
+	uint32_t runq_enqueued_tick;
+
+	/*
 	 * Timer ticks this thread has run at its current level since it last
 	 * blocked or changed level. Unlike quantum_remaining, dispatching or
 	 * yielding does not refill it, so a thread that spins in sched_yield()

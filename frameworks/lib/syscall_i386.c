@@ -224,6 +224,18 @@ nxu_spawn_attr(const char *path, const nxu_spawn_attr_t *attr)
 }
 
 int64_t
+nxu_set_qos(uint32_t pid, uint32_t qos)
+{
+	return nxu_syscall2(NXU_SYS_SET_QOS, pid, qos);
+}
+
+int64_t
+nxu_time(void)
+{
+	return nxu_syscall0(NXU_SYS_TIME);
+}
+
+int64_t
 nxu_socketpair(uint32_t descriptors[2])
 {
 	return nxu_syscall1(NXU_SYS_SOCKETPAIR, NXU_PTR(descriptors));

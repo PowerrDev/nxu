@@ -251,6 +251,15 @@ void sched_clear_preemption(void);
 uint16_t sched_mlfq_level_priority(uint8_t level);
 
 /*
+ * sched_thread_level_priority
+ *
+ * The run-queue priority `thread` is scheduled at on MLFQ level `level`:
+ * the level's place in the thread's QoS band (sched_mlfq_level_priority is
+ * the DEFAULT band's).
+ */
+uint16_t sched_thread_level_priority(thread_t thread, uint8_t level);
+
+/*
  * sched_mlfq_level_quantum
  *
  * Quantum length, in timer ticks, granted to a thread at a given MLFQ
@@ -258,6 +267,41 @@ uint16_t sched_mlfq_level_priority(uint8_t level);
  * less often once it has been identified as such.
  */
 uint32_t sched_mlfq_level_quantum(uint8_t level);
+
+/*
+ * sched_task_set_qos
+ *
+ * Put every thread of `task` in quality-of-service band `qos` (NXU_QOS_*):
+ * each takes it the next time it is queued or changes level. The caller
+ * decides who may (see syscall_set_qos).
+ */
+bool sched_task_set_qos(task_t task, uint8_t qos);
+
+/*
+ * sched_task_effective_qos
+ *
+ * The QoS `task`'s threads run at: its own, or one donated to it over NXPC
+ * while that is higher and has not lapsed.
+ *
+ * sched_task_qos_donate
+ *
+ * A process at `qos` sent `task` a message: `task` runs at least at `qos` for
+ * a short while (renewed by every such message), so a service a user-facing
+ * process is waiting on is not left behind lower-QoS work (XNU's QoS
+ * importance donation).
+ *
+ * sched_task_qos_handling
+ *
+ * `task` took a message from a sender at `qos` (NXU_QOS_COUNT: it found none):
+ * it runs at that QoS while it handles it, and at its own once its queue is
+ * empty.
+ */
+uint8_t sched_task_effective_qos(task_t task);
+void sched_task_qos_donate(task_t task, uint8_t qos);
+void sched_task_qos_handling(task_t task, uint8_t qos);
+
+/* A QoS class's name, for logs. */
+const char *sched_qos_name(uint8_t qos);
 
 /*
  * sched_run_queue_self_test

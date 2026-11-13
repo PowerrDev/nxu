@@ -55,6 +55,20 @@ run_queue_init(run_queue_t *runq)
 	runq->highq = RUN_QUEUE_NONE;
 }
 
+static uint32_t g_run_queue_clock;
+
+uint32_t
+run_queue_clock(void)
+{
+	return __atomic_load_n(&g_run_queue_clock, __ATOMIC_RELAXED);
+}
+
+void
+run_queue_clock_advance(void)
+{
+	(void)__atomic_add_fetch(&g_run_queue_clock, 1U, __ATOMIC_RELAXED);
+}
+
 /*
  * run_queue_enqueue
  */
@@ -86,6 +100,7 @@ run_queue_enqueue(run_queue_t *runq, thread_t thread, run_queue_placement_t plac
 	}
 
 	thread->runq = runq;
+	thread->runq_enqueued_tick = run_queue_clock();
 	runq->bitmap |= run_queue_priority_mask(priority);
 	runq->count++;
 

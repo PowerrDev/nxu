@@ -191,6 +191,35 @@ service_apply_value(service_config_t *config, const plist_event_t *key, const pl
 		return true;
 	}
 
+	if (service_key_is(key, "ProcessType")) {
+		static const struct {
+			const char *name;
+			uint32_t qos;
+		} types[] = {
+			{"Interactive", NXU_QOS_USER_INTERACTIVE},
+			{"UserInitiated", NXU_QOS_USER_INITIATED},
+			{"Standard", NXU_QOS_DEFAULT},
+			{"Utility", NXU_QOS_UTILITY},
+			{"Background", NXU_QOS_BACKGROUND},
+		};
+
+		if (value->type != PLIST_EVENT_STRING) return false;
+		for (uint32_t index = 0; index < sizeof(types) / sizeof(types[0]); index++) {
+			if (nxu_streq(value->text, types[index].name)) {
+				config->qos = types[index].qos;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	if (service_key_is(key, "AllowStorage")) {
+		if (value->type != PLIST_EVENT_BOOLEAN) return false;
+
+		config->allow_storage = value->boolean;
+		return true;
+	}
+
 	if (service_key_is(key, "AllowDisplay")) {
 		if (value->type != PLIST_EVENT_BOOLEAN) return false;
 
@@ -231,7 +260,8 @@ service_parse(const char *data, uint64_t length, service_config_t *config)
 						  service_key_is(&key, "KeepAlive") || service_key_is(&key, "Disabled") ||
 						  service_key_is(&key, "DisabledInSafeMode") || service_key_is(&key, "StartOnLogin") ||
 						  service_key_is(&key, "AllowReset") || service_key_is(&key, "AllowFilesystemWrite") ||
-						  service_key_is(&key, "AllowDisplay") || service_key_is(&key, "AllowCrashReports") ||
+						  service_key_is(&key, "AllowDisplay") || service_key_is(&key, "AllowStorage") ||
+						  service_key_is(&key, "ProcessType") || service_key_is(&key, "AllowCrashReports") ||
 						  service_key_is(&key, "AllowCrashNotifications");
 
 		if (recognized) {

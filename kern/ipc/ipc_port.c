@@ -35,6 +35,11 @@ struct ipc_port {
 
 	/* Threads sleeping in ipc_port_wait for a message. */
 	waitq_t ip_waiters;
+
+	/* The process last seen receiving here (pid and uniqueid, never a
+	 * pointer that could outlive it): who a sender donates its QoS to. */
+	uint32_t ip_receiver_pid;
+	uint64_t ip_receiver_uniqueid;
 };
 
 /* Diagnostics only: updated with atomics, no lock. */
@@ -358,4 +363,27 @@ ipc_port_deactivate(ipc_port_t port)
 		ipc_kmsg_free(messages);
 		messages = next;
 	}
+}
+
+void
+ipc_port_note_receiver(ipc_port_t port, uint32_t pid, uint64_t uniqueid)
+{
+	if (port == IPC_PORT_NULL) return;
+
+	uint64_t irq_state = nxu_spin_lock_irqsave(&port->ip_lock);
+	port->ip_receiver_pid = pid;
+	port->ip_receiver_uniqueid = uniqueid;
+	nxu_spin_unlock_irqrestore(&port->ip_lock, irq_state);
+}
+
+bool
+ipc_port_receiver(ipc_port_t port, uint32_t *pid, uint64_t *uniqueid)
+{
+	if (port == IPC_PORT_NULL || pid == 0 || uniqueid == 0) return false;
+
+	uint64_t irq_state = nxu_spin_lock_irqsave(&port->ip_lock);
+	*pid = port->ip_receiver_pid;
+	*uniqueid = port->ip_receiver_uniqueid;
+	nxu_spin_unlock_irqrestore(&port->ip_lock, irq_state);
+	return *pid != 0U;
 }

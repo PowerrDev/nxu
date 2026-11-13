@@ -63,6 +63,7 @@
  * queued until released.
  */
 
+#include <kern/boot/boot_args.h>
 #include <kern/console/console.h>
 #include <kern/sched_prism/sched.h>
 #include <kern/sched_prism/waitq.h>
@@ -72,6 +73,7 @@
 #include <kern/machine/smp.h>
 #include <kern/machine/timer.h>
 #include <kern/process/proc.h>
+#include <kern/syscall/syscall_defs.h>
 #include <platform/uart.h>
 #include <vm/address_space.h>
 #include <stdbool.h>
@@ -254,6 +256,7 @@ sched_kick_sleepers(void)
 static bool sched_switch(sched_switch_reason_t reason);
 static processor_t sched_select_cpu(thread_t thread);
 static bool sched_enqueue_on(processor_t target, thread_t thread, run_queue_placement_t placement);
+static bool sched_qos_self_test(void);
 
 /*
  * sched_fatal
@@ -277,12 +280,159 @@ sched_fatal(const char *message)
  * non-empty line" (Rule 1) and "share a line round-robin" (Rule 2)
  * behavior. Only the level<->priority/quantum mapping is policy here.
  */
-static const uint16_t sched_mlfq_priority[SCHED_MLFQ_LEVELS] = {63U, 47U, 31U, 15U};
-
 static const uint32_t sched_mlfq_quantum[SCHED_MLFQ_LEVELS] = {4U, 8U, 16U, 32U};
 
-_Static_assert(sizeof(sched_mlfq_priority) / sizeof(sched_mlfq_priority[0]) == SCHED_MLFQ_LEVELS,
-			   "sched_mlfq_priority must have exactly SCHED_MLFQ_LEVELS entries");
+/*
+ * Quality-of-service bands (NXU_QOS_*, after XNU's QoS classes).
+ *
+ * A thread's MLFQ level picks a priority inside its QoS band, and the bands
+ * never overlap: a CPU-bound thread sinks to the bottom of its own band and
+ * no further, so the compositor and the desktop -- which render every frame
+ * and so do use up their quanta -- can never fall below a newly started app
+ * or a daemon walking the disk. Starvation is the price of strict bands;
+ * sched_starvation_scan pays it.
+ */
+static const uint16_t sched_qos_band[NXU_QOS_COUNT][SCHED_MLFQ_LEVELS] = {
+	[NXU_QOS_USER_INTERACTIVE] = {63U, 61U, 59U, 57U},
+	[NXU_QOS_USER_INITIATED] = {54U, 52U, 50U, 48U},
+	[NXU_QOS_DEFAULT] = {45U, 41U, 37U, 33U},
+	[NXU_QOS_UTILITY] = {30U, 27U, 24U, 21U},
+	[NXU_QOS_BACKGROUND] = {16U, 12U, 8U, 4U},
+};
+
+_Static_assert(sizeof(sched_qos_band[0]) / sizeof(sched_qos_band[0][0]) == SCHED_MLFQ_LEVELS,
+			   "every QoS band must have exactly SCHED_MLFQ_LEVELS entries");
+
+static const char *const sched_qos_names[NXU_QOS_COUNT] = {
+	[NXU_QOS_USER_INTERACTIVE] = "user-interactive",
+	[NXU_QOS_USER_INITIATED] = "user-initiated",
+	[NXU_QOS_DEFAULT] = "default",
+	[NXU_QOS_UTILITY] = "utility",
+	[NXU_QOS_BACKGROUND] = "background",
+};
+
+/* What a yielding thread is depressed to (see thread->yield_depressed): the
+ * bottom of the DEFAULT band. */
+#define SCHED_YIELD_DEPRESS_PRIORITY 33U
+/* Consecutive yields without blocking that make a thread a spinner. */
+#define SCHED_YIELD_DEPRESS_STREAK 16U
+
+/*
+ * Starvation lifts, in two tiers. A thread kept waiting SCHED_STARVATION_TICKS
+ * is lifted just under the USER_INTERACTIVE band: above every other band, so
+ * it runs, but never level with the compositor and the desktop -- lifting
+ * starved work to the very top had two CPU hogs taking turns at the user
+ * interface's priority. Only one kept waiting SCHED_STARVATION_EMERGENCY_TICKS
+ * (which takes an interactive thread that never blocks or yields) goes to the
+ * top.
+ */
+#define SCHED_STARVATION_PRIORITY 56U
+#define SCHED_STARVATION_TICKS 50U
+#define SCHED_STARVATION_EMERGENCY_PRIORITY THREAD_PRIORITY_MAX
+#define SCHED_STARVATION_EMERGENCY_TICKS 200U
+/* How often each CPU looks for starved threads, and how many it lifts. */
+#define SCHED_STARVATION_SCAN_TICKS 10U
+#define SCHED_STARVATION_LIFT_MAX 4U
+
+/*
+ * The QoS a thread is scheduled with: its task's. Kernel threads are system
+ * work the user interface waits on (I/O completion, input), so they share
+ * the top band; the MLFQ still sinks a busy one to the bottom of it.
+ */
+/* QoS classes in order, lowest first; and each class's place in it. */
+static const uint8_t sched_qos_by_rank[NXU_QOS_COUNT] = {NXU_QOS_BACKGROUND, NXU_QOS_UTILITY, NXU_QOS_DEFAULT,
+														 NXU_QOS_USER_INITIATED, NXU_QOS_USER_INTERACTIVE};
+
+static uint8_t
+sched_qos_rank(uint8_t qos)
+{
+	for (uint8_t rank = 0U; rank < NXU_QOS_COUNT; rank++)
+		if (sched_qos_by_rank[rank] == qos) return rank;
+	return sched_qos_rank(NXU_QOS_DEFAULT);
+}
+
+/* How long a donation lasts unless renewed: long enough to serve a request,
+ * short enough that one leaked into a reply's receiver does not matter. */
+#define SCHED_QOS_DONATION_TICKS 20U
+
+/* sched.qos=0 on the boot command line: every thread in the DEFAULT band,
+ * the plain MLFQ, for comparing with and without QoS. */
+static bool g_sched_qos_enabled = true;
+
+uint8_t
+sched_task_effective_qos(task_t task)
+{
+	if (task == 0 || !g_sched_qos_enabled) return NXU_QOS_DEFAULT;
+	if ((task->flags & TASK_FLAG_KERNEL) != 0U) return NXU_QOS_USER_INTERACTIVE;
+
+	uint8_t own = task->qos < NXU_QOS_COUNT ? task->qos : NXU_QOS_DEFAULT;
+	uint8_t donated = __atomic_load_n(&task->qos_override, __ATOMIC_RELAXED);
+	uint32_t until = __atomic_load_n(&task->qos_override_until, __ATOMIC_RELAXED);
+
+	if (donated == 0U || donated > NXU_QOS_COUNT || (int32_t)(until - run_queue_clock()) <= 0) return own;
+	return donated - 1U > sched_qos_rank(own) ? sched_qos_by_rank[donated - 1U] : own;
+}
+
+void
+sched_task_qos_donate(task_t task, uint8_t qos)
+{
+	if (task == 0 || qos >= NXU_QOS_COUNT) return;
+
+	uint8_t rank = sched_qos_rank(qos);
+
+	if (rank <= sched_qos_rank(task->qos)) return;
+
+	uint8_t current = __atomic_load_n(&task->qos_override, __ATOMIC_RELAXED);
+	bool live = current != 0U && (int32_t)(task->qos_override_until - run_queue_clock()) > 0;
+
+	if (!live || current - 1U < rank) __atomic_store_n(&task->qos_override, (uint8_t)(rank + 1U), __ATOMIC_RELAXED);
+	__atomic_store_n(&task->qos_override_until, run_queue_clock() + SCHED_QOS_DONATION_TICKS, __ATOMIC_RELAXED);
+}
+
+void
+sched_task_qos_handling(task_t task, uint8_t qos)
+{
+	if (task == 0) return;
+
+	if (qos >= NXU_QOS_COUNT || sched_qos_rank(qos) <= sched_qos_rank(task->qos)) {
+		__atomic_store_n(&task->qos_override, (uint8_t)0U, __ATOMIC_RELAXED);
+		return;
+	}
+	__atomic_store_n(&task->qos_override, (uint8_t)(sched_qos_rank(qos) + 1U), __ATOMIC_RELAXED);
+	__atomic_store_n(&task->qos_override_until, run_queue_clock() + SCHED_QOS_DONATION_TICKS, __ATOMIC_RELAXED);
+}
+
+static uint8_t
+sched_thread_qos(const struct thread *thread)
+{
+	return sched_task_effective_qos(thread != 0 ? thread->task : 0);
+}
+
+/* The run-queue priority of an MLFQ level within a QoS band. */
+static uint16_t
+sched_qos_priority(uint8_t qos, uint8_t level)
+{
+	if (qos >= NXU_QOS_COUNT) qos = NXU_QOS_DEFAULT;
+	if (level > SCHED_MLFQ_BOTTOM_LEVEL) level = SCHED_MLFQ_BOTTOM_LEVEL;
+	return sched_qos_band[qos][level];
+}
+
+/* Whether `priority` is the top of some band: only level-0 threads (and
+ * lifted ones) are queued there. */
+static bool
+sched_priority_is_band_top(uint16_t priority)
+{
+	for (uint8_t qos = 0U; qos < NXU_QOS_COUNT; qos++)
+		if (sched_qos_band[qos][SCHED_MLFQ_TOP_LEVEL] == priority) return true;
+	return false;
+}
+
+const char *
+sched_qos_name(uint8_t qos)
+{
+	return qos < NXU_QOS_COUNT ? sched_qos_names[qos] : "unknown";
+}
+
 
 _Static_assert(sizeof(sched_mlfq_quantum) / sizeof(sched_mlfq_quantum[0]) == SCHED_MLFQ_LEVELS,
 			   "sched_mlfq_quantum must have exactly SCHED_MLFQ_LEVELS entries");
@@ -290,8 +440,13 @@ _Static_assert(sizeof(sched_mlfq_quantum) / sizeof(sched_mlfq_quantum[0]) == SCH
 uint16_t
 sched_mlfq_level_priority(uint8_t level)
 {
-	if (level > SCHED_MLFQ_BOTTOM_LEVEL) level = SCHED_MLFQ_BOTTOM_LEVEL;
-	return sched_mlfq_priority[level];
+	return sched_qos_priority(NXU_QOS_DEFAULT, level);
+}
+
+uint16_t
+sched_thread_level_priority(thread_t thread, uint8_t level)
+{
+	return sched_qos_priority(sched_thread_qos(thread), level);
 }
 
 uint32_t
@@ -319,9 +474,13 @@ sched_mlfq_assign(thread_t thread, uint8_t level)
 
 	if (level > SCHED_MLFQ_BOTTOM_LEVEL) level = SCHED_MLFQ_BOTTOM_LEVEL;
 
+	uint16_t priority = sched_qos_priority(sched_thread_qos(thread), level);
+
 	thread->mlfq_level = level;
-	thread->sched_pri = sched_mlfq_priority[level];
-	thread->base_pri = sched_mlfq_priority[level];
+	thread->sched_pri = priority;
+	thread->base_pri = priority;
+	thread->qos_promoted = false;
+	thread->yield_depressed = false;
 	thread->quantum_remaining = sched_mlfq_quantum[level];
 	thread->mlfq_ticks = 0U;
 }
@@ -382,6 +541,9 @@ static void
 sched_mlfq_blocked(thread_t thread)
 {
 	thread->mlfq_ticks = 0U;
+	/* Waiting for something real: the yield depression is over. */
+	thread->yield_depressed = false;
+	thread->yield_streak = 0U;
 }
 
 /*
@@ -396,11 +558,17 @@ sched_mlfq_boost_locked(processor_t processor)
 {
 	if (processor == 0) return;
 
-	for (uint8_t level = SCHED_MLFQ_TOP_LEVEL + 1U; level < SCHED_MLFQ_LEVELS; level++) {
-		uint16_t priority = sched_mlfq_priority[level];
+	/*
+	 * Highest priority first: a boosted thread moves up to the top of its own
+	 * band, which is above where it was and so already past, never seen twice.
+	 * The band tops hold only level-0 threads and are left alone.
+	 */
+	for (int32_t priority = THREAD_PRIORITY_MAX; priority >= 0; priority--) {
+		if (sched_priority_is_band_top((uint16_t)priority)) continue;
+
 		thread_t thread;
 
-		while ((thread = run_queue_dequeue_priority(&processor->runq, priority)) != 0) {
+		while ((thread = run_queue_dequeue_priority(&processor->runq, (uint16_t)priority)) != 0) {
 			sched_mlfq_assign(thread, SCHED_MLFQ_TOP_LEVEL);
 
 			if (!run_queue_enqueue(&processor->runq, thread, RUN_QUEUE_TAIL)) {
@@ -414,6 +582,64 @@ sched_mlfq_boost_locked(processor_t processor)
 	if (current != 0 && !thread_is_idle(current)) {
 		sched_mlfq_assign(current, SCHED_MLFQ_TOP_LEVEL);
 	}
+}
+
+/*
+ * sched_starvation_scan
+ *
+ * The guard strict bands need: a thread that has waited on `runq` for
+ * SCHED_STARVATION_TICKS or more is lifted to the top priority for one
+ * top-level quantum, so even background work runs at least about twice a
+ * second however busy the bands above it are. Its own band comes back the
+ * moment the quantum runs out (the demotion reassigns it) or it is queued
+ * again (sched_enqueue_on). Buckets are FIFO, so only their heads can be the
+ * longest waiting. Returns how many were lifted. Called with the run
+ * queue's lock held.
+ */
+static uint32_t
+sched_starvation_scan(run_queue_t *runq, uint32_t now)
+{
+	uint32_t lifted = 0U;
+
+	for (uint16_t priority = 0U; priority < SCHED_STARVATION_EMERGENCY_PRIORITY && lifted < SCHED_STARVATION_LIFT_MAX;
+		 priority++) {
+		thread_t thread;
+
+		while (lifted < SCHED_STARVATION_LIFT_MAX &&
+			   (thread = run_queue_dequeue_priority(runq, priority)) != 0) {
+			uint32_t waited = now - thread->runq_enqueued_tick;
+			uint16_t lift = waited >= SCHED_STARVATION_EMERGENCY_TICKS ? SCHED_STARVATION_EMERGENCY_PRIORITY
+						  : waited >= SCHED_STARVATION_TICKS		   ? SCHED_STARVATION_PRIORITY
+																	   : 0U;
+
+			if (lift <= priority) {
+				/* Not starved (or already that high): back where it was, at
+				 * the head of its line. */
+				if (!run_queue_enqueue(runq, thread, RUN_QUEUE_HEAD))
+					sched_fatal("run_queue_enqueue: starvation scan re-enqueue failed");
+				break;
+			}
+
+			thread->qos_promoted = true;
+			thread->sched_pri = lift;
+			thread->quantum_remaining = sched_mlfq_quantum[SCHED_MLFQ_TOP_LEVEL];
+			if (!run_queue_enqueue(runq, thread, RUN_QUEUE_TAIL))
+				sched_fatal("run_queue_enqueue: starvation lift enqueue failed");
+			lifted++;
+		}
+	}
+	return lifted;
+}
+
+bool
+sched_task_set_qos(task_t task, uint8_t qos)
+{
+	if (task == 0 || qos >= NXU_QOS_COUNT) return false;
+
+	/* Its threads take the band the next time they are queued or change
+	 * level; one running now keeps its current priority until then. */
+	__atomic_store_n(&task->qos, qos, __ATOMIC_RELEASE);
+	return true;
 }
 
 /*
@@ -734,6 +960,19 @@ sched_enqueue_on(processor_t target, thread_t thread, run_queue_placement_t plac
 
 	nxu_spin_lock(&target->runq_lock);
 
+	/*
+	 * Queued afresh (woken, started, yielded): back to its own band at its
+	 * level, which also ends a starvation lift and takes in a QoS change.
+	 */
+	if (thread->runq == 0 && !thread_is_idle(thread)) {
+		uint16_t priority = sched_qos_priority(sched_thread_qos(thread), thread->mlfq_level);
+
+		thread->base_pri = priority;
+		if (thread->yield_depressed && priority > SCHED_YIELD_DEPRESS_PRIORITY) priority = SCHED_YIELD_DEPRESS_PRIORITY;
+		thread->qos_promoted = false;
+		thread->sched_pri = priority;
+	}
+
 	bool queued = thread->runq == 0 && run_queue_enqueue(&target->runq, thread, placement);
 
 	if (queued) {
@@ -821,6 +1060,19 @@ sched_switch(sched_switch_reason_t reason)
 
 	bool requeue_current =
 		yielding && thread_is_active(current) && thread_is_runnable(current) && !thread_is_idle(current);
+
+	/*
+	 * An explicit yield by a thread that could go on running: depress it, so
+	 * the threads of the bands below get the CPU (see yield_depressed). Its
+	 * own band comes back when it blocks.
+	 */
+	if (reason == SCHED_SWITCH_YIELD && requeue_current) {
+		if (current->yield_streak != UINT16_MAX) current->yield_streak++;
+		if (current->yield_streak >= SCHED_YIELD_DEPRESS_STREAK && current->sched_pri > SCHED_YIELD_DEPRESS_PRIORITY) {
+			current->yield_depressed = true;
+			current->sched_pri = SCHED_YIELD_DEPRESS_PRIORITY;
+		}
+	}
 
 	thread_t candidate = run_queue_peek(&processor->runq);
 	bool stay = false;
@@ -1043,6 +1295,8 @@ sched_bootstrap(task_t kernel_task)
 	g_sched.kernel_task = kernel_task;
 	g_sched.initialized = true;
 
+	g_sched_qos_enabled = boot_arg_bool("sched.qos", true);
+	kprintf("quality-of-service bands %s (sched.qos=0 turns them off)\n", g_sched_qos_enabled ? "on" : "off");
 	kprintf("standard timeslicing quantum is %u tick(s), %u MLFQ levels boosted every %u tick(s)\n",
 			(uint32_t)SCHED_DEFAULT_QUANTUM_TICKS, (uint32_t)SCHED_MLFQ_LEVELS, (uint32_t)SCHED_MLFQ_BOOST_INTERVAL_TICKS);
 
@@ -1587,6 +1841,15 @@ sched_tick(void)
 		sched_mlfq_boost_locked(processor);
 	}
 
+	/* The clock queued threads' waits are measured on, and the guard that
+	 * keeps strict QoS bands from starving the lower ones. */
+	if (processor->cpu_id == 0U) run_queue_clock_advance();
+
+	if (processor->sched_ticks % SCHED_STARVATION_SCAN_TICKS == 0U &&
+		sched_starvation_scan(&processor->runq, run_queue_clock()) != 0U) {
+		__atomic_store_n(&processor->preemption_pending, true, __ATOMIC_RELEASE);
+	}
+
 	nxu_spin_unlock(&processor->runq_lock);
 
 	/* Timed sleepers (sched_sleep_us) are checked on the boot CPU's tick. */
@@ -1806,6 +2069,102 @@ sched_mlfq_self_test(void)
 	if (queued_mid.runq != &test_processor.runq) return false;
 
 	if (queued_bottom.runq != &test_processor.runq) return false;
+
+	if (!run_queue_validate(&test_processor.runq)) return false;
+
+	return sched_qos_self_test();
+}
+
+/*
+ * sched_qos_self_test
+ *
+ * The QoS bands: strictly ordered with no overlap, a CPU-bound thread stays
+ * inside its own, a boost takes it back to its own band's top, and a thread
+ * left waiting is lifted by the starvation guard and loses the lift when
+ * queued again.
+ */
+static bool sched_qos_self_test_body(void);
+
+/* The mechanism is tested whether or not sched.qos turned the bands off. */
+static bool
+sched_qos_self_test(void)
+{
+	bool enabled = g_sched_qos_enabled;
+
+	g_sched_qos_enabled = true;
+	bool passed = sched_qos_self_test_body();
+	g_sched_qos_enabled = enabled;
+	return passed;
+}
+
+static bool
+sched_qos_self_test_body(void)
+{
+	/* Every level of a band is above every level of the bands below it. */
+	static const uint8_t order[NXU_QOS_COUNT] = {NXU_QOS_USER_INTERACTIVE, NXU_QOS_USER_INITIATED, NXU_QOS_DEFAULT,
+												 NXU_QOS_UTILITY, NXU_QOS_BACKGROUND};
+	for (uint32_t index = 0U; index + 1U < NXU_QOS_COUNT; index++) {
+		uint16_t floor = sched_qos_priority(order[index], SCHED_MLFQ_BOTTOM_LEVEL);
+		uint16_t below = sched_qos_priority(order[index + 1U], SCHED_MLFQ_TOP_LEVEL);
+
+		if (floor <= below) return false;
+	}
+
+	static struct task background_task;
+	static struct task interactive_task;
+	struct thread background;
+	struct thread interactive;
+	struct processor test_processor;
+
+	memset(&background_task, 0, sizeof(background_task));
+	memset(&interactive_task, 0, sizeof(interactive_task));
+	background_task.qos = NXU_QOS_BACKGROUND;
+	interactive_task.qos = NXU_QOS_USER_INTERACTIVE;
+
+	sched_mlfq_test_thread(&background, SCHED_MLFQ_TOP_LEVEL);
+	sched_mlfq_test_thread(&interactive, SCHED_MLFQ_TOP_LEVEL);
+	background.task = &background_task;
+	interactive.task = &interactive_task;
+	sched_mlfq_assign(&background, SCHED_MLFQ_TOP_LEVEL);
+	sched_mlfq_assign(&interactive, SCHED_MLFQ_TOP_LEVEL);
+
+	/* A fresh background thread is still below an interactive one that has
+	 * sunk all the way down its band. */
+	sched_mlfq_assign(&interactive, SCHED_MLFQ_BOTTOM_LEVEL);
+	if (background.sched_pri >= interactive.sched_pri) return false;
+
+	/* Starvation: queued long enough ago, the background thread is lifted
+	 * above everything; queued just now, it is left alone. */
+	memset(&test_processor, 0, sizeof(test_processor));
+	run_queue_init(&test_processor.runq);
+
+	if (!run_queue_enqueue(&test_processor.runq, &background, RUN_QUEUE_TAIL)) return false;
+
+	uint32_t queued_at = background.runq_enqueued_tick;
+
+	if (sched_starvation_scan(&test_processor.runq, queued_at + 1U) != 0U) return false;
+	if (background.qos_promoted) return false;
+
+	if (sched_starvation_scan(&test_processor.runq, queued_at + SCHED_STARVATION_TICKS) != 1U) return false;
+	if (!background.qos_promoted || background.sched_pri != SCHED_STARVATION_PRIORITY) return false;
+	if (run_queue_peek(&test_processor.runq) != &background) return false;
+
+	/* Donation: a background task that an interactive one sent a message
+	 * to runs interactive until it is done, then at its own class again. */
+	sched_task_qos_donate(&background_task, NXU_QOS_USER_INTERACTIVE);
+	if (sched_task_effective_qos(&background_task) != NXU_QOS_USER_INTERACTIVE) return false;
+	sched_task_qos_donate(&background_task, NXU_QOS_UTILITY);
+	if (sched_task_effective_qos(&background_task) != NXU_QOS_USER_INTERACTIVE) return false;
+	sched_task_qos_handling(&background_task, (uint8_t)NXU_QOS_COUNT);
+	if (sched_task_effective_qos(&background_task) != NXU_QOS_BACKGROUND) return false;
+	/* Never lowers: an interactive task handling a utility request stays. */
+	sched_task_qos_handling(&interactive_task, NXU_QOS_UTILITY);
+	if (sched_task_effective_qos(&interactive_task) != NXU_QOS_USER_INTERACTIVE) return false;
+
+	/* The next level change gives it its own band back. */
+	(void)run_queue_remove(&test_processor.runq, &background);
+	sched_mlfq_assign(&background, SCHED_MLFQ_TOP_LEVEL);
+	if (background.qos_promoted || background.sched_pri != sched_qos_priority(NXU_QOS_BACKGROUND, 0U)) return false;
 
 	return run_queue_validate(&test_processor.runq);
 }

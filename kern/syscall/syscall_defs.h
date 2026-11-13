@@ -125,6 +125,27 @@
 #define NXU_SYS_SPAWN_ATTR 107ULL
 /* Two connected stream sockets, one descriptor each. */
 #define NXU_SYS_SOCKETPAIR 108ULL
+/* The wall clock: seconds since 1970-01-01 UTC, from the RTC. */
+#define NXU_SYS_TIME 109ULL
+/* Set a process's quality of service (pid 0: the caller); see NXU_QOS_*. */
+#define NXU_SYS_SET_QOS 110ULL
+
+/*
+ * Quality-of-service classes, after XNU's. Each is a band of scheduling
+ * priorities its threads stay within (the MLFQ moves them inside the band,
+ * never below it), so background work cannot outrank the user interface.
+ * Highest first: USER_INTERACTIVE (the compositor and the desktop),
+ * USER_INITIATED (the app in front, work the user is waiting on), DEFAULT,
+ * UTILITY (long work the user knows about), BACKGROUND (maintenance). 0 is
+ * DEFAULT so a fresh task has it. Raising a process above DEFAULT takes
+ * root; changing another process's takes root too.
+ */
+#define NXU_QOS_DEFAULT 0U
+#define NXU_QOS_USER_INTERACTIVE 1U
+#define NXU_QOS_USER_INITIATED 2U
+#define NXU_QOS_UTILITY 3U
+#define NXU_QOS_BACKGROUND 4U
+#define NXU_QOS_COUNT 5U
 #include <kern/syscall/net_defs.h>
 #include <kern/syscall/dyrld_defs.h>
 #include <kern/syscall/crash_defs.h>
@@ -173,8 +194,10 @@
 #define NXU_CAP_AUDIO (1U << 3U)
 #define NXU_CAP_CRASH (1U << 4U)	/* consume privileged process crash snapshots */
 #define NXU_CAP_CRASH_UI (1U << 5U) /* receive saved-report UI notifications */
+#define NXU_CAP_STORAGE (1U << 6U)	/* see volumes and disks, mount and unmount (storaged, diskd) */
 #define NXU_CAP_ALL                                                                                                    \
-	(NXU_CAP_FS_WRITE | NXU_CAP_DISPLAY | NXU_CAP_RESET | NXU_CAP_AUDIO | NXU_CAP_CRASH | NXU_CAP_CRASH_UI)
+	(NXU_CAP_FS_WRITE | NXU_CAP_DISPLAY | NXU_CAP_RESET | NXU_CAP_AUDIO | NXU_CAP_CRASH | NXU_CAP_CRASH_UI |          \
+	 NXU_CAP_STORAGE)
 
 /*
  * Exit status recorded for a process the kernel terminated (waitpid reports

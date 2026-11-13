@@ -17,5 +17,7 @@
 		<true />
 		<key>DisabledBootArgument</key>
 		<string>-no-crashd</string>
-	</dict>
+		<key>ProcessType</key>
+	<string>Utility</string>
+</dict>
 </plist>

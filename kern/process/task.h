@@ -100,6 +100,16 @@ struct task {
 	uint16_t priority;
 	uint16_t max_priority;
 
+	/* Quality of service (NXU_QOS_*): the priority band of all its threads. */
+	uint8_t qos;
+	/*
+	 * QoS donated by a process waiting on this one over NXPC (see
+	 * sched_task_qos_donate): its rank + 1 (0: none), good until the
+	 * run-queue clock reaches qos_override_until. Only ever raises qos.
+	 */
+	uint8_t qos_override;
+	uint32_t qos_override_until;
+
 	struct proc *bsd_info;
 };
 

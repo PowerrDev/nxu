@@ -27,6 +27,7 @@
 #include <kern/console/console.h>
 #include <kern/console/display_owner.h>
 #include <kern/loader/elf.h>
+#include <platform/rtc.h>
 #include <kern/ipc/ipc_init.h>
 #include <kern/ipc/ipc_kmsg.h>
 #include <kern/ipc/ipc_port.h>
@@ -886,6 +887,40 @@ syscall_spawn(uint64_t user_path, uint64_t user_name, uint64_t caps)
 	return syscall_return(child->p_ident.pid);
 }
 
+/*
+ * set_qos: put process `pid` (0: the caller) in QoS class `qos` (NXU_QOS_*).
+ * Anyone may lower their own; raising above DEFAULT, or changing another
+ * process's, takes root -- the desktop raising the app in front, bootd
+ * applying a service's ProcessType.
+ */
+static syscall_result_t
+syscall_set_qos(uint64_t pid, uint64_t qos)
+{
+	if (qos >= NXU_QOS_COUNT || pid > PROC_PID_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+
+	proc_t self = current_proc();
+	bool root = proc_is_root(self);
+	bool raising = qos == NXU_QOS_USER_INTERACTIVE || qos == NXU_QOS_USER_INITIATED;
+	proc_t target = pid == 0ULL ? self : proc_find((proc_id_t)pid);
+
+	if (target == 0) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+
+	if ((target != self || raising) && !root) {
+		if (target != self) proc_rele(target);
+		return syscall_error(SYSCALL_ERROR_DENIED);
+	}
+
+	task_t task = proc_task(target);
+	uint8_t before = task != 0 ? __atomic_load_n(&task->qos, __ATOMIC_ACQUIRE) : NXU_QOS_DEFAULT;
+	bool set = sched_task_set_qos(task, (uint8_t)qos);
+
+	if (set && before != (uint8_t)qos)
+		kprintf("pid %u (%s): %s -> %s\n", (unsigned)target->p_ident.pid, target->p_comm, sched_qos_name(before),
+				sched_qos_name((uint8_t)qos));
+	if (target != self) proc_rele(target);
+	return set ? syscall_return(0ULL) : syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+}
+
 /* The last component of path: what a process is called when its creator did not name it. */
 static const char *
 syscall_path_leaf(const char *path)
@@ -1335,10 +1370,21 @@ syscall_recovery_privileged(void)
 	return boot_mode_is_triage_os() && proc_selfpid() == 1U;
 }
 
+/*
+ * The volume and disk calls below were the recovery environment's alone; a
+ * normal boot opens them (not partition delete or verify) to services that
+ * hold NXU_CAP_STORAGE: storaged reads volumes and space, diskd mounts.
+ */
+static bool
+syscall_storage_privileged(void)
+{
+	return syscall_recovery_privileged() || syscall_has_caps(NXU_CAP_STORAGE);
+}
+
 static syscall_result_t
 syscall_recovery_fs_mount_info(uint64_t index, uint64_t user_info)
 {
-	if (!syscall_recovery_privileged()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+	if (!syscall_storage_privileged()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
 
 	if (index > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
@@ -1358,7 +1404,7 @@ syscall_recovery_fs_mount_info(uint64_t index, uint64_t user_info)
 static syscall_result_t
 syscall_recovery_fs_mount(uint64_t user_filesystem, uint64_t device_index, uint64_t user_path)
 {
-	if (!syscall_recovery_privileged()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+	if (!syscall_storage_privileged()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
 
 	if (device_index > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
@@ -1378,7 +1424,7 @@ syscall_recovery_fs_mount(uint64_t user_filesystem, uint64_t device_index, uint6
 static syscall_result_t
 syscall_recovery_fs_unmount(uint64_t user_path)
 {
-	if (!syscall_recovery_privileged()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+	if (!syscall_storage_privileged()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
 
 	char path[VFS_PATH_MAX];
 	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
@@ -1392,7 +1438,7 @@ syscall_recovery_fs_unmount(uint64_t user_path)
 static syscall_result_t
 syscall_recovery_block_info(uint64_t index, uint64_t user_info)
 {
-	if (!syscall_recovery_privileged()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+	if (!syscall_storage_privileged()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
 
 	if (index > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
@@ -1413,7 +1459,7 @@ syscall_recovery_block_info(uint64_t index, uint64_t user_info)
 static syscall_result_t
 syscall_recovery_fs_space_info(uint64_t user_path, uint64_t user_info)
 {
-	if (!syscall_recovery_privileged()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+	if (!syscall_storage_privileged()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
 
 	char path[VFS_PATH_MAX];
 	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
@@ -1434,7 +1480,7 @@ syscall_recovery_fs_space_info(uint64_t user_path, uint64_t user_info)
 static syscall_result_t
 syscall_recovery_block_layout_info(uint64_t index, uint64_t user_info)
 {
-	if (!syscall_recovery_privileged()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+	if (!syscall_storage_privileged()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
 
 	if (index > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
@@ -1454,7 +1500,7 @@ syscall_recovery_block_layout_info(uint64_t index, uint64_t user_info)
 static syscall_result_t
 syscall_recovery_block_partition_info(uint64_t device_index, uint64_t partition_index, uint64_t user_info)
 {
-	if (!syscall_recovery_privileged()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+	if (!syscall_storage_privileged()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
 
 	if (device_index > UINT32_MAX || partition_index > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
@@ -2051,10 +2097,29 @@ syscall_ipc_send(uint64_t dest_name, uint64_t user_buffer, uint64_t length, uint
 
 	/* Identity comes from the sending process, never the payload. */
 	kmsg->ikm_sender =
-		(nxu_ipc_peer_t){proc->p_ident.pid, proc->p_ident.idversion, proc->p_ident.uniqueid, proc->p_caps, 0};
+		(nxu_ipc_peer_t){proc->p_ident.pid, proc->p_ident.idversion, proc->p_ident.uniqueid, proc->p_caps,
+						 proc->p_ucred.cr_uid};
+	kmsg->ikm_qos = sched_task_effective_qos(proc_task(proc));
+	uint8_t sender_qos = kmsg->ikm_qos;
 	/* xfer_port's reference (if any) now belongs to kmsg. */
 
 	status = ipc_port_enqueue(dest_port, kmsg);
+
+	/* Whoever receives here works for this sender now: donate its QoS, so a
+	 * service a user-facing process waits on runs ahead of lower work. */
+	uint32_t receiver_pid = 0U;
+	uint64_t receiver_uniqueid = 0ULL;
+
+	if (status == IPC_SUCCESS && ipc_port_receiver(dest_port, &receiver_pid, &receiver_uniqueid) &&
+		receiver_pid != proc->p_ident.pid) {
+		proc_t receiver = proc_find((proc_id_t)receiver_pid);
+
+		if (receiver != 0) {
+			if (receiver->p_ident.uniqueid == receiver_uniqueid)
+				sched_task_qos_donate(proc_task(receiver), sender_qos);
+			proc_rele(receiver);
+		}
+	}
 	ipc_port_release(dest_port);
 	if (status != IPC_SUCCESS) {
 		ipc_kmsg_free(kmsg);
@@ -2089,6 +2154,9 @@ syscall_ipc_receive_impl(uint64_t port_name, uint64_t user_buffer, uint64_t capa
 	ipc_return_t status = ipc_space_lookup_receive(&proc->p_ipc, (uint32_t)port_name, &port);
 	if (status != IPC_SUCCESS) return syscall_error(syscall_ipc_error(status));
 
+	/* Senders donate their QoS to whoever receives here: this process. */
+	ipc_port_note_receiver(port, proc->p_ident.pid, proc->p_ident.uniqueid);
+
 	ipc_kmsg_t kmsg;
 	bool interrupted = false;
 	uint64_t now = timer_get_microseconds();
@@ -2119,6 +2187,10 @@ syscall_ipc_receive_impl(uint64_t port_name, uint64_t user_buffer, uint64_t capa
 	}
 
 	ipc_port_release(port);
+
+	/* It now works for this message's sender, or for no one. */
+	sched_task_qos_handling(proc_task(proc), status == IPC_SUCCESS ? kmsg->ikm_qos : (uint8_t)NXU_QOS_COUNT);
+
 	if (interrupted) return syscall_error(SYSCALL_ERROR_INTERRUPTED);
 
 	if (status != IPC_SUCCESS) return syscall_error(syscall_ipc_error(status));
@@ -2194,7 +2266,7 @@ syscall_process_identity(uint64_t pid, uint64_t output)
 	if (!process) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
 
 	nxu_ipc_peer_t peer = {process->p_ident.pid, process->p_ident.idversion, process->p_ident.uniqueid, process->p_caps,
-						   0};
+						   process->p_ucred.cr_uid};
 	bool alive = !(process->p_flag & PROC_FLAG_EXITING);
 	proc_rele(process);
 	if (!alive) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
@@ -3071,6 +3143,10 @@ syscall_dispatch_inner(const syscall_request_t *request)
 		return syscall_spawn_attr(request->arguments[0], request->arguments[1]);
 	case SYSCALL_SOCKETPAIR:
 		return syscall_socketpair(request->arguments[0]);
+	case SYSCALL_TIME:
+		return syscall_return(rtc_unix_time());
+	case SYSCALL_SET_QOS:
+		return syscall_set_qos(request->arguments[0], request->arguments[1]);
 	case SYSCALL_EXIT:
 		return syscall_exit(request->arguments[0]);
 	case SYSCALL_WRITE:

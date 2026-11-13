@@ -69,6 +69,11 @@ int64_t nxu_spawn_attr(const char *path, const nxu_spawn_attr_t *attr);
 
 /* Two connected stream sockets; their descriptors are stored in descriptors[0] and [1]. */
 int64_t nxu_socketpair(uint32_t descriptors[2]);
+/* The wall clock: seconds since 1970-01-01 UTC (timed adds the time zone). */
+int64_t nxu_time(void);
+/* Put process pid (0: the caller) in QoS class qos (NXU_QOS_*); raising or
+ * changing another process's takes root. */
+int64_t nxu_set_qos(uint32_t pid, uint32_t qos);
 int64_t nxu_get_caps(void);
 
 /*

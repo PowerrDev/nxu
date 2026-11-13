@@ -363,7 +363,7 @@ test_tick_and_preempt(void)
 	sched_tick();
 
 	SELFTEST_CHECK(self->mlfq_level == 1U, "quantum expiry demotes to level 1");
-	SELFTEST_CHECK(self->sched_pri == sched_mlfq_level_priority(1U), "priority follows the level");
+	SELFTEST_CHECK(self->sched_pri == sched_thread_level_priority(self, 1U), "priority follows the level");
 	SELFTEST_CHECK(sched_preemption_pending(), "quantum expiry requests preemption");
 
 	/* Nothing better to run: the exit hook must consume the request and go on. */

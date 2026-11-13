@@ -47,4 +47,13 @@ uint32_t ipc_port_qlimit(ipc_port_t port);
 bool ipc_port_active(ipc_port_t port);
 uint64_t ipc_port_outstanding_count(void);
 
+/*
+ * ipc_port_note_receiver / ipc_port_receiver
+ *
+ * Which process receives on a port, as its receive calls show (pid and
+ * uniqueid): a sender donates its QoS to it (see sched_task_qos_donate).
+ */
+void ipc_port_note_receiver(ipc_port_t port, uint32_t pid, uint64_t uniqueid);
+bool ipc_port_receiver(ipc_port_t port, uint32_t *pid, uint64_t *uniqueid);
+
 #endif

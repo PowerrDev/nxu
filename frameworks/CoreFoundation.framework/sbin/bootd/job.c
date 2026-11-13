@@ -132,6 +132,7 @@ bootd_job_capabilities(const bootd_job_t *job)
 	if (job->config.allow_filesystem_write) caps |= NXU_CAP_FS_WRITE;
 	if (job->config.allow_reset) caps |= NXU_CAP_RESET;
 	if (job->config.allow_display) caps |= NXU_CAP_DISPLAY;
+	if (job->config.allow_storage) caps |= NXU_CAP_STORAGE;
 	if (job->config.allow_crash_reports) caps |= NXU_CAP_CRASH;
 	if (job->config.allow_crash_notifications) caps |= NXU_CAP_CRASH_UI;
 	return caps;
@@ -164,6 +165,9 @@ bootd_job_spawn(bootd_job_t *job, uint64_t now_us)
 	}
 
 	job->pid = (uint64_t)pid;
+	/* Its ProcessType: the band of priorities its threads run in. */
+	if (job->config.qos != NXU_QOS_DEFAULT && nxu_set_qos((uint32_t)pid, job->config.qos) != 0)
+		bootd_job_log(job, "could not set its ProcessType");
 	job->identity = (nxu_ipc_peer_t){0};
 	(void)nxu_process_identity((uint32_t)pid, &job->identity);
 	job->state = BOOTD_JOB_RUNNING;

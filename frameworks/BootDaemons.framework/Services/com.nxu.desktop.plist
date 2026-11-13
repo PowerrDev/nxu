@@ -22,5 +22,7 @@
 
     <key>DisabledBootArgument</key>
     <string>-no-desktop</string>
+	<key>ProcessType</key>
+	<string>Interactive</string>
 </dict>
 </plist>

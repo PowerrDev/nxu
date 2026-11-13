@@ -10,7 +10,9 @@ typedef struct {
 	uint32_t idversion;
 	uint64_t uniqueid;
 	uint32_t capabilities;
-	uint32_t reserved;
+	/* The sender's effective UID when it sent: 0 is root (which holds every
+	 * capability whatever `capabilities` says). */
+	uint32_t uid;
 } nxu_ipc_peer_t;
 
 static inline bool

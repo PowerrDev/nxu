@@ -19,5 +19,7 @@
 
 	<key>DisabledBootArgument</key>
 	<string>-no-windowserver</string>
+	<key>ProcessType</key>
+	<string>Interactive</string>
 </dict>
 </plist>

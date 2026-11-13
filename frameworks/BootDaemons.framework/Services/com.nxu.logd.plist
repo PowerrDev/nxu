@@ -25,5 +25,7 @@
 
 	<key>DisabledBootArgument</key>
 	<string>-no-logd</string>
+	<key>ProcessType</key>
+	<string>Background</string>
 </dict>
 </plist>

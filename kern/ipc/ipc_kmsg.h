@@ -30,6 +30,8 @@
 struct ipc_kmsg {
 	ipc_kmsg_t ikm_next;
 	nxu_ipc_peer_t ikm_sender;
+	/* The sender's effective QoS (NXU_QOS_*), donated to who handles it. */
+	uint8_t ikm_qos;
 	size_t ikm_size;
 	uint32_t ikm_flags;
 	ipc_kmsg_xfer_type_t ikm_xfer_type;

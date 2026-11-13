@@ -83,6 +83,16 @@ thread_t run_queue_peek(const run_queue_t *runq);
 thread_t run_queue_dequeue_priority(run_queue_t *runq, uint16_t priority);
 
 /*
+ * run_queue_clock / run_queue_clock_advance
+ *
+ * Scheduler ticks since boot, as the boot CPU counts them: every enqueue
+ * records it in the thread (runq_enqueued_tick), which is how long a thread
+ * has waited to run is measured (wrapping: compare by difference).
+ */
+uint32_t run_queue_clock(void);
+void run_queue_clock_advance(void);
+
+/*
  * run_queue_validate
  *
  * Validate queue linkage, bitmap state, priority placement and accounting.
