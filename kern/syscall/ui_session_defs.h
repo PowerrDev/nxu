@@ -43,6 +43,10 @@
 /* nxu_ui_menu_item_t.command for a divider line. */
 #define NXU_UI_MENU_SEPARATOR 0xFFFFFFFFU
 
+/* nxu_ui_connect_t.chrome. */
+#define NXU_UI_CHROME_CONTROLS_X(chrome) ((chrome) & 0xFFFFU)
+#define NXU_UI_CHROME_CONTROLS_WIDTH(chrome) ((chrome) >> 16)
+
 typedef struct {
 	uint32_t menu;	  /* index into nxu_ui_connect_t.menu_titles */
 	uint32_t command; /* passed back in NXU_UI_MSG_MENU_COMMAND, or NXU_UI_MENU_SEPARATOR */
@@ -71,7 +75,16 @@ typedef struct {
 	uint32_t corner_radius;
 	uint32_t menu_count;
 	uint32_t item_count;
-	uint32_t reserved;
+	/*
+	 * The window's chrome. 0: a standard titlebar above the content. Otherwise
+	 * the content fills the whole window, the titlebar band included (a
+	 * unified, macOS "full size content" window): the desktop draws only the
+	 * traffic lights over it, and a press in the band drags the window except
+	 * between x = NXU_UI_CHROME_CONTROLS_X(chrome) and that plus
+	 * NXU_UI_CHROME_CONTROLS_WIDTH(chrome) (window pixels), where the app has
+	 * controls of its own and gets the press.
+	 */
+	uint32_t chrome;
 	char menu_titles[NXU_UI_MENU_MAX][NXU_UI_MENU_TITLE_MAX];
 	nxu_ui_menu_item_t items[NXU_UI_MENU_ITEM_MAX];
 } nxu_ui_connect_t;

@@ -67,6 +67,9 @@ key_character(uint32_t code, uint32_t modifiers)
 	return (uint8_t)character;
 }
 
+/* One 60 Hz frame, in microseconds. */
+#define DESKTOP_FRAME_US 16667
+
 static uint32_t
 poll_event(void *context, CoreGraphicsHostEvent *event)
 {
@@ -123,7 +126,17 @@ poll_event(void *context, CoreGraphicsHostEvent *event)
 		}
 
 		if (!received) {
-			if (desktop.idle_once) (void)nxu_event_wait(16667, sequence);
+			/* Nothing to do: sleep until the next 60 Hz frame deadline (an
+			 * input event wakes it sooner), not a whole frame on top of the
+			 * work just done, which held the desktop well under 60 Hz. A pass
+			 * that ran past its deadline waits for nothing. */
+			if (desktop.idle_once) {
+				static int64_t next_frame_us;
+				int64_t now = nxu_uptime_us();
+
+				if (next_frame_us > now) (void)nxu_event_wait((uint32_t)(next_frame_us - now), sequence);
+				next_frame_us = (next_frame_us > now ? next_frame_us : now) + DESKTOP_FRAME_US;
+			}
 			desktop.idle_once = true;
 			return CORE_GRAPHICS_STATUS_OK;
 		}

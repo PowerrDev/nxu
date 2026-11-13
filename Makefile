@@ -699,7 +699,7 @@ USER_SERVICE_PLISTS := \
 # which quotes them, uses the real paths.
 UISERVICE_APPS_DIR := $(UISERVICE_DIR)/build/apps
 
-USER_APP_BUNDLES := voyager activity-monitor about-sevos dock
+USER_APP_BUNDLES := voyager activity-monitor system-settings about-sevos dock
 
 USER_APPS := $(addprefix $(USER_BUILD)/apps/,$(USER_APP_BUNDLES))
 
@@ -716,6 +716,9 @@ USER_APP_voyager_ICON := Voyager.icns
 USER_APP_activity-monitor_BUNDLE := Applications/Activity Monitor.app
 USER_APP_activity-monitor_EXEC := Activity Monitor
 USER_APP_activity-monitor_ICON := ActivityMonitor.icns
+USER_APP_system-settings_BUNDLE := Applications/System Settings.app
+USER_APP_system-settings_EXEC := System Settings
+USER_APP_system-settings_ICON := SystemSettings.icns
 USER_APP_about-sevos_BUNDLE := System/Library/CoreServices/About sevOS.app
 USER_APP_about-sevos_EXEC := About sevOS
 USER_APP_about-sevos_ICON :=
@@ -1212,13 +1215,17 @@ $(USER_BUILD)/about_sevos_service: $(USER_COMMON_OBJECTS) $(USER_BUILD)/framewor
 # copies it with its time kept, so it only looks new when cargo rebuilt it.
 $(UISERVICE_APPS_DIR)/lib%.a: | uiservice-apps-build ;
 
-$(USER_BUILD)/apps/%: $(USER_COMMON_OBJECTS) $(USER_APPKIT_OBJECTS) $(UISERVICE_APPS_DIR)/lib%.a | uiservice-apps-build
+# The system services' client calls (<nxu/services.h>), for System Settings.
+USER_SERVICES_CLIENT := $(USER_BUILD)/frameworks/lib/services.o \
+	$(USER_BUILD)/frameworks/CoreFoundation.framework/lib/service/bootstrap_client.o
+
+$(USER_BUILD)/apps/%: $(USER_COMMON_OBJECTS) $(USER_APPKIT_OBJECTS) $(USER_SERVICES_CLIENT) $(UISERVICE_APPS_DIR)/lib%.a | uiservice-apps-build
 
 	@mkdir -p $(dir $@)
 
 	$(QUIET_PRINT) "LD" "$@"
 
-	$(Q)$(USER_LD) $(USER_LDFLAGS) --gc-sections $(USER_COMMON_OBJECTS) $(USER_APPKIT_OBJECTS) $(UISERVICE_APPS_DIR)/lib$*.a -o $@
+	$(Q)$(USER_LD) $(USER_LDFLAGS) --gc-sections $(USER_COMMON_OBJECTS) $(USER_APPKIT_OBJECTS) $(USER_SERVICES_CLIENT) $(UISERVICE_APPS_DIR)/lib$*.a -o $@
 
 
 userland: $(USER_DAEMONS) $(USER_APPS)

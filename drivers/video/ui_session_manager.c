@@ -11,6 +11,7 @@
 #include <kern/sched_prism/sched.h>
 #include <kern/sched_prism/waitq.h>
 #include <kern/machine/timer.h>
+#include <vfs/vfs.h>
 #include <vm/user_copy.h>
 
 #include <platform/rtc.h>
@@ -683,6 +684,59 @@ ui_bridge_take_frame(uint32_t index, uint32_t *destination, uint32_t destination
 
 	nxu_spin_unlock(&connection->lock);
 	return taken;
+}
+
+/*
+ * The in-kernel desktop's file reader (the userland desktop has its own in
+ * DesktopService.framework): at most capacity bytes of the file at path into
+ * buffer. Returns the file's size -- with capacity 0, only that -- or -1.
+ */
+/* The in-kernel desktop raises the app in front the same way. */
+bool
+ui_bridge_set_qos(uint32_t pid, uint32_t qos)
+{
+	proc_t proc = proc_find((proc_id_t)pid);
+
+	if (proc == 0) return false;
+
+	bool set = sched_task_set_qos(proc_task(proc), (uint8_t)qos);
+
+	proc_rele(proc);
+	return set;
+}
+
+/* The in-kernel desktop has no preferencesd to hear from: it reads its
+ * preference files on its own timer. */
+bool
+ui_bridge_preferences_changed(void)
+{
+	return false;
+}
+
+int64_t
+ui_bridge_read_file(const char *path, void *buffer, size_t capacity)
+{
+	proc_t kernel = proc_kernel();
+	uint8_t scratch[256];
+	uint32_t descriptor;
+	uint64_t size = 0;
+
+	if (!path || !kernel || vfs_open(&kernel->p_fd, path, VFS_OPEN_READ, &descriptor) != VFS_STATUS_OK) return -1;
+
+	for (;;) {
+		uint8_t *target = size < capacity && buffer ? (uint8_t *)buffer + size : scratch;
+		uint64_t room = size < capacity && buffer ? capacity - size : sizeof(scratch);
+		uint64_t count = 0;
+
+		if (vfs_read(&kernel->p_fd, descriptor, target, room, &count) != VFS_STATUS_OK) {
+			(void)vfs_close(&kernel->p_fd, descriptor);
+			return -1;
+		}
+		if (count == 0) break;
+		size += count;
+	}
+	(void)vfs_close(&kernel->p_fd, descriptor);
+	return (int64_t)size;
 }
 
 bool

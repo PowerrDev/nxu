@@ -20,6 +20,7 @@
 #include <kern/process/proc.h>
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define UI_BRIDGE_CONNECTION_MAX 8U
@@ -70,6 +71,9 @@ bool ui_bridge_take_frame(uint32_t connection, uint32_t *destination, uint32_t d
 
 /* The next bundle an app asked to open (NXU_UI_CONTROL_LAUNCH), into path; false if none. */
 bool ui_bridge_take_launch(char path[NXU_UI_PATH_MAX]);
+int64_t ui_bridge_read_file(const char *path, void *buffer, size_t capacity);
+bool ui_bridge_preferences_changed(void);
+bool ui_bridge_set_qos(uint32_t pid, uint32_t qos);
 
 /* The next pid the Dock asked to bring to the front, or 0. */
 uint32_t ui_bridge_take_activation(void);

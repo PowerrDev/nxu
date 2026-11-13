@@ -21,6 +21,10 @@
 			<key>path</key>
 			<string>/Applications/Terminal.app</string>
 		</dict>
+		<dict>
+			<key>path</key>
+			<string>/Applications/System Settings.app</string>
+		</dict>
 	</array>
 
 	<!-- Icon size, in points. -->

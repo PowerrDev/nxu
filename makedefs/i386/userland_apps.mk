@@ -37,16 +37,37 @@ uiservice-apps-i386-build:
 
 $(UISERVICE_I386_APPS_DIR)/lib%.a: | uiservice-apps-i386-build ;
 
-$(I386_USER_BUILD)/apps/%: $(I386_USER_COMMON_OBJECTS) $(I386_USER_APPKIT_OBJECTS) $(I386_USER_RUNTIME) $(UISERVICE_I386_APPS_DIR)/lib%.a makedefs/user-i386.ld | uiservice-apps-i386-build
+$(I386_USER_BUILD)/apps/%: $(I386_USER_COMMON_OBJECTS) $(I386_USER_APPKIT_OBJECTS) $(I386_USER_SERVICES_CLIENT) $(I386_USER_RUNTIME) $(UISERVICE_I386_APPS_DIR)/lib%.a makedefs/user-i386.ld | uiservice-apps-i386-build
 
 	@mkdir -p $(dir $@)
 
 	$(QUIET_PRINT) "LD" "$@"
 
-	$(Q)$(LD) $(I386_USER_LDFLAGS) --gc-sections --strip-debug $(I386_USER_COMMON_OBJECTS) $(I386_USER_APPKIT_OBJECTS) $(UISERVICE_I386_APPS_DIR)/lib$*.a $(I386_USER_RUNTIME) -o $@
+	$(Q)$(LD) $(I386_USER_LDFLAGS) --gc-sections --strip-debug $(I386_USER_COMMON_OBJECTS) $(I386_USER_APPKIT_OBJECTS) $(I386_USER_SERVICES_CLIENT) $(UISERVICE_I386_APPS_DIR)/lib$*.a $(I386_USER_RUNTIME) -o $@
+
+# Wallpapers: the system one (System/Library/Desktop Pictures) and whatever
+# is dropped into tools/DiskRoot/Library/Caches/Wallpapers, re-encoded as the
+# PNGs the desktop and System Settings decode at run time, each with a
+# thumbnail (see tools/make_wallpapers.py). The sources are read, never
+# rewritten. File names with spaces are not supported by this wildcard.
+I386_WALLPAPER_SOURCES := $(wildcard tools/DiskRoot/Library/Caches/Wallpapers/*)
+I386_SYSTEM_WALLPAPER := tools/UI/Backgrounds/Sonoma.jpg
+I386_WALLPAPERS := $(I386_BUILD)/wallpapers
+
+$(I386_WALLPAPERS)/stamp: $(I386_WALLPAPER_SOURCES) $(I386_SYSTEM_WALLPAPER) tools/make_wallpapers.py $(FONT_PYTHON)
+
+	$(QUIET_PRINT) "WALLPAPER" "$(I386_WALLPAPERS)"
+
+	$(Q)rm -rf $(I386_WALLPAPERS)
+
+	$(Q)$(FONT_PYTHON) tools/make_wallpapers.py --output $(I386_WALLPAPERS)/user tools/DiskRoot/Library/Caches/Wallpapers
+
+	$(Q)$(FONT_PYTHON) tools/make_wallpapers.py --output $(I386_WALLPAPERS)/system $(I386_SYSTEM_WALLPAPER)
+
+	@touch $@
 
 # Extra prerequisites for the staging rule in userland.mk, and what it runs.
-$(I386_USER_STAMP): $(I386_USER_BUILD)/terminal frameworks/Terminal.framework/Info.plist tools/UI/Icons/Terminal.png $(I386_USER_APPS) $(USER_SYSTEM_FONTS) frameworks/BootDaemons.framework/Services/com.nxu.dock.plist
+$(I386_USER_STAMP): $(I386_USER_BUILD)/terminal frameworks/Terminal.framework/Info.plist tools/UI/Icons/Terminal.png $(I386_USER_APPS) $(USER_SYSTEM_FONTS) frameworks/BootDaemons.framework/Services/com.nxu.dock.plist $(I386_WALLPAPERS)/stamp
 
 define I386_USER_EXTRA_STAGE
 	$(Q)mkdir -p "$(I386_DISKROOT)/Applications/Terminal.app/Contents/SevOS"
@@ -59,6 +80,9 @@ define I386_USER_EXTRA_STAGE
 	$(Q)cp frameworks/BootDaemons.framework/Services/com.nxu.dock.plist $(I386_DISKROOT)/System/Library/BootDaemons/
 	$(Q)cp tools/DiskRoot/System/Library/Preferences/com.nxu.dock.plist $(I386_DISKROOT)/System/Library/Preferences/
 	$(Q)cp tools/DiskRoot/System/Library/Resources/Images/*.icns $(I386_DISKROOT)/System/Library/Resources/Images/
+	$(Q)mkdir -p "$(I386_DISKROOT)/Library/Caches/Wallpapers" "$(I386_DISKROOT)/System/Library/Desktop Pictures"
+	$(Q)cp -R $(I386_WALLPAPERS)/user/. "$(I386_DISKROOT)/Library/Caches/Wallpapers/"
+	$(Q)cp -R $(I386_WALLPAPERS)/system/. "$(I386_DISKROOT)/System/Library/Desktop Pictures/"
 	$(foreach app,$(USER_APP_BUNDLES),$(Q)mkdir -p "$(I386_DISKROOT)/$(USER_APP_$(app)_BUNDLE)/Contents" && cp "tools/DiskRoot/$(USER_APP_$(app)_BUNDLE)/Contents/Info.plist" "$(I386_DISKROOT)/$(USER_APP_$(app)_BUNDLE)/Contents/"
 	$(call stage_app,$(app),$(I386_USER_BUILD)/apps/$(app),$(I386_DISKROOT)))
 endef
