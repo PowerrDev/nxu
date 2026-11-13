@@ -68,7 +68,7 @@ ipc_process_test(void)
 		loader_status_t status_bootd =
 			loader_spawn(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/bootd", "bootd", &proc_bootd);
 		if (status_bootd != LOADER_STATUS_OK) {
-			kputs("ipc_process_test: spawning bootd failed: ");
+			kprintf("spawning bootd failed: ");
 			kputln(loader_status_name(status_bootd));
 			return false;
 		}
@@ -85,7 +85,7 @@ ipc_process_test(void)
 	loader_status_t status_a =
 		loader_spawn(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/ipctest_a", "ipctest_a", &proc_a);
 	if (status_a != LOADER_STATUS_OK) {
-		kputs("ipc_process_test: spawning ipctest_a failed: ");
+		kprintf("spawning ipctest_a failed: ");
 		kputln(loader_status_name(status_a));
 		goto cleanup;
 	}
@@ -93,7 +93,7 @@ ipc_process_test(void)
 	loader_status_t status_b =
 		loader_spawn(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/ipctest_b", "ipctest_b", &proc_b);
 	if (status_b != LOADER_STATUS_OK) {
-		kputs("ipc_process_test: spawning ipctest_b failed: ");
+		kprintf("spawning ipctest_b failed: ");
 		kputln(loader_status_name(status_b));
 		goto cleanup;
 	}

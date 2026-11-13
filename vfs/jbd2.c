@@ -1,12 +1,16 @@
 #include <vfs/jbd2.h>
 
 #include <crc32c.h>
+#include <kern/console/console.h>
 #include <kern/memory/heap.h>
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+
+/* "(jbd2) function:line: disk0s2 ..." -- see kfslog() in kern/console/console.h. */
+#define JBD2_LOG(journal, format, ...) kfslog("jbd2", (journal)->device->name, format, ##__VA_ARGS__)
 
 #define JBD2_MAGIC 0xC03B3998U
 
@@ -327,6 +331,10 @@ jbd2_init(jbd2_t *journal, block_device_t device, uint32_t block_size, uint64_t 
 		journal->entries[index].data = journal->transaction_storage + (uint64_t)index * block_size;
 	}
 
+	JBD2_LOG(journal, "journal log blocks %u-%u (%u blocks of %u bytes), sequence %u, head %u, %s block numbers, checksum v3\n",
+			 first, maximum - 1U, maximum - first, block_size, journal->sequence, journal->head,
+			 journal->block64 ? "64-bit" : "32-bit");
+
 	return JBD2_STATUS_OK;
 }
 
@@ -559,8 +567,12 @@ jbd2_recover(jbd2_t *journal)
 {
 	if (journal == 0 || !journal->active) return JBD2_STATUS_INVALID;
 	uint32_t start = jbd2_be32(journal->superblock + 0x1CU);
-	if (start == 0U) return JBD2_STATUS_OK;
+	if (start == 0U) {
+		JBD2_LOG(journal, "journal is clean at sequence %u: nothing to replay\n", journal->sequence);
+		return JBD2_STATUS_OK;
+	}
 	uint32_t sequence = jbd2_be32(journal->superblock + 0x18U);
+	JBD2_LOG(journal, "journal needs recovery: transaction %u starts at log block %u\n", sequence, start);
 	if (start < journal->first || start >= journal->maximum) return JBD2_STATUS_IO_ERROR;
 
 	uint8_t *descriptor = kmalloc(journal->block_size);
@@ -631,10 +643,13 @@ jbd2_recover(jbd2_t *journal)
 	journal->replayed_block_count += recovered;
 	journal->last_replay_sequence = sequence;
 	journal->last_replay_blocks = recovered;
+	JBD2_LOG(journal, "replayed transaction %u: %u metadata block(s) written to their home locations\n", sequence,
+			 recovered);
 	goto finish;
 
 discard:
 	journal->discard_count++;
+	JBD2_LOG(journal, "discarded transaction %u: it was never committed\n", sequence);
 
 finish:
 	journal->sequence = sequence + 1U;
@@ -647,11 +662,13 @@ finish:
 	return JBD2_STATUS_OK;
 
 checksum_fail:
+	JBD2_LOG(journal, "transaction %u failed its checksum: journal not replayed\n", sequence);
 	(void)kfree(data_block);
 	(void)kfree(descriptor);
 	return JBD2_STATUS_CHECKSUM;
 
 io_fail:
+	JBD2_LOG(journal, "I/O error while replaying transaction %u\n", sequence);
 	(void)kfree(data_block);
 	(void)kfree(descriptor);
 	return JBD2_STATUS_IO_ERROR;

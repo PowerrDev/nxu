@@ -15,6 +15,7 @@
  */
 
 #include <kern/aqua/window_server.h>
+#include <kern/console/console.h>
 
 #include <skylight/skylight.h>
 
@@ -56,7 +57,11 @@ windowserver_bootstrap(void)
 		.present = ws_display_present,
 	};
 
-	return WS_Initialize(ws_display);
+	kprintf("display %ux%u, stride %u pixels, framebuffer %p\n", ws_display.width, ws_display.height, ws_display.stride,
+			(void *)pixels);
+	bool started = WS_Initialize(ws_display);
+	kprintf("%s\n", started ? "window server running on the primary display" : "window server failed to start");
+	return started;
 }
 
 #else

@@ -134,6 +134,7 @@ ioreg_bootstrap(void)
 	if (g_ioreg_count != 0U) return;
 
 	(void)ioreg_add_raw(IOREG_INVALID, "Root", "IORegistryEntry");
+	kprintf("IORegistry root entry created\n");
 }
 
 ioreg_id_t
@@ -228,6 +229,6 @@ ioreg_dump(void)
 {
 	if (g_ioreg_count == 0U) return;
 
-	kputln("IORegistry: dumping device tree");
+	kprintf("dumping device tree\n");
 	ioreg_dump_node(IOREG_ROOT, 0U);
 }

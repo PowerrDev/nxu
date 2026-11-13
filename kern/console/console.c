@@ -235,25 +235,28 @@ kconsole_emit_timestamp(void)
 	kconsole_emit_raw(' ');
 }
 
+/* Start a line: its time stamp, then "function: " when a kprintf() is printing. */
+static void
+kconsole_begin_line(void)
+{
+	if (g_kconsole_timestamp_enabled) kconsole_emit_timestamp();
+
+	if (g_kconsole_prefix != 0) {
+		for (const char *prefix = g_kconsole_prefix; *prefix != '\0'; prefix++)
+			kconsole_emit_raw(*prefix);
+		kconsole_emit_raw(':');
+		kconsole_emit_raw(' ');
+	}
+
+	g_kconsole_line_start = false;
+}
+
 void
 kputc(char character)
 {
 	NXU_RLOCK_GUARD(&g_kconsole_lock);
 
-	if (g_kconsole_line_start && character != '\n') {
-		if (g_kconsole_timestamp_enabled) {
-			kconsole_emit_timestamp();
-		}
-
-		if (g_kconsole_prefix != 0) {
-			for (const char *prefix = g_kconsole_prefix; *prefix != '\0'; prefix++)
-				kconsole_emit_raw(*prefix);
-			kconsole_emit_raw(':');
-			kconsole_emit_raw(' ');
-		}
-
-		g_kconsole_line_start = false;
-	}
+	if (g_kconsole_line_start && character != '\n') kconsole_begin_line();
 
 	kconsole_emit_raw(character);
 
@@ -495,6 +498,13 @@ kconsole_vprintf_as(const char *function, const char *format, va_list arguments)
 
 	const char *saved = g_kconsole_prefix;
 	g_kconsole_prefix = function;
+
+	/*
+	 * kprintf("") at the start of a line prints just "function: ", for a
+	 * line the kputs()/kputhex*() calls after it go on to build.
+	 */
+	if (function != 0 && format != 0 && format[0] == '\0' && g_kconsole_line_start) kconsole_begin_line();
+
 	int written = kvprintf(format, arguments);
 	g_kconsole_prefix = saved;
 	return written;

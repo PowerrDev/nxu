@@ -62,7 +62,7 @@ windowserver_process_test(void)
 	loader_status_t status_bootd =
 		loader_spawn(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/bootd", "bootd", &proc_bootd);
 	if (status_bootd != LOADER_STATUS_OK) {
-		kputs("windowserver_process_test: spawning bootd failed: ");
+		kprintf("spawning bootd failed: ");
 		kputln(loader_status_name(status_bootd));
 		return false;
 	}
@@ -76,7 +76,7 @@ windowserver_process_test(void)
 		loader_spawn_caps(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/WindowServer",
 						  "WindowServer", NXU_CAP_DISPLAY, &proc_windowserver);
 	if (status_windowserver != LOADER_STATUS_OK) {
-		kputs("windowserver_process_test: spawning WindowServer failed: ");
+		kprintf("spawning WindowServer failed: ");
 		kputln(loader_status_name(status_windowserver));
 		return false;
 	}
@@ -100,7 +100,7 @@ windowserver_process_test(void)
 	loader_status_t status_client =
 		loader_spawn(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/wstest_client", "wstest_client", &proc_client);
 	if (status_client != LOADER_STATUS_OK) {
-		kputs("windowserver_process_test: spawning wstest_client failed: ");
+		kprintf("spawning wstest_client failed: ");
 		kputln(loader_status_name(status_client));
 		return false;
 	}

@@ -40,13 +40,14 @@ typedef struct btrfs_fs btrfs_fs_t;
 /* ---- log ------------------------------------------------------------------ */
 
 /*
- * Every line starts with the emitting function's name: BTRFS_LOG(fs, "bad %s", x)
- * logs "func: bad x". The formatter is a printf subset (%s %c %d %u %x %llu %llx
+ * Every line starts with the emitting function's name and source line:
+ * BTRFS_LOG(fs, "bad %s", x) logs "func:123: bad x"; the kernel's log sink
+ * turns that into "(btrfs) func:123: disk1 bad x" (see kfslog()). The formatter is a printf subset (%s %c %d %u %x %llu %llx
  * %lu %lx %%) with no field widths, matching the kernel's kprintf.
  */
 void btrfs_log(const btrfs_fs_t *fs, const char *format, ...) __attribute__((format(printf, 2, 3)));
 
-#define BTRFS_LOG(fs, format, ...) btrfs_log((fs), "%s: " format, __func__, ##__VA_ARGS__)
+#define BTRFS_LOG(fs, format, ...) btrfs_log((fs), "%s:%d: " format, __func__, __LINE__, ##__VA_ARGS__)
 #define BTRFS_U64(value) ((unsigned long long)(value))
 
 /* ---- tree references and blocks -------------------------------------------- */

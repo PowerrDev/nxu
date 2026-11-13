@@ -33,11 +33,11 @@ bool
 i386_startup_core_test(void)
 {
 	if (crc32c(~0U, "123456789", 9) != 0x1CF96D7CU) {
-		kputln("NXU_CRC32C_Checksum: self-test failed");
+		kprintf("CRC32C checksum self-test failed\n");
 		return false;
 	}
 
-	kputln("NXU_CRC32C_Checksum: self-test passed");
+	kprintf("CRC32C checksum self-test passed\n");
 	if (!shm_registry_self_test() || !statistics_self_test()) return false;
 
 	kprintf("core self-tests passed\n");
@@ -51,11 +51,11 @@ i386_startup_storage_test(void)
 	uint8_t sector[BLOCK_SECTOR_SIZE];
 
 	if (!device || !block_device_read(device, 0, 1, sector)) {
-		kputln("VirtIOBlockFamily: sector read test failed");
+		kprintf("sector read test failed\n");
 		return false;
 	}
 
-	kputln("VirtIOBlockFamily: sector read test passed");
+	kprintf("sector read test passed\n");
 
 	vnode_t root;
 

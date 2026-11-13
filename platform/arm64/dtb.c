@@ -427,7 +427,7 @@ dtb_dump_begin_node(const char *name, uint32_t depth, void *context)
 
 	dump_context->node_count++;
 
-	kputs("dtb: ");
+	kprintf("");
 	dtb_dump_indent(depth);
 	kputs("node ");
 
@@ -451,7 +451,7 @@ dtb_dump_property(const char *name, const void *value, uint32_t length, uint32_t
 
 	dump_context->property_count++;
 
-	kputs("dtb: ");
+	kprintf("");
 	dtb_dump_indent(depth + 1U);
 	kputs("property ");
 	kputs(name);
@@ -480,7 +480,7 @@ dtb_dump(const dtb_t *dtb)
 		return false;
 	}
 
-	kputs("dtb: walk complete: ");
+	kprintf("walk complete: ");
 	kputu64(context.node_count);
 	kputs(" nodes, ");
 	kputu64(context.property_count);

@@ -7,6 +7,7 @@
  * Implements interrupt registration, dispatch, and masking.
  */
 #include <kern/irq/irq.h>
+#include <kern/console/console.h>
 
 #include <kern/machine/machine_routines.h>
 
@@ -50,6 +51,8 @@ irq_init(void)
 
 	memset(g_irq_table, 0, sizeof(g_irq_table));
 	g_irq_initialized = true;
+	kprintf("dispatch table for %u interrupt lines, %u handler(s) per line\n", (uint32_t)IRQ_LINE_COUNT,
+			(uint32_t)IRQ_CHAIN_DEPTH);
 	return true;
 }
 
@@ -87,6 +90,8 @@ irq_register(uint32_t intid, irq_handler_t handler, void *context)
 	free_entry->context = context;
 	__atomic_store_n(&free_entry->handler, handler, __ATOMIC_RELEASE);
 	ml_irq_restore(irq_state);
+	kprintf("line %u: handler %p (context %p) in slot %u\n", intid, (void *)handler, context,
+			(uint32_t)(free_entry - chain));
 	return true;
 }
 
@@ -166,6 +171,7 @@ irq_init(void)
 
 	memset(g_irq_table, 0, sizeof(g_irq_table));
 	g_irq_initialized = true;
+	kprintf("dispatch table for INTIDs 0-%u\n", (uint32_t)IRQ_MAX_INTID);
 	return true;
 }
 
@@ -192,6 +198,7 @@ irq_register(uint32_t intid, irq_handler_t handler, void *context)
 	entry->context = context;
 	__atomic_store_n(&entry->handler, handler, __ATOMIC_RELEASE);
 	ml_irq_restore(irq_state);
+	kprintf("INTID %u: handler %p (context %p)\n", intid, (void *)handler, context);
 	return true;
 }
 

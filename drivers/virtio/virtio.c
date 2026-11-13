@@ -60,7 +60,7 @@ virtio_bind_device(const virtio_device_t *device, const virtio_probe_policy_t *p
 	case VIRTIO_DEVICE_ID_SOUND: driver_name = "VirtIOSoundDriver"; break;
 	default: break;
 	}
-	IOLogVerbose("VirtIOFamily: %s via %s at 0x%llx, DMA %s, address mask 0x%llx\n", driver_name,
+	kverbosef("%s via %s at 0x%llx, DMA %s, address mask 0x%llx\n", driver_name,
 			  device->ops != 0 && device->ops->name != 0 ? device->ops->name : "unknown transport",
 			  (unsigned long long)device->region.base, device->dma.coherent ? "coherent" : "noncoherent",
 			  (unsigned long long)device->dma.address_mask);
@@ -72,7 +72,7 @@ virtio_bind_device(const virtio_device_t *device, const virtio_probe_policy_t *p
 				g_virtio_network_count++;
 				ioreg_set_driver_state(device->registry_id, IOREG_STATE_ACTIVE, driver_name);
 			} else {
-				kputln("VirtIOFamily: network device failed to attach");
+				kprintf("network device failed to attach\n");
 				ioreg_set_driver_state(device->registry_id, IOREG_STATE_FAILED, driver_name);
 			}
 		} else {
@@ -89,7 +89,7 @@ virtio_bind_device(const virtio_device_t *device, const virtio_probe_policy_t *p
 		}
 
 		if (!virtio_gpu_attach(device)) {
-			IOLog("VirtIOFamily: GPU at 0x%llx failed to attach\n", (unsigned long long)device->region.base);
+			kprintf("GPU at 0x%llx failed to attach\n", (unsigned long long)device->region.base);
 			ioreg_set_driver_state(device->registry_id, IOREG_STATE_FAILED, driver_name);
 			return true;
 		}
@@ -107,7 +107,7 @@ virtio_bind_device(const virtio_device_t *device, const virtio_probe_policy_t *p
 		}
 
 		if (!virtio_block_attach(device)) {
-			IOLog("VirtIOFamily: block device at 0x%llx failed to attach\n", (unsigned long long)device->region.base);
+			kprintf("block device at 0x%llx failed to attach\n", (unsigned long long)device->region.base);
 			ioreg_set_driver_state(device->registry_id, IOREG_STATE_FAILED, driver_name);
 			return false;
 		}
@@ -124,7 +124,7 @@ virtio_bind_device(const virtio_device_t *device, const virtio_probe_policy_t *p
 		}
 
 		if (!virtio_input_attach(device)) {
-			IOLog("VirtIOFamily: input device at 0x%llx failed to attach\n", (unsigned long long)device->region.base);
+			kprintf("input device at 0x%llx failed to attach\n", (unsigned long long)device->region.base);
 			ioreg_set_driver_state(device->registry_id, IOREG_STATE_FAILED, driver_name);
 			return false;
 		}
@@ -141,7 +141,7 @@ virtio_bind_device(const virtio_device_t *device, const virtio_probe_policy_t *p
 		}
 
 		if (!virtio_snd_attach(device)) {
-			IOLog("VirtIOFamily: sound device at 0x%llx failed to attach\n", (unsigned long long)device->region.base);
+			kprintf("sound device at 0x%llx failed to attach\n", (unsigned long long)device->region.base);
 			ioreg_set_driver_state(device->registry_id, IOREG_STATE_FAILED, driver_name);
 			return true;
 		}
@@ -153,7 +153,7 @@ virtio_bind_device(const virtio_device_t *device, const virtio_probe_policy_t *p
 		return true;
 	}
 
-	IOLog("VirtIOFamily: unclaimed device ID %u at 0x%llx\n", device->device_id,
+	kprintf("unclaimed device ID %u at 0x%llx\n", device->device_id,
 			(unsigned long long)device->region.base);
 	ioreg_set_driver_state(device->registry_id, IOREG_STATE_UNMATCHED, 0);
 	return true;
@@ -176,11 +176,11 @@ virtio_init(const platform_t *platform, const virtio_probe_policy_t *policy)
 		if (!virtio_mmio_probe(&platform->virtio_mmio[index], platform->virtio_mmio_intid[index],
 							   platform->virtio_mmio_irq_flags[index],
 							   platform->virtio_mmio_dma_coherent[index], &device)) {
-			IOLogVerbose("VirtIOFamily: MMIO slot %u base=%llx has no supported active device\n", index,
+			kverbosef("MMIO slot %u base=%llx has no supported active device\n", index,
 					  (unsigned long long)platform->virtio_mmio[index].base);
 			continue;
 		}
-		IOLogVerbose("VirtIOFamily: MMIO slot %u base=%llx IRQ=%u discovered device=%u\n", index,
+		kverbosef("MMIO slot %u base=%llx IRQ=%u discovered device=%u\n", index,
 				  (unsigned long long)platform->virtio_mmio[index].base, platform->virtio_mmio_intid[index],
 				  device.device_id);
 		device.registry_id = ioreg_add_virtio_mmio(device.region.base);
@@ -194,7 +194,7 @@ virtio_init(const platform_t *platform, const virtio_probe_policy_t *policy)
 
 	g_virtio_initialized = true;
 	virtio_snd_probe();
-	IOLog("VirtIOFamily: %u device(s): %u input, %u block, %u GPU, %u sound, %u network\n", g_virtio_device_count,
+	kprintf("%u device(s): %u input, %u block, %u GPU, %u sound, %u network\n", g_virtio_device_count,
 			g_virtio_input_count, g_virtio_block_count, g_virtio_gpu_count, g_virtio_sound_count,
 			g_virtio_network_count);
 	return true;
@@ -234,7 +234,7 @@ void
 virtio_dump(void)
 {
 	/* virtio_init() already printed the device count line. */
-	IOLogVerbose("VirtIOFamily: %u device(s): %u input, %u block, %u GPU, %u sound, %u network\n", g_virtio_device_count,
+	kverbosef("%u device(s): %u input, %u block, %u GPU, %u sound, %u network\n", g_virtio_device_count,
 			  g_virtio_input_count, g_virtio_block_count, g_virtio_gpu_count, g_virtio_sound_count,
 			  g_virtio_network_count);
 	virtio_input_dump();

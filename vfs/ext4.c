@@ -17,6 +17,10 @@
 #include <stdint.h>
 #include <string.h>
 
+/* "(ext4) function:line: disk0s2 ..." -- see kfslog() in kern/console/console.h. */
+#define EXT4_LOG(device, format, ...) kfslog("ext4", (device), format, ##__VA_ARGS__)
+#define EXT4_VERBOSE(device, format, ...) kfsverbose("ext4", (device), format, ##__VA_ARGS__)
+
 #define EXT4_SUPERBLOCK_OFFSET 1024ULL
 #define EXT4_SUPERBLOCK_SIZE 1024U
 #define EXT4_SUPER_MAGIC 0xEF53U
@@ -2650,8 +2654,8 @@ ext4_journal_map_locked(ext4_mount_data_t *data, uint64_t **block_map, uint32_t 
 		previous = physical;
 	}
 
-	IOLog("IOFilesystemFamily: journal blocks: %llu\n", (unsigned long long)blocks);
-	IOLogVerbose("IOFilesystemFamily: journal physical runs: %llu\n", (unsigned long long)runs);
+	EXT4_LOG(data->device->name, "journal blocks: %llu\n", (unsigned long long)blocks);
+	EXT4_VERBOSE(data->device->name, "journal physical runs: %llu\n", (unsigned long long)runs);
 
 	*block_map = map;
 	*block_count = blocks;
@@ -2702,6 +2706,21 @@ ext4_destroy_mount_data(ext4_mount_data_t *data)
 	(void)kfree(data);
 }
 
+/* "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" into text[37]: kprintf has no field widths. */
+static void
+ext4_format_uuid(const uint8_t uuid[16], char text[37])
+{
+	static const char digits[] = "0123456789abcdef";
+	uint32_t out = 0U;
+
+	for (uint32_t index = 0U; index < 16U; index++) {
+		if (index == 4U || index == 6U || index == 8U || index == 10U) text[out++] = '-';
+		text[out++] = digits[uuid[index] >> 4U];
+		text[out++] = digits[uuid[index] & 0xFU];
+	}
+	text[out] = '\0';
+}
+
 /*
  * ext4_mount:
  *
@@ -2716,11 +2735,11 @@ ext4_mount(filesystem_t filesystem, block_device_t device, mount_t mount)
 	if (device == 0 || mount == 0 || !device->registered) return VFS_STATUS_INVALID;
 
 	if (g_ext4_mount_count >= EXT4_MOUNT_MAX) return VFS_STATUS_NO_SPACE;
-	IOLog("(ext4) ext4_mount: mounting device %s at %s\n", device->name, mount->m_path);
+	EXT4_LOG(device->name, "mounting at %s\n", mount->m_path);
 
 	ext4_mount_data_t *data = kcalloc(1U, sizeof(*data));
 	if (data == 0) {
-		IOLog("(ext4) ext4_mount: mount failed with status %s\n", vfs_status_name(VFS_STATUS_NO_MEMORY));
+		EXT4_LOG(device->name, "mount failed with status %s\n", vfs_status_name(VFS_STATUS_NO_MEMORY));
 		return VFS_STATUS_NO_MEMORY;
 	}
 
@@ -2730,7 +2749,7 @@ ext4_mount(filesystem_t filesystem, block_device_t device, mount_t mount)
 
 	uint8_t super[EXT4_SUPERBLOCK_SIZE];
 	if (!ext4_read_bytes(data, EXT4_SUPERBLOCK_OFFSET, super, sizeof(super))) {
-		IOLog("(ext4) ext4_mount: could not read the superblock from %s\n", device->name);
+		EXT4_LOG(device->name, "could not read the superblock\n");
 		mount->m_data = 0;
 		ext4_destroy_mount_data(data);
 		return VFS_STATUS_IO_ERROR;
@@ -2738,7 +2757,7 @@ ext4_mount(filesystem_t filesystem, block_device_t device, mount_t mount)
 
 	vfs_status_t status = ext4_parse_superblock(data, super);
 	if (status != VFS_STATUS_OK) {
-		IOLog("(ext4) ext4_mount: superblock validation failed with status %s\n", vfs_status_name(status));
+		EXT4_LOG(device->name, "superblock validation failed with status %s\n", vfs_status_name(status));
 		mount->m_data = 0;
 		ext4_destroy_mount_data(data);
 		return status;
@@ -2756,14 +2775,19 @@ ext4_mount(filesystem_t filesystem, block_device_t device, mount_t mount)
 		for (uint32_t index = 0U; index < 16U && device->name[index] != '\0'; index++)
 			volume_label[index] = device->name[index];
 	}
-	IOLog("(ext4) ext4_mount: mounting volume %s\n", volume_label);
-	IOLog("(ext4) ext4_mount: block size %u bytes, %llu blocks, %u groups\n", (unsigned)data->block_size,
+	EXT4_LOG(device->name, "mounting volume %s\n", volume_label);
+	char uuid_text[37];
+	ext4_format_uuid(data->uuid, uuid_text);
+	EXT4_LOG(device->name, "uuid %s, %u inodes (%u free), %llu blocks (%llu free), %u-byte inodes\n", uuid_text,
+			 (unsigned)data->inodes_count, (unsigned)data->free_inodes_count, (unsigned long long)data->blocks_count,
+			 (unsigned long long)data->free_blocks_count, (unsigned)data->inode_size);
+	EXT4_LOG(device->name, "block size %u bytes, %llu blocks, %u groups\n", (unsigned)data->block_size,
 			(unsigned long long)data->blocks_count, (unsigned)data->group_count);
 
 	data->block_buffer = kmalloc(data->block_size);
 	data->inode_buffer = kmalloc(data->inode_size);
 	if (data->block_buffer == 0 || data->inode_buffer == 0) {
-		IOLog("(ext4) ext4_mount: metadata buffer allocation failed\n");
+		EXT4_LOG(device->name, "metadata buffer allocation failed\n");
 		mount->m_data = 0;
 		ext4_destroy_mount_data(data);
 		return VFS_STATUS_NO_MEMORY;
@@ -2775,35 +2799,35 @@ ext4_mount(filesystem_t filesystem, block_device_t device, mount_t mount)
 	uint32_t journal_blocks;
 	status = ext4_journal_map_locked(data, &journal_map, &journal_blocks);
 	if (status == VFS_STATUS_OK) {
-		IOLog("(ext4) ext4_mount: initializing journal on %s\n", volume_label);
+		EXT4_LOG(device->name, "initializing journal on %s\n", volume_label);
 		status = ext4_jbd2_status(jbd2_init(&data->journal, data->device, data->block_size, data->blocks_count,
 											journal_map, journal_blocks, data->uuid));
 	}
 
 	if (journal_map != 0) (void)kfree(journal_map);
 	if (status == VFS_STATUS_OK) {
-		IOLog("(ext4) ext4_mount: recovering journal for %s\n", volume_label);
+		EXT4_LOG(device->name, "recovering journal for %s\n", volume_label);
 		status = ext4_recover_journal_locked(data);
 	}
 	uint32_t checked_inodes = 0U;
 	if (status == VFS_STATUS_OK) {
-		IOLog("(ext4) ext4_mount: checking metadata integrity for %s\n", volume_label);
+		EXT4_LOG(device->name, "checking metadata integrity for %s\n", volume_label);
 		status = ext4_check_integrity_locked(data, &checked_inodes);
 	}
 	if (status != VFS_STATUS_OK) {
-		IOLog("(ext4) ext4_mount: mount of %s failed with status %s\n", volume_label, vfs_status_name(status));
+		EXT4_LOG(device->name, "mount of %s failed with status %s\n", volume_label, vfs_status_name(status));
 		ext4_unlock(data);
 		mount->m_data = 0;
 		ext4_destroy_mount_data(data);
 		return status;
 	}
-	IOLog("(ext4) ext4_mount: metadata integrity passed for %u inode(s) across %u group(s)\n",
+	EXT4_LOG(device->name, "metadata integrity passed for %u inode(s) across %u group(s)\n",
 			(unsigned)checked_inodes, (unsigned)data->group_count);
 	vnode_t root;
 	status = ext4_get_node_locked(data, EXT4_ROOT_INODE, 0, &root);
 	ext4_unlock(data);
 	if (status != VFS_STATUS_OK || root == 0 || root->v_type != VNODE_TYPE_DIRECTORY) {
-		IOLog("(ext4) ext4_mount: root directory validation failed for %s\n", volume_label);
+		EXT4_LOG(device->name, "root directory validation failed for %s\n", volume_label);
 		mount->m_data = 0;
 		ext4_destroy_mount_data(data);
 		return status == VFS_STATUS_OK ? VFS_STATUS_IO_ERROR : status;
@@ -2812,7 +2836,7 @@ ext4_mount(filesystem_t filesystem, block_device_t device, mount_t mount)
 	mount->m_root = root;
 	data->active = true;
 	g_ext4_mounts[g_ext4_mount_count++] = data;
-	IOLog("(ext4) ext4_mount: mount-complete volume %s at %s\n", volume_label, mount->m_path);
+	EXT4_LOG(device->name, "mount-complete volume %s at %s\n", volume_label, mount->m_path);
 	return VFS_STATUS_OK;
 }
 
@@ -2957,36 +2981,36 @@ ext4_dump(void)
 		ext4_mount_data_t *data = g_ext4_mounts[index];
 		if (data == 0 || !data->active) continue;
 
-		IOLog("IOFilesystemFamily: mount %s, block size: %llu\n", data->mount->m_path,
+		EXT4_LOG(data->device->name, "mount %s, block size: %llu\n", data->mount->m_path,
 				(unsigned long long)data->block_size);
-		IOLog("IOFilesystemFamily: blocks: %llu\n", (unsigned long long)data->blocks_count);
-		IOLog("IOFilesystemFamily: free blocks: %llu\n", (unsigned long long)data->free_blocks_count);
-		IOLog("IOFilesystemFamily: free inodes: %llu\n", (unsigned long long)data->free_inodes_count);
-		kputln("IOFilesystemFamily: journal: JBD2 checksum-v3, ordered data");
-		kprintf("commits: %llu\n", (unsigned long long)data->journal.commit_count);
-		kprintf("replays: %llu\n", (unsigned long long)data->journal.replay_count);
-		kprintf("replayed metadata blocks: %llu\n", (unsigned long long)data->journal.replayed_block_count);
-		kprintf("discarded incomplete transactions: %llu\n", (unsigned long long)data->journal.discard_count);
+		EXT4_LOG(data->device->name, "blocks: %llu\n", (unsigned long long)data->blocks_count);
+		EXT4_LOG(data->device->name, "free blocks: %llu\n", (unsigned long long)data->free_blocks_count);
+		EXT4_LOG(data->device->name, "free inodes: %llu\n", (unsigned long long)data->free_inodes_count);
+		EXT4_LOG(data->device->name, "journal: JBD2 checksum-v3, ordered data\n");
+		EXT4_LOG(data->device->name, "commits: %llu\n", (unsigned long long)data->journal.commit_count);
+		EXT4_LOG(data->device->name, "replays: %llu\n", (unsigned long long)data->journal.replay_count);
+		EXT4_LOG(data->device->name, "replayed metadata blocks: %llu\n", (unsigned long long)data->journal.replayed_block_count);
+		EXT4_LOG(data->device->name, "discarded incomplete transactions: %llu\n", (unsigned long long)data->journal.discard_count);
 		if (data->journal.replay_count != 0ULL) {
-			kprintf("last replay sequence: %llu\n", (unsigned long long)data->journal.last_replay_sequence);
-			kprintf("last replay metadata blocks: %llu\n", (unsigned long long)data->journal.last_replay_blocks);
+			EXT4_LOG(data->device->name, "last replay sequence: %llu\n", (unsigned long long)data->journal.last_replay_sequence);
+			EXT4_LOG(data->device->name, "last replay metadata blocks: %llu\n", (unsigned long long)data->journal.last_replay_blocks);
 		}
 
-		IOLogVerbose("IOFilesystemFamily: groups: %llu\n", (unsigned long long)data->group_count);
-		IOLogVerbose("IOFilesystemFamily: inode size: %llu\n", (unsigned long long)data->inode_size);
+		EXT4_VERBOSE(data->device->name, "groups: %llu\n", (unsigned long long)data->group_count);
+		EXT4_VERBOSE(data->device->name, "inode size: %llu\n", (unsigned long long)data->inode_size);
 		if (kconsole_verbose()) {
-			kputs("IOFilesystemFamily: features compat: ");
+			EXT4_LOG(data->device->name, "features compat: ");
 			kputhex32(data->feature_compat);
 			kputc('\n');
-			kputs("IOFilesystemFamily: features incompat: ");
+			EXT4_LOG(data->device->name, "features incompat: ");
 			kputhex32(data->feature_incompat);
 			kputc('\n');
-			kputs("IOFilesystemFamily: features ro-compat: ");
+			EXT4_LOG(data->device->name, "features ro-compat: ");
 			kputhex32(data->feature_ro_compat);
 			kputc('\n');
 		}
 
-		IOLogVerbose("IOFilesystemFamily: resident vnodes: %llu\n", (unsigned long long)data->node_count);
-		IOLogVerbose("IOFilesystemFamily: metadata checksums: CRC32C\n");
+		EXT4_VERBOSE(data->device->name, "resident vnodes: %llu\n", (unsigned long long)data->node_count);
+		EXT4_VERBOSE(data->device->name, "metadata checksums: CRC32C\n");
 	}
 }

@@ -240,7 +240,7 @@ i386_init(uint32_t magic, const multiboot_info_t *info)
 	i386_idt_init();
 
 	IOLog("%s [%s]\n", NXU_KERNEL_VERSION, sizeof(void *) == 8U ? "x86_64" : "i386");
-	IOLog("Copyright (c) 2026 NXU Project. All rights reserved.\n");
+	IOLog("%s\n\n", NXU_COPYRIGHT);
 
 	(void)timer_calibrate();
 

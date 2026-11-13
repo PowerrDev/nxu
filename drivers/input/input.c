@@ -35,6 +35,7 @@ input_init(void)
 	if (g_input.initialized) return true;
 	memset(&g_input, 0, sizeof(g_input));
 	g_input.initialized = true;
+	kprintf("input event layer ready\n");
 	return true;
 }
 
@@ -163,7 +164,7 @@ input_dump_activity(void)
 	g_input.last_dump_published = published;
 	g_input.last_dump_dropped = dropped;
 
-	kputs("input: events ");
+	kprintf("events ");
 	kputu64(published);
 	kputs(", pending ");
 	kputu64(input_pending_count());

@@ -95,6 +95,24 @@ int kvprintf(const char *format, va_list arguments);
  * `function` must name a real function: it is checked at compile time, so the
  * prefix cannot drift from the code when the function is renamed.
  */
+/*
+ * kfslog(fs, device, format, ...) / kfsverbose(...)
+ *
+ * A filesystem's log line, in the shape XNU's filesystems use
+ * ("(apfs) nx_mount:1528: disk1s1 ..."): the filesystem, the function and
+ * source line that printed it, then the device it is about:
+ *
+ *	kfslog("ext4", device->name, "recovering journal for %s\n", label);
+ *	-> (ext4) ext4_mount:2785: disk0s2 recovering journal for NXU System
+ *
+ * A filesystem wraps it once (EXT4_LOG(device, ...)) so its tag is spelled
+ * in one place. kfsverbose() prints only with -v / log.verbose=1.
+ */
+#define kfslog(fs, device, format, ...)                                                                                \
+	IOLog("(" fs ") %s:%d: %s " format, __func__, __LINE__, (device), ##__VA_ARGS__)
+#define kfsverbose(fs, device, format, ...)                                                                            \
+	IOLogVerbose("(" fs ") %s:%d: %s " format, __func__, __LINE__, (device), ##__VA_ARGS__)
+
 #define kprintf_for(function, ...) ((void)sizeof(&(function)), kprintf_from(#function, __VA_ARGS__))
 #define kverbosef(...) kverbosef_from(__func__, __VA_ARGS__)
 

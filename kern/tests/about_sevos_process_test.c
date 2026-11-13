@@ -63,7 +63,7 @@ about_sevos_process_test(void)
 	loader_status_t status_bootd =
 		loader_spawn(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/bootd", "bootd", &proc_bootd);
 	if (status_bootd != LOADER_STATUS_OK) {
-		kputs("about_sevos_process_test: spawning bootd failed: ");
+		kprintf("spawning bootd failed: ");
 		kputln(loader_status_name(status_bootd));
 		return false;
 	}
@@ -77,7 +77,7 @@ about_sevos_process_test(void)
 		loader_spawn_caps(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/WindowServer",
 						  "WindowServer", NXU_CAP_DISPLAY, &proc_windowserver);
 	if (status_windowserver != LOADER_STATUS_OK) {
-		kputs("about_sevos_process_test: spawning WindowServer failed: ");
+		kprintf("spawning WindowServer failed: ");
 		kputln(loader_status_name(status_windowserver));
 		return false;
 	}
@@ -93,7 +93,7 @@ about_sevos_process_test(void)
 	loader_status_t status_about = loader_spawn(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/about_sevos_service",
 												"about_sevos_service", &proc_about);
 	if (status_about != LOADER_STATUS_OK) {
-		kputs("about_sevos_process_test: spawning about_sevos_service failed: ");
+		kprintf("spawning about_sevos_service failed: ");
 		kputln(loader_status_name(status_about));
 		return false;
 	}

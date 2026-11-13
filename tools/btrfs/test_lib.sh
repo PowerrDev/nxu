@@ -114,10 +114,10 @@ run_group() {
 
 	local total=$#
 	local passes bad
-	passes=$(printf '%s\n' "$OUTPUT" | grep -c 'btrfs_selftest: PASS ')
-	bad=$(printf '%s\n' "$OUTPUT" | grep -c 'btrfs_selftest: FAIL\|Unhandled\|PANIC\|panic')
+	passes=$(printf '%s\n' "$OUTPUT" | grep -cE 'st_run_(fixture|refusal): PASS ')
+	bad=$(printf '%s\n' "$OUTPUT" | grep -c 'st_[a-z_]*: FAIL\|btrfs_selftest_run: FAIL\|Unhandled\|PANIC\|panic')
 
-	if printf '%s\n' "$OUTPUT" | grep -q 'btrfs_selftest: ALL PASSED' && [ "$passes" -eq "$total" ] && [ "$bad" -eq 0 ]; then
+	if printf '%s\n' "$OUTPUT" | grep -q 'btrfs_selftest_run: ALL PASSED' && [ "$passes" -eq "$total" ] && [ "$bad" -eq 0 ]; then
 		pass "$name: $total fixture(s) [$BT_SPEC]"
 	else
 		fail "$name: expected $total PASS lines, saw $passes, $bad failure lines (status $rc) [$BT_SPEC]" "$OUTPUT" 40

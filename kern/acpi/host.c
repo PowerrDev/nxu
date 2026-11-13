@@ -64,7 +64,7 @@ uacpi_kernel_log(uacpi_log_level level, const char *message)
 
 		line[n] = 0;
 		if (n) {
-			IOLog("NxuACPIPlatform: %s\n", line);
+			kprintf("%s\n", line);
 		}
 	}
 }

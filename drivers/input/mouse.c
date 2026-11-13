@@ -305,7 +305,7 @@ mouse_dump_state(void)
 {
 	if (!g_mouse.present) return;
 
-	kputs("mouse: events ");
+	kprintf("events ");
 	kputu64(g_mouse.events);
 	kputs(", packets ");
 	kputu64(g_mouse.packets);

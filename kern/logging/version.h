@@ -18,5 +18,7 @@
 #define NXU_BUILD "NXU-5F1A"
 #define NXU_KERNEL_NAME "NXU"
 #define NXU_KERNEL_VERSION "NXU Kernel Version " NXU_VERSION " (" NXU_BUILD ")"
+/* Printed under the version line at boot, indented one space. */
+#define NXU_COPYRIGHT " Copyright (c) 2026 NXU Project. All rights reserved."
 
 #endif

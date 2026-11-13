@@ -617,7 +617,7 @@ ui_service_bootstrap(void)
 	if (boot_arg_bool("ui.userland", false)) return true;
 
 #if !defined(NXU_UI_SERVICE)
-	kputln("[com.butterscotch.UIService.framework]: NXU bridge is not linked");
+	kprintf("NXU bridge is not linked\n");
 	return false;
 #else
 	uint32_t *framebuffer = 0;
@@ -647,25 +647,25 @@ ui_service_bootstrap(void)
 	}
 
 	if (framebuffer == 0 || width == 0U || height == 0U || stride < width) {
-		kputln("[com.butterscotch.UIService.framework]: no scanout surface is available");
+		kprintf("no scanout surface is available\n");
 		return false;
 	}
 
 	if (UIServiceAPIVersion() != UI_SERVICE_API_VERSION) {
-		IOLog("[com.butterscotch.UIService.framework]: API mismatch, kernel expects %u but framework reported %u\n",
+		kprintf("API mismatch, kernel expects %u but framework reported %u\n",
 				UI_SERVICE_API_VERSION, UIServiceAPIVersion());
 		return false;
 	}
 
 	size_t pixel_count = (size_t)stride * (size_t)height;
 	if (height != 0U && pixel_count / (size_t)height != (size_t)stride) {
-		kputln("[com.butterscotch.UIService.framework]: framebuffer size overflow while allocating backbuffer");
+		kprintf("framebuffer size overflow while allocating backbuffer\n");
 		return false;
 	}
 
 	uint32_t *backbuffer = kcalloc(pixel_count, sizeof(uint32_t));
 	if (backbuffer == 0) {
-		kputln("[com.butterscotch.UIService.framework]: software backbuffer allocation failed");
+		kprintf("software backbuffer allocation failed\n");
 		return false;
 	}
 	memcpy(backbuffer, framebuffer, pixel_count * sizeof(uint32_t));
@@ -713,17 +713,17 @@ ui_service_bootstrap(void)
 		.get_activity = ui_service_get_activity};
 
 	if (UIServiceValidateHostV5(&host) != UI_SERVICE_STATUS_OK) {
-		kputln("[com.butterscotch.UIService.framework]: NXU host ABI v5 rejected");
+		kprintf("NXU host ABI v5 rejected\n");
 		(void)kfree(backbuffer);
 		return false;
 	}
 
-	IOLog("[com.butterscotch.UIService.framework]: ABI v%u, %ux%u XRGB8888, %s\n", UIServiceABIVersion(), width,
+	kprintf("ABI v%u, %ux%u XRGB8888, %s\n", UIServiceABIVersion(), width,
 			height, using_ramfb ? "RAMFB" : "VirtIO GPU");
 	kputln(UIServiceHasInter() != 0U ? "[com.butterscotch.UIService.framework]: font renderer active"
 									 : "[com.butterscotch.UIService.framework]: bootstrap text renderer active");
 	if (using_ramfb)
-		kputln("[com.butterscotch.UIService.framework]: RAMFB fallback active (no vblank synchronization)");
+		kprintf("RAMFB fallback active (no vblank synchronization)\n");
 
 	/*
 	 * Stop the emergency framebuffer console from writing underneath UI while
@@ -731,7 +731,7 @@ ui_service_bootstrap(void)
 	 */
 	if (using_ramfb) {
 		if (!ramfb_console_set_mirroring(false)) {
-			kputln("[com.butterscotch.UIService.framework]: failed to suspend RAMFB console mirroring");
+			kprintf("failed to suspend RAMFB console mirroring\n");
 			(void)kfree(backbuffer);
 			return false;
 		}
@@ -758,7 +758,7 @@ ui_service_bootstrap(void)
 	g_ui_service_running = false;
 	if (using_ramfb) (void)ramfb_console_set_mirroring(true);
 
-	IOLog("[com.butterscotch.UIService.framework]: the desktop exited unexpectedly with status %u\n", status);
+	kprintf("the desktop exited unexpectedly with status %u\n", status);
 	(void)kfree(backbuffer);
 	return false;
 #endif

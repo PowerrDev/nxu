@@ -264,10 +264,10 @@ virtio_gpu_log_failure(uint32_t command, const char *why, const char *what, uint
 {
 	if (++g_virtio_gpu_failures > VIRTIO_GPU_FAILURES_LOGGED) return;
 
-	IOLog("VirtIOGPUFamily: command 0x%x failed: %s\n", command, why);
-	if (what != 0) IOLog("VirtIOGPUFamily: %s: 0x%x\n", what, value);
+	kprintf("command 0x%x failed: %s\n", command, why);
+	if (what != 0) kprintf("%s: 0x%x\n", what, value);
 	if (g_virtio_gpu_failures == VIRTIO_GPU_FAILURES_LOGGED)
-		kputln("VirtIOGPUFamily: further command failures are not logged");
+		kprintf("further command failures are not logged\n");
 }
 
 static bool
@@ -485,7 +485,7 @@ virtio_gpu_display_present(display_device_t *display, uint32_t x, uint32_t y, ui
 	 */
 	for (uint32_t attempt = 0U; attempt < 2U; attempt++) {
 		if (virtio_gpu_transfer(device, x, y, width, height) && virtio_gpu_flush(device, x, y, width, height)) {
-			if (attempt != 0U) kputln("VirtIOGPUFamily: present succeeded on retry");
+			if (attempt != 0U) kprintf("present succeeded on retry\n");
 			device->present_count++;
 			return true;
 		}
@@ -539,10 +539,10 @@ virtio_gpu_attach(const virtio_device_t *transport)
 	memset(device, 0, sizeof(*device));
 	device->transport = *transport;
 
-	IOLog("VirtIOGPUFamily: probe 0x%llx, INTID %u\n", (unsigned long long)transport->region.base, transport->intid);
+	kprintf("probe 0x%llx, INTID %u\n", (unsigned long long)transport->region.base, transport->intid);
 
 	if (!virtio_device_begin(&device->transport, 0ULL)) {
-		kputln("VirtIOGPUFamily: transport feature negotiation failed before queue setup");
+		kprintf("transport feature negotiation failed before queue setup\n");
 		return false;
 	}
 
@@ -569,8 +569,8 @@ virtio_gpu_attach(const virtio_device_t *transport)
 		device->irq_attached = true;
 		*device->controlq.available_flags = 0U;
 	} else {
-		kputln("VirtIOGPUFamily: no interrupt");
-		kputln("VirtIOGPUFamily: command completions are polled");
+		kprintf("no interrupt\n");
+		kprintf("command completions are polled\n");
 	}
 
 	failure_stage = "GET_DISPLAY_INFO";
@@ -614,19 +614,19 @@ virtio_gpu_attach(const virtio_device_t *transport)
 	if (!sl_device_register("VirtIOGPUFamily", &g_virtio_gpu_sl_ops, device, &sl_device) ||
 		!sl_display_register(sl_device, device->scanout_id, device->framebuffer, device->width, device->height,
 							 device->width, &sl_display)) {
-		kputln("VirtIOGPUFamily: Skylight registration failed");
-		kputln("VirtIOGPUFamily: only the early display path has this scanout");
+		kprintf("Skylight registration failed\n");
+		kprintf("only the early display path has this scanout\n");
 	}
 
 	device->attached = true;
 	g_virtio_gpu_device_count++;
-	IOLog("VirtIOGPUFamily: scanout %u online at %ux%u, framebuffer %llu bytes\n", device->scanout_id, device->width,
+	kprintf("scanout %u online at %ux%u, framebuffer %llu bytes\n", device->scanout_id, device->width,
 			device->height, (unsigned long long)device->framebuffer_bytes);
 	(void)ioreg_add(virtio_gpu_ioreg_family(), "Display0", "VirtIOGPUDevice");
 	return true;
 
 fail:
-	IOLog("VirtIOGPUFamily: attach failed during %s\n", failure_stage);
+	kprintf("attach failed during %s\n", failure_stage);
 	virtio_device_fail(&device->transport);
 
 	if (device->framebuffer_pages != 0ULL) {
@@ -650,10 +650,10 @@ virtio_gpu_dump(void)
 {
 	for (uint32_t index = 0U; index < g_virtio_gpu_device_count; index++) {
 		const virtio_gpu_device_t *device = &g_virtio_gpu_devices[index];
-		IOLog("VirtIOGPUFamily: device %u: %ux%u\n", index + 1U, device->width, device->height);
-		IOLogVerbose("VirtIOGPUFamily: device %u: scanout %u\n", index + 1U, device->scanout_id);
-		IOLogVerbose("VirtIOGPUFamily: device %u: framebuffer %llu bytes\n", index + 1U,
+		kprintf("device %u: %ux%u\n", index + 1U, device->width, device->height);
+		kverbosef("device %u: scanout %u\n", index + 1U, device->scanout_id);
+		kverbosef("device %u: framebuffer %llu bytes\n", index + 1U,
 				  (unsigned long long)device->framebuffer_bytes);
-		IOLogVerbose("VirtIOGPUFamily: device %u: %llu presents\n", index + 1U, (unsigned long long)device->present_count);
+		kverbosef("device %u: %llu presents\n", index + 1U, (unsigned long long)device->present_count);
 	}
 }

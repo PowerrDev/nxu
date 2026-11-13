@@ -105,44 +105,44 @@ driverkit_init(driverkit_config_t *config)
 
 	gic_init();
 	kprintf("GICv3 initialized\n");
-	IOLog("IOPlatformCPU: cpu0 MPIDR 0x%llx, GICv3 redistributor 0, enabled\n",
+	kprintf("cpu0 MPIDR 0x%llx, GICv3 redistributor 0, enabled\n",
 			(unsigned long long)arm64_read_mpidr_el1());
 	(void)ioreg_add(ioreg_family_platform(), "IOPlatformCPU", "IOPlatformCPU");
 
 	if (!irq_init()) return driverkit_fail("irq: initialization failed");
-	kputln("IOInterruptController: GICv3 vector table online");
+	kprintf("GICv3 vector table online\n");
 	(void)ioreg_add(ioreg_family_platform(), "IOInterruptController", "IOInterruptController");
 
 	if (!input_init()) return driverkit_fail("input: core initialization failed");
-	kputln("IOHIDSystem: input core online");
+	kprintf("input core online\n");
 
   kprintf("initializating keyboard.\n");
 	if (!keyboard_init()) return driverkit_fail("keyboard: initialization failed");
-	kputln("IOHIDSystem: keyboard driver matched");
+	kprintf("keyboard driver matched\n");
 
 	boot_mode_init();
-	kputln("IOBootMode: recovery key watch armed");
+	kprintf("recovery key watch armed\n");
 	(void)ioreg_add(ioreg_family_platform(), "IOBootMode", "IOBootMode");
 
   kprintf("initializating mouse.\n");
-	if (!mouse_init()) return driverkit_fail("VirtIOMouseFamily: initialization failed");
-	kputln("IOHIDSystem: mouse driver matched");
+	if (!mouse_init()) return driverkit_fail("mouse_init: initialization failed");
+	kprintf("mouse driver matched\n");
 
   kprintf("initializating block device.\n");
-	if (!block_device_init()) return driverkit_fail("VirtIOBlockFamily: initialization failed");
-	kputln("IOStorageFamily: block device core online");
+	if (!block_device_init()) return driverkit_fail("block_device_init: initialization failed");
+	kprintf("block device core online\n");
 
   kprintf("initializating display.\n");
-	if (!display_init()) return driverkit_fail("IODisplayFamily: core initialization failed");
-	kputln("IOGraphicsFamily: display core online");
+	if (!display_init()) return driverkit_fail("display_init: initialization failed");
+	kprintf("display core online\n");
 
   kprintf("initializating real-time clock.\n");
 	if (!rtc_init()) return driverkit_fail("rtc_init: initialization failed");
-	kputln("IORTC: real-time clock online");
+	kprintf("real-time clock online\n");
 	(void)ioreg_add(ioreg_family_platform(), "IORTC", "IORTC");
 
 	nxu_boot_log_driver_handoff();
-	kputln("VirtIOFamily: probing MMIO transports");
+	kprintf("probing MMIO transports\n");
 
 	const platform_t *runtime_platform = platform_get();
 
@@ -159,26 +159,26 @@ driverkit_init(driverkit_config_t *config)
 										   .on_gpu_ready = config->gpu_enabled ? driverkit_show_splash_if_needed : 0};
 
 	if (runtime_platform == 0 || !virtio_init(runtime_platform, &virtio_policy)) {
-		return driverkit_fail("VirtIOFamily: initialization failed");
+		return driverkit_fail("virtio_init: initialization failed");
 	}
 
 	if (config->input_enabled && !keyboard_is_present()) return driverkit_fail("keyboard: VirtIO keyboard not found");
 	if (config->input_enabled && !mouse_is_present()) return driverkit_fail("mouse: VirtIO mouse not found");
 	if (config->block_enabled && block_device_count() == 0U)
-		return driverkit_fail("VirtIOBlockFamily: VirtIO block device not found");
+		return driverkit_fail("driverkit_start: VirtIO block device not found");
 
 	if (!config->input_enabled) kprintf("disabled by boot-args\n");
-	if (!config->block_enabled) kputln("VirtIOBlockFamily: disabled by boot-args");
-	if (!config->gpu_enabled) kputln("DriverKitDisplayFamily: VirtIO GPU disabled by boot-args");
-	if (!config->sound_enabled) kputln("DriverKitAudioFamily: VirtIO Sound disabled by boot-args");
+	if (!config->block_enabled) kprintf("disabled by boot-args\n");
+	if (!config->gpu_enabled) kprintf("VirtIO GPU disabled by boot-args\n");
+	if (!config->sound_enabled) kprintf("VirtIO Sound disabled by boot-args\n");
 
 	if (config->gpu_enabled && (display_primary() == 0 || virtio_gpu_count() == 0U)) {
-		kputln("DriverKitDisplayFamily: VirtIO GPU not found");
+		kprintf("VirtIO GPU not found\n");
 
 		if (ramfb_console_init(runtime_platform)) {
-			kputln("DriverKitDisplayFamily: emergency ramfb console active");
+			kprintf("emergency ramfb console active\n");
 		} else {
-			kputln("DriverKitDisplayFamily: emergency ramfb console unavailable");
+			kprintf("emergency ramfb console unavailable\n");
 		}
 	}
 

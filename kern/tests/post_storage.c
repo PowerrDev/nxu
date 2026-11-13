@@ -41,7 +41,7 @@ post_test_block_device(void)
 
 	if (!block_device_read(device, 0ULL, 1U, sector)) return false;
 
-	kputs("VirtIOBlockFamily: sector 0 first bytes:");
+	kprintf("sector 0 first bytes:");
 
 	for (uint32_t index = 0U; index < 16U; index++) {
 		kputc(' ');
@@ -188,7 +188,7 @@ post_test_ext4(void)
 		if (!post_ext4_read_exact(filedesc, "/Volumes/mainOS/NXU/persistent.txt", g_ext4_persist_message,
 								  sizeof(g_ext4_persist_message) - 1ULL))
 			return false;
-		kputln("IOFilesystemFamily: persistence marker recovered from previous boot");
+		kprintf("persistence marker recovered from previous boot\n");
 	} else if (status == VFS_STATUS_NOT_FOUND) {
 		status = vfs_open(filedesc, "/Volumes/mainOS/NXU/persistent.txt", VFS_OPEN_WRITE | VFS_OPEN_CREATE, &descriptor);
 		if (status != VFS_STATUS_OK) return false;
@@ -199,13 +199,13 @@ post_test_ext4(void)
 
 		if (status != VFS_STATUS_OK || written != sizeof(g_ext4_persist_message) - 1ULL) return false;
 
-		kputln("IOFilesystemFamily: persistence marker created");
-		kputln("IOFilesystemFamily: reboot to verify persistence");
+		kprintf("persistence marker created\n");
+		kprintf("reboot to verify persistence\n");
 	} else {
 		return false;
 	}
 
-	kputs("IOFilesystemFamily: /hello.txt: ");
+	kprintf("/hello.txt: ");
 	kputs(g_ext4_test_message);
 	return filedesc->fd_open_count == 0U;
 
@@ -218,28 +218,28 @@ bool
 post_storage(void)
 {
 	if (!post_test_block_device()) {
-		kputln("VirtIOBlockFamily: sector read test failed");
+		kprintf("sector read test failed\n");
 		return false;
 	}
 
 	if (boot_mode_is_triage_os()) {
-		kputln("IOFilesystemFamily: recovery boot");
-		kputln("IOFilesystemFamily: writable filesystem self-test skipped");
+		kprintf("recovery boot\n");
+		kprintf("writable filesystem self-test skipped\n");
 		return true;
 	}
 
 	if (!post_test_ext4()) {
-		kputln("IOFilesystemFamily: writable filesystem self-test failed");
+		kprintf("writable filesystem self-test failed\n");
 		return false;
 	}
 
-	kputln("IOFilesystemFamily: writable filesystem self-test passed");
+	kprintf("writable filesystem self-test passed\n");
 
 	if (vfs_sync_all() != VFS_STATUS_OK) {
-		kputln("IOVirtualFSDriver filesystem sync failed");
+		kprintf("filesystem sync failed\n");
 		return false;
 	}
 
-	kputln("IOVirtualFSDriver mounted filesystems synchronized");
+	kprintf("mounted filesystems synchronized\n");
 	return true;
 }

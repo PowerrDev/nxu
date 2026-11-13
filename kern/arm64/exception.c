@@ -368,7 +368,7 @@ irq_handle(void)
 	} else if (intid < 16U) {
 		smp_handle_ipi(intid);
 	} else if (!irq_dispatch(intid)) {
-		kputs("irq: unhandled INTID ");
+		kprintf("unhandled INTID ");
 		kputu64(intid);
 		kputc('\n');
 	}
@@ -414,7 +414,7 @@ exception_handle_user_svc(arm64_exception_frame_t *frame)
 		return true;
 
 	case SYSCALL_ACTION_EXIT:
-		kputs("syscall: exit(");
+		kprintf("exit(");
 		kputu64(result.value);
 		kputln(")");
 

@@ -352,13 +352,13 @@ post_core(void)
 {
 	/* NXPC kernel message transport, shared memory and mmap. */
 
-	if (!ipc_self_test()) return post_fail(NXPC_LOG_PREFIX "kernel transport self-test failed");
+	if (!ipc_self_test()) return post_fail("ipc_self_test: kernel transport self-test failed");
 
 	if (!ipc_space_self_test()) {
-		return post_fail(NXPC_LOG_PREFIX "per-process name table self-test failed");
+		return post_fail("ipc_space_self_test: per-process name table self-test failed");
 	}
 
-	kputln(NXPC_LOG_PREFIX "kernel transport ready");
+	kprintf("kernel transport ready\n");
 
 	if (!vm_shm_self_test()) return post_fail("vm_shm: self-test failed");
 
@@ -370,17 +370,17 @@ post_core(void)
 
 	/* Checksums. */
 
-	if (!post_test_crc32c()) return post_fail("NXU_CRC32C_Checksum: self-test failed");
+	if (!post_test_crc32c()) return post_fail("post_test_crc32c: self-test failed");
 
-	kputln("NXU_CRC32C_Checksum: self-test passed");
+	kprintf("CRC32C checksum self-test passed\n");
 
 	/* Virtual filesystem. */
 
 	if (!post_test_vfs()) {
-		return post_fail("IOVirtualFSDriver pathname/file-descriptor self-test failed");
+		return post_fail("post_test_vfs: pathname/file-descriptor self-test failed");
 	}
 
-	kputln("IOVirtualFSDriver pathname/file-descriptor self-test passed");
+	kprintf("pathname/file-descriptor self-test passed\n");
 	vfs_dump();
 
 	/* Scheduler. */
@@ -442,17 +442,17 @@ post_core(void)
 
 	/* EL0 exception-vector classification. */
 
-	kputln("ARM64ExceptionHandler(): validating EL0 vector classification");
+	kprintf("validating EL0 vector classification\n");
 
 	if (!exception_validate_vector_classification()) {
-		return post_fail("ARM64ExceptionHandler(): EL0 vector classification failed");
+		return post_fail("exception_validate_vector_classification: EL0 vector classification failed");
 	}
 
-	kputln("ARM64ExceptionHandler(): current EL synchronous vector classified");
-	kputln("ARM64ExceptionHandler(): current EL IRQ vector classified");
-	kputln("ARM64ExceptionHandler(): EL0 synchronous vector classified");
-	kputln("ARM64ExceptionHandler(): EL0 IRQ vector classified");
-	kputln("ARM64ExceptionHandler(): EL0 return state is recoverable");
+	kprintf("current EL synchronous vector classified\n");
+	kprintf("current EL IRQ vector classified\n");
+	kprintf("EL0 synchronous vector classified\n");
+	kprintf("EL0 IRQ vector classified\n");
+	kprintf("EL0 return state is recoverable\n");
 
 	return true;
 }

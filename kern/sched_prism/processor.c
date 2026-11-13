@@ -7,6 +7,7 @@
  * Manages per-processor scheduler state and CPU coordination.
  */
 #include <kern/machine/smp.h>
+#include <kern/console/console.h>
 #include <kern/sched_prism/processor.h>
 
 #include <stdbool.h>
@@ -52,6 +53,8 @@ processor_bootstrap(void)
 
 	/* From here `current_processor()` on the boot CPU is a register read. */
 	machine_cpu_local_set(&g_processors[0]);
+	kprintf("boot CPU is processor 0 (hardware id 0x%llx), room for %u\n",
+			(unsigned long long)g_processors[0].mpidr, (uint32_t)NXU_MAX_CPUS);
 	return true;
 }
 
@@ -81,6 +84,8 @@ processor_register(uint32_t cpu_id, uint64_t mpidr)
 	processor_init_slot(&g_processors[cpu_id], cpu_id, mpidr);
 
 	if (cpu_id >= g_processor_count) g_processor_count = cpu_id + 1U;
+	kprintf("processor %u registered (hardware id 0x%llx), %u processor(s)\n", cpu_id, (unsigned long long)mpidr,
+			g_processor_count);
 	return &g_processors[cpu_id];
 }
 

@@ -399,7 +399,7 @@ devices_selftest_block(void)
 		return false;
 	}
 
-	kputs("i386_init_drivers_selftest: sector 0 begins");
+	kprintf("sector 0 begins");
 
 	for (uint32_t index = 0U; index < 8U; index++) {
 		kputc(' ');

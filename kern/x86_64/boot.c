@@ -141,7 +141,7 @@ x86_kernel_main(const struct nxu_boot_x86_64 *boot)
 	}
 
 	kconsole_set_timestamp(true);
-	kprintf("%s\n", NXU_KERNEL_VERSION);
+	IOLog("%s\n%s\n\n", NXU_KERNEL_VERSION, NXU_COPYRIGHT);
 	x86_log_processor();
 	kprintf("handoff 0x%llx, size %u, version %u\n", (unsigned long long)(uintptr_t)boot,
 			boot->size, boot->version);

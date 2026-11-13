@@ -131,12 +131,33 @@ btrfs_env_release(void *context, void *pointer)
 	(void)kfree(pointer);
 }
 
+/*
+ * The driver core logs "function:line: message"; on the console that is
+ * "(btrfs) function:line: disk1 message", like every filesystem's lines.
+ */
 static void
 btrfs_env_log(void *context, const char *line)
 {
-	(void)context;
-	kputs(line);
-	kputc('\n');
+	const btrfs_mount_t *data = context;
+	const char *device = data != 0 && data->device != 0 ? data->device->name : "-";
+	const char *message = line;
+
+	/* After "function:line: ". */
+	for (const char *cursor = line; cursor[0] != '\0' && cursor[1] != '\0'; cursor++) {
+		if (cursor[0] == ':' && cursor[1] == ' ') {
+			message = cursor + 2;
+			break;
+		}
+	}
+
+	IOLog("(btrfs) ");
+	for (const char *cursor = line; cursor < message; cursor++)
+		kputc(*cursor);
+	if (message == line) {
+		IOLog("%s\n", line);
+		return;
+	}
+	IOLog("%s %s\n", device, message);
 }
 
 /* ---- helpers ----------------------------------------------------------------------------- */
@@ -398,7 +419,7 @@ btrfs_mount_op(filesystem_t filesystem, block_device_t device, mount_t mount)
 	data->fs = btrfs_fs_open_devices(&env, data->reader, data->device_count, &open_options, &status);
 	if (data->fs == 0) {
 		btrfs_destroy_mount(data);
-		kprintf("mount refused: %s\n", btrfs_status_name(status));
+		kfslog("btrfs", device->name, "mount refused: %s\n", btrfs_status_name(status));
 		return btrfs_mount_fail(status);
 	}
 
@@ -409,7 +430,7 @@ btrfs_mount_op(filesystem_t filesystem, block_device_t device, mount_t mount)
 	if (status == BTRFS_OK) status = btrfs_inode_read(data->fs, &subvol.tree, subvol.item.root_dirid, &root_inode);
 	if (status == BTRFS_OK && btrfs_inode_type(root_inode.item.mode) != BTRFS_S_IFDIR) status = BTRFS_ERR_CORRUPT;
 	if (status != BTRFS_OK) {
-		kprintf("cannot read the root directory: %s\n", btrfs_status_name(status));
+		kfslog("btrfs", device->name, "cannot read the root directory: %s\n", btrfs_status_name(status));
 		btrfs_destroy_mount(data);
 		return btrfs_mount_fail(status);
 	}
@@ -754,8 +775,8 @@ btrfs_dump(void)
 
 		if (data == 0 || !data->active) continue;
 
-		kprintf("mount %s, device %s, %u devices, %u resident vnodes\n", data->mount->m_path,
-				data->device->name, data->device_count, data->node_count);
+		kfslog("btrfs", data->device->name, "mount %s, %u devices, %u resident vnodes\n", data->mount->m_path,
+			   data->device_count, data->node_count);
 		btrfs_fs_describe(data->fs);
 	}
 }

@@ -381,6 +381,7 @@ thread_bootstrap(void)
 	g_thread_initialized = true;
 
 	thread_unlock(&g_thread_lock);
+	kprintf("thread table: %u slots\n", (uint32_t)THREAD_MAX);
 	return true;
 }
 
@@ -1424,7 +1425,7 @@ thread_dump(void)
 	kprintf("global thread list\n");
 
 	for (thread_t thread = g_threads_head; thread != 0; thread = thread->threads_next) {
-		kputs("thread: tid ");
+		kprintf("tid ");
 		kputu64(thread->thread_id);
 
 		kputs(", task ");

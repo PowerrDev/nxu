@@ -58,6 +58,8 @@ boot_args_init(void)
 	/* Share the default with userland services which recognize -v. */
 	if (boot_args_verbose()) (void)boot_args_append("-v");
 	kconsole_set_verbose(boot_args_verbose());
+	kprintf("boot-args \"%s\" (%u bytes from NVRAM), %s console\n", g_boot_args, length,
+			boot_args_verbose() ? "verbose" : "milestone");
 	return true;
 }
 

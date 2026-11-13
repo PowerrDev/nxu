@@ -397,19 +397,19 @@ smp_start_cpu(uint32_t cpu_id, uint64_t mpidr, platform_psci_method_t method, ui
 	processor_t cpu = processor_register(cpu_id, mpidr);
 
 	if (cpu == 0) {
-		IOLog("SMP: cannot register CPU%u\n", cpu_id);
+		kprintf("cannot register CPU%u\n", cpu_id);
 		return false;
 	}
 
 	if (!sched_cpu_prepare(cpu_id)) {
-		IOLog("SMP: cannot create the CPU%u idle thread\n", cpu_id);
+		kprintf("cannot create the CPU%u idle thread\n", cpu_id);
 		return false;
 	}
 
 	void *stack;
 
 	if (!vm_kern_allocate(SMP_STACK_SIZE, VM_KMAP_PROT_READ_WRITE, &stack)) {
-		IOLog("SMP: no memory for the CPU%u boot stack\n", cpu_id);
+		kprintf("no memory for the CPU%u boot stack\n", cpu_id);
 		return false;
 	}
 
@@ -439,16 +439,16 @@ smp_start_cpu(uint32_t cpu_id, uint64_t mpidr, platform_psci_method_t method, ui
 	uint64_t params_physical;
 
 	if (!vmm_kernel_address_to_physical((uint64_t)params, &params_physical)) {
-		IOLog("SMP: CPU%u boot parameters have no physical address\n", cpu_id);
+		kprintf("CPU%u boot parameters have no physical address\n", cpu_id);
 		return false;
 	}
 
-	IOLog("SMP: starting CPU%u MPIDR 0x%llx\n", cpu_id, (unsigned long long)mpidr);
+	kprintf("starting CPU%u MPIDR 0x%llx\n", cpu_id, (unsigned long long)mpidr);
 
 	int64_t status = smp_psci_call(method, PSCI_CPU_ON_64, mpidr, entry_physical, params_physical);
 
 	if (status != PSCI_SUCCESS) {
-		IOLog("SMP: PSCI CPU_ON for CPU%u failed: %s (%d)\n", cpu_id, smp_psci_status_name(status), (int)status);
+		kprintf("PSCI CPU_ON for CPU%u failed: %s (%d)\n", cpu_id, smp_psci_status_name(status), (int)status);
 		__atomic_store_n(&cpu->state, PROCESSOR_OFFLINE, __ATOMIC_RELEASE);
 		return false;
 	}
@@ -459,7 +459,7 @@ smp_start_cpu(uint32_t cpu_id, uint64_t mpidr, platform_psci_method_t method, ui
 	while (!processor_is_online(cpu)) {
 		if (__atomic_load_n(&cpu->state, __ATOMIC_ACQUIRE) == PROCESSOR_SHUTDOWN ||
 			timer_get_microseconds() > deadline) {
-			IOLog("SMP: CPU%u did not come online\n", cpu_id);
+			kprintf("CPU%u did not come online\n", cpu_id);
 			return false;
 		}
 
@@ -489,7 +489,7 @@ smp_boot_secondaries(void)
 		if (platform->cpu_mpidr[index] == boot_mpidr) boot_index = index;
 	}
 	if (boot_index == platform->cpu_count) {
-		IOLog("SMP: boot CPU MPIDR 0x%llx is not in the Device Tree CPU list\n", (unsigned long long)boot_mpidr);
+		kprintf("boot CPU MPIDR 0x%llx is not in the Device Tree CPU list\n", (unsigned long long)boot_mpidr);
 		return 1U;
 	}
 
@@ -497,11 +497,11 @@ smp_boot_secondaries(void)
 		if (index != boot_index) g_cpu_mpidr[g_cpu_total++] = platform->cpu_mpidr[index];
 	}
 
-	IOLog("SMP: boot CPU0 MPIDR 0x%llx, %u CPU(s) in the Device Tree\n", (unsigned long long)boot_mpidr,
+	kprintf("boot CPU0 MPIDR 0x%llx, %u CPU(s) in the Device Tree\n", (unsigned long long)boot_mpidr,
 			platform->cpu_count);
 
 	if (platform->psci_method == PLATFORM_PSCI_NONE) {
-		kputln("SMP: firmware offers no PSCI: secondary CPUs stay off");
+		kprintf("firmware offers no PSCI: secondary CPUs stay off\n");
 		g_cpu_total = 1U;
 		return 1U;
 	}
@@ -514,7 +514,7 @@ smp_boot_secondaries(void)
 	uint64_t entry_physical;
 
 	if (!vmm_kernel_address_to_physical((uint64_t)&arm64_secondary_entry, &entry_physical)) {
-		kputln("SMP: the secondary entry point has no physical address");
+		kprintf("the secondary entry point has no physical address\n");
 		g_cpu_total = 1U;
 		return 1U;
 	}
@@ -522,7 +522,7 @@ smp_boot_secondaries(void)
 	uint64_t trampoline_root;
 
 	if (!vmm_create_identity_stub(entry_physical & ~0xFFFULL, 2U * 4096U, &trampoline_root)) {
-		kputln("SMP: cannot build the trampoline identity map");
+		kprintf("cannot build the trampoline identity map\n");
 		g_cpu_total = 1U;
 		return 1U;
 	}
@@ -537,9 +537,9 @@ smp_boot_secondaries(void)
 	uint32_t online = smp_online_count();
 
 	if (online == g_cpu_total) {
-		IOLog("SMP: %u CPUs online\n", online);
+		kprintf("%u CPUs online\n", online);
 	} else {
-		IOLog("SMP: %u of %u CPUs online\n", online, g_cpu_total);
+		kprintf("%u of %u CPUs online\n", online, g_cpu_total);
 	}
 
 	if (online > 1U) kprintf("SMP scheduling enabled, %u run queues\n", online);

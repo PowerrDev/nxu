@@ -116,7 +116,7 @@ i386_trap_syscall(x86_saved_state_t *state)
 		return;
 
 	case SYSCALL_ACTION_EXIT:
-		kputs("syscall: exit(");
+		kprintf("exit(");
 		kputu64(result.value);
 		kputln(")");
 

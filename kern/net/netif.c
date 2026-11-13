@@ -7,6 +7,7 @@
  * Registers network interfaces and manages their state.
  */
 #include <kern/net/netif.h>
+#include <kern/console/console.h>
 
 #include <kern/lock.h>
 #include <string.h>
@@ -83,6 +84,14 @@ netif_register(const uint8_t mac[6], void *context, bool (*transmit)(void *, con
 	link[14] = mac[4];
 	link[15] = mac[5];
 
+	kprintf("%s: MAC %x:%x:%x:%x:%x:%x, MTU %u, interface index %u\n", interface->info.name, mac[0], mac[1], mac[2],
+			mac[3], mac[4], mac[5], (uint32_t)interface->info.mtu, (uint32_t)interface->info.index);
+	if (interface->info.prefix4 != 0U) {
+		const uint8_t *a = interface->info.address4;
+		const uint8_t *g = interface->info.gateway4;
+		kprintf("%s: inet %u.%u.%u.%u/%u, gateway %u.%u.%u.%u\n", interface->info.name, a[0], a[1], a[2], a[3],
+				(uint32_t)interface->info.prefix4, g[0], g[1], g[2], g[3]);
+	}
 	return interface;
 }
 

@@ -76,8 +76,8 @@ boot() {
 
 boot "$MULTI_CPUS" "test=smp qemu-exit=1 expect-cpus=$MULTI_CPUS"
 patterns=(
-	"NxuACPIPlatform: MADT lists $MULTI_CPUS CPU(s)"
-	"SMP: $MULTI_CPUS CPUs online"
+	"acpi_scan: MADT lists $MULTI_CPUS CPU(s)"
+	"smp_boot_secondaries: $MULTI_CPUS CPUs online"
 	"cpu count and IPI round trip ok"
 	"smp self-test passed"
 )
@@ -92,14 +92,14 @@ verify "smp-$MULTI_CPUS" "$STATUS" $STATUS_CLEAN "$OUTPUT" "${patterns[@]}"
 
 boot 1 "test=smp qemu-exit=1"
 verify smp-1 "$STATUS" $STATUS_CLEAN "$OUTPUT" \
-	"SMP: one CPU" \
+	"smp_boot_secondaries: one CPU" \
 	"smp self-test passed"
 
 # ---- a plain boot (no test=, no disk) still completes with SMP linked in ----
 
 boot "$MULTI_CPUS" "qemu-exit=1"
 verify smp-boot "$STATUS" $STATUS_CLEAN "$OUTPUT" \
-	"SMP: $MULTI_CPUS CPUs online" \
+	"smp_boot_secondaries: $MULTI_CPUS CPUs online" \
 	"i386_init_userland: no block device, staying in kernel-only mode" \
 	"i386_init: boot phases complete"
 

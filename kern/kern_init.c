@@ -121,11 +121,11 @@ kern_dump_boot_dtb(const dtb_t *device_tree)
 {
 	kprintf("valid flattened Device Tree\n");
 
-	kputs("dtb: version: ");
+	kprintf("version: ");
 	kputu64(device_tree->version);
 	kputc('\n');
 
-	kputs("dtb: total size: ");
+	kprintf("total size: ");
 	kputu64(device_tree->total_size);
 	kputln(" bytes");
 
@@ -636,23 +636,23 @@ kern_init_processes(void)
 {
 	ipc_init();
 
-	kputln("[com.butterscotch.proc]: initializing process manager");
+	kprintf("initializing process manager\n");
 
 	if (!proc_bootstrap()) {
-		kern_fail("[com.butterscotch.proc]: process manager initialization failed");
+		kern_fail("proc_bootstrap: process manager initialization failed");
 	}
 
 	if (!proc_validate()) {
-		kern_fail("[com.butterscotch.proc]: process manager validation failed");
+		kern_fail("proc_validate: process manager validation failed");
 	}
 
-	kputln("[com.butterscotch.proc]: process manager initialized");
+	kprintf("process manager initialized\n");
 
 	if (proc_kernel() == 0) {
-		kern_fail("[com.butterscotch.proc]: kernel process unavailable");
+		kern_fail("proc_kernel: kernel process unavailable");
 	}
 
-	kputs("[com.butterscotch.proc]: kernel process PID: ");
+	kprintf("kernel process PID: ");
 	kputu64(proc_kernel()->p_ident.pid);
 	kputc('\n');
 }
@@ -666,30 +666,30 @@ kern_init_processes(void)
 static void
 kern_init_filesystem(void)
 {
-	kputln("IOVirtualFSDriver initializing virtual filesystem");
+	kprintf("initializing virtual filesystem\n");
 
-	if (!vfs_init()) kern_fail("IOVirtualFSDriver initialization failed");
+	if (!vfs_init()) kern_fail("vfs_init: initialization failed");
 
-	if (!ramfs_register()) kern_fail("IOVirtualFSDriver ramfs registration failed");
+	if (!ramfs_register()) kern_fail("ramfs_register: registration failed");
 
-	if (!ext4_register()) kern_fail("IOVirtualFSDriver ext4 registration failed");
+	if (!ext4_register()) kern_fail("ext4_register: registration failed");
 
-	if (!devfs_register()) kern_fail("IOVirtualFSDriver devfs registration failed");
+	if (!devfs_register()) kern_fail("devfs_register: registration failed");
 
 	vfs_status_t mount_status = vfs_mount("ramfs", 0, "/");
-	if (mount_status != VFS_STATUS_OK) kern_fail("IOVirtualFSDriver root ramfs mount failed");
+	if (mount_status != VFS_STATUS_OK) kern_fail("vfs_mount: root ramfs mount failed");
 
-	kputln("IOVirtualFSDriver mounted ramfs at /");
+	kprintf("mounted ramfs at /\n");
 
 	if (vfs_mkdir("/Volumes") != VFS_STATUS_OK || vfs_mkdir("/Volumes/mainOS") != VFS_STATUS_OK)
-		kern_fail("IOVirtualFSDriver: /Volumes/mainOS mountpoint creation failed");
+		kern_fail("vfs_mkdir: /Volumes/mainOS mountpoint creation failed");
 
 	if (vfs_mkdir("/dev") != VFS_STATUS_OK || vfs_mount("devfs", 0, "/dev") != VFS_STATUS_OK)
-		kern_fail("IOVirtualFSDriver: devfs mount at /dev failed");
+		kern_fail("vfs_mount: devfs mount at /dev failed");
 
-	kputln("IOVirtualFSDriver mounted devfs at /dev");
+	kprintf("mounted devfs at /dev\n");
 
-	if (!devfs_self_test()) kern_fail("IOVirtualFSDriver: devfs self-test failed");
+	if (!devfs_self_test()) kern_fail("devfs_self_test: failed");
 }
 
 /*
@@ -724,12 +724,12 @@ kern_init_scheduler(void)
 static void
 kern_mount_system_volume(void)
 {
-	kputln("IOFilesystemFamily: mounting disk0 at /Volumes/mainOS");
+	kprintf("mounting disk0 at /Volumes/mainOS\n");
 
 	vfs_status_t ext4_mount_status = vfs_mount("ext4", boot_system_volume_device(), "/Volumes/mainOS");
 
 	if (ext4_mount_status != VFS_STATUS_OK) {
-		kputs("IOFilesystemFamily: mount failed: ");
+		kprintf("mount failed: ");
 		kputln(vfs_status_name(ext4_mount_status));
 		boot_mount_recovery_volume();
 		if (boot_recovery_volume_available()) {
@@ -738,7 +738,7 @@ kern_mount_system_volume(void)
 			return;
 		}
 
-		kern_fail("IOFilesystemFamily: mount failed");
+		kern_fail("vfs_mount: system volume mount failed");
 	}
 
 	ext4_dump();
@@ -775,27 +775,27 @@ kern_launch_init_process(display_device_t *boot_display)
 
 	kprintf("selected environment: %s\n", boot_mode_name());
 	if (boot_display != 0 && !boot_splash_finish()) kern_fail("boot_splash_finish: completion failed");
-	kputs("loader_spawn: loading ");
+	kprintf("loading ");
 	kputs(init_path);
 	kputln(" as PID 1");
 
 	loader_status_t init_status = loader_spawn(proc_kernel(), init_path, init_name, &g_boot_process);
 	if (init_status != LOADER_STATUS_OK && !recovery_boot && !init_uses_fallback) {
-		kputs("loader_spawn: primary bootd unavailable: ");
+		kprintf("primary bootd unavailable: ");
 		kputln(loader_status_name(init_status));
 		kprintf("trying bootd recovery image\n");
 		init_status = loader_spawn(proc_kernel(), bootd_recovery_path, init_name, &g_boot_process);
 	}
 
 	if (init_status != LOADER_STATUS_OK || g_boot_process == 0) {
-		kputs("loader_spawn: selected environment unavailable: ");
+		kprintf("selected environment unavailable: ");
 		kputln(loader_status_name(init_status));
 		kern_fail("loader_spawn: PID 1 launch failed");
 	}
 
 	if (g_boot_process->p_ident.pid != 1U) kern_fail("loader_spawn: selected environment did not receive PID 1");
-	IOLog("%s: PID %u ready for scheduler dispatch\n", init_name, g_boot_process->p_ident.pid);
-	kputln("VirtIOBlockFamily: VirtIO block device initialized");
+	kprintf("%s PID %u ready for scheduler dispatch\n", init_name, g_boot_process->p_ident.pid);
+	kprintf("VirtIO block device initialized\n");
 }
 
 /*
@@ -868,7 +868,7 @@ kern_start_scheduler(const driverkit_config_t *drivers)
 		if (seconds != last_second) {
 			last_second = seconds;
 
-			kputs("timer: uptime ");
+			kprintf("uptime ");
 			kputu64(seconds);
 			kputln(" second(s)");
 			input_dump_activity();
@@ -927,7 +927,7 @@ kern_init_higher_half(void)
 	if (tep_mailbox_start()) (void)tep_boot_check_start();
 
 	if (!boot_mode_is_triage_os() && boot_arg_bool("ui.userland", false) && !ui_service_trusted_prepare())
-		kern_fail("NXUKeystoreManager: unable to establish login boundary");
+		kern_fail("ui_service_trusted_prepare: unable to establish login boundary");
 
 	boot_test_graphical(boot_display);
 
@@ -989,7 +989,7 @@ kern_init(const void *dtb_address)
 
 	const volatile uint8_t *dtb_bytes = (const volatile uint8_t *)dtb_address;
 
-	kputs("dtb: first bytes: ");
+	kprintf("first bytes: ");
 
 	for (uint32_t index = 0U; index < 4U; index++) {
 		kputhex_byte(dtb_bytes[index]);
@@ -1010,7 +1010,7 @@ kern_init(const void *dtb_address)
 	const dtb_t *device_tree = dtb_get_boot();
 
 	if (device_tree == 0) {
-		kern_fail("dtb_t device_tree: boot Device Tree unavailable");
+		kern_fail("dtb_get_boot: boot Device Tree unavailable");
 	}
 
 	kprintf("bootstrap begin\n");
@@ -1102,10 +1102,10 @@ kern_init(const void *dtb_address)
 
 	/* Exception level and vector table. */
 
-	kputs("kern_init: current raw exception level: 0x");
+	kprintf("current raw exception level: 0x");
 	kputhex_byte((uint8_t)current_el_raw);
 	kputc('\n');
-	kputs("kern_init: current exception level: EL");
+	kprintf("current exception level: EL");
 
 	kputc((char)('0' + current_el));
 

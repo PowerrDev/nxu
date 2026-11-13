@@ -453,7 +453,7 @@ pci_dump(void)
 	for (uint32_t index = 0U; index < g_pci_device_count; index++) {
 		const pci_device_t *device = &g_pci_devices[index];
 
-		kputs("pci_dump: ");
+		kprintf("");
 		pci_print_location(device);
 		IOLog(" %x:%x class %x:%x (%s) irq %u pin %c\n", (unsigned int)device->vendor_id,
 				(unsigned int)device->device_id, (unsigned int)device->class_code, (unsigned int)device->subclass,
@@ -465,7 +465,7 @@ pci_dump(void)
 
 			if (!region->valid) continue;
 
-			kputs("pci_dump: ");
+			kprintf("");
 			pci_print_location(device);
 			IOLog(" BAR%u %s%s base 0x%llx size 0x%llx\n", bar, region->io ? "io" : "mem", region->is64 ? "64" : "",
 					(unsigned long long)region->base, (unsigned long long)region->size);

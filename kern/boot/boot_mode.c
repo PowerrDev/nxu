@@ -37,6 +37,7 @@ boot_mode_init(void)
 	g_r_down = false;
 	g_left_shift_down = false;
 	g_right_shift_down = false;
+	kprintf("boot mode: %s\n", g_boot_mode == BOOT_MODE_TRIAGE_OS ? "triageOS (recovery)" : "normal");
 }
 
 void

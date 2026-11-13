@@ -88,13 +88,13 @@ run_case boot "qemu-exit=1" $STATUS_CLEAN \
 # kernel reports that it skipped those stages because paging is on.
 RING3_PATTERNS=(
 	"i386_init_threads_selftest: hello from ring 3"
-	"syscall: exit(42)"
+	"i386_trap_syscall: exit(42)"
 	"test_ring3_syscalls: ring 3 entry and system calls passed"
 	"terminated by #GP General Protection Fault"
 	"terminated by #UD Invalid Opcode"
 	"terminated by #DE Divide Error"
 	"test_ring3_faults: ring 3 faults terminate only the offender"
-	"syscall: exit(7)"
+	"i386_trap_syscall: exit(7)"
 	"test_ring3_preemption: ring 3 preemption passed (log uuuVuuuuu)"
 )
 

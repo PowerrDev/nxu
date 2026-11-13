@@ -86,7 +86,7 @@ fault_process_test(void)
 		loader_status_t loaded =
 			loader_spawn(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/faulttest", "faulttest", &proc);
 		if (loaded != LOADER_STATUS_OK) {
-			kputs("fault_process_test: spawning faulttest failed: ");
+			kprintf("spawning faulttest failed: ");
 			kputln(loader_status_name(loaded));
 			return false;
 		}

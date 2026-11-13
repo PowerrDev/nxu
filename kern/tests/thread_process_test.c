@@ -44,7 +44,7 @@ thread_process_test(void)
 	loader_status_t status =
 		loader_spawn(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/threadtest", "threadtest", &proc);
 	if (status != LOADER_STATUS_OK) {
-		kputs("thread_process_test: spawning threadtest failed: ");
+		kprintf("spawning threadtest failed: ");
 		kputln(loader_status_name(status));
 		return false;
 	}
@@ -56,7 +56,7 @@ thread_process_test(void)
 	}
 
 	if (exit_status != 0ULL) {
-		kputs("thread_process_test: threadtest exited with nonzero status: ");
+		kprintf("threadtest exited with nonzero status: ");
 		kputu64(exit_status);
 		kputc('\n');
 		return false;

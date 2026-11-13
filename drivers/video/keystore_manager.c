@@ -429,7 +429,7 @@ login_thread(void *unused)
 	keyboard_set_secure(true);
 	keyboard_flush_keys();
 	input_flush();
-	kputln("NXUKeystoreManager: waiting for authentication.");
+	kprintf("waiting for authentication.\n");
 
 	uint8_t password[65] = {0}, first[65] = {0};
 	uint32_t length = 0, first_length = 0;
@@ -535,7 +535,7 @@ login_thread(void *unused)
 						return;
 					}
 
-					kputln("NXUKeystoreManager: password refused.");
+					kprintf("password refused.\n");
 					
           if (result == TEP_ERR_INVALID) {
 						message = "Passwords did not match. Try again.";
@@ -562,8 +562,8 @@ bool
 ui_service_trusted_prepare(void)
 {
 	if (tep_mailbox_link_state() == TEP_LINK_ABSENT) {
-		kputln("NXUKeystoreManager: no enclave link");
-		kputln("NXUKeystoreManager: no login screen");
+		kprintf("no enclave link\n");
+		kprintf("no login screen\n");
 		return true;
 	}
 

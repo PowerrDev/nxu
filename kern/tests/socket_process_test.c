@@ -46,7 +46,7 @@ socket_process_test(void)
 	loader_status_t status_server = loader_spawn(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/sockettest_server",
 												 "sockettest_server", &proc_server);
 	if (status_server != LOADER_STATUS_OK) {
-		kputs("socket_process_test: spawning sockettest_server failed: ");
+		kprintf("spawning sockettest_server failed: ");
 		kputln(loader_status_name(status_server));
 		return false;
 	}
@@ -54,7 +54,7 @@ socket_process_test(void)
 	loader_status_t status_client = loader_spawn(proc_kernel(), "/Volumes/mainOS/System/Library/CoreServices/sockettest_client",
 												 "sockettest_client", &proc_client);
 	if (status_client != LOADER_STATUS_OK) {
-		kputs("socket_process_test: spawning sockettest_client failed: ");
+		kprintf("spawning sockettest_client failed: ");
 		kputln(loader_status_name(status_client));
 		return false;
 	}

@@ -1,4 +1,5 @@
 #include <vfs/file.h>
+#include <kern/console/console.h>
 #include <kern/machine/cpu.h>
 
 #include <stdbool.h>
@@ -73,6 +74,7 @@ file_table_init(void)
 	g_file_table_initialized = true;
 
 	file_unlock(&g_file_table_lock);
+	kprintf("open-file table: %u slots\n", (uint32_t)VFS_FILE_MAX);
 	return true;
 }
 

@@ -183,7 +183,7 @@ devfs_register_device(const char *name, const devfs_operations_t *operations, vo
 
 	nxu_spin_unlock(&g_devfs_lock);
 
-	if (node != 0 && g_devfs_announce) kprintf("/dev/%s registered\n", name);
+	if (node != 0 && g_devfs_announce) kfslog("devfs", name, "registered at /dev/%s\n", name);
 
 	return node != 0;
 }
@@ -274,6 +274,7 @@ devfs_mount(filesystem_t filesystem, block_device_t device, mount_t mount)
 	g_devfs_mount = mount;
 	mount->m_root = &g_devfs_root;
 	mount->m_data = 0;
+	kfslog("devfs", "devfs", "mounted at %s, %u device node slot(s)\n", mount->m_path, (uint32_t)DEVFS_DEVICE_MAX);
 	return VFS_STATUS_OK;
 }
 

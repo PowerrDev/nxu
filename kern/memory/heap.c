@@ -413,6 +413,7 @@ heap_init(void)
 	g_heap.head = page;
 	g_heap.initialized = true;
 
+	kprintf("first heap page at %p\n", (void *)page);
 	return true;
 }
 

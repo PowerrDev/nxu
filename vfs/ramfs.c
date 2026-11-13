@@ -1,4 +1,5 @@
 #include <vfs/ramfs.h>
+#include <kern/console/console.h>
 #include <kern/machine/cpu.h>
 
 #include <kern/memory/heap.h>
@@ -201,6 +202,8 @@ ramfs_mount(filesystem_t filesystem, block_device_t device, mount_t mount)
 	data->root = root;
 	mount->m_data = data;
 	mount->m_root = &root->vnode;
+	kfslog("ramfs", "memory", "mounted at %s, root node %llu\n", mount->m_path,
+		   (unsigned long long)root->vnode.v_id);
 	return VFS_STATUS_OK;
 }
 

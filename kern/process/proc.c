@@ -968,6 +968,10 @@ proc_exit(proc_t proc, uint64_t status)
 		(void)signal_post_group(orphaned[index], NXU_SIGCONT);
 	}
 
+	kverbosef("pid %u (%s) exited with status 0x%llx; parent pid %u, %u process group(s) orphaned\n",
+			  (uint32_t)proc->p_ident.pid, proc->p_comm, (unsigned long long)status,
+			  parent != 0 ? (uint32_t)parent->p_ident.pid : 0U, orphaned_count);
+
 	sched_unbind_boot_cpu();
 	return true;
 }
@@ -1596,10 +1600,10 @@ proc_dump(void)
 {
 	proc_lock(&g_proc_lock);
 
-	kputln("NXU_ProcessManager: live process list");
+	kprintf("live process list\n");
 
 	for (proc_t proc = g_allproc_head; proc != 0; proc = proc->p_list_next) {
-		kputs("NXU_ProcessManager: pid ");
+		kprintf("pid ");
 		kputu64(proc->p_ident.pid);
 
 		kputs(", ppid ");
@@ -1619,11 +1623,11 @@ proc_dump(void)
 		kputln(proc->p_comm);
 	}
 	if (g_zombproc_head != 0) {
-		kputln("NXU_ProcessManager: zombie process list");
+		kprintf("zombie process list\n");
 	}
 
 	for (proc_t proc = g_zombproc_head; proc != 0; proc = proc->p_list_next) {
-		kputs("NXU_ProcessManager: pid ");
+		kprintf("pid ");
 		kputu64(proc->p_ident.pid);
 
 		kputs(", state zombie, status ");

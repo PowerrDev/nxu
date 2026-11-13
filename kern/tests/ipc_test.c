@@ -78,7 +78,7 @@ ipc_self_test(void)
 
 	if (ipc_kmsg_outstanding_bytes() != 0ULL) return false;
 
-	kprintf(NXPC_LOG_PREFIX "self-test passed on port object %llu (%llu-byte payload)\n", object_id,
+	kprintf("self-test passed on port object %llu (%llu-byte payload)\n", object_id,
 			(uint64_t)sizeof(g_ipc_test_payload));
 	return true;
 
@@ -228,6 +228,6 @@ cleanup:
 
 	if (ipc_kmsg_outstanding_count() != 0ULL) return false;
 
-	kprintf(NXPC_LOG_PREFIX "ipc_space self-test passed (port transferred across spaces)\n");
+	kprintf("ipc_space self-test passed (port transferred across spaces)\n");
 	return true;
 }

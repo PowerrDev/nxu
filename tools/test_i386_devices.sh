@@ -149,12 +149,12 @@ before_scratch=$(sector_hash "$DISK" $SCRATCH_FIRST 16)
 
 boot "$DISK" "test=drivers qemu-exit=1 expect-input=2 expect-display=1"
 verify drivers "$STATUS" $STATUS_CLEAN "$OUTPUT" \
-	"VirtIOBlockFamily: matched virtio-blk" \
+	"virtio_block_attach: matched virtio-blk" \
 	"block device disk0, 16384 sectors of 512 bytes, read-write, flush supported" \
 	"sector 0 begins 4E 58 55 2D 44 45 56 30" \
 	"wrote, flushed and read back 16 sectors at $SCRATCH_FIRST" \
 	"2 input device(s), keyboard present, mouse present" \
-	"VirtIOGPUFamily: scanout 0 online at ${DISPLAY_XRES}x${DISPLAY_YRES}" \
+	"virtio_gpu_attach: scanout 0 online at ${DISPLAY_XRES}x${DISPLAY_YRES}" \
 	"painting test pattern, ${DISPLAY_XRES}x${DISPLAY_YRES}" \
 	"test pattern presented" \
 	"block round trip, input and display ok" \

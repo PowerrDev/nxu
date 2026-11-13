@@ -90,20 +90,41 @@ Two variants cover the other cases:
   function, usually the one just called when the caller reports how it went
   (`kprintf_for(ipc_process_test, "passed\n")` prints
   `ipc_process_test: passed`). The name is checked at compile time.
+* `kfslog(fs, device, format, ...)` (and `kfsverbose()`) is for filesystems,
+  in the shape XNU's filesystems use: the filesystem, the function and source
+  line, then the device the line is about:
+
+  ```text
+  (ext4) ext4_mount:2783: disk0s1 uuid 1d9fd809-..., 16384 inodes (16256 free), ...
+  (jbd2) jbd2_recover:571: disk0s1 journal is clean at sequence 1132: nothing to replay
+  (devfs) devfs_register_device:186: audio0 registered at /dev/audio0
+  ```
+
+  Each filesystem wraps it once (`EXT4_LOG(device, ...)`, `JBD2_LOG(journal,
+  ...)`); btrfs's core logs `function:line: message` and the kernel's log sink
+  adds the `(btrfs)` tag and the device.
 * `IOLog()` (and `IOLogVerbose()`) print exactly what they are given, with no
-  prefix: IOKit-style family tags such as `VirtIOFamily:` or
-  `[com.butterscotch.xpc]:`, the version banner, panic reports, tables, and
-  the rest of a line something else started.
+  prefix. They are for text that is not a log line: the version banner and
+  copyright, panic reports, and the rest of a line something else started.
+  There are no family tags (`VirtIOFamily:`, `[com.butterscotch.xpc]:`):
+  every log line is `function_name: content`.
+
+`kprintf("")` at the start of a line prints just `function: `, for a line that
+`kputs()`/`kputhex*()` calls go on to build.
 
 `kputs()`/`kputc()` stay raw; userland text reaching the console through them
 keeps its own prefix (`bootd: ...`).
 
 ## Verbose display
 
-With `-v` the boot display shows the console instead of the logo. The text
-already printed when the display comes up is drawn in one go (one paint, one
-present) rather than scrolled through, and later lines follow live. The
-display leaves out the `[ seconds ]` stamps the serial log carries.
+With `-v` the boot display shows the console instead of the logo, like a
+video console: the text already printed when the display comes up is drawn in
+one go, and from then on every line is drawn and presented as soon as it is
+printed, the screen scrolling one line at a time. A scroll moves the pixels
+already on screen up one text row and paints only the new row, so a line costs
+one row of drawing plus one present (presents wait for the GPU, so they cannot
+queue up). The display leaves out the `[ seconds ]` stamps the serial log
+carries.
 
 ## Verbose switches
 

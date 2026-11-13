@@ -7,6 +7,7 @@
  * Reads and updates boot variables stored in NVRAM.
  */
 #include <kern/boot/nvram.h>
+#include <kern/console/console.h>
 
 #include <string.h>
 
@@ -56,6 +57,7 @@ nvram_bootstrap(const dtb_t *dtb)
 	}
 
 	g_nvram.initialized = true;
+	kprintf("NVRAM from the Device Tree /chosen node, boot-args %u bytes\n", g_nvram.boot_args_length);
 	return true;
 }
 

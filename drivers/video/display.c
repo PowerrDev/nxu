@@ -14,6 +14,7 @@ display_init(void)
 	if (g_display_initialized) return true;
 	g_primary_display = 0;
 	g_display_initialized = true;
+	kprintf("display registry ready, no primary display yet\n");
 	return true;
 }
 
@@ -60,10 +61,10 @@ void
 display_dump(void)
 {
 	if (g_primary_display == 0) {
-		kputln("com.butterscotch.io.display: no primary display");
+		kprintf("no primary display\n");
 		return;
 	}
 
-	IOLog("com.butterscotch.io.display: primary %ux%u, stride %u pixels, %u Bpp\n", g_primary_display->width,
+	kprintf("primary %ux%u, stride %u pixels, %u Bpp\n", g_primary_display->width,
 			g_primary_display->height, g_primary_display->stride, g_primary_display->bytes_per_pixel);
 }

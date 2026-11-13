@@ -746,7 +746,7 @@ virtio_pci_probe(const pci_device_t *pci, virtio_device_t *device)
 		pci_command_update(pci, PCI_COMMAND_MEMORY | PCI_COMMAND_BUS_MASTER, true);
 
 		if (!virtio_modern_map(pci, &probe)) {
-			kputs("virtio_pci_probe: modern device at ");
+			kprintf("modern device at ");
 			pci_print_location(pci);
 			kputln(" needs its memory BARs mapped (no MMIO mapping available)");
 			return false;
@@ -789,7 +789,7 @@ virtio_pci_attach_early(uint32_t device_id, const virtio_probe_policy_t *policy)
 
 		if (!virtio_pci_probe(pci, &device) || device.device_id != device_id) continue;
 
-		kputs("virtio_pci_attach_early: ");
+		kprintf("");
 		pci_print_location(pci);
 		IOLog(" device ID %u via %s, irq line %u\n", device.device_id, device.ops->name,
 				(unsigned int)pci->interrupt_line);
@@ -815,7 +815,7 @@ virtio_pci_scan(const platform_t *platform, const virtio_probe_policy_t *policy)
 
 		if (!virtio_pci_probe(pci, &device)) continue;
 
-		kputs("virtio_pci_scan: ");
+		kprintf("");
 		pci_print_location(pci);
 		IOLog(" device ID %u via %s, irq line %u\n", device.device_id, device.ops->name,
 				(unsigned int)pci->interrupt_line);

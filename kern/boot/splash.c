@@ -26,11 +26,9 @@
 #define BOOT_SPLASH_BAR_GAP 44U
 #define BOOT_SPLASH_FRAME_HZ 30U
 /*
- * Deliberately much lower than BOOT_SPLASH_FRAME_HZ: every text-overlay
- * present transfers the whole framebuffer (~3.7MB at 1366x690 XRGB8888), and
- * a burst of log lines a few milliseconds apart can queue full-frame
- * presents faster than an emulated virtio-gpu queue drains them, leaving the
- * screen showing a stale/in-flight frame until the backlog clears.
+ * Cap on text presents when the console shares the screen with the logo.
+ * A verbose boot (text only) is not capped: it presents every line, like a
+ * video console -- see boot_splash_text_flush().
  */
 #define BOOT_SPLASH_TEXT_PRESENT_HZ 8U
 #define BOOT_SPLASH_BAR_TRACK 0x00303034U
@@ -128,6 +126,12 @@ static char g_text_cells[BOOT_SPLASH_TEXT_MAX_ROWS][BOOT_SPLASH_TEXT_MAX_COLUMNS
 static bool g_text_row_dirty[BOOT_SPLASH_TEXT_MAX_ROWS];
 static uint32_t g_text_top;
 static bool g_text_all_dirty;
+/*
+ * Scrolls since the last render while the console has the whole screen
+ * (g_text_only): the render moves the pixels already on screen up by that
+ * many rows, the way a video console scrolls, instead of repainting them.
+ */
+static uint32_t g_text_pending_scrolls;
 
 static const boot_status_glyph_t *
 boot_splash_status_glyph(char character)
@@ -480,6 +484,23 @@ boot_splash_text_render_row(uint32_t row)
 static void
 boot_splash_text_render(void)
 {
+	if (g_text_pending_scrolls != 0U && !g_text_all_dirty) {
+		uint32_t scrolls = g_text_pending_scrolls;
+
+		if (scrolls >= g_text_rows) {
+			g_text_all_dirty = true;
+		} else {
+			/* Move the rows still on screen up, then repaint only the ones scrolled in. */
+			uint64_t shift = (uint64_t)scrolls * BOOT_SPLASH_TEXT_CELL_HEIGHT * g_display->stride;
+			uint64_t kept = (uint64_t)(g_text_rows - scrolls) * BOOT_SPLASH_TEXT_CELL_HEIGHT * g_display->stride;
+
+			memmove(g_display->framebuffer, g_display->framebuffer + shift, kept * sizeof(uint32_t));
+			for (uint32_t row = g_text_rows - scrolls; row < g_text_rows; row++)
+				g_text_row_dirty[row] = true;
+		}
+	}
+	g_text_pending_scrolls = 0U;
+
 	for (uint32_t row = 0U; row < g_text_rows; row++) {
 		if (!g_text_all_dirty && !g_text_row_dirty[row]) continue;
 
@@ -502,7 +523,15 @@ boot_splash_text_advance_line(void)
 	g_text_top = (g_text_top + 1U) % g_text_rows;
 	memset(g_text_cells[vacated], 0, sizeof(g_text_cells[vacated]));
 	g_text_cursor_y = g_text_rows - 1U;
-	g_text_all_dirty = true;
+
+	if (g_text_only) {
+		/* Rows keep their pixels: the next render shifts them up (see g_text_pending_scrolls). */
+		g_text_pending_scrolls++;
+		memmove(&g_text_row_dirty[0], &g_text_row_dirty[1], (g_text_rows - 1U) * sizeof(g_text_row_dirty[0]));
+		g_text_row_dirty[g_text_rows - 1U] = true;
+	} else {
+		g_text_all_dirty = true;
+	}
 }
 
 /* Present the full screen once if the text console has drawn since the last flush. */
@@ -522,7 +551,12 @@ boot_splash_text_flush(void)
 {
 	if (!g_text_dirty || g_display == 0) return true;
 
-	uint64_t frequency = timer_get_frequency();
+	/*
+	 * A verbose boot is a video console: every line is drawn and on the
+	 * screen as soon as it is printed. Presents wait for the GPU to finish,
+	 * so one per line cannot pile up behind the device.
+	 */
+	uint64_t frequency = g_text_only ? 0ULL : timer_get_frequency();
 	if (frequency != 0ULL) {
 		uint64_t interval = frequency / BOOT_SPLASH_TEXT_PRESENT_HZ;
 		if (interval == 0ULL) interval = 1ULL;
@@ -761,6 +795,7 @@ boot_splash_text_init(void)
 	g_text_cursor_y = 0U;
 	g_text_top = 0U;
 	g_text_all_dirty = false;
+	g_text_pending_scrolls = 0U;
 	memset(g_text_cells, 0, sizeof(g_text_cells));
 	memset(g_text_row_dirty, 0, sizeof(g_text_row_dirty));
 	g_text_dirty = false;
@@ -835,7 +870,9 @@ boot_splash_show(display_device_t *display)
 
 	if (!display_present_full(display)) return false;
 
-	kprintf("shown %ux%u at %ux scale\n", g_boot_splash_width, g_boot_splash_height, g_scale);
+	kprintf("shown %ux%u at %ux scale on a %ux%u display, stride %u, console %ux%u cells%s\n", g_boot_splash_width,
+		g_boot_splash_height, g_scale, display->width, display->height, display->stride, g_text_columns, g_text_rows,
+		g_text_only ? " (verbose: text only)" : "");
 	return true;
 }
 

@@ -216,7 +216,7 @@ acpi_scan(mp_table_t *table)
 				table->cpu_count < MP_TABLE_MAX_CPUS) {
 				table->cpus[table->cpu_count++].apic_id = (uint8_t)apic_id;
 			} else if ((flags & ACPI_MADT_LOCAL_APIC_ENABLED) != 0U && apic_id > 255U) {
-				IOLog("NxuACPIPlatform: x2APIC id=%u exceeds this kernel's xAPIC support\n", apic_id);
+				kprintf("x2APIC id=%u exceeds this kernel's xAPIC support\n", apic_id);
 			}
 		}
 
@@ -233,11 +233,11 @@ acpi_scan(mp_table_t *table)
 
 	table->lapic_physical = lapic_physical;
 
-	IOLog("NxuACPIPlatform: MADT lists %u CPU(s), Local APIC at phys 0x%x\n", table->cpu_count,
+	kprintf("MADT lists %u CPU(s), Local APIC at phys 0x%x\n", table->cpu_count,
 			table->lapic_physical);
 
 	for (uint32_t index = 0U; index < table->cpu_count; index++) {
-		IOLog("NxuACPIPlatform: processor apic_id=%u\n", table->cpus[index].apic_id);
+		kprintf("processor apic_id=%u\n", table->cpus[index].apic_id);
 	}
 
 	/*
@@ -330,7 +330,7 @@ mp_table_scan(mp_table_t *table)
 	kprintf("%u CPU(s), Local APIC at phys 0x%x\n", table->cpu_count, table->lapic_physical);
 
 	for (uint32_t index = 0U; index < table->cpu_count; index++) {
-		IOLog("NxuACPIPlatform: processor apic_id=%u%s\n", table->cpus[index].apic_id,
+		kprintf("processor apic_id=%u%s\n", table->cpus[index].apic_id,
 				table->cpus[index].is_bsp ? " (BSP)" : "");
 	}
 

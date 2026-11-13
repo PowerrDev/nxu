@@ -1,4 +1,5 @@
 #include <drivers/virtio/virtqueue.h>
+#include <kern/console/console.h>
 
 #include <kern/machine/barrier.h>
 #include <vm/pmm.h>
@@ -177,6 +178,9 @@ virtqueue_init(virtqueue_t *queue, const dma_device_t *dma, uint16_t size)
 
 	queue->initialized = true;
 	virtqueue_count(&g_virtqueue_stats.live_queues, 1ULL);
+	kverbosef("%u descriptors at phys 0x%llx (%u page(s)), available ring +0x%llx, used ring +0x%llx\n",
+			  (uint32_t)size, (unsigned long long)queue->storage_physical, queue->storage_pages,
+			  (unsigned long long)available_offset, (unsigned long long)used_offset);
 	return true;
 }
 

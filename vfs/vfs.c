@@ -106,6 +106,7 @@ vfs_init(void)
 
 	g_vfs_initialized = true;
 	vfs_unlock(&g_vfs_lock);
+	kprintf("%u filesystem type slot(s), %u mount slot(s)\n", (uint32_t)VFS_FILESYSTEM_MAX, (uint32_t)VFS_MOUNT_MAX);
 	return true;
 }
 
@@ -471,7 +472,7 @@ vfs_status_name(vfs_status_t status)
 void
 vfs_dump(void)
 {
-	kputs("IOVirtualFSDriver filesystems: ");
+	kprintf("filesystems: ");
 	kputu64(g_filesystem_count);
 	kputs(", mounts: ");
 	kputu64(g_mount_count);
@@ -481,7 +482,7 @@ vfs_dump(void)
 		mount_t mount = &g_mounts[index];
 		if (!mount->m_active) continue;
 
-		kputs("IOVirtualFSDriver mount ");
+		kprintf("mount ");
 		kputs(mount->m_path);
 		kputs(" type ");
 		kputs(mount->m_filesystem->fs_name);

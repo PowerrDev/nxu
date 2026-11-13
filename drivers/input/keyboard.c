@@ -329,7 +329,7 @@ keyboard_dump_state(void)
 {
 	if (!g_keyboard.present) return;
 
-	kputs("keyboard: events ");
+	kprintf("events ");
 	kputu64(g_keyboard.events);
 	kputs(", modifiers 0x");
 	kputhex_byte((uint8_t)g_keyboard.modifiers);
