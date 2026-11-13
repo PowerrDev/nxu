@@ -653,6 +653,49 @@ run with the QEMU monitor (`info registers` on every CPU) to see whether the
 CPUs are idle or spinning on a lock, and check `sched_yield` on the boot CPU,
 which every stalled case has in common through `wait_for`.
 
+### 8.3 A pointer movement during boot could hang the kernel (fixed)
+
+Reported on the i386 desktop (2026-11-12): moving the trackpad in the QEMU
+window during boot stopped it right after `mouse_attach`, with no message.
+
+Cause: `virtio_input_attach` set `DRIVER_OK`, with its event buffers posted,
+before registering its interrupt handler, and the handler ignored
+interrupts until a flag set after registration. The mouse shares IRQ 10, a
+level-triggered line, with the GPU, which is attached earlier, so the line was
+already unmasked. An event in that window raised the line; only the GPU's
+handler ran, found nothing of its own and did not acknowledge it; and since
+`irq_dispatch` counts any handler that ran as "handled", nothing was logged.
+The line, still asserted, interrupted again the moment it was dismissed, and
+CPU 0 never left the interrupt. The window is wide on the desktop because
+each log line is drawn on screen.
+
+Reproduced with QEMU's `mouse_move` (after `mouse_set` to the virtio mouse;
+QEMU sends to the PS/2 mouse by default) and a temporary 3 s pause after
+`DRIVER_OK`: the original order never left the pause, the fixed order did and
+booted.
+
+Fix (`drivers/virtio`): the handler is bound before `DRIVER_OK` and is ready
+to acknowledge by then, in `virtio_input`, `virtio_net` (received frames
+arrive unprompted the same way) and `virtio_gpu` (a host display change);
+`virtio_sound` already did this. `virtio_device_irq_detach` undoes the
+binding when an attach fails later. The rule is written at
+`virtio_device_irq_attach`.
+
+Not done: `irq_dispatch` cannot tell an unclaimed interrupt from a handled
+one, because handlers return nothing, so any future bug of this shape is
+equally silent. Linux's "nobody cared" check (count unclaimed interrupts on a
+line, disable the line with a message) would need every handler to report
+whether the interrupt was its own.
+
+### 8.4 AddressSanitizer does not run on this machine
+
+On this host (macOS 26, Apple clang 17, x86_64) every program built with
+`-fsanitize=address` dies in `__pthread_init` before `main`, including the
+existing `test-audio-host` programs, which therefore fail here for reasons that
+are not the code's. `tools/tty/test_host.sh` probes for a working ASan and,
+without one, says so and builds with UBSan, bounds checking and stack
+protection instead. The audio script was left as it is.
+
 ## 9. Known limitations accepted up front
 
 - No general `poll`/`select` (risk 5).
