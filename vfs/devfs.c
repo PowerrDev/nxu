@@ -159,6 +159,13 @@ devfs_announce_registrations(bool announce)
 bool
 devfs_register_device(const char *name, const devfs_operations_t *operations, void *context)
 {
+	return devfs_register_device_owned(name, operations, context, 0U, 0U, DEVFS_MODE_DEFAULT);
+}
+
+bool
+devfs_register_device_owned(const char *name, const devfs_operations_t *operations, void *context, uint32_t uid,
+							uint32_t gid, uint32_t mode)
+{
 	if (name == 0 || operations == 0 || name[0] == '\0') return false;
 
 	size_t length = strlen(name);
@@ -177,7 +184,9 @@ devfs_register_device(const char *name, const devfs_operations_t *operations, vo
 		memcpy(node->name, name, length + 1U);
 		node->operations = operations;
 		node->context = context;
-		node->mode = DEVFS_MODE_DEFAULT;
+		node->uid = uid;
+		node->gid = gid;
+		node->mode = mode & 0777U;
 		node->registered = true;
 	}
 

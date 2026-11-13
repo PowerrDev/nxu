@@ -83,6 +83,16 @@ typedef struct devfs_operations {
 bool devfs_register_device(const char *name, const devfs_operations_t *operations, void *context);
 
 /*
+ * devfs_register_device_owned:
+ *
+ * devfs_register_device with an owner, a group and permission bits (the low
+ * nine bits of mode) from the start, so the node is never visible with the
+ * default ones. A terminal registers this way.
+ */
+bool devfs_register_device_owned(const char *name, const devfs_operations_t *operations, void *context, uint32_t uid,
+								 uint32_t gid, uint32_t mode);
+
+/*
  * devfs_announce_registrations:
  *
  * Whether devfs_register_device() logs each node it publishes (it does by
