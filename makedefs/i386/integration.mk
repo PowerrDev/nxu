@@ -39,6 +39,7 @@ I386_C_SOURCES += \
     kern/tests/thread_process_test.c \
     kern/tests/signal_process_test.c \
     kern/tests/spawn_process_test.c \
+    kern/tty/n_tty.c \
     libk/crc32c.c \
     libk/sha256.c \
     libk/mp3.c \
