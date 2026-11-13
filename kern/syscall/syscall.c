@@ -875,6 +875,8 @@ syscall_spawn(uint64_t user_path, uint64_t user_name, uint64_t caps)
 
 	proc_t child;
 	loader_status_t status = loader_spawn_caps(current_proc(), path, name, (uint32_t)caps, &child);
+	if (status != LOADER_STATUS_OK) kprintf("%s: could not be started: %s\n", path, loader_status_name(status));
+
 	if (status == LOADER_STATUS_NOT_FOUND) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
 
 	if (status == LOADER_STATUS_NO_MEMORY) return syscall_error(SYSCALL_ERROR_NO_MEMORY);

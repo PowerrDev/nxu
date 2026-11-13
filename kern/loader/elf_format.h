@@ -48,12 +48,14 @@
 /*
  * With demand paging the stack is only address space until it is touched, so
  * it can be generous (256 KiB) at no cost to a process that never uses it.
- * Without, every page is allocated up front and stays at 16 KiB.
+ * Without, every page is allocated up front, so it is smaller: 64 KiB, enough
+ * for the GUI processes (the desktop and the apps decode pictures and lay out
+ * windows on it; 16 KiB overflowed).
  */
 #if VM_DEMAND_PAGING
 #define LOADER_USER_STACK_PAGES 64ULL
 #else
-#define LOADER_USER_STACK_PAGES 4ULL
+#define LOADER_USER_STACK_PAGES 16ULL
 #endif
 #define LOADER_USER_STACK_TOP VM_USER_STACK_TOP
 #define LOADER_USER_STACK_BASE (LOADER_USER_STACK_TOP - LOADER_USER_STACK_PAGES * LOADER_PAGE_SIZE)

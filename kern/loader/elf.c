@@ -99,6 +99,7 @@ loader_map_zero_page(vm_address_space_t *map, uint64_t virtual_address, vm_user_
 
 	if (!vm_address_space_map_page(map, virtual_address, physical_address, protection)) {
 		(void)pmm_free_page(physical_address);
+		kprintf("could not map a page at 0x%llx\n", (unsigned long long)virtual_address);
 		return LOADER_STATUS_PROCESS_ERROR;
 	}
 
@@ -268,6 +269,7 @@ loader_place_segment(vnode_t vnode, const char *path, uint64_t file_identity, vm
 			uint64_t kernel_address = loader_segment_cache_page(entry, page_index);
 			if (kernel_address == 0ULL) {
 				loader_segment_cache_abandon(entry);
+				kprintf("segment cache has no page %llu to fill\n", (unsigned long long)page_index);
 				return LOADER_STATUS_PROCESS_ERROR;
 			}
 
@@ -294,13 +296,19 @@ loader_place_segment(vnode_t vnode, const char *path, uint64_t file_identity, vm
 		if (chunk > segment->file_size - hashed) chunk = segment->file_size - hashed;
 
 		uint64_t kernel_address = loader_segment_cache_page(entry, page_index);
-		if (kernel_address == 0ULL) return LOADER_STATUS_PROCESS_ERROR;
+		if (kernel_address == 0ULL) {
+			kprintf("segment cache has no page %llu to hash\n", (unsigned long long)page_index);
+			return LOADER_STATUS_PROCESS_ERROR;
+		}
 
 		sha256_update(identity, (const void *)(kernel_address + page_offset), chunk);
 		hashed += chunk;
 	}
 
-	if (!loader_segment_cache_map(entry, map, page_start, protection)) return LOADER_STATUS_PROCESS_ERROR;
+	if (!loader_segment_cache_map(entry, map, page_start, protection)) {
+		kprintf("could not map cached segment pages at 0x%llx\n", (unsigned long long)page_start);
+		return LOADER_STATUS_PROCESS_ERROR;
+	}
 
 	return LOADER_STATUS_OK;
 }
@@ -339,11 +347,13 @@ loader_start_process(proc_t proc)
 
 	if (!proc_make_runnable(proc) || !proc_mark_running(proc)) {
 		thread_deallocate(thread);
+		kprintf("could not make the new process runnable\n");
 		return LOADER_STATUS_PROCESS_ERROR;
 	}
 
 	bool started = sched_thread_start(thread);
 	thread_deallocate(thread);
+	if (!started) kprintf("the scheduler refused the new thread\n");
 	return started ? LOADER_STATUS_OK : LOADER_STATUS_PROCESS_ERROR;
 }
 
@@ -547,6 +557,7 @@ loader_configure_process(proc_t parent, proc_t proc, const loader_spawn_request_
 	if (map == 0 || thread == 0) {
 		if (thread != 0) thread_deallocate(thread);
 
+		kprintf("new process has no %s\n", map == 0 ? "address space" : "thread");
 		return LOADER_STATUS_PROCESS_ERROR;
 	}
 
@@ -556,8 +567,10 @@ loader_configure_process(proc_t parent, proc_t proc, const loader_spawn_request_
 	loader_status_t status = loader_build_stack_args(map, args, &stack_pointer, &argv_address);
 
 	/* The program's entry stub finds argc and argv at its initial stack pointer. */
-	if (status == LOADER_STATUS_OK && !machine_thread_set_user_state(&thread->machine, entry, stack_pointer, args->argc))
+	if (status == LOADER_STATUS_OK && !machine_thread_set_user_state(&thread->machine, entry, stack_pointer, args->argc)) {
+		kprintf("could not set the new thread's user state\n");
 		status = LOADER_STATUS_PROCESS_ERROR;
+	}
 
 	if (status == LOADER_STATUS_OK && request->set_sigmask) thread->sig_blocked = signal_sanitize_mask(request->sigmask);
 
@@ -733,6 +746,7 @@ loader_spawn_internal(proc_t parent, const char *path, const loader_spawn_reques
 
 	if (created != PROC_CREATE_OK) {
 		vnode_rele(vnode);
+		kprintf("could not create a process for %s (%u of %u slots)\n", name, (unsigned)proc_count(), (unsigned)proc_limit());
 		return created == PROC_CREATE_GROUP_DENIED ? LOADER_STATUS_DENIED : LOADER_STATUS_PROCESS_ERROR;
 	}
 
@@ -777,7 +791,10 @@ loader_spawn_internal(proc_t parent, const char *path, const loader_spawn_reques
 	sha256_context_t identity;
 	sha256_init(&identity);
 	vm_address_space_t *map = proc_vm_map(proc);
-	if (map == 0) status = LOADER_STATUS_PROCESS_ERROR;
+	if (map == 0) {
+		kprintf("new process has no address space\n");
+		status = LOADER_STATUS_PROCESS_ERROR;
+	}
 
 	for (uint32_t index = 0U; status == LOADER_STATUS_OK && index < header.program_header_count; index++) {
 		if (programs[index].type != ELF_PT_LOAD) continue;
