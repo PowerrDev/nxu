@@ -340,6 +340,8 @@ _Static_assert(sizeof(nxu_spawn_attr_t) == 112U, "nxu_spawn_attr_t is ABI: its l
 #define NXU_SYS_E_NOT_DIRECTORY 16LL
 #define NXU_SYS_E_READ_ONLY 17LL
 #define NXU_SYS_E_NOT_EMPTY 18LL
+#define NXU_SYS_E_NOT_TTY 19LL	/* ioctl: not a terminal, or a request the device does not know */
+#define NXU_SYS_E_NO_DEVICE 20LL /* the device behind the descriptor or path is gone */
 
 /* Mirrors kern/ipc/ipc_types.h's ipc_kmsg_xfer_type_t numerically. */
 #define NXU_IPC_XFER_NONE 0U

@@ -510,7 +510,7 @@ devfs_ioctl(vnode_t vnode, uint32_t command, void *argument)
 	devfs_node_t *node = devfs_node(vnode);
 
 	if (node == 0) return VFS_STATUS_INVALID;
-	if (node->operations->ioctl == 0) return VFS_STATUS_NOT_SUPPORTED;
+	if (node->operations->ioctl == 0) return VFS_STATUS_NOT_TTY;
 
 	return node->operations->ioctl(node->context, command, argument);
 }

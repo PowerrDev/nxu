@@ -500,7 +500,7 @@ vfs_status_t
 file_ioctl(file_t file, uint32_t command, void *argument)
 {
 	if (file == 0 || !file->f_active) return VFS_STATUS_INVALID;
-	if (file->f_type == FILE_TYPE_SOCKET) return VFS_STATUS_NOT_SUPPORTED;
+	if (file->f_type == FILE_TYPE_SOCKET) return VFS_STATUS_NOT_TTY;
 
 	return vnode_ioctl(file->f_vnode, command, argument);
 }

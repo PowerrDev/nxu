@@ -464,6 +464,10 @@ vfs_status_name(vfs_status_t status)
 		return "denied";
 	case VFS_STATUS_NOT_EMPTY:
 		return "directory not empty";
+	case VFS_STATUS_NOT_TTY:
+		return "not a terminal";
+	case VFS_STATUS_NO_DEVICE:
+		return "no such device";
 	default:
 		return "unknown";
 	}

@@ -292,7 +292,8 @@ vnode_ioctl(vnode_t vnode, uint32_t command, void *argument)
 {
 	if (vnode == 0 || !vnode->v_active) return VFS_STATUS_INVALID;
 
-	if (vnode->v_ops == 0 || vnode->v_ops->ioctl == 0) return VFS_STATUS_NOT_SUPPORTED;
+	/* An object that takes no ioctl at all is, among other things, not a terminal (isatty asks this way). */
+	if (vnode->v_ops == 0 || vnode->v_ops->ioctl == 0) return VFS_STATUS_NOT_TTY;
 
 	return vnode->v_ops->ioctl(vnode, command, argument);
 }

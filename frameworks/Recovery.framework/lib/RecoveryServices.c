@@ -85,6 +85,10 @@ recovery_error_name(int64_t error)
 		return "already exists";
 	case NXU_SYS_E_BUSY:
 		return "busy";
+	case NXU_SYS_E_NOT_TTY:
+		return "not a terminal";
+	case NXU_SYS_E_NO_DEVICE:
+		return "no such device";
 	default:
 		return "unknown error";
 	}

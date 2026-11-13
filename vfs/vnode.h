@@ -44,7 +44,9 @@ typedef enum {
 	VFS_STATUS_WOULD_BLOCK,
 	VFS_STATUS_INTERRUPTED,
 	VFS_STATUS_DENIED,
-	VFS_STATUS_NOT_EMPTY
+	VFS_STATUS_NOT_EMPTY,
+	VFS_STATUS_NOT_TTY,  /* an ioctl the object does not take: it is not a terminal, or not that kind of device */
+	VFS_STATUS_NO_DEVICE /* the device behind the node is gone (a terminal whose driver detached) */
 } vfs_status_t;
 
 typedef struct {

@@ -23,6 +23,9 @@
  * are closed. The driver therefore keeps its context alive until the last
  * close it is told about, exactly as it must for any open device.
  *
+ * A device with no ioctl operation answers every ioctl with NOT_TTY, as does
+ * any other object that takes none: that is how isatty() learns the answer.
+ *
  * Each node has an owner, a group and permission bits, reported by getattr
  * and enforced by the VFS at open (vnode_access). A device registered without
  * them belongs to root and is open to everyone (0666): whom to let in is then
