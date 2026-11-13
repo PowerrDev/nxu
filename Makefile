@@ -421,6 +421,7 @@ C_SOURCES := \
     kern/tests/smp_test.c \
     kern/tests/smp_user_test.c \
     kern/tests/sound_test.c \
+    kern/tests/tty_loopback.c \
     kern/tests/tep_mailbox_test.c \
     kern/tests/windowserver_process_test.c \
     kern/tests/about_sevos_process_test.c \
