@@ -288,12 +288,21 @@ virtio_net_attach(const virtio_device_t *transport)
 		}
 	}
 
-	failure_stage = "queue setup or DRIVER_OK transition";
+	failure_stage = "queue setup";
 	if (!virtio_device_setup_queue(&device->transport, 0, &device->receive) ||
-		!virtio_device_setup_queue(&device->transport, 1, &device->transmit) ||
-		!virtio_device_finish(&device->transport)) {
+		!virtio_device_setup_queue(&device->transport, 1, &device->transmit)) {
 		goto fail;
 	}
+
+	/*
+	 * Bound before DRIVER_OK: the receive buffers are posted, so a frame can
+	 * arrive, and raise the interrupt, the moment the device is live. See
+	 * virtio_device_irq_attach. Without an interrupt the interface is polled.
+	 */
+	(void)virtio_device_irq_attach(&device->transport, virtio_net_irq, device);
+
+	failure_stage = "DRIVER_OK transition";
+	if (!virtio_device_finish(&device->transport)) goto fail;
 
 	failure_stage = "MAC address validation";
 	uint8_t mac[6];
@@ -315,7 +324,6 @@ virtio_net_attach(const virtio_device_t *transport)
 
 	device->attached = true;
 	g_device_count++;
-	(void)virtio_device_irq_attach(&device->transport, virtio_net_irq, device);
 	virtio_device_notify(&device->transport, 0);
 	kprintf("%s MAC %x:%x:%x:%x:%x:%x (%s)\n", device->interface->info.name, mac[0], mac[1], mac[2],
 			mac[3], mac[4], mac[5], transport->ops->name);
@@ -323,6 +331,7 @@ virtio_net_attach(const virtio_device_t *transport)
 
 fail:
 	kprintf("attach failed during %s\n", failure_stage);
+	virtio_device_irq_detach(&device->transport, virtio_net_irq, device);
 	virtio_device_fail(&device->transport);
 
 	if (virtio_device_reset(&device->transport)) {

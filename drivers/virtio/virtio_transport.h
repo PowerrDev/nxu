@@ -183,10 +183,33 @@ virtio_device_interrupt_ack(virtio_device_t *device, uint32_t status)
 	if (virtio_device_live(device)) device->ops->interrupt_ack(device, status);
 }
 
+/*
+ * virtio_device_irq_attach / virtio_device_irq_detach
+ *
+ * A class driver attaches its handler before DRIVER_OK (virtio_device_finish),
+ * never after, and has the handler ready to acknowledge by then: from
+ * DRIVER_OK on, the device may raise its interrupt at any moment (an input
+ * event, a received packet), and on a level-triggered line it shares with a
+ * device already attached, an interrupt nobody acknowledges is raised again
+ * the instant it is dismissed, for ever.
+ *
+ * An attach that fails after its handler is bound detaches it, so the line
+ * never calls a handler with a context that is being freed or reused.
+ * Detaching a transport that polls does nothing.
+ */
 static inline bool
 virtio_device_irq_attach(virtio_device_t *device, irq_handler_t handler, void *context)
 {
 	return virtio_device_live(device) && device->ops->irq_attach(device, handler, context);
+}
+
+static inline void
+virtio_device_irq_detach(virtio_device_t *device, irq_handler_t handler, void *context)
+{
+	if (device == 0 || !device->irq_bound) return;
+
+	(void)irq_unregister(device->intid, handler, context);
+	device->irq_bound = false;
 }
 
 static inline uint8_t

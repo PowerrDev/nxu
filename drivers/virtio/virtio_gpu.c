@@ -561,10 +561,12 @@ virtio_gpu_attach(const virtio_device_t *transport)
 
 	failure_stage = "control request page allocation";
 	if (!virtio_gpu_allocate_page(&device->transport.dma, &device->control_physical, &device->control)) goto fail;
-	failure_stage = "DRIVER_OK transition";
-	if (!virtio_device_finish(&device->transport)) goto fail;
-
-	/* Completions by interrupt when it can be had; spinning stays the fallback. */
+	/*
+	 * Completions by interrupt when it can be had; spinning stays the
+	 * fallback. Bound before DRIVER_OK, as every VirtIO handler is (see
+	 * virtio_device_irq_attach): a display change on the host raises a
+	 * configuration interrupt whenever it likes.
+	 */
 	if (virtio_device_irq_attach(&device->transport, virtio_gpu_irq, device)) {
 		device->irq_attached = true;
 		*device->controlq.available_flags = 0U;
@@ -572,6 +574,9 @@ virtio_gpu_attach(const virtio_device_t *transport)
 		kprintf("no interrupt\n");
 		kprintf("command completions are polled\n");
 	}
+
+	failure_stage = "DRIVER_OK transition";
+	if (!virtio_device_finish(&device->transport)) goto fail;
 
 	failure_stage = "GET_DISPLAY_INFO";
 	if (!virtio_gpu_get_display_info(device)) goto fail;
@@ -627,6 +632,7 @@ virtio_gpu_attach(const virtio_device_t *transport)
 
 fail:
 	kprintf("attach failed during %s\n", failure_stage);
+	virtio_device_irq_detach(&device->transport, virtio_gpu_irq, device);
 	virtio_device_fail(&device->transport);
 
 	if (device->framebuffer_pages != 0ULL) {

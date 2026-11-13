@@ -336,9 +336,6 @@ virtio_input_attach(const virtio_device_t *transport)
 		goto fail;
 	}
 
-	failure_stage = "DRIVER_OK transition";
-	if (!virtio_device_finish(&device->transport)) goto fail;
-
 	failure_stage = "input subsystem registration";
 	if (device->device_class == INPUT_DEVICE_KEYBOARD) {
 		if (!keyboard_attach(device->input_device_id)) goto fail;
@@ -346,10 +343,22 @@ virtio_input_attach(const virtio_device_t *transport)
 		if (!mouse_attach(device->input_device_id)) goto fail;
 	}
 
+	/*
+	 * Everything the interrupt handler needs exists now, and it must be
+	 * bound before DRIVER_OK: the event buffers are already posted, so the
+	 * first key or pointer movement after DRIVER_OK raises the interrupt. A
+	 * mouse shares a level-triggered line with the GPU, which is attached
+	 * earlier; unacknowledged there, the interrupt would repeat for ever and
+	 * stop the boot. See virtio_device_irq_attach.
+	 */
+	device->attached = true;
+
 	failure_stage = "interrupt registration";
 	if (!virtio_device_irq_attach(&device->transport, virtio_input_irq, device)) goto fail;
 
-	device->attached = true;
+	failure_stage = "DRIVER_OK transition";
+	if (!virtio_device_finish(&device->transport)) goto fail;
+
 	g_virtio_input_device_count++;
 
 	kprintf("matched %s \"%s\" at 0x%llx\n",
@@ -369,6 +378,7 @@ virtio_input_attach(const virtio_device_t *transport)
 
 fail:
 	kprintf("attach failed during %s\n", failure_stage);
+	virtio_device_irq_detach(&device->transport, virtio_input_irq, device);
 	virtio_device_fail(&device->transport);
 	virtio_input_cleanup(device);
 	return false;
