@@ -558,6 +558,7 @@ USER_C_SOURCES := \
     frameworks/BootDaemons.framework/suidhelper.c \
     frameworks/BootDaemons.framework/suidtest.c \
     frameworks/BootDaemons.framework/spawntest.c \
+    frameworks/BootDaemons.framework/stty.c \
     frameworks/lib/termios.c \
     frameworks/BootDaemons.framework/su.c \
     frameworks/BootDaemons.framework/sudo.c \
@@ -653,6 +654,7 @@ USER_DAEMONS := \
     $(USER_BUILD)/suidhelper \
     $(USER_BUILD)/suidtest \
     $(USER_BUILD)/spawntest \
+    $(USER_BUILD)/stty \
     $(USER_BUILD)/su \
     $(USER_BUILD)/sudo \
     $(USER_BUILD)/passwd \
@@ -1106,6 +1108,13 @@ $(USER_BUILD)/spawntest: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDae
 
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
+
+$(USER_BUILD)/stty: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/stty.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
 $(USER_BUILD)/suidtest: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/suidtest.o
 
 	$(QUIET_PRINT) "LD" "$@"
@@ -1268,6 +1277,8 @@ $(USER_STAGE_STAMP): frameworks/Terminal.framework/Info.plist tools/UI/Icons/Ter
 	$(Q)cp $(USER_BUILD)/suidtest $(DISK_ROOT)/System/Library/CoreServices/suidtest
 
 	$(Q)cp $(USER_BUILD)/spawntest $(DISK_ROOT)/System/Library/CoreServices/spawntest
+
+	$(Q)cp $(USER_BUILD)/stty $(DISK_ROOT)/System/Library/CoreServices/stty
 
 	$(Q)cp $(USER_BUILD)/su $(DISK_ROOT)/System/Library/CoreServices/su
 
