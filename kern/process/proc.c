@@ -7,6 +7,7 @@
  * Implements process creation, lifecycle, and process-level operations.
  */
 #include <kern/console/console.h>
+#include <kern/logging/version.h>
 #include <kern/process/proc.h>
 #include <kern/process/pgrp.h>
 #include <kern/process/proc_internal.h>
@@ -466,8 +467,15 @@ proc_bootstrap(void)
 	g_proc_initialized = true;
 
 	proc_unlock(&g_proc_lock);
-	
-  return true;
+
+	/*
+	 * The process layer is NXU's BSD half coming up, about halfway through
+	 * the boot, so the copyright goes here, where XNU's bsd_init() prints
+	 * the Regents' one.
+	 */
+	IOLog("\n%s\n\n", NXU_COPYRIGHT);
+
+	return true;
 }
 
 uint32_t

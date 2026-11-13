@@ -24,7 +24,6 @@ void
 nxu_boot_log_early(const void *dtb_address, uint64_t current_el_raw, uint32_t current_el)
 {
 	kputln(NXU_KERNEL_VERSION);
-	IOLog("%s\n\n", NXU_COPYRIGHT);
 	IOLog("NXU: %s, clang %u.%u.%u\n", NXU_BUILD, __clang_major__, __clang_minor__, __clang_patchlevel__);
 	kprintf("cpu0 EL%u (CurrentEL 0x%llx), MIDR 0x%llx, MPIDR 0x%llx\n", current_el,
 			(unsigned long long)current_el_raw, (unsigned long long)arm64_read_midr_el1(),
