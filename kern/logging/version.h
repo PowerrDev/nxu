@@ -14,8 +14,8 @@
  * tools/version.sh; refresh them with `make version` rather than by hand.
  * 187 commits: generation 2, position 87 -> 0.2.87-dev, build 2I7A.
  */
-#define NXU_VERSION "0.5.51-dev"
-#define NXU_BUILD "NXU-5F1A"
+#define NXU_VERSION "0.6.33-dev"
+#define NXU_BUILD "NXU-6D3A"
 #define NXU_KERNEL_NAME "NXU"
 #define NXU_KERNEL_VERSION "NXU Kernel Version " NXU_VERSION " (" NXU_BUILD ")"
 /* Printed halfway through boot, as the process layer comes up (proc_bootstrap), indented one space. */
