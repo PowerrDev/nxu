@@ -941,8 +941,10 @@ proc_exit(proc_t proc, uint64_t status)
 
 	proc_reparent_children_locked(proc);
 
-	/* A zombie stays in its group until it is reaped, but it leads its session no longer. */
-	pgrp_leader_exit_locked(proc);
+	/* A zombie stays in its group until it is reaped, but it leads its session, and holds its terminal, no longer. */
+	pgrp_reclaim_t gave_up = {0};
+
+	pgrp_leader_exit_locked(proc, &gave_up);
 
 	proc_all_remove_locked(proc);
 
@@ -975,6 +977,9 @@ proc_exit(proc_t proc, uint64_t status)
 		(void)signal_post_group(orphaned[index], NXU_SIGHUP);
 		(void)signal_post_group(orphaned[index], NXU_SIGCONT);
 	}
+
+	/* The controlling process is gone: its terminal's foreground group is hung up, and the terminal let go. */
+	pgrp_reclaim(&gave_up);
 
 	kverbosef("pid %u (%s) exited with status 0x%llx; parent pid %u, %u process group(s) orphaned\n",
 			  (uint32_t)proc->p_ident.pid, proc->p_comm, (unsigned long long)status,

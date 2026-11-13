@@ -73,8 +73,10 @@
  *   - Hung up (tty_hangup: the line dropped, the other end of a
  *     pseudo-terminal closed). Reads return what is left in the input queue
  *     and then end of file; writes fail with an I/O error; a new open fails
- *     with NO_DEVICE; readiness reports a hangup. The terminal stays hung up
- *     until its last file closes, and the next open starts afresh.
+ *     with NO_DEVICE; readiness reports a hangup. The session the terminal
+ *     controlled loses it, and its leader and foreground group are sent
+ *     SIGHUP and SIGCONT. The terminal stays hung up until its last file
+ *     closes, and the next open starts afresh.
  *
  *   - Detached (tty_detach: the driver is going away for good). Hung up, and
  *     every later open fails with NO_DEVICE. The driver's operations other
@@ -92,7 +94,9 @@
 #ifndef NXU_KERN_TTY_TTY_H
 #define NXU_KERN_TTY_TTY_H
 
+#include <kern/process/proc.h>
 #include <kern/syscall/termios_defs.h>
+#include <vfs/file.h>
 #include <vfs/vnode.h>
 
 #include <stdbool.h>
@@ -259,6 +263,35 @@ void tty_set_winsize(tty_t tty, const struct nxu_winsize *size);
  * group is job control's part; until then they wait here.
  */
 uint32_t tty_take_signals(tty_t tty);
+
+/*
+ * Job control (kern/tty/tty_jobctl.c), the half the process subsystem and
+ * the loader call. The model and the lock order are in kern/process/pgrp.h.
+ *
+ * tty_claim_locked
+ *     Become the terminal of session sid with pgid in the foreground, if no
+ *     session has it. Called by kern/process/pgrp.c with the process table
+ *     lock held; takes the terminal's.
+ *
+ * tty_session_gone / tty_session_leader_exit
+ *     Session sid no longer exists, or its leader has exited: the terminal
+ *     forgets it, and after a leader's exit its foreground group is sent
+ *     SIGHUP and SIGCONT. No lock held.
+ *
+ * tty_job_acquire_for / tty_job_set_foreground_for
+ *     What the spawn attributes ask for: `tty` becomes the controlling
+ *     terminal of the session proc leads; proc's controlling terminal gets
+ *     pgid (a group of proc's session) in the foreground.
+ *
+ * tty_from_file
+ *     The terminal an open file refers to, with a reference, or TTY_NULL.
+ */
+bool tty_claim_locked(tty_t tty, proc_id_t sid, proc_id_t pgid);
+void tty_session_gone(tty_t tty, proc_id_t sid);
+void tty_session_leader_exit(tty_t tty, proc_id_t sid);
+bool tty_job_acquire_for(proc_t proc, tty_t tty);
+vfs_status_t tty_job_set_foreground_for(proc_t proc, proc_id_t pgid);
+tty_t tty_from_file(file_t file);
 
 /* How many terminals exist (diagnostics and tests: a terminal that is never freed shows here). */
 uint32_t tty_count(void);

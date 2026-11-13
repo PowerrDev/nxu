@@ -123,6 +123,15 @@ bool devfs_unregister_device(const char *name);
  */
 bool devfs_set_attributes(const char *name, uint32_t uid, uint32_t gid, uint32_t mode);
 
+/*
+ * devfs_device_of:
+ *
+ * The operations and context behind a devfs device vnode, named or not (a
+ * clone). False for any other vnode. For a driver that needs to recognise its
+ * own devices among open files.
+ */
+bool devfs_device_of(vnode_t vnode, const devfs_operations_t **operations, void **context);
+
 /* How many devices are registered, and the name of one (0 past the end). */
 uint32_t devfs_device_count(void);
 const char *devfs_device_name(uint32_t index);

@@ -195,6 +195,30 @@ cfmakeraw(struct termios *termios)
 }
 
 int
+tcgetpgrp(int descriptor)
+{
+	int32_t pgid = -1;
+
+	return termios_request(descriptor, NXU_TIOCGPGRP, &pgid) == 0 ? (int)pgid : -1;
+}
+
+int
+tcsetpgrp(int descriptor, int pgid)
+{
+	int32_t value = pgid;
+
+	return termios_request(descriptor, NXU_TIOCSPGRP, &value);
+}
+
+int
+tcgetsid(int descriptor)
+{
+	int32_t sid = -1;
+
+	return termios_request(descriptor, NXU_TIOCGSID, &sid) == 0 ? (int)sid : -1;
+}
+
+int
 isatty(int descriptor)
 {
 	struct termios termios;

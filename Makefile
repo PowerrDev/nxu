@@ -405,6 +405,7 @@ C_SOURCES := \
     kern/tty/tty.c \
     kern/tty/tty_ioctl.c \
     kern/tty/n_tty.c \
+    kern/tty/tty_jobctl.c \
     kern/console/display_owner.c \
     kern/tests/ipc_test.c \
     kern/tests/post.c \
@@ -561,6 +562,7 @@ USER_C_SOURCES := \
     frameworks/BootDaemons.framework/spawntest.c \
     frameworks/BootDaemons.framework/stty.c \
     frameworks/BootDaemons.framework/ttytest.c \
+    frameworks/BootDaemons.framework/restarttest.c \
     frameworks/lib/termios.c \
     frameworks/BootDaemons.framework/su.c \
     frameworks/BootDaemons.framework/sudo.c \
@@ -658,6 +660,7 @@ USER_DAEMONS := \
     $(USER_BUILD)/spawntest \
     $(USER_BUILD)/stty \
     $(USER_BUILD)/ttytest \
+    $(USER_BUILD)/restarttest \
     $(USER_BUILD)/su \
     $(USER_BUILD)/sudo \
     $(USER_BUILD)/passwd \
@@ -1125,6 +1128,13 @@ $(USER_BUILD)/ttytest: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemo
 
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
+
+$(USER_BUILD)/restarttest: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/restarttest.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
 $(USER_BUILD)/suidtest: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/suidtest.o
 
 	$(QUIET_PRINT) "LD" "$@"
@@ -1291,6 +1301,8 @@ $(USER_STAGE_STAMP): frameworks/Terminal.framework/Info.plist tools/UI/Icons/Ter
 	$(Q)cp $(USER_BUILD)/stty $(DISK_ROOT)/System/Library/CoreServices/stty
 
 	$(Q)cp $(USER_BUILD)/ttytest $(DISK_ROOT)/System/Library/CoreServices/ttytest
+
+	$(Q)cp $(USER_BUILD)/restarttest $(DISK_ROOT)/System/Library/CoreServices/restarttest
 
 	$(Q)cp $(USER_BUILD)/su $(DISK_ROOT)/System/Library/CoreServices/su
 

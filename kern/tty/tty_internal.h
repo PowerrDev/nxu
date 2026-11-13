@@ -15,6 +15,7 @@
 
 #include <kern/ioready.h>
 #include <kern/tty/n_tty.h>
+#include <vfs/devfs.h>
 #include <kern/lock.h>
 #include <kern/sched_prism/waitq.h>
 
@@ -77,6 +78,15 @@ typedef struct {
  * t_winsize
  *     The window size (kern/syscall/termios_defs.h).
  *
+ * t_session / t_pgrp
+ *     The session this is the controlling terminal of and its foreground
+ *     process group, 0 for none (kern/tty/tty_jobctl.c). IDs, not pointers:
+ *     the process subsystem owns the objects.
+ *
+ * t_deliver
+ *     Signals (1 << number) to post to the foreground group once the lock is
+ *     dropped (the signal characters, a window change); see t_signals.
+ *
  * t_ldisc / t_input_buffer / t_input_delimiters
  *     The line discipline and the input ring it owns (kern/tty/n_tty.h),
  *     with its termios. The ring replaces a plain input queue.
@@ -101,6 +111,9 @@ struct tty {
 	uint32_t t_deferred;
 	uint32_t t_signals;
 	struct nxu_winsize t_winsize;
+	proc_id_t t_session;
+	proc_id_t t_pgrp;
+	uint32_t t_deliver;
 
 	n_tty_t t_ldisc;
 	uint8_t *t_input_buffer;
@@ -114,6 +127,19 @@ struct tty {
 	/* Posted when input arrives, output room appears, or the line hangs up. */
 	ioready_t t_ready;
 };
+
+/*
+ * tty_deferred_t
+ *
+ * What a path that held the lock must do once it is dropped: the TTY_DEFER_*
+ * work, and signals to post to a foreground group. Filled by
+ * tty_take_deferred, under the lock; carried out by tty_run_deferred.
+ */
+typedef struct {
+	uint32_t work;
+	uint32_t signals;
+	proc_id_t pgrp;
+} tty_deferred_t;
 
 /* Work for after the lock (t_deferred). */
 #define TTY_DEFER_START (1U << 0U)		  /* output was queued or restarted: start the driver */
@@ -164,5 +190,39 @@ void tty_stop_output(tty_t tty, bool stop);
  * buffer sized by the request.
  */
 vfs_status_t tty_ioctl(tty_t tty, uint32_t command, void *argument);
+
+/* The file operations of every terminal node, and the open behind them (also /dev/tty's, kern/tty/tty_jobctl.c). */
+extern const devfs_operations_t g_tty_devfs_operations;
+vfs_status_t tty_file_open(tty_t tty, uint32_t flags);
+
+/*
+ * Job control, kern/tty/tty_jobctl.c. See the file header there.
+ *
+ * tty_job_check
+ *     May the caller do this to the terminal? OK; INTERRUPTED after posting
+ *     SIGTTIN or SIGTTOU to its group (restarted once it is continued); or
+ *     IO_ERROR. No lock held.
+ *
+ * tty_job_open
+ *     After a successful open: a session leader with no controlling terminal
+ *     acquires this one, unless VFS_OPEN_NOCTTY.
+ *
+ * tty_job_ioctl
+ *     The job-control requests; *handled is false for any other.
+ *
+ * tty_hangup_session
+ *     The line went down: the session loses its terminal, and its leader and
+ *     foreground group are told.
+ *
+ * tty_jobctl_init
+ *     Publish /dev/tty.
+ */
+typedef enum { TTY_JOB_READ, TTY_JOB_WRITE, TTY_JOB_CONFIGURE } tty_job_access_t;
+
+vfs_status_t tty_job_check(tty_t tty, tty_job_access_t access);
+void tty_job_open(tty_t tty, uint32_t flags);
+vfs_status_t tty_job_ioctl(tty_t tty, uint32_t command, void *argument, bool *handled);
+void tty_hangup_session(tty_t tty);
+bool tty_jobctl_init(void);
 
 #endif

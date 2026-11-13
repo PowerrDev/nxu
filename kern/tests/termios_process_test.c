@@ -4,17 +4,20 @@
 /*
  * File:        kern/tests/termios_process_test.c
  *
- * Starts the user program ttytest (frameworks/BootDaemons.framework/
- * ttytest.c) on a terminal of its own and waits for its verdict. The
- * terminal is the loopback test driver (kern/tests/tty_loopback.h) at
- * /dev/ttytest, open to everyone: ttytest runs as an ordinary user holding no
- * capabilities, because nothing a program does to its own terminal needs
- * any. It also runs stty (frameworks/BootDaemons.framework/stty.c) and reads
- * its output.
+ * Runs user programs that test the terminal and the signals that reach it,
+ * each on a terminal of its own, and waits for their verdicts:
  *
- * When ttytest is done the terminal is taken down the way a driver that goes
- * away does (unregister, detach, release), and it must then be freed: every
- * file ttytest and stty opened on it has been closed by their exits.
+ *   ttytest      <termios.h> and stty (frameworks/BootDaemons.framework/
+ *                ttytest.c, stty.c), on /dev/ttytest
+ *   restarttest  system calls interrupted by signals, restarted or not
+ *                (restarttest.c), on /dev/ttyrestart
+ *
+ * The terminal is the loopback test driver (kern/tests/tty_loopback.h), open
+ * to everyone: the programs run as an ordinary user holding no capabilities,
+ * because nothing a program does to its own terminal needs any. When a program
+ * is done its terminal is taken down the way a driver that goes away does
+ * (unregister, detach, release), and it must then be freed: every file the
+ * program and its children opened on it has been closed by their exits.
  */
 
 #include <kern/tests/termios_process_test.h>
@@ -30,48 +33,61 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
-#define TERMIOS_TEST_PATH "/Volumes/mainOS/System/Library/CoreServices/ttytest"
-#define TERMIOS_TEST_DEVICE "ttytest"
-#define TERMIOS_TEST_TIMEOUT_US 60000000ULL
+#define CORESERVICES "/Volumes/mainOS/System/Library/CoreServices/"
+#define PROGRAM_TEST_TIMEOUT_US 60000000ULL
 
 static tty_loopback_t g_terminal;
 
-bool
-termios_process_test(void)
+/*
+ * Put a loopback terminal at /dev/`device`, open to everyone, run the program
+ * `name` from CoreServices on it as an ordinary user, and take the terminal
+ * down again the way a driver that goes away does. True when the program
+ * exited 0 and the terminal was then freed (every file on it closed).
+ */
+static bool
+run_on_terminal(const char *name, const char *device)
 {
+	char path[96];
 	uint32_t terminals = tty_count();
+	size_t prefix = sizeof(CORESERVICES) - 1U;
+	size_t length = strlen(name);
+
+	if (prefix + length + 1U > sizeof(path)) return false;
+
+	memcpy(path, CORESERVICES, prefix);
+	memcpy(path + prefix, name, length + 1U);
 
 	if (!tty_loopback_create(&g_terminal)) {
-		kprintf("cannot create the terminal\n");
+		kprintf("cannot create the terminal for %s\n", name);
 		return false;
 	}
 
-	if (!tty_register(g_terminal.tty, TERMIOS_TEST_DEVICE, 0U, 0U, 0666U)) {
-		kprintf("cannot register /dev/%s\n", TERMIOS_TEST_DEVICE);
+	if (!tty_register(g_terminal.tty, device, 0U, 0U, 0666U)) {
+		kprintf("cannot register /dev/%s\n", device);
 		tty_release(g_terminal.tty);
 		return false;
 	}
 
 	proc_t proc = 0;
-	loader_status_t loaded =
-		loader_spawn_as(proc_kernel(), TERMIOS_TEST_PATH, "ttytest", 0U, NXU_UID_NOBODY, NXU_GID_NOBODY, &proc);
+	loader_status_t loaded = loader_spawn_as(proc_kernel(), path, name, 0U, NXU_UID_NOBODY, NXU_GID_NOBODY, &proc);
 	bool ok = loaded == LOADER_STATUS_OK;
 	uint64_t status = 0ULL;
 
-	if (!ok) kprintf("spawning ttytest failed: %s\n", loader_status_name(loaded));
+	if (!ok) kprintf("spawning %s failed: %s\n", name, loader_status_name(loaded));
 
-	uint64_t deadline = timer_get_microseconds() + TERMIOS_TEST_TIMEOUT_US;
+	uint64_t deadline = timer_get_microseconds() + PROGRAM_TEST_TIMEOUT_US;
 
 	while (ok && !proc_reap(proc_kernel(), proc->p_ident.pid, &status)) {
 		if (timer_get_microseconds() > deadline || !sched_yield()) {
-			kprintf("ttytest did not exit in time\n");
+			kprintf("%s did not exit in time\n", name);
 			ok = false;
 		}
 	}
 
 	if (ok && status != 0ULL) {
-		kprintf("ttytest failed with status 0x%llx (check number, or a kill)\n", (unsigned long long)status);
+		kprintf("%s failed with status 0x%llx (check number, or a kill)\n", name, (unsigned long long)status);
 		ok = false;
 	}
 
@@ -80,11 +96,27 @@ termios_process_test(void)
 	tty_release(g_terminal.tty);
 
 	if (ok && (!g_terminal.released || tty_count() != terminals)) {
-		kprintf("the terminal was not freed: a file on it stayed open\n");
+		kprintf("the terminal of %s was not freed: a file on it stayed open\n", name);
 		ok = false;
 	}
 
-	if (ok) kprintf("programs configure their terminal with termios and stty\n");
-
 	return ok;
+}
+
+bool
+termios_process_test(void)
+{
+	if (!run_on_terminal("ttytest", "ttytest")) return false;
+
+	kprintf("programs configure their terminal with termios and stty\n");
+	return true;
+}
+
+bool
+restart_process_test(void)
+{
+	if (!run_on_terminal("restarttest", "ttyrestart")) return false;
+
+	kprintf("interrupted system calls are restarted, or not, as SA_RESTART and the call say\n");
+	return true;
 }

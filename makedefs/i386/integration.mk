@@ -45,6 +45,7 @@ I386_C_SOURCES += \
     kern/tty/tty.c \
     kern/tty/tty_ioctl.c \
     kern/tty/n_tty.c \
+    kern/tty/tty_jobctl.c \
     libk/crc32c.c \
     libk/sha256.c \
     libk/mp3.c \

@@ -115,6 +115,10 @@ i386_trap_syscall(x86_saved_state_t *state)
 		/* The call replaced the whole frame (sigreturn): eax is part of what it restored. */
 		return;
 
+	case SYSCALL_ACTION_RESTART:
+		/* eax and eip still describe the call as it was made; see i386_finish_restart. */
+		return;
+
 	case SYSCALL_ACTION_EXIT:
 		kprintf("exit(");
 		kputu64(result.value);
@@ -229,6 +233,33 @@ i386_trap_user_exception(x86_saved_state_t *state)
 	return i386_trap_user_terminate(state);
 }
 
+/* The length of `int $0x80`, which a restarted system call goes back over. */
+#define I386_SYSCALL_INSTRUCTION_LENGTH 2U
+
+/*
+ * i386_finish_restart
+ *
+ * A system call a signal interrupted before it did anything: make it again by
+ * pointing eip back at its `int $0x80` (eax and the argument registers still
+ * hold it as it was made), or give it the interrupted result. Done before a
+ * handler frame is built, so the context the frame saves is the one the
+ * handler's sigreturn comes back to.
+ */
+static void
+i386_finish_restart(x86_saved_state_t *state, thread_t thread, const nxu_sigaction_t *handler)
+{
+	switch (syscall_restart_resolve(thread, handler)) {
+	case SYSCALL_RESTART_AGAIN:
+		state->eip -= I386_SYSCALL_INSTRUCTION_LENGTH;
+		break;
+	case SYSCALL_RESTART_INTERRUPTED:
+		state->eax = (uint32_t)(0ULL - (uint64_t)NXU_SYS_E_INTERRUPTED);
+		break;
+	default:
+		break;
+	}
+}
+
 /*
  * i386_deliver_pending_signals
  *
@@ -256,10 +287,12 @@ i386_deliver_pending_signals(x86_saved_state_t *state)
 
 	switch (signal_take(proc, thread, &signal, &action)) {
 	case SIGNAL_TAKE_NONE:
+		i386_finish_restart(state, thread, 0);
 		return;
 	case SIGNAL_TAKE_HANDLER: {
 		uint32_t previous_mask = thread->sig_blocked;
 
+		i386_finish_restart(state, thread, &action);
 		machine->user_frame = state;
 
 		bool pushed = machine_user_signal_push(action.handler, action.restorer, signal, previous_mask);

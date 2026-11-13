@@ -232,6 +232,35 @@ _Static_assert(sizeof(struct nxu_winsize) == 8U, "struct nxu_winsize is ABI: its
 #define NXU_TIOCGWINSZ NXU_IOR(NXU_TTY_IOC_GROUP, 104U, struct nxu_winsize)
 #define NXU_TIOCSWINSZ NXU_IOW(NXU_TTY_IOC_GROUP, 103U, struct nxu_winsize)
 
+/*
+ * Job control (Darwin's numbers; the argument is an int32_t process group or
+ * session ID). TIOCGPGRP, TIOCSPGRP, TIOCGSID and TIOCNOTTY apply only to the
+ * caller's controlling terminal (NXU_SYS_E_NOT_TTY otherwise).
+ *
+ * TIOCSCTTY
+ *     Make this terminal the caller's controlling terminal. The caller leads
+ *     its session, the session has none, and no other session has this one
+ *     (NXU_SYS_E_DENIED otherwise).
+ *
+ * TIOCNOTTY
+ *     Give the controlling terminal up. For the session leader this ends the
+ *     session's hold on it, and its foreground group is sent SIGHUP and
+ *     SIGCONT; for anyone else it does nothing.
+ *
+ * TIOCGPGRP / TIOCSPGRP
+ *     The foreground process group. A new one must be a group of the caller's
+ *     session (NXU_SYS_E_DENIED otherwise). With no foreground group,
+ *     TIOCGPGRP reports an ID no group has.
+ *
+ * TIOCGSID
+ *     The session the terminal controls.
+ */
+#define NXU_TIOCSCTTY NXU_IO(NXU_TTY_IOC_GROUP, 97U)
+#define NXU_TIOCNOTTY NXU_IO(NXU_TTY_IOC_GROUP, 113U)
+#define NXU_TIOCGPGRP NXU_IOR(NXU_TTY_IOC_GROUP, 119U, int32_t)
+#define NXU_TIOCSPGRP NXU_IOW(NXU_TTY_IOC_GROUP, 118U, int32_t)
+#define NXU_TIOCGSID NXU_IOR(NXU_TTY_IOC_GROUP, 99U, int32_t)
+
 /* TIOCFLUSH: which queues. */
 #define NXU_FREAD 0x1U
 #define NXU_FWRITE 0x2U

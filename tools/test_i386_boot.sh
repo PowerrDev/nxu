@@ -110,6 +110,11 @@ run_case termios yes "process-test=termios qemu-exit=1" $STATUS_CLEAN \
   "termios_process_test: programs configure their terminal with termios and stty" \
   "userland_run_process_test: termios process test passed"
 
+run_case restart yes "process-test=restart qemu-exit=1" $STATUS_CLEAN \
+  "restarttest: interrupted system calls were restarted, or not, as they should be" \
+  "restart_process_test: interrupted system calls are restarted, or not, as SA_RESTART and the call say" \
+  "userland_run_process_test: restart process test passed"
+
 printf '\n%d case(s), %d failure(s)\n' "$count" "$failures"
 
 [ "$failures" -eq 0 ]

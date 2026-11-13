@@ -187,6 +187,15 @@ bool sched_block_commit(void);
 bool sched_sleep_us(uint64_t microseconds);
 
 /*
+ * sched_sleep_us_interruptible
+ *
+ * sched_sleep_us that a signal can end early, for a sleep a user program asked
+ * for: a signal that is not blocked or ignored ends it with *interrupted set.
+ * Returns false, as sched_sleep_us does, if the thread could not sleep.
+ */
+bool sched_sleep_us_interruptible(uint64_t microseconds, bool *interrupted);
+
+/*
  * True once the boot CPU has taken a scheduler tick. Timed sleeps are ended by
  * the tick, so before this they wait by yielding instead.
  */

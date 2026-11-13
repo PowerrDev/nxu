@@ -30,6 +30,8 @@
 #include <vm/address_space.h>
 #include <vm/pmm.h>
 #include <vm/vm_fault.h>
+#include <kern/process/pgrp.h>
+#include <kern/tty/tty.h>
 #include <vm/vm_map.h>
 #include <vm/vmm.h>
 #include <stdbool.h>
@@ -527,9 +529,12 @@ loader_spawn_request(proc_t parent, const char *path, const loader_spawn_request
  *
  * Give the embryo `proc` what `request` says it starts with and what could not
  * be decided when it was created: its arguments, laid out on its stack with
- * its first thread pointed at them, its signal mask, and its descriptors.
- * Nothing here is visible to the process until it is started, and nothing
- * else can reach its descriptor table or its thread: it has never run.
+ * its first thread pointed at them, its signal mask, its descriptors, its
+ * controlling terminal, and whether its group is the foreground of its
+ * parent's. Nothing here is visible to the process until it is started, and
+ * nothing else can reach its descriptor table or its thread: it has never run.
+ * A failure here takes the embryo apart (loader_discard_process), so a
+ * terminal it acquired is let go with its session.
  */
 static loader_status_t
 loader_configure_process(proc_t parent, proc_t proc, const loader_spawn_request_t *request, uint64_t entry)
@@ -571,6 +576,34 @@ loader_configure_process(proc_t parent, proc_t proc, const loader_spawn_request_
 			file_rele(file);
 			status = LOADER_STATUS_INVALID;
 		}
+	}
+
+	/* Its controlling terminal, from among the descriptors it now has. */
+	if (status == LOADER_STATUS_OK && request->set_ctty) {
+		file_t file;
+		tty_t tty = TTY_NULL;
+
+		if (filedesc_get(&proc->p_fd, request->ctty, &file) == VFS_STATUS_OK) {
+			tty = tty_from_file(file);
+			file_rele(file);
+		}
+
+		if (tty == TTY_NULL) {
+			status = LOADER_STATUS_INVALID;
+		} else {
+			if (!tty_job_acquire_for(proc, tty)) status = LOADER_STATUS_DENIED;
+
+			tty_release(tty);
+		}
+	}
+
+	/* The foreground of the parent's terminal, before the job can run or be signalled as a background one. */
+	if (status == LOADER_STATUS_OK && request->set_foreground) {
+		proc_id_t pgid = 0U;
+
+		if (proc_getpgid(proc, 0U, &pgid) != PGRP_STATUS_OK ||
+			tty_job_set_foreground_for(parent, pgid) != VFS_STATUS_OK)
+			status = LOADER_STATUS_DENIED;
 	}
 
 	return status;

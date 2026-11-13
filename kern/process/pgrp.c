@@ -21,6 +21,7 @@
 
 #include <kern/memory/heap.h>
 #include <kern/process/proc_internal.h>
+#include <kern/tty/tty.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -37,11 +38,17 @@
  *
  * s_count
  *     Process groups in the session.
+ *
+ * s_ctty
+ *     Its controlling terminal, a counted reference (tty_reference), or 0. It
+ *     is acquired by the leader and given up when the leader exits, when the
+ *     leader gives it up (TIOCNOTTY), or when the line hangs up.
  */
 struct session {
 	proc_id_t s_sid;
 	proc_t s_leader;
 	uint32_t s_count;
+	struct tty *s_ctty;
 };
 
 /*
@@ -109,6 +116,19 @@ void
 pgrp_reclaim(pgrp_reclaim_t *reclaim)
 {
 	if (reclaim == 0) return;
+
+	/* A terminal its session gave up when the leader left: the foreground hears of it. */
+	if (reclaim->ctty != TTY_NULL) {
+		tty_session_leader_exit(reclaim->ctty, reclaim->ctty_sid);
+		tty_release(reclaim->ctty);
+		reclaim->ctty = TTY_NULL;
+	}
+
+	/* A session that ends still holding a terminal (it never had a leader to give it up): let go of it. */
+	if (reclaim->session != 0 && reclaim->session->s_ctty != TTY_NULL) {
+		tty_session_gone(reclaim->session->s_ctty, reclaim->session->s_sid);
+		tty_release(reclaim->session->s_ctty);
+	}
 
 	pgrp_discard(reclaim->pgrp, reclaim->session);
 	reclaim->pgrp = 0;
@@ -281,18 +301,121 @@ pgrp_leave_locked(proc_t proc, pgrp_reclaim_t *reclaim)
 {
 	if (proc == 0) return;
 
-	pgrp_leader_exit_locked(proc);
+	pgrp_leader_exit_locked(proc, reclaim);
 	pgrp_detach_locked(proc, reclaim);
 }
 
 void
-pgrp_leader_exit_locked(proc_t proc)
+pgrp_leader_exit_locked(proc_t proc, pgrp_reclaim_t *reclaim)
 {
 	if (proc == 0 || proc->p_pgrp == 0) return;
 
 	struct session *session = proc->p_pgrp->pg_session;
 
-	if (session->s_leader == proc) session->s_leader = 0;
+	if (session->s_leader != proc) return;
+
+	session->s_leader = 0;
+
+	if (session->s_ctty != TTY_NULL && reclaim != 0 && reclaim->ctty == TTY_NULL) {
+		reclaim->ctty = session->s_ctty;
+		reclaim->ctty_sid = session->s_sid;
+		session->s_ctty = TTY_NULL;
+	}
+}
+
+static struct session *
+pgrp_session_find_locked(proc_id_t sid)
+{
+	for (struct pgrp *pgrp = g_pgrp_head; pgrp != 0; pgrp = pgrp->pg_next) {
+		if (pgrp->pg_session->s_sid == sid) return pgrp->pg_session;
+	}
+
+	return 0;
+}
+
+bool
+proc_job_get(proc_t proc, proc_job_t *job)
+{
+	if (proc == 0 || job == 0) return false;
+
+	*job = (proc_job_t){0};
+
+	proc_table_lock();
+
+	bool found = proc->p_pgrp != 0;
+
+	if (found) {
+		struct session *session = proc->p_pgrp->pg_session;
+
+		job->sid = session->s_sid;
+		job->pgid = proc->p_pgrp->pg_id;
+		job->leader = session->s_leader == proc;
+
+		/* Lock order: the process table, then the terminal (tty_reference takes its lock). */
+		if (session->s_ctty != TTY_NULL && tty_reference(session->s_ctty)) job->ctty = session->s_ctty;
+	}
+
+	proc_table_unlock();
+	return found;
+}
+
+pgrp_status_t
+proc_ctty_acquire(proc_t proc, struct tty *tty)
+{
+	if (proc == 0 || tty == TTY_NULL) return PGRP_STATUS_INVALID;
+
+	/* The session's reference, taken before the lock. */
+	if (!tty_reference(tty)) return PGRP_STATUS_INVALID;
+
+	pgrp_status_t status = PGRP_STATUS_DENIED;
+
+	proc_table_lock();
+
+	if (proc->p_pgrp != 0) {
+		struct session *session = proc->p_pgrp->pg_session;
+
+		if (session->s_leader == proc && session->s_ctty == TTY_NULL &&
+			tty_claim_locked(tty, session->s_sid, proc->p_pgrp->pg_id)) {
+			session->s_ctty = tty;
+			status = PGRP_STATUS_OK;
+		}
+	}
+
+	proc_table_unlock();
+
+	if (status != PGRP_STATUS_OK) tty_release(tty);
+
+	return status;
+}
+
+struct tty *
+proc_session_drop_tty(proc_id_t sid, struct tty *tty)
+{
+	struct tty *dropped = TTY_NULL;
+
+	proc_table_lock();
+
+	struct session *session = pgrp_session_find_locked(sid);
+
+	if (session != 0 && session->s_ctty == tty) {
+		dropped = tty;
+		session->s_ctty = TTY_NULL;
+	}
+
+	proc_table_unlock();
+	return dropped;
+}
+
+bool
+pgrp_in_session(proc_id_t pgid, proc_id_t sid)
+{
+	proc_table_lock();
+
+	struct pgrp *pgrp = pgrp_find_locked(pgid);
+	bool member = pgrp != 0 && pgrp->pg_session->s_sid == sid;
+
+	proc_table_unlock();
+	return member;
 }
 
 /* The live process a pid argument names: 0 is the caller. No reference: the caller holds the lock. */

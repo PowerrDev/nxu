@@ -232,6 +232,22 @@ devfs_set_attributes(const char *name, uint32_t uid, uint32_t gid, uint32_t mode
 	return node != 0;
 }
 
+static devfs_node_t *devfs_node(vnode_t vnode);
+
+bool
+devfs_device_of(vnode_t vnode, const devfs_operations_t **operations, void **context)
+{
+	if (vnode == 0 || vnode->v_ops != &g_devfs_device_ops) return false;
+
+	devfs_node_t *node = devfs_node(vnode);
+
+	if (node == 0) return false;
+
+	*operations = node->operations;
+	*context = node->context;
+	return true;
+}
+
 uint32_t
 devfs_device_count(void)
 {

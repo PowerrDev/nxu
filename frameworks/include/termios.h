@@ -19,8 +19,8 @@
  * returns -NXU_SYS_E_*. A descriptor that is not a terminal fails every
  * request with NXU_SYS_E_NOT_TTY; isatty() is that test.
  *
- * Not here yet: tcgetpgrp, tcsetpgrp, tcgetsid (job control) and
- * tcsendbreak (no driver can send a break).
+ * Not here: tcsendbreak (no driver can send a break). Open a terminal with
+ * NXU_O_NOCTTY to keep it from becoming the caller's controlling terminal.
  */
 #ifndef NXU_USER_TERMIOS_H
 #define NXU_USER_TERMIOS_H
@@ -193,6 +193,17 @@ int cfsetispeed(struct termios *termios, speed_t speed);
 int cfsetospeed(struct termios *termios, speed_t speed);
 int cfsetspeed(struct termios *termios, speed_t speed);
 void cfmakeraw(struct termios *termios);
+
+/*
+ * Job control on the caller's controlling terminal: the foreground process
+ * group, and the session (POSIX puts tcgetpgrp and tcsetpgrp in <unistd.h>).
+ * tcgetpgrp reports an ID no group has when there is no foreground group.
+ * tcsetpgrp from a background process stops it with SIGTTOU, unless it ignores
+ * or blocks SIGTTOU, as a shell does.
+ */
+int tcgetpgrp(int descriptor);
+int tcsetpgrp(int descriptor, int pgid);
+int tcgetsid(int descriptor);
 
 /* 1 when `descriptor` is a terminal, 0 when it is not (POSIX puts this in <unistd.h>). */
 int isatty(int descriptor);

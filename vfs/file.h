@@ -18,6 +18,8 @@
 #define VFS_OPEN_APPEND (1U << 4U)
 /* Device files only: a read or write that would have to wait returns WOULD_BLOCK (or a short count) instead. */
 #define VFS_OPEN_NONBLOCK (1U << 5U)
+/* Do not acquire the terminal as the controlling terminal (NXU_O_NOCTTY). */
+#define VFS_OPEN_NOCTTY (1U << 6U)
 
 struct file;
 typedef struct file *file_t;

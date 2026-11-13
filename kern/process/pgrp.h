@@ -127,10 +127,17 @@ bool proc_pgrp_is_orphaned(proc_t proc);
  * lock held, and none allocates or frees.
  */
 
-/* What a process left behind when it changed or left its group: to be freed, by pgrp_reclaim, after the lock is dropped. */
+/*
+ * What a process left behind when it changed or left its group: to be freed,
+ * by pgrp_reclaim, after the lock is dropped. ctty is a controlling terminal
+ * its session gave up (its leader left), with the session's reference, which
+ * pgrp_reclaim hands back after telling the terminal (tty_session_leader_exit).
+ */
 typedef struct {
 	struct pgrp *pgrp;
 	struct session *session;
+	struct tty *ctty;
+	proc_id_t ctty_sid;
 } pgrp_reclaim_t;
 
 /* A group and a session to build with, allocated ahead of the lock. Either may be 0 on return. */
@@ -165,8 +172,11 @@ void pgrp_new_session_locked(proc_t proc, struct pgrp *pgrp, struct session *ses
 /* A reaped process leaves its group. */
 void pgrp_leave_locked(proc_t proc, pgrp_reclaim_t *reclaim);
 
-/* An exiting process stops being its session's leader; the session lives on without one. */
-void pgrp_leader_exit_locked(proc_t proc);
+/*
+ * An exiting process stops being its session's leader; the session lives on
+ * without one, and without its controlling terminal, which goes in *reclaim.
+ */
+void pgrp_leader_exit_locked(proc_t proc, pgrp_reclaim_t *reclaim);
 
 /*
  * pgrp_orphaned_by_exit_locked
@@ -179,6 +189,46 @@ void pgrp_leader_exit_locked(proc_t proc);
  * exiting's children are given to another parent.
  */
 uint32_t pgrp_orphaned_by_exit_locked(proc_t exiting, proc_id_t *pgids, uint32_t capacity);
+
+/*
+ * Controlling terminals. The process subsystem keeps, for each session, a
+ * counted reference to its controlling terminal (kern/tty/tty.h), and the
+ * terminal keeps the session's and its foreground group's IDs. Both sides
+ * change together under the process table lock and then the terminal's lock:
+ * the process table lock may be held while a terminal's is taken, never the
+ * other way round (kern/tty/tty_jobctl.c).
+ *
+ * proc_job_get
+ *     proc's session and group IDs, whether it leads the session, and the
+ *     session's controlling terminal with a reference for the caller
+ *     (tty_release), or TTY_NULL. False for a process with no group.
+ *
+ * proc_ctty_acquire
+ *     `tty` becomes the controlling terminal of proc's session, with proc's
+ *     group in the foreground. proc must lead the session, the session must
+ *     have none, and no other session may have this one (DENIED otherwise).
+ *
+ * proc_session_drop_tty
+ *     Session `sid` no longer has `tty` as its controlling terminal. Returns
+ *     the session's reference for the caller to release, or TTY_NULL when the
+ *     session did not have it.
+ *
+ * pgrp_in_session
+ *     Whether pgid names a process group of session sid.
+ */
+struct tty;
+
+typedef struct {
+	proc_id_t sid;
+	proc_id_t pgid;
+	bool leader;
+	struct tty *ctty;
+} proc_job_t;
+
+bool proc_job_get(proc_t proc, proc_job_t *job);
+pgrp_status_t proc_ctty_acquire(proc_t proc, struct tty *tty);
+struct tty *proc_session_drop_tty(proc_id_t sid, struct tty *tty);
+bool pgrp_in_session(proc_id_t pgid, proc_id_t sid);
 
 /* True while a group or a session is named `id`: such a pid must not be handed out again. */
 bool pgrp_id_in_use_locked(proc_id_t id);

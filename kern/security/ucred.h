@@ -75,8 +75,6 @@ ucred_init_root(struct ucred *cred)
 static inline void
 ucred_copy(struct ucred *dst, const struct ucred *src)
 {
-  kprintf("copying src into dst\n");
-
   if (dst == 0 || src == 0) return;
 	*dst = *src;
 }
@@ -129,7 +127,6 @@ ucred_may_setegid(const struct ucred *cred, nxu_gid_t target)
 static inline bool
 ucred_setuid(struct ucred *cred, nxu_uid_t uid)
 {
-  kprintf("setting uid. Will return false if transition is not permitted.\n");
 	if (cred == 0) return false;
 
   if (ucred_is_root(cred)) {

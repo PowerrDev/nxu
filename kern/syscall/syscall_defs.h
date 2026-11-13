@@ -216,8 +216,22 @@
 #define NXU_SIG_DFL 0ULL
 #define NXU_SIG_IGN 1ULL
 
-/* sigaction flags. */
+/*
+ * sigaction flags.
+ *
+ * NXU_SA_RESTART: a system call this signal's handler interrupted before it
+ * had done anything is made again once the handler returns, instead of
+ * failing with -NXU_SYS_E_INTERRUPTED. Only calls that can be made again
+ * without a visible difference are restarted (read, write, open, ioctl and the
+ * waits for a child); the others always report the interruption (the sleeps,
+ * the event and message waits). A call that had already moved data returns
+ * what it moved, with or without the flag. A signal that runs no handler (one
+ * that stops and continues the process) restarts the call it interrupted
+ * whatever the flag says.
+ */
 #define NXU_SA_NODEFER (1U << 0U) /* do not block the signal while its handler runs */
+#define NXU_SA_RESTART (1U << 1U) /* restart the system call the handler interrupted */
+#define NXU_SA_FLAGS_ALL (NXU_SA_NODEFER | NXU_SA_RESTART)
 
 /* sigprocmask "how". */
 #define NXU_SIG_BLOCK 0U
@@ -263,6 +277,16 @@ typedef struct {
  *                           it. Not together with NXU_SPAWN_SETPGROUP.
  *     NXU_SPAWN_SETSIGMASK  the child's first thread starts with `sigmask`
  *                           blocked. Without it nothing is blocked.
+ *     NXU_SPAWN_SETCTTY     the terminal open at the child's descriptor `ctty`
+ *                           becomes the controlling terminal of its new
+ *                           session, with the child's group in the foreground.
+ *                           Needs NXU_SPAWN_SETSID, and a terminal no other
+ *                           session controls.
+ *     NXU_SPAWN_SETFG       the child's process group becomes the foreground
+ *                           group of the caller's controlling terminal. Not
+ *                           with NXU_SPAWN_SETSID. This is how a shell starts a
+ *                           job in the foreground without a window in which
+ *                           the job runs, or is signalled, as a background one.
  *
  *   caps
  *     The capabilities the child holds (NXU_CAP_*), a subset of the caller's.
@@ -282,8 +306,14 @@ typedef struct {
  *     after a fork. Nothing else is inherited; a child with no entry for 0,
  *     1 or 2 has no standard input, output or error of its own.
  *
+ *   ctty
+ *     The child descriptor NXU_SPAWN_SETCTTY names.
+ *
  * A new process always starts with every signal disposition at its default;
  * dispositions are not inherited across spawn.
+ *
+ * The structure grew from 112 bytes (without `ctty`); the kernel accepts both
+ * sizes, so a program built against the shorter one still works.
  *
  * The layout is the same on every architecture: fixed-width fields, user
  * addresses as 64-bit values, no padding. `size` is sizeof(nxu_spawn_attr_t)
@@ -292,7 +322,10 @@ typedef struct {
 #define NXU_SPAWN_SETPGROUP (1U << 0U)
 #define NXU_SPAWN_SETSID (1U << 1U)
 #define NXU_SPAWN_SETSIGMASK (1U << 2U)
-#define NXU_SPAWN_FLAGS_ALL (NXU_SPAWN_SETPGROUP | NXU_SPAWN_SETSID | NXU_SPAWN_SETSIGMASK)
+#define NXU_SPAWN_SETCTTY (1U << 3U)
+#define NXU_SPAWN_SETFG (1U << 4U)
+#define NXU_SPAWN_FLAGS_ALL \
+	(NXU_SPAWN_SETPGROUP | NXU_SPAWN_SETSID | NXU_SPAWN_SETSIGMASK | NXU_SPAWN_SETCTTY | NXU_SPAWN_SETFG)
 
 #define NXU_SPAWN_FD_MAX 8U
 
@@ -313,9 +346,14 @@ typedef struct {
 	uint64_t arguments;
 	uint64_t name;
 	nxu_spawn_fd_t descriptors[NXU_SPAWN_FD_MAX];
+	uint32_t ctty;
+	uint32_t reserved;
 } nxu_spawn_attr_t;
 
-_Static_assert(sizeof(nxu_spawn_attr_t) == 112U, "nxu_spawn_attr_t is ABI: its layout must not change");
+/* The size before `ctty` was added. */
+#define NXU_SPAWN_ATTR_SIZE_V1 112U
+
+_Static_assert(sizeof(nxu_spawn_attr_t) == 120U, "nxu_spawn_attr_t is ABI: its layout must not change");
 
 /* Mirrors vm_user_protection_t (vm/address_space.h) numerically. */
 #define NXU_MMAP_PROT_READ_WRITE 0U
@@ -359,6 +397,12 @@ _Static_assert(sizeof(nxu_spawn_attr_t) == 112U, "nxu_spawn_attr_t is ABI: its l
  * -NXU_SYS_E_AGAIN (or is cut short) instead of sleeping.
  */
 #define NXU_O_NONBLOCK (1U << 5U)
+
+/*
+ * Opening a terminal does not make it the caller's controlling terminal, which
+ * it otherwise does for a session leader that has none.
+ */
+#define NXU_O_NOCTTY (1U << 6U)
 
 /*
  * The open flags that can change a file or create one: they need

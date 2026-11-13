@@ -97,6 +97,8 @@ userland_run_process_test(const char *name)
 		ok = tty_test_run();
 	else if (strcmp(name, "termios") == 0)
 		ok = termios_process_test();
+	else if (strcmp(name, "restart") == 0)
+		ok = restart_process_test();
 	else {
 		kprintf("unknown process-test \"%s\"\n", name);
 		return false;
@@ -236,7 +238,7 @@ i386_init_userland(const i386_boot_info_t *boot)
 	vfs_dump();
 
 	/*
-	 * "process-test=<ipc|thread|socket|signal|spawn|tty|termios>" runs one of the shared kernel-side
+	 * "process-test=<ipc|thread|socket|signal|spawn|tty|termios|restart>" runs one of the shared kernel-side
 	 * process tests instead of the normal boot. They spawn their own
 	 * processes (the IPC one starts its own bootd as PID 1), so bootd must
 	 * not already be running.

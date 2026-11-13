@@ -58,8 +58,10 @@
 #include <kern/memory/heap.h>
 #include <kern/sched_prism/waitq.h>
 #include <kern/syscall/syscall_defs.h>
+#include <kern/process/signal.h>
 #include <kern/syscall/termios_defs.h>
 #include <vfs/devfs.h>
+#include <vfs/file.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -77,12 +79,12 @@ static vfs_status_t tty_devfs_write(void *context, const void *buffer, uint64_t 
 static vfs_status_t tty_devfs_ioctl(void *context, uint32_t command, void *argument);
 static vfs_status_t tty_devfs_poll(void *context, uint32_t *ready, struct ioready **source);
 
-static const devfs_operations_t g_tty_devfs_operations = {.open = tty_devfs_open,
-														  .close = tty_devfs_close,
-														  .read = tty_devfs_read,
-														  .write = tty_devfs_write,
-														  .ioctl = tty_devfs_ioctl,
-														  .poll = tty_devfs_poll};
+const devfs_operations_t g_tty_devfs_operations = {.open = tty_devfs_open,
+												   .close = tty_devfs_close,
+												   .read = tty_devfs_read,
+												   .write = tty_devfs_write,
+												   .ioctl = tty_devfs_ioctl,
+												   .poll = tty_devfs_poll};
 
 /* ---- queues ------------------------------------------------------------- */
 
@@ -195,6 +197,7 @@ tty_hook_signal(void *context, n_tty_signal_t signal)
 													   : NXU_SIGTSTP;
 
 	tty->t_signals |= 1U << number;
+	tty->t_deliver |= 1U << number;
 }
 
 static void
@@ -214,27 +217,45 @@ static const n_tty_hooks_t g_tty_ldisc_hooks = {.output_room = tty_hook_output_r
 												.signal = tty_hook_signal,
 												.flow = tty_hook_flow};
 
-/* Take the work the hooks recorded; t_lock held. A detached driver is not started. */
-static uint32_t
-tty_take_deferred(tty_t tty)
+/*
+ * Take what the hooks recorded; t_lock held. A detached driver is not
+ * started. Signals go to the foreground group as it is now; with none, they
+ * go nowhere (they are still counted in t_signals).
+ */
+static void
+tty_take_deferred(tty_t tty, tty_deferred_t *deferred)
 {
-	uint32_t deferred = tty->t_deferred;
+	deferred->work = tty->t_deferred;
+	deferred->signals = tty->t_pgrp != 0U ? tty->t_deliver : 0U;
+	deferred->pgrp = tty->t_pgrp;
 
 	tty->t_deferred = 0U;
-	if (tty->t_detached || tty->t_driver->start == 0) deferred &= ~TTY_DEFER_START;
-	if (tty->t_detached || tty->t_driver->unthrottle == 0) deferred &= ~TTY_DEFER_UNTHROTTLE;
+	tty->t_deliver = 0U;
 
-	return deferred;
+	if (tty->t_detached || tty->t_driver->start == 0) deferred->work &= ~TTY_DEFER_START;
+	if (tty->t_detached || tty->t_driver->unthrottle == 0) deferred->work &= ~TTY_DEFER_UNTHROTTLE;
 }
 
-/* Do it, with no lock held. */
-static void
-tty_run_deferred(tty_t tty, uint32_t deferred)
+static bool
+tty_deferred_pending(const tty_deferred_t *deferred)
 {
-	if ((deferred & TTY_DEFER_START) != 0U) tty->t_driver->start(tty, tty->t_driver_context);
-	if ((deferred & TTY_DEFER_UNTHROTTLE) != 0U) tty->t_driver->unthrottle(tty, tty->t_driver_context);
-	if ((deferred & TTY_DEFER_POST_READ) != 0U) ioready_post(&tty->t_ready, IOREADY_READ);
-	if ((deferred & TTY_DEFER_POST_WRITE) != 0U) ioready_post(&tty->t_ready, IOREADY_WRITE);
+	return deferred->work != 0U || deferred->signals != 0U;
+}
+
+/* Do it, with no lock held: driver calls, readiness, then the signals (rule 6.3: never under a terminal lock). */
+static void
+tty_run_deferred(tty_t tty, const tty_deferred_t *deferred)
+{
+	uint32_t work = deferred->work;
+
+	if ((work & TTY_DEFER_START) != 0U) tty->t_driver->start(tty, tty->t_driver_context);
+	if ((work & TTY_DEFER_UNTHROTTLE) != 0U) tty->t_driver->unthrottle(tty, tty->t_driver_context);
+	if ((work & TTY_DEFER_POST_READ) != 0U) ioready_post(&tty->t_ready, IOREADY_READ);
+	if ((work & TTY_DEFER_POST_WRITE) != 0U) ioready_post(&tty->t_ready, IOREADY_WRITE);
+
+	for (uint32_t signal = 1U; signal < NXU_NSIG; signal++) {
+		if ((deferred->signals & (1U << signal)) != 0U) (void)signal_post_group(deferred->pgrp, signal);
+	}
 }
 
 /* The discipline may have made input readable, or changed what a reader waits for: wake them. */
@@ -344,10 +365,12 @@ tty_change_termios(tty_t tty, const struct nxu_termios *termios, bool flush_inpu
 	n_tty_set_termios(&tty->t_ldisc, termios);
 	tty_wake_readers_locked(tty);
 
-	uint32_t deferred = tty_take_deferred(tty);
+	tty_deferred_t deferred;
+
+	tty_take_deferred(tty, &deferred);
 
 	tty_unlock(tty, state);
-	tty_run_deferred(tty, deferred);
+	tty_run_deferred(tty, &deferred);
 	return VFS_STATUS_OK;
 }
 
@@ -359,10 +382,12 @@ tty_flush(tty_t tty, uint32_t which)
 	if ((which & NXU_FREAD) != 0U) tty_flush_input_locked(tty);
 	if ((which & NXU_FWRITE) != 0U) tty_flush_output_locked(tty);
 
-	uint32_t deferred = tty_take_deferred(tty);
+	tty_deferred_t deferred;
+
+	tty_take_deferred(tty, &deferred);
 
 	tty_unlock(tty, state);
-	tty_run_deferred(tty, deferred);
+	tty_run_deferred(tty, &deferred);
 }
 
 /*
@@ -403,10 +428,12 @@ tty_stop_output(tty_t tty, bool stop)
 	tty->t_ldisc.stopped = stop;
 	if (!stop) tty->t_deferred |= TTY_DEFER_START;
 
-	uint32_t deferred = tty_take_deferred(tty);
+	tty_deferred_t deferred;
+
+	tty_take_deferred(tty, &deferred);
 
 	tty_unlock(tty, state);
-	tty_run_deferred(tty, deferred);
+	tty_run_deferred(tty, &deferred);
 }
 
 void
@@ -426,9 +453,17 @@ tty_set_winsize(tty_t tty, const struct nxu_winsize *size)
 				   tty->t_winsize.ws_xpixel != size->ws_xpixel || tty->t_winsize.ws_ypixel != size->ws_ypixel;
 
 	tty->t_winsize = *size;
-	if (changed) tty->t_signals |= 1U << NXU_SIGWINCH;
 
+	if (changed) {
+		tty->t_signals |= 1U << NXU_SIGWINCH;
+		tty->t_deliver |= 1U << NXU_SIGWINCH;
+	}
+
+	tty_deferred_t deferred;
+
+	tty_take_deferred(tty, &deferred);
 	tty_unlock(tty, state);
+	tty_run_deferred(tty, &deferred);
 }
 
 uint32_t
@@ -454,6 +489,11 @@ tty_init(void)
 	g_tty_count = 0U;
 	g_tty_initialized = true;
 	nxu_spin_unlock(&g_tty_count_lock);
+
+	if (!tty_jobctl_init()) {
+		kprintf("cannot publish /dev/tty\n");
+		return;
+	}
 
 	kprintf("initialized tty successfully\n");
 }
@@ -647,10 +687,12 @@ tty_input(tty_t tty, const void *bytes, uint32_t count)
 	/* A byte stored can satisfy VMIN or restart a VTIME timer, even before a line is complete. */
 	if (tty->t_ldisc.received != received || n_tty_readable(&tty->t_ldisc)) tty_wake_readers_locked(tty);
 
-	uint32_t deferred = tty_take_deferred(tty);
+	tty_deferred_t deferred;
+
+	tty_take_deferred(tty, &deferred);
 
 	tty_unlock(tty, state);
-	tty_run_deferred(tty, deferred);
+	tty_run_deferred(tty, &deferred);
 
 	return taken;
 }
@@ -714,6 +756,9 @@ tty_hangup_internal(tty_t tty, bool detach)
 	tty_unlock(tty, state);
 
 	ioready_post(&tty->t_ready, IOREADY_HANGUP | IOREADY_READ | IOREADY_WRITE);
+
+	/* The session loses its terminal; its leader and foreground group hear of it. */
+	tty_hangup_session(tty);
 }
 
 void
@@ -739,13 +784,10 @@ tty_detach(tty_t tty)
  * keeping everyone else out until it answers. A terminal whose first open
  * finds it hung up by a previous session starts afresh.
  */
-static vfs_status_t
-tty_devfs_open(void *context, uint32_t flags, devfs_clone_t *clone)
+vfs_status_t
+tty_file_open(tty_t tty, uint32_t flags)
 {
 	(void)flags;
-	(void)clone;
-
-	tty_t tty = context;
 
 	if (!tty_reference(tty)) return VFS_STATUS_NO_DEVICE;
 
@@ -794,6 +836,31 @@ tty_devfs_open(void *context, uint32_t flags, devfs_clone_t *clone)
 	if (status != VFS_STATUS_OK) tty_release(tty);
 
 	return status;
+}
+
+/* The devfs open: the file's open, then the controlling terminal, if this opener is to acquire one. */
+static vfs_status_t
+tty_devfs_open(void *context, uint32_t flags, devfs_clone_t *clone)
+{
+	(void)clone;
+
+	vfs_status_t status = tty_file_open(context, flags);
+
+	if (status == VFS_STATUS_OK) tty_job_open(context, flags);
+
+	return status;
+}
+
+tty_t
+tty_from_file(file_t file)
+{
+	const devfs_operations_t *operations;
+	void *context;
+
+	if (file == 0 || file->f_type == FILE_TYPE_SOCKET || file->f_vnode == 0) return TTY_NULL;
+	if (!devfs_device_of(file->f_vnode, &operations, &context) || operations != &g_tty_devfs_operations) return TTY_NULL;
+
+	return tty_reference(context) ? context : TTY_NULL;
 }
 
 /*
@@ -889,6 +956,10 @@ tty_devfs_read(void *context, void *buffer, uint64_t size, uint32_t ioflags, uin
 
 	if (size == 0ULL) return VFS_STATUS_OK;
 
+	vfs_status_t allowed = tty_job_check(tty, TTY_JOB_READ);
+
+	if (allowed != VFS_STATUS_OK) return allowed;
+
 	uint32_t capacity = size > (uint64_t)UINT32_MAX ? UINT32_MAX : (uint32_t)size;
 	uint64_t deadline = WAITQ_NO_DEADLINE;
 	uint32_t received_mark = 0U;
@@ -972,6 +1043,10 @@ tty_devfs_write(void *context, const void *buffer, uint64_t size, uint32_t iofla
 
 	*written_size = 0ULL;
 
+	vfs_status_t allowed = tty_job_check(tty, TTY_JOB_WRITE);
+
+	if (allowed != VFS_STATUS_OK) return allowed;
+
 	uint64_t state = tty_lock(tty);
 
 	while (done < size) {
@@ -986,12 +1061,14 @@ tty_devfs_write(void *context, const void *buffer, uint64_t size, uint32_t iofla
 
 		done += taken;
 
-		uint32_t deferred = tty_take_deferred(tty);
+		tty_deferred_t deferred;
+
+		tty_take_deferred(tty, &deferred);
 
 		/* Bytes queued: start the driver, then try again; it may have made room already. */
-		if (deferred != 0U) {
+		if (tty_deferred_pending(&deferred)) {
 			tty_unlock(tty, state);
-			tty_run_deferred(tty, deferred);
+			tty_run_deferred(tty, &deferred);
 			state = tty_lock(tty);
 			continue;
 		}
@@ -1015,10 +1092,12 @@ tty_devfs_write(void *context, const void *buffer, uint64_t size, uint32_t iofla
 		state = tty_lock(tty);
 	}
 
-	uint32_t deferred = tty_take_deferred(tty);
+	tty_deferred_t deferred;
+
+	tty_take_deferred(tty, &deferred);
 
 	tty_unlock(tty, state);
-	tty_run_deferred(tty, deferred);
+	tty_run_deferred(tty, &deferred);
 
 	*written_size = done;
 	return done != 0ULL ? VFS_STATUS_OK : status;

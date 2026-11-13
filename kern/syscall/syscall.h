@@ -156,7 +156,16 @@ typedef enum {
 	 * (exec entering a new program, sigreturn restoring the interrupted
 	 * context); the trap path must not store a result over them.
 	 */
-	SYSCALL_ACTION_KEEP_FRAME
+	SYSCALL_ACTION_KEEP_FRAME,
+
+	/*
+	 * A signal interrupted the call before it did anything, and the call can
+	 * be made again (current_thread()->syscall_restart is set). The trap path
+	 * stores no result: the caller's registers still hold the call as it was
+	 * made, and syscall_restart_resolve decides on the way back to user mode
+	 * whether to make it again or to return -NXU_SYS_E_INTERRUPTED.
+	 */
+	SYSCALL_ACTION_RESTART
 } syscall_action_t;
 
 typedef struct {
@@ -170,5 +179,31 @@ typedef struct {
 } syscall_result_t;
 
 syscall_result_t syscall_dispatch(const syscall_request_t *request);
+
+/*
+ * System-call restart, the machine-independent half.
+ *
+ * A system call that sleeps interruptibly returns "interrupted" when a signal
+ * ends the sleep. If it had done nothing yet and is restartable (see
+ * syscall_is_restartable in kern/syscall/syscall.c), syscall_dispatch turns
+ * the result into SYSCALL_ACTION_RESTART. The machine-dependent return path
+ * then acts on the thread's signals (signal_take) and, before it builds a
+ * handler frame or resumes the thread, calls syscall_restart_resolve with the
+ * handler it is about to run (0 when there is none) and does what it says:
+ *
+ *   SYSCALL_RESTART_NONE         nothing was interrupted: resume as it is
+ *   SYSCALL_RESTART_AGAIN        point the user program counter back at the
+ *                                system call instruction, so the call is made
+ *                                again, after the handler if there is one
+ *   SYSCALL_RESTART_INTERRUPTED  store -NXU_SYS_E_INTERRUPTED as the result
+ *
+ * AGAIN when no handler runs (the signal stopped and continued the process,
+ * or was taken by another thread) or when the handler has NXU_SA_RESTART;
+ * INTERRUPTED when a handler without it runs.
+ */
+typedef enum { SYSCALL_RESTART_NONE, SYSCALL_RESTART_AGAIN, SYSCALL_RESTART_INTERRUPTED } syscall_restart_t;
+
+struct thread;
+syscall_restart_t syscall_restart_resolve(struct thread *thread, const nxu_sigaction_t *handler);
 
 #endif

@@ -219,6 +219,15 @@ struct thread {
 	uint32_t sig_blocked;
 
 	/*
+	 * The system call this thread made was interrupted by a signal before it
+	 * did anything, and can be made again: set by syscall_dispatch, consumed
+	 * by syscall_restart_resolve on the way back to user mode, which decides
+	 * between making it again and reporting the interruption. Only the thread
+	 * itself touches it.
+	 */
+	bool syscall_restart;
+
+	/*
 	 * The wait queue this thread is sleeping on, or 0. wait_interruptible
 	 * says a signal may cut the wait short; wait_interrupted is how it tells
 	 * the sleeper it did. See kern/sched_prism/waitq.h.

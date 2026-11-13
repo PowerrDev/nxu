@@ -99,6 +99,14 @@ typedef struct {
  * set_identity / uid / gid
  *     Start it as this user and group instead of with the parent's
  *     credentials. For kernel callers; the spawn system call never sets it.
+ *
+ * set_ctty / ctty
+ *     The terminal at its descriptor `ctty` becomes the controlling terminal
+ *     of the new session it leads (group.mode PROC_GROUP_NEW_SESSION).
+ *
+ * set_foreground
+ *     Its process group becomes the foreground group of the parent's
+ *     controlling terminal.
  */
 typedef struct {
 	const char *name;
@@ -112,6 +120,9 @@ typedef struct {
 	bool set_identity;
 	uint32_t uid;
 	uint32_t gid;
+	bool set_ctty;
+	uint32_t ctty;
+	bool set_foreground;
 } loader_spawn_request_t;
 
 /*

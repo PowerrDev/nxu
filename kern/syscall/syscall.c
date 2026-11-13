@@ -531,6 +531,7 @@ syscall_sigaction(uint64_t signal, uint64_t user_action, uint64_t user_old_actio
 	if (user_action != 0ULL) {
 		if (!vm_copy_from_user(&replacement, user_action, sizeof(replacement)))
 			return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+		if ((replacement.flags & ~NXU_SA_FLAGS_ALL) != 0U) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 		if (!signal_set_action(proc, (uint32_t)signal, &replacement))
 			return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 	}
@@ -904,12 +905,20 @@ syscall_path_leaf(const char *path)
 static syscall_result_t
 syscall_spawn_attr(uint64_t user_path, uint64_t user_attr)
 {
-	nxu_spawn_attr_t attr;
+	nxu_spawn_attr_t attr = {0};
+	uint32_t size;
 
-	if (!vm_copy_from_user(&attr, user_attr, sizeof(attr))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	/* The caller says how large its structure is; a program built before `ctty` existed passes the shorter one. */
+	if (!vm_copy_from_user(&size, user_attr, sizeof(size))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	if (size != sizeof(attr) && size != NXU_SPAWN_ATTR_SIZE_V1) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	if (!vm_copy_from_user(&attr, user_attr, size)) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 
-	if (attr.size != sizeof(attr) || (attr.flags & ~NXU_SPAWN_FLAGS_ALL) != 0U ||
+	bool new_session = (attr.flags & NXU_SPAWN_SETSID) != 0U;
+
+	if ((attr.flags & ~NXU_SPAWN_FLAGS_ALL) != 0U ||
 		(attr.flags & (NXU_SPAWN_SETPGROUP | NXU_SPAWN_SETSID)) == (NXU_SPAWN_SETPGROUP | NXU_SPAWN_SETSID) ||
+		((attr.flags & NXU_SPAWN_SETCTTY) != 0U && (!new_session || attr.ctty >= VFS_FD_MAX)) ||
+		((attr.flags & NXU_SPAWN_SETFG) != 0U && new_session) ||
 		attr.caps > NXU_CAP_ALL || attr.pgid > PROC_PID_MAX || attr.argc > NXU_EXEC_ARGV_MAX ||
 		attr.arguments_size > NXU_EXEC_ARGV_BYTES || attr.descriptor_count > NXU_SPAWN_FD_MAX ||
 		(attr.argc == 0U) != (attr.arguments_size == 0U)) {
@@ -979,7 +988,10 @@ syscall_spawn_attr(uint64_t user_path, uint64_t user_attr)
 									  .args = args,
 									  .set_sigmask = (attr.flags & NXU_SPAWN_SETSIGMASK) != 0U,
 									  .sigmask = attr.sigmask,
-									  .descriptor_count = attr.descriptor_count};
+									  .descriptor_count = attr.descriptor_count,
+									  .set_ctty = (attr.flags & NXU_SPAWN_SETCTTY) != 0U,
+									  .ctty = attr.ctty,
+									  .set_foreground = (attr.flags & NXU_SPAWN_SETFG) != 0U};
 
 	if ((attr.flags & NXU_SPAWN_SETSID) != 0U) {
 		request.group.mode = PROC_GROUP_NEW_SESSION;
@@ -2766,7 +2778,11 @@ syscall_sleep_us(uint64_t microseconds)
 {
 	if (microseconds > SYSCALL_SLEEP_MAX_US) microseconds = SYSCALL_SLEEP_MAX_US;
 
-	if (!sched_sleep_us(microseconds)) return syscall_error(SYSCALL_ERROR_INTERRUPTED);
+	bool interrupted = false;
+
+	/* Like nanosleep: a caught signal ends the sleep early, and it is never restarted. */
+	if (!sched_sleep_us_interruptible(microseconds, &interrupted) || interrupted)
+		return syscall_error(SYSCALL_ERROR_INTERRUPTED);
 
 	return syscall_return(0ULL);
 }
@@ -2935,6 +2951,36 @@ syscall_read_poll(uint64_t descriptor, uint64_t user_buffer, uint64_t length)
 
 static syscall_result_t syscall_dispatch_inner(const syscall_request_t *request);
 
+/*
+ * syscall_is_restartable
+ *
+ * Whether a call that a signal interrupted before it did anything can simply
+ * be made again. The test is that nothing observable happened: the call
+ * reports "interrupted" only from a sleep it took before changing anything
+ * (a read or write that had moved bytes returns the short count instead, see
+ * syscall_io_partial). What is left out on purpose: the sleeps, whose caller
+ * asked to be woken by a signal (nanosleep never restarts either), and the
+ * event and message waits, which are how a program waits for "anything", a
+ * signal included (as select and poll never restart).
+ */
+static bool
+syscall_is_restartable(uint64_t number)
+{
+	switch (number) {
+	case SYSCALL_READ:
+	case SYSCALL_WRITE:
+	case SYSCALL_OPEN:
+	case SYSCALL_IOCTL:
+	case SYSCALL_WAIT:
+	case SYSCALL_WAIT_OPTIONS:
+	case SYSCALL_SOCKET_CONNECT:
+	case SYSCALL_SOCKET_ACCEPT:
+		return true;
+	default:
+		return false;
+	}
+}
+
 syscall_result_t
 syscall_dispatch(const syscall_request_t *request)
 {
@@ -2950,7 +2996,27 @@ syscall_dispatch(const syscall_request_t *request)
 
 	if (bind) sched_unbind_boot_cpu();
 
+	thread_t thread = current_thread();
+
+	if (result.action == SYSCALL_ACTION_RETURN && result.value == 0ULL - (uint64_t)SYSCALL_ERROR_INTERRUPTED &&
+		syscall_is_restartable(request->number) && thread != 0) {
+		thread->syscall_restart = true;
+		result.action = SYSCALL_ACTION_RESTART;
+	}
+
 	return result;
+}
+
+syscall_restart_t
+syscall_restart_resolve(thread_t thread, const nxu_sigaction_t *handler)
+{
+	if (thread == 0 || !thread->syscall_restart) return SYSCALL_RESTART_NONE;
+
+	thread->syscall_restart = false;
+
+	if (handler != 0 && (handler->flags & NXU_SA_RESTART) == 0U) return SYSCALL_RESTART_INTERRUPTED;
+
+	return SYSCALL_RESTART_AGAIN;
 }
 
 static syscall_result_t

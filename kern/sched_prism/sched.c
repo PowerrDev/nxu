@@ -170,6 +170,33 @@ sched_sleep_us(uint64_t microseconds)
 	return true;
 }
 
+/*
+ * A queue nobody wakes: the deadline ends the sleep, or a signal does
+ * (waitq_interrupt unlinks the thread). It lives on this thread's stack for
+ * exactly the length of the wait, which is all it is ever reached by.
+ */
+bool
+sched_sleep_us_interruptible(uint64_t microseconds, bool *interrupted)
+{
+	*interrupted = false;
+
+	if (!g_sched.initialized || current_thread() == 0 || thread_is_idle(current_thread())) return false;
+
+	uint64_t deadline = timer_get_microseconds() + microseconds;
+	waitq_t alone;
+
+	waitq_init(&alone);
+
+	while (timer_get_microseconds() < deadline) {
+		if (waitq_block_deadline(&alone, waitq_seq(&alone), true, deadline) == WAITQ_INTERRUPTED) {
+			*interrupted = true;
+			break;
+		}
+	}
+
+	return true;
+}
+
 bool
 sched_is_ticking(void)
 {

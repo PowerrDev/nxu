@@ -426,6 +426,10 @@ exception_handle_user_svc(arm64_exception_frame_t *frame)
 		/* exec / sigreturn already rewrote the user registers. */
 		return true;
 
+	case SYSCALL_ACTION_RESTART:
+		/* x0 and ELR still describe the call as it was made; see exception_finish_restart. */
+		return true;
+
 	default:
 		return false;
 	}
@@ -619,6 +623,32 @@ exception_handle_kernel_user_access(arm64_exception_frame_t *frame)
  * "returns" into the handler. One handler at a time -- the rest wait for the
  * handler's sigreturn, which comes back through here.
  */
+/* The length of the SVC instruction, which a restarted system call goes back over. */
+#define ARM64_SVC_LENGTH 4ULL
+
+/*
+ * exception_finish_restart
+ *
+ * A system call a signal interrupted before it did anything: make it again by
+ * pointing ELR back at its SVC (x0 to x8 still hold it as it was made), or
+ * give it the interrupted result. Done before a handler frame is built, so the
+ * context the frame saves is the one the handler's sigreturn comes back to.
+ */
+static void
+exception_finish_restart(arm64_exception_frame_t *frame, thread_t thread, const nxu_sigaction_t *handler)
+{
+	switch (syscall_restart_resolve(thread, handler)) {
+	case SYSCALL_RESTART_AGAIN:
+		frame->elr -= ARM64_SVC_LENGTH;
+		break;
+	case SYSCALL_RESTART_INTERRUPTED:
+		frame->x[0] = 0ULL - (uint64_t)NXU_SYS_E_INTERRUPTED;
+		break;
+	default:
+		break;
+	}
+}
+
 static void
 exception_deliver_pending_signals(arm64_exception_frame_t *frame)
 {
@@ -641,9 +671,12 @@ exception_deliver_pending_signals(arm64_exception_frame_t *frame)
 
 	switch (signal_take(proc, thread, &signal, &action)) {
 	case SIGNAL_TAKE_NONE:
+		exception_finish_restart(frame, thread, 0);
 		return;
 	case SIGNAL_TAKE_HANDLER: {
 		uint32_t previous_mask = thread->sig_blocked;
+
+		exception_finish_restart(frame, thread, &action);
 
 		if (machine_user_signal_push(action.handler, action.restorer, signal, previous_mask)) {
 			thread->sig_blocked = signal_blocked_mask_for_handler(previous_mask, signal, &action);

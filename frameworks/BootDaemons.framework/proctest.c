@@ -103,11 +103,16 @@ handler_segv_exit(int signal)
 }
 
 /* Runs on a second thread: lets the main thread go to sleep, then signals the
- * process, which must cut that sleep short. */
+ * process, which must cut that sleep short. The signal is process-directed and
+ * goes to one thread that does not block it: blocking it here makes that the
+ * sleeping main thread. (Taken here instead, it would interrupt nothing, and the
+ * main thread's wait would rightly be made again.) */
 static void
 signal_self_thread(void *arg)
 {
 	(void)arg;
+
+	(void)nxu_sigprocmask(NXU_SIG_BLOCK, 1U << NXU_SIGUSR1);
 
 	for (uint32_t index = 0U; index < 30U; index++)
 		(void)nxu_yield();

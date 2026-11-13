@@ -4,7 +4,7 @@
 /*
  * File:        kern/tests/termios_process_test.h
  *
- * Declares the kernel-side driver of the ttytest user program.
+ * Declares the kernel-side drivers of the ttytest and restarttest user programs.
  */
 #ifndef NXU_KERN_TESTS_TERMIOS_PROCESS_TEST_H
 #define NXU_KERN_TESTS_TERMIOS_PROCESS_TEST_H
@@ -17,5 +17,8 @@
  * mounted, tty_init done and the scheduler running.
  */
 bool termios_process_test(void);
+
+/* Run restarttest on a loopback terminal at /dev/ttyrestart the same way. */
+bool restart_process_test(void);
 
 #endif

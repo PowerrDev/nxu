@@ -118,6 +118,57 @@ The model is deliberately small; `kern/process/signal.h` is the reference.
 A port declares the first two rows with `MACHINE_USER_SIGNALS` and the last
 with `MACHINE_USER_CONTEXT` (`kern/machine/user.h`).
 
+### Restarting interrupted system calls
+
+A system call that sleeps interruptibly (a terminal read or write, an open
+waiting out a terminal's driver, `TIOCDRAIN`, a wait for a child) ends with
+"interrupted" when a signal arrives. What the program then sees is decided on
+the way back to user mode, after the signal has been acted on:
+
+| The call | The signal | Result |
+| --- | --- | --- |
+| had moved data (a partial read or write) | any | the short count; never made again |
+| had done nothing, restartable | runs a handler with `NXU_SA_RESTART` | made again after the handler |
+| had done nothing, restartable | runs a handler without it | `-NXU_SYS_E_INTERRUPTED` after the handler |
+| had done nothing, restartable | runs no handler (stop and continue) | made again |
+| not restartable | any | `-NXU_SYS_E_INTERRUPTED` |
+
+Restartable: `read`, `write`, `open`, `ioctl`, `wait`, `wait_options`,
+`socket_connect`, `socket_accept` (`syscall_is_restartable` in
+`kern/syscall/syscall.c`). Not restartable, on purpose: `sleep_us`, which a
+caught signal now ends early as `nanosleep` is ended, the event wait and the
+message waits, which are how a program waits for "anything", a signal included.
+
+How it works, so that only the last step is per architecture:
+
+1. `syscall_dispatch` (machine-independent) turns an "interrupted" result of a
+   restartable call into `SYSCALL_ACTION_RESTART` and marks the thread
+   (`thread->syscall_restart`). The trap path stores no result, so the user
+   registers still describe the call exactly as it was made.
+2. The return-to-user path (`exception_deliver_pending_signals` on arm64,
+   `i386_deliver_pending_signals` on i386) calls `signal_take`, then
+   `syscall_restart_resolve` with the handler it is about to run, if any,
+   before it builds the handler frame.
+3. It applies the answer: `AGAIN` moves the user program counter back over the
+   trap instruction (`svc`, 4 bytes; `int $0x80`, 2 bytes), `INTERRUPTED`
+   stores the error as the result. Because this happens before the handler
+   frame is built, the context the frame saves is the one `sigreturn` comes
+   back to, and the call is made again from there.
+
+A call reports "interrupted" only from a sleep it took before changing
+anything, which is what makes making it again invisible; a transfer that had
+moved bytes returns them (`syscall_io_partial`). `sigaction` refuses flags it
+does not know (`NXU_SA_FLAGS_ALL`). `nxu_signal` installs handlers without
+`NXU_SA_RESTART`, as it always has.
+
+Tests: `restarttest` (`frameworks/BootDaemons.framework/restarttest.c`), run on
+a loopback terminal by `kern/tests/termios_process_test.c`: a terminal read
+interrupted by a handler with and without `SA_RESTART`, by a stop and a
+continue, a partial write (short count with and without the flag, nothing
+written twice), a write that had moved nothing restarted under `SA_RESTART`, a
+sleep that is not restarted, and an unknown flag refused. i386 boot case
+`restart`; arm64 `tty` row.
+
 ## Sleeping: wait queues
 
 `kern/sched_prism/waitq.{c,h}` is the one way a thread sleeps until something

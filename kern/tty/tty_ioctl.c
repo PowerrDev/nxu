@@ -38,6 +38,29 @@ tty_ioctl(tty_t tty, uint32_t command, void *argument)
 
 	uint64_t state;
 	vfs_status_t status;
+	bool handled;
+
+	status = tty_job_ioctl(tty, command, argument, &handled);
+
+	if (handled) return status;
+
+	/* What changes the terminal is refused to, or stops, a background job (kern/tty/tty_jobctl.c). */
+	switch (command) {
+	case NXU_TIOCSETA:
+	case NXU_TIOCSETAW:
+	case NXU_TIOCSETAF:
+	case NXU_TIOCFLUSH:
+	case NXU_TIOCDRAIN:
+	case NXU_TIOCSTOP:
+	case NXU_TIOCSTART:
+	case NXU_TIOCSWINSZ:
+		status = tty_job_check(tty, TTY_JOB_CONFIGURE);
+		if (status != VFS_STATUS_OK) return status;
+
+		break;
+	default:
+		break;
+	}
 
 	switch (command) {
 	case NXU_TIOCGETA:
