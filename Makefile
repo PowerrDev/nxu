@@ -402,6 +402,8 @@ C_SOURCES := \
     kern/ipc/shm_registry.c \
     kern/ipc/socket.c \
     kern/ioready.c \
+    kern/tty/tty.c \
+    kern/tty/tty_ioctl.c \
     kern/tty/n_tty.c \
     kern/console/display_owner.c \
     kern/tests/ipc_test.c \

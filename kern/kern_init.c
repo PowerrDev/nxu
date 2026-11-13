@@ -44,6 +44,7 @@
 #include <kern/tests/post.h>
 #include <kern/tests/smp_test.h>
 #include <kern/tests/smp_user_test.h>
+#include <kern/tty/tty.h>
 #include <platform/driverkit.h>
 #include <kern/process/proc.h>
 #include <kern/sched_prism/sched.h>
@@ -690,6 +691,8 @@ kern_init_filesystem(void)
 	kprintf("mounted devfs at /dev\n");
 
 	if (!devfs_self_test()) kern_fail("devfs_self_test: failed");
+
+	tty_init();
 }
 
 /*

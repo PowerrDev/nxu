@@ -21,6 +21,7 @@
 #include <kern/memory/heap.h>
 #include <kern/process/proc.h>
 #include <kern/tests/ipc_test.h>
+#include <kern/tty/tty.h>
 #include <vfs/devfs.h>
 #include <vfs/ext4.h>
 #include <vfs/file.h>
@@ -121,6 +122,8 @@ i386_init_kernel(const i386_boot_info_t *boot)
 	kprintf("devfs mounted at /dev\n");
 
 	if (!devfs_self_test()) return false;
+
+	tty_init();
 	vfs_dump();
 	return true;
 }
