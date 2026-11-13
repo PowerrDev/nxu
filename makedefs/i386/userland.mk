@@ -67,7 +67,8 @@ I386_USER_COMMON_OBJECTS := \
     $(I386_USER_BUILD)/frameworks/lib/string.o \
     $(I386_USER_BUILD)/frameworks/lib/spawn_io.o \
     $(I386_USER_BUILD)/frameworks/lib/thread_i386.o \
-    $(I386_USER_BUILD)/frameworks/lib/pwdb.o
+    $(I386_USER_BUILD)/frameworks/lib/pwdb.o \
+    $(I386_USER_BUILD)/frameworks/lib/termios.o
 
 # User code is freestanding and the compiler lowers 64-bit / and % on i386 to
 # __udivdi3 and friends. libk's implementation goes into an archive so a

@@ -558,6 +558,7 @@ USER_C_SOURCES := \
     frameworks/BootDaemons.framework/suidhelper.c \
     frameworks/BootDaemons.framework/suidtest.c \
     frameworks/BootDaemons.framework/spawntest.c \
+    frameworks/lib/termios.c \
     frameworks/BootDaemons.framework/su.c \
     frameworks/BootDaemons.framework/sudo.c \
     frameworks/BootDaemons.framework/passwd.c \
@@ -588,7 +589,8 @@ USER_COMMON_OBJECTS := \
     $(USER_BUILD)/frameworks/lib/string.o \
     $(USER_BUILD)/frameworks/lib/thread.o \
     $(USER_BUILD)/frameworks/lib/spawn_io.o \
-    $(USER_BUILD)/frameworks/lib/pwdb.o
+    $(USER_BUILD)/frameworks/lib/pwdb.o \
+    $(USER_BUILD)/frameworks/lib/termios.o
 
 
 USER_COREFOUNDATION_OBJECTS := \
