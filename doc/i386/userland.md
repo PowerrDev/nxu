@@ -119,7 +119,7 @@ those two are staged for a standard userland boot. The desktop build also
 stages `dyrld`, WindowServer and desktop service plists.
 
 Staged tree (`$(BUILD_ROOT)/i386/diskroot`, same shape as `tools/DiskRoot`,
-which is only read): `hello.txt`, `System/README.txt`,
+which is only read): `Library/Preferences/com.butterscotch.iokit.filesystem/hello.txt`, `System/README.txt`,
 `System/Library/CoreServices/{bootd,bootd.recovery,logd,logd.recovery,patchd,
 patchd.recovery,ipctest_a,ipctest_b,threadtest,sockettest_server,
 sockettest_client}`, `System/Library/BootDaemons/*.plist`, `System/Recovery/`

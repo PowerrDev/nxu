@@ -214,7 +214,9 @@ def main():
         services = diskroot / "System/Library/CoreServices"
         services.mkdir(parents=True)
         (diskroot / "System/Library/BootDaemons").mkdir()
-        shutil.copyfile(ROOT / "tools/DiskRoot/hello.txt", diskroot / "hello.txt")
+        fixture = "Library/Preferences/com.butterscotch.iokit.filesystem/hello.txt"
+        (diskroot / fixture).parent.mkdir(parents=True)
+        shutil.copyfile(ROOT / "tools/DiskRoot" / fixture, diskroot / fixture)
         shutil.copyfile(
             ROOT / "tools/DiskRoot/System/README.txt", diskroot / "System/README.txt"
         )

@@ -54,6 +54,9 @@ post_test_block_device(void)
 }
 
 static const char g_ext4_test_message[] = "Hello from the NXU ext4 driver!\n";
+
+/* The fixed ext4 fixture, installed from tools/DiskRoot. */
+#define HELLO_FIXTURE_PATH "/Volumes/mainOS/Library/Preferences/com.butterscotch.iokit.filesystem/hello.txt"
 static const char g_ext4_write_message[] = "NXU writable ext4 foundation\n";
 static const char g_ext4_persist_message[] = "NXU persistent ext4 marker\n";
 static const char g_ext4_tail_message[] = "tail-after-sparse-growth";
@@ -101,10 +104,10 @@ post_test_ext4(void)
 
 	filedesc_t filedesc = &kernel_proc->p_fd;
 
-	if (!post_ext4_read_exact(filedesc, "/Volumes/mainOS/hello.txt", g_ext4_test_message, sizeof(g_ext4_test_message) - 1ULL))
+	if (!post_ext4_read_exact(filedesc, HELLO_FIXTURE_PATH, g_ext4_test_message, sizeof(g_ext4_test_message) - 1ULL))
 		return false;
 
-	/* Installed System files may change between builds; only hello.txt is a fixed fixture. */
+	/* Installed System files may change between builds; only the ext4 hello.txt fixture is fixed. */
 
 	vfs_status_t status = vfs_mkdir("/Volumes/mainOS/NXU");
 	if (status != VFS_STATUS_OK && status != VFS_STATUS_EXISTS) return false;
@@ -205,7 +208,7 @@ post_test_ext4(void)
 		return false;
 	}
 
-	kprintf("/hello.txt: ");
+	kprintf("%s: ", HELLO_FIXTURE_PATH);
 	kputs(g_ext4_test_message);
 	return filedesc->fd_open_count == 0U;
 

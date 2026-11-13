@@ -26,6 +26,9 @@
 #include <string.h>
 
 static const char g_hello_message[] = "Hello from the NXU ext4 driver!\n";
+
+/* The fixed ext4 fixture, installed from tools/DiskRoot. */
+#define HELLO_FIXTURE_PATH "/Volumes/mainOS/Library/Preferences/com.butterscotch.iokit.filesystem/hello.txt"
 static const char g_system_message[] = "NXU System volume\n";
 static const char g_write_message[] = "NXU writable ext4 foundation\n";
 static const char g_persist_message[] = "NXU persistent ext4 marker\n";
@@ -90,8 +93,8 @@ fs_test_write(void)
 	uint32_t descriptor;
 	uint64_t written;
 
-	if (!fs_test_read_exact(filedesc, "/Volumes/mainOS/hello.txt", g_hello_message, sizeof(g_hello_message) - 1ULL)) {
-		return fs_test_fail("read of /Volumes/mainOS/hello.txt");
+	if (!fs_test_read_exact(filedesc, HELLO_FIXTURE_PATH, g_hello_message, sizeof(g_hello_message) - 1ULL)) {
+		return fs_test_fail("read of " HELLO_FIXTURE_PATH);
 	}
 
 	if (!fs_test_read_exact(filedesc, "/Volumes/mainOS/System/README.txt", g_system_message, sizeof(g_system_message) - 1ULL)) {

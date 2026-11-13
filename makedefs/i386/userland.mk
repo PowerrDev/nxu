@@ -13,7 +13,7 @@
 #
 # Everything here is separate from the arm64 userland rules in the top-level
 # Makefile and never writes into tools/DiskRoot: the arm64 DiskRoot holds
-# arm64 binaries and is only read (hello.txt, README.txt) for the image
+# arm64 binaries and is only read (the ext4 hello.txt fixture, README.txt) for the image
 # layout. See doc/i386/userland.md.
 
 I386_USER_BUILD := $(I386_BUILD)/user
@@ -301,7 +301,9 @@ $(I386_USER_STAMP): $(I386_USER_BINARIES) $(I386_USER_PLISTS) $(I386_DISK_STATIC
 
 	$(Q)cp $(I386_USER_BUILD)/triageOS $(I386_DISKROOT)/System/Recovery/triageOS
 
-	$(Q)cp tools/DiskRoot/hello.txt $(I386_DISKROOT)/hello.txt
+	$(Q)mkdir -p $(I386_DISKROOT)/Library/Preferences/com.butterscotch.iokit.filesystem
+
+	$(Q)cp tools/DiskRoot/Library/Preferences/com.butterscotch.iokit.filesystem/hello.txt $(I386_DISKROOT)/Library/Preferences/com.butterscotch.iokit.filesystem/hello.txt
 
 	$(Q)cp tools/DiskRoot/System/README.txt $(I386_DISKROOT)/System/README.txt
 
