@@ -18,6 +18,12 @@ typedef struct {
 	uint64_t used_page_count;
 
 	uint8_t *bitmap;
+	/*
+	 * Extra owners of each page beyond its allocator (pmm_page_retain:
+	 * shared code pages, shared memory), one count per page, kept in the
+	 * same carve-out as the bitmap, just after it.
+	 */
+	uint16_t *extra_references;
 	uint64_t bitmap_bytes;
 	uint64_t bitmap_storage_bytes;
 
