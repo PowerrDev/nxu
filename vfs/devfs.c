@@ -467,6 +467,17 @@ devfs_open(vnode_t vnode, uint32_t flags, vnode_t *opened)
 	devfs_node_t *node = devfs_node(vnode);
 
 	if (node == 0) return VFS_STATUS_INVALID;
+
+	/*
+	 * Only a named device is opened by path. A vnode looked up before its name
+	 * was unregistered must not reach the driver again: once the name is gone
+	 * the driver may release the context the moment its open files close.
+	 */
+	nxu_spin_lock(&g_devfs_lock);
+	bool named = node->registered;
+	nxu_spin_unlock(&g_devfs_lock);
+
+	if (!named) return VFS_STATUS_NOT_FOUND;
 	if (node->operations->open == 0) return VFS_STATUS_OK;
 
 	devfs_clone_t clone = {0};

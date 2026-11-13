@@ -21,7 +21,12 @@
  * system runs. Unregistering removes the name; it does not revoke the files
  * already open on it, which keep reaching the driver's operations until they
  * are closed. The driver therefore keeps its context alive until the last
- * close it is told about, exactly as it must for any open device.
+ * close it is told about, exactly as it must for any open device. Nothing
+ * else reaches it after the name is gone: an open through a vnode that was
+ * looked up before the unregister fails with NOT_FOUND without calling the
+ * driver. So a device that has been unregistered and has no files open can
+ * be freed (opens and unregisters are serialized by the VFS, see
+ * doc/architecture/tty-subsystem.md section 9).
  *
  * A device with no ioctl operation answers every ioctl with NOT_TTY, as does
  * any other object that takes none: that is how isatty() learns the answer.
