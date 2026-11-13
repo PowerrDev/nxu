@@ -423,6 +423,7 @@ C_SOURCES := \
     kern/tests/sound_test.c \
     kern/tests/tty_test.c \
     kern/tests/tty_loopback.c \
+    kern/tests/termios_process_test.c \
     kern/tests/tep_mailbox_test.c \
     kern/tests/windowserver_process_test.c \
     kern/tests/about_sevos_process_test.c \
@@ -559,6 +560,7 @@ USER_C_SOURCES := \
     frameworks/BootDaemons.framework/suidtest.c \
     frameworks/BootDaemons.framework/spawntest.c \
     frameworks/BootDaemons.framework/stty.c \
+    frameworks/BootDaemons.framework/ttytest.c \
     frameworks/lib/termios.c \
     frameworks/BootDaemons.framework/su.c \
     frameworks/BootDaemons.framework/sudo.c \
@@ -655,6 +657,7 @@ USER_DAEMONS := \
     $(USER_BUILD)/suidtest \
     $(USER_BUILD)/spawntest \
     $(USER_BUILD)/stty \
+    $(USER_BUILD)/ttytest \
     $(USER_BUILD)/su \
     $(USER_BUILD)/sudo \
     $(USER_BUILD)/passwd \
@@ -1115,6 +1118,13 @@ $(USER_BUILD)/stty: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.
 
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
+
+$(USER_BUILD)/ttytest: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/ttytest.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
 $(USER_BUILD)/suidtest: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/suidtest.o
 
 	$(QUIET_PRINT) "LD" "$@"
@@ -1279,6 +1289,8 @@ $(USER_STAGE_STAMP): frameworks/Terminal.framework/Info.plist tools/UI/Icons/Ter
 	$(Q)cp $(USER_BUILD)/spawntest $(DISK_ROOT)/System/Library/CoreServices/spawntest
 
 	$(Q)cp $(USER_BUILD)/stty $(DISK_ROOT)/System/Library/CoreServices/stty
+
+	$(Q)cp $(USER_BUILD)/ttytest $(DISK_ROOT)/System/Library/CoreServices/ttytest
 
 	$(Q)cp $(USER_BUILD)/su $(DISK_ROOT)/System/Library/CoreServices/su
 

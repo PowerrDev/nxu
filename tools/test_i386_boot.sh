@@ -105,6 +105,11 @@ run_case tty yes "process-test=tty qemu-exit=1" $STATUS_CLEAN \
   "tty_init: initialized tty successfully" \
   "userland_run_process_test: tty process test passed"
 
+run_case termios yes "process-test=termios qemu-exit=1" $STATUS_CLEAN \
+  "ttytest: termios calls, terminal requests and stty all behaved" \
+  "termios_process_test: programs configure their terminal with termios and stty" \
+  "userland_run_process_test: termios process test passed"
+
 printf '\n%d case(s), %d failure(s)\n' "$count" "$failures"
 
 [ "$failures" -eq 0 ]

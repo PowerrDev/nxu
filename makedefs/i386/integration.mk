@@ -41,6 +41,7 @@ I386_C_SOURCES += \
     kern/tests/spawn_process_test.c \
     kern/tests/tty_test.c \
     kern/tests/tty_loopback.c \
+    kern/tests/termios_process_test.c \
     kern/tty/tty.c \
     kern/tty/tty_ioctl.c \
     kern/tty/n_tty.c \
