@@ -1,6 +1,6 @@
 # TTY, PTY and termios: audit and plan
 
-Status: **Phase 0 (audit) complete and approved. Phase 1 (infrastructure, M1 to M7) complete. Next: Phase 2, the TTY core.**
+Status: **Phase 0 (audit) complete and approved. Phase 1 (infrastructure, M1 to M7) complete. Phases 2 to 4 (TTY core, line discipline, termios) built. Next: Phase 5, job control.**
 
 This document is the prerequisite audit, dependency report and roadmap for a
 kernel terminal subsystem (TTY core, line discipline, termios, PTYs, job
@@ -543,12 +543,232 @@ After M7 (2026-11-12):
 **Phase 2: TTY core.** Object, refcount, driver interface, input/output
 queues, open/close/read/write/ioctl through devfs, a loopback test driver.
 
+### Phase 2 as built
+
+`kern/tty/tty.h` (the driver interface and the model), `tty_internal.h`
+(`struct tty`), `tty.c` (lifetime, queues, the devfs file operations),
+`tty_ioctl.c`; ABI in `kern/syscall/termios_defs.h`.
+
+- **Object.** A heap `struct tty` with one irqsave spinlock, two 4096-byte
+  rings, three wait queues (readers, writers, open/close transitions) and an
+  `ioready_t`. Bytes pass through unchanged; there is no line discipline yet.
+- **References.** The driver's (from `tty_create`), the name's
+  (`tty_register` to `tty_unregister`), one per open file, transient ones.
+  At zero the driver's `release` runs and the memory goes. `tty_count()`
+  makes a leak visible to tests.
+- **Driver interface** (BSD `t_oproc` style): `open` on the first open,
+  `close` on the last, `start` after every write (the driver pulls with
+  `tty_output_take`), `unthrottle` once a read makes room in an input queue
+  that refused bytes or filled, `ioctl` for requests the core does not
+  handle, `release`. All called with no terminal lock held; none starts after
+  `tty_detach`. Input is pushed with `tty_input`. (Phase 3 changed this: it
+  runs the line discipline, can start the driver for echo and is
+  thread-context only.)
+- **Open and close.** The first open and the last close run the driver with
+  a transition flag set; an open that arrives meanwhile sleeps
+  (interruptibly) until it clears. A refused first open leaves the terminal
+  closed. The last close flushes both queues.
+- **Read and write.** A read waits (interruptibly) for at least one byte and
+  returns what is queued, up to the size asked; a write queues what fits,
+  starts the driver, and waits for room for the rest, reporting a short
+  count if cut off after moving bytes. Both honour `VNODE_IO_NONBLOCK`.
+- **Hangup and detach.** `tty_hangup`: reads drain then return end of file,
+  writes fail with an I/O error, new opens fail with `NO_DEVICE`, readiness
+  reports `HANGUP`; cleared by the last close. `tty_detach` is the same and
+  permanent: the driver is going away.
+- **ioctl.** `NXU_FIONREAD` (`'f'` 127) and `NXU_TIOCOUTQ` (`'t'` 115), as
+  `uint32_t`. Anything else goes to the driver, and fails with `NOT_TTY` if
+  the driver does not know it either.
+- **Readiness.** `poll` reports readable (input, or hung up), writable (room
+  and the line up) and hangup; input posts `READ`, `tty_output_take` posts
+  `WRITE`, hangup posts all three.
+
+Changes to shared code:
+
+- New status codes `VFS_STATUS_NOT_TTY` and `VFS_STATUS_NO_DEVICE`, system
+  call errors 19 `NXU_SYS_E_NOT_TTY` and 20 `NXU_SYS_E_NO_DEVICE` (and their
+  names in `RecoveryServices.c`). An object with no ioctl at all (a regular
+  file, a directory, a socket, a device without the operation) now answers
+  `NOT_TTY` instead of `NOT_SUPPORTED`; nothing depended on the old answer.
+- devfs: `devfs_register_device_owned` registers with owner, group and mode
+  in one step, so a terminal is never visible with the default 0666. An open
+  through a vnode whose name was unregistered after the lookup now fails with
+  `NOT_FOUND` without calling the driver, which is what lets a driver free
+  its context once the name is gone and its files are closed.
+- `tty_init()` runs on both architectures right after devfs is mounted and
+  self-tested.
+
+Test: `kern/tests/tty_test.c`, a loopback driver behind `/dev/ttyloop-test`
+used through the VFS, with kernel threads for the parts that sleep. It
+covers attributes and a duplicate name, a refused first open, driver
+open/close counts, would-block, partial reads, readiness levels and edges,
+both ioctls, `NOT_TTY` for an unknown request and for a directory, a blocked
+reader woken by input, a full output queue (short write, would-block), a
+13 KiB stream through both full queues intact and in order with the
+unthrottle path taken, flushing at the last close, hangup (sleeping reader
+gets end of file, write fails, open gets `NO_DEVICE`, reopen after the last
+close), and unregister plus detach (stale vnode refused, open files keep
+working, the terminal is freed after its last file). Run as the arm64 kernel
+test `tty` (`make test TEST=tty`, a `make check` row) and the i386
+`test-i386-boot` case `tty` (`process-test=tty`).
+
+Verified 2026-11-12: arm64 rows `tty`, `default`, `sound` pass;
+`test-i386-boot` passes every case including `tty`, except `kernel` (the
+known log-prefix failure, section 7 "Verification state"); x86_64 builds.
+
+Not covered: input from an interrupt handler (no driver produces any yet),
+an interrupted read or write (kernel threads take no signals; covered once
+programs use terminals), and SMP contention (the threads share the boot
+CPU, as the VFS requires; the stress case is Phase 8).
+
 **Phase 3: line discipline.** Interface plus the default discipline as pure
 code: canonical and raw input, `VMIN`/`VTIME`, echo, special characters, input
 and output flags. Host-tested under ASan.
 
+### Phase 3 as built
+
+`kern/tty/n_tty.h`, `n_tty.c` (pure: no locks, no sleeping, no allocation,
+nothing but the ABI header), the termios ABI in
+`kern/syscall/termios_defs.h`, and the core rewired around it in `tty.c`.
+
+- **ABI.** `struct nxu_termios` as decided in section 5: Darwin's layout,
+  flag bits and `c_cc` slots with 32-bit fields, 44 bytes (a static
+  assertion holds it), `NXU_POSIX_VDISABLE` 0xff. No request numbers yet;
+  those are Phase 4.
+- **Input** (`n_tty_receive`): `ISTRIP`, `IGNCR`, `ICRNL`, `INLCR`; `IXON`
+  with `VSTOP`, `VSTART`, `IXANY`; `ISIG` with `VINTR`, `VQUIT`, `VSUSP`
+  (flush both ways unless `NOFLSH`, echo, ask for the signal); with
+  `IEXTEN`, `VLNEXT`, `VDISCARD` (`FLUSHO`), `VWERASE`, `VREPRINT`;
+  canonical editing with `VERASE` and `VKILL`, lines ended by newline,
+  `VEOL`, `VEOL2`, `VEOF`. A canonical read returns at most one line; a line
+  of only `VEOF` reads as end of file.
+- **Echo**: `ECHO`, `ECHOE`, `ECHOK`, `ECHOKE`, `ECHONL`, `ECHOCTL`. Erasing
+  replays the line's echo widths from the column where it began, so a tab or
+  a `^X` is rubbed out exactly; with `IUTF8` an erase takes a whole UTF-8
+  sequence. Echo that does not fit in the output queue is dropped.
+- **Output** (`n_tty_write`, and echo): `OPOST` with `ONLCR`, `OCRNL`,
+  `ONOCR`, `ONLRET`, `OXTABS`, `ONOEOT`, keeping the cursor column.
+- **Room.** The input ring is the terminal's input queue (4096 bytes plus a
+  delimiter bitmap). Canonical mode keeps a slot for the delimiter and drops
+  bytes past a full line (bell under `IMAXBEL`) rather than refuse them;
+  raw mode refuses and the driver is unthrottled later.
+- **Core.** The discipline runs under the terminal lock; its hooks append to
+  the output queue and record what to do after the unlock (start the driver,
+  post readiness). Reads apply `VMIN`/`VTIME` with `waitq_block_deadline`:
+  from the start of the read when `VMIN` is 0, from the last byte otherwise.
+  `VSTOP` stops `tty_output_take`. `tty_get_termios`/`tty_set_termios` (kernel
+  only until Phase 4), `tty_termios_defaults` (Darwin's `ttydefaults` plus
+  `IUTF8`, which every terminal starts with).
+- **`tty_input` is now thread-context only**, a change from Phase 2: echo
+  can call the driver's `start` before it returns. Phase 7's UART receive
+  was already planned to go through a kernel thread, so nothing is lost. A
+  driver must not hold a lock that its `start` takes while it calls
+  `tty_input`.
+- **Signals.** The signal characters record the signal in the terminal
+  (`tty_take_signals`). Delivery to the foreground process group is
+  Phase 5, which is where a terminal gets one.
+
+Not handled, by decision: parity, framing and break (`IGNBRK`, `BRKINT`,
+`IGNPAR`, `PARMRK`, `INPCK`) until a driver reports them (Phase 7);
+`VSTATUS` (there is no `SIGINFO`) and `VDSUSP` (a read-time stop, job
+control), both disabled in the defaults; `ALTWERASE`, `ECHOPRT`, `PENDIN`,
+`EXTPROC`. Their bits are accepted and ignored. A `VEOF` still unread when
+canonical mode is switched off reads as byte 0xff.
+
+Tests:
+
+- `make test-tty-host` (`tools/tty`, in `CHECK_HOST_TARGETS`): every rule
+  above as a scripted case against a fake terminal (output room, flushes,
+  signals, flow), then 300000 random steps (bytes biased to the special ones,
+  reads, writes, random termios, random output room) checking the ring's
+  invariants after each. See 8.4 for the sanitizers on this machine.
+- `tty_test` (kernel, arm64 row `tty` and i386 case `tty`): the Phase 2
+  cases now run the terminal raw; new cases type through the real core with
+  a capture driver: an edited line and its echo, `VEOF`, `^C` (input and
+  output flushed, `^C` echoed, `SIGINT` recorded), a password typed with echo
+  off, `ONLCR`, `^S`/`^Q`, and the four `VMIN`/`VTIME` combinations timed
+  by a reader that really sleeps (`0 0` at once; `0 2` about 0.2 s, or at
+  the first byte; `3 0` not before the third byte; `4 1` 0.1 s after the
+  first byte).
+
 **Phase 4: termios.** ABI header, `TIOCGETA`/`TIOCSETA[W|F]`, flush, drain,
 flow, window size; userland `tcgetattr` family and `stty`.
+
+### Phase 4 as built
+
+**ABI** (`kern/syscall/termios_defs.h`). The requests, with Darwin's numbers
+and argument types: `TIOCGETA`, `TIOCSETA`, `TIOCSETAW`, `TIOCSETAF`,
+`TIOCFLUSH` (`NXU_FREAD`, `NXU_FWRITE`), `TIOCDRAIN`, `TIOCSTOP`,
+`TIOCSTART`, `TIOCGWINSZ`, `TIOCSWINSZ`; `struct nxu_winsize` (8 bytes,
+asserted). The defaults moved here as `NXU_TTYDEF_*` and `NXU_C*`
+(Darwin's `<sys/ttydefaults.h>`), so the kernel's `tty_termios_defaults` and
+`stty sane` read the same table.
+
+**Kernel.** `tty_ioctl.c` is a dispatcher; the operations live in `tty.c`:
+
+- `tty_change_termios`: the driver's new `param` operation (BSD's
+  `t_param`) is asked first and may refuse with INVALID, leaving the terminal
+  unchanged; `TIOCSETAF` discards input in the same locked step as the
+  change.
+- `tty_drain`: sleeps on the writers' queue until the output queue is empty
+  or the line hangs up; interruptible. Stopped output keeps it waiting.
+  `TIOCSETAW` and `TIOCSETAF` drain first, so output written under the old
+  settings goes out under them.
+- `tty_flush`: input (and an unthrottle, if the driver was holding input
+  back), output (waking writers and drainers), or both.
+- `tty_stop_output`: the same stopped state as `VSTOP`/`VSTART`, so either
+  undoes the other.
+- `tty_get_winsize`/`tty_set_winsize` (public: the PTY master will set it);
+  a real change records `SIGWINCH` for the foreground group, beside the
+  signal characters' signals.
+- `CREAD` off now discards input as it arrives.
+
+**User space.**
+
+- `frameworks/include/termios.h`: the POSIX names over the ABI, with
+  `struct termios` asserted identical to `struct nxu_termios`;
+  `frameworks/lib/termios.c` (linked into every program): `tcgetattr`,
+  `tcsetattr` (`TCSANOW`, `TCSADRAIN`, `TCSAFLUSH`, and `TCSASOFT`, which
+  keeps `c_cflag` and the speeds), `tcdrain`, `tcflush`, `tcflow` (`TCOOFF`,
+  `TCOON` by request; `TCIOFF`, `TCION` by writing `VSTOP`/`VSTART`),
+  `tcgetwinsize`/`tcsetwinsize` (POSIX 2024), `cfget`/`cfset` speeds,
+  `cfmakeraw` (Darwin's), `isatty`. They return 0 or -1 as POSIX says; with
+  no C library there is no `errno`, so a caller that needs the reason uses
+  `nxu_ioctl`, which returns `-NXU_SYS_E_*`.
+- `stty` (CoreServices): BSD's, as macOS ships it. `-a`, `-g`, `-f file`;
+  every mode by name; `cs5`..`cs8`; control characters (`^X`, `^?`,
+  `undef`); `min`, `time`; speeds; `rows`, `columns`, `size`, `speed`; the
+  combinations `raw`, `-raw`/`cooked`, `cbreak`, `-cbreak`, `sane`, `nl`,
+  `-nl`, `ek`, `crt`, `newcrt`, `dec`, `evenp`, `oddp`, `parity`, `pass8`,
+  `litout` and their negations; `gfmt1:` lines from `-g`. Listings use BSD's
+  layout: the short form shows what differs from a new terminal, `-a`
+  everything, wrapped at 72 columns.
+
+Not here yet: `tcgetpgrp`, `tcsetpgrp`, `tcgetsid` (Phase 5), `tcsendbreak`
+(no driver sends a break), `ttyname`. The background-process rule (a
+process outside the foreground group that changes the settings gets
+`SIGTTOU`) is Phase 5. Speed 0 (`B0`) does not hang the line up.
+
+**Tests.**
+
+- `tty_test` (kernel), new cases through `vfs_ioctl`: `TIOCSETA`/`TIOCGETA`
+  across two descriptors, the driver consulted and its refusal changing
+  nothing, `TIOCFLUSH` each way and a bad queue, `TIOCDRAIN` and
+  `TIOCSETAW` blocking on a stalled driver and finishing when it resumes
+  (and `TIOCSETAW` applying only then), `TIOCSETAF`, `TIOCSTOP`/`TIOCSTART`,
+  the window size and `SIGWINCH` only on a real change, `CREAD`.
+- `ttytest` (user program), run by `kern/tests/termios_process_test.c` on a
+  loopback terminal at `/dev/ttytest`, as an ordinary user: `isatty` on a
+  terminal, a file, bad descriptors; the defaults; round trips, `TCSASOFT`,
+  unknown actions; raw and canonical bytes through real system calls (a
+  canonical read returns exactly one line; `ONLCR` out and `ICRNL` in);
+  `tcflush`, `TCSAFLUSH`, `tcdrain`, `tcflow`; the window size; and `stty`
+  run as a child with its output read back over a socket pair: `-g` (the
+  exact `gfmt1` line) and restoring from it, `raw -echo`, `sane rows cols`,
+  the exact short listing and `-a` layout, control characters, an unknown
+  operand, standard input that is not a terminal. i386: `test-i386-boot`
+  case `termios`; arm64: the `tty` row runs it after `tty_test`.
+- The loopback driver moved to `kern/tests/tty_loopback.c`, shared by both.
 
 **Phase 5: job control.** Controlling terminal, foreground group,
 `TIOCSCTTY`/`TIOCNOTTY`/`TIOC[GS]PGRP`/`TIOCGSID`, `SIGTTIN`/`SIGTTOU`,
