@@ -49,6 +49,7 @@
 #include <kern/tests/spawn_process_test.h>
 #include <kern/tests/sound_test.h>
 #include <kern/tests/thread_process_test.h>
+#include <kern/tests/tty_test.h>
 #include <vfs/btrfs/btrfs_list.h>
 #include <vfs/btrfs/btrfs_selftest.h>
 #include <vfs/vfs.h>
@@ -91,6 +92,8 @@ userland_run_process_test(const char *name)
 		ok = signal_process_test();
 	else if (strcmp(name, "spawn") == 0)
 		ok = spawn_process_test();
+	else if (strcmp(name, "tty") == 0)
+		ok = tty_test_run();
 	else {
 		kprintf("unknown process-test \"%s\"\n", name);
 		return false;
@@ -230,7 +233,7 @@ i386_init_userland(const i386_boot_info_t *boot)
 	vfs_dump();
 
 	/*
-	 * "process-test=<ipc|thread|socket>" runs one of the shared kernel-side
+	 * "process-test=<ipc|thread|socket|signal|spawn|tty>" runs one of the shared kernel-side
 	 * process tests instead of the normal boot. They spawn their own
 	 * processes (the IPC one starts its own bootd as PID 1), so bootd must
 	 * not already be running.

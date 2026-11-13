@@ -101,6 +101,10 @@ run_case process-spawn yes "process-test=spawn qemu-exit=1" $STATUS_CLEAN \
   "spawntest: arguments, descriptors, groups, sessions and masks were all in place at the start" \
   "spawn_process_test: a spawned process starts with its arguments, descriptors, group and mask in place"
 
+run_case tty yes "process-test=tty qemu-exit=1" $STATUS_CLEAN \
+  "tty_init: initialized tty successfully" \
+  "userland_run_process_test: tty process test passed"
+
 printf '\n%d case(s), %d failure(s)\n' "$count" "$failures"
 
 [ "$failures" -eq 0 ]

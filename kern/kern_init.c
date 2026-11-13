@@ -44,6 +44,7 @@
 #include <kern/tests/post.h>
 #include <kern/tests/smp_test.h>
 #include <kern/tests/smp_user_test.h>
+#include <kern/tests/tty_test.h>
 #include <kern/tty/tty.h>
 #include <platform/driverkit.h>
 #include <kern/process/proc.h>
@@ -830,6 +831,15 @@ kern_start_scheduler(const driverkit_config_t *drivers)
 	/* Real user processes and threads on every CPU: the boot thread supervises. */
 	if (!smp_user_test_run()) kern_fail("smp_user_test: failed");
 	kprintf_for(smp_user_test_run, "passed\n");
+	kprintf("halting (test build)\n");
+	for (;;)
+		__asm__ volatile("wfe");
+#endif
+
+#if defined(NXU_TTY_TEST)
+	/* Terminals sleep and wake like any device: the test needs the scheduler and the tick. */
+	if (!tty_test_run()) kern_fail("tty_test_run: failed");
+	kprintf_for(tty_test_run, "passed\n");
 	kprintf("halting (test build)\n");
 	for (;;)
 		__asm__ volatile("wfe");

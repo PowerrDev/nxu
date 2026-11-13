@@ -67,6 +67,7 @@ TEST_IDS := \
     about-sevos-process \
     smp \
     smp-user \
+    tty \
     sound \
     tep-mailbox
 

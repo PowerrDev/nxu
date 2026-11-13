@@ -39,6 +39,7 @@ I386_C_SOURCES += \
     kern/tests/thread_process_test.c \
     kern/tests/signal_process_test.c \
     kern/tests/spawn_process_test.c \
+    kern/tests/tty_test.c \
     kern/tests/tty_loopback.c \
     kern/tty/tty.c \
     kern/tty/tty_ioctl.c \
