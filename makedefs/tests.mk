@@ -216,6 +216,7 @@ CHECK_I386_TARGETS := \
 # The host tests `make check` runs first, one make target each.
 CHECK_HOST_TARGETS := \
     test-audio-host \
+    test-tty-host \
     test-network-host
 
 
