@@ -52,6 +52,21 @@ then polls `TXFF` until the FIFO accepts another byte and writes that byte to
 There is no allocation, queue or interrupt dependency, so the raw transport is
 available from early boot and panic context.
 
+## Receiving and the serial terminal
+
+The kernel log still uses only `uart_putc`. A second client, the serial
+terminal behind `/dev/console` (`kern/tty/serial.c`), uses the rest of
+`platform/uart.h`: `uart_put_byte` (no newline translation), `uart_get_byte`
+(a byte and its break, parity, framing and overrun status from `UARTDR`
+bits 8-11), `uart_set_line` (the `UARTLCR_H` character format; the speed
+stays at 115200 because the divisor needs the reference clock, which is not
+read), and the receive interrupt. That is the Device Tree's interrupt for
+this PL011 (`platform->uart_intid`, INTID 33 on QEMU `virt`), enabled through
+`UARTIMSC` for receive, receive timeout and the four errors. The handler
+writes `UARTICR` before the terminal drains the FIFO. Transmitting and
+configuring are serialized by the kernel console's lock. See
+`doc/architecture/tty-subsystem.md`, "Phase 7 as built".
+
 ## Why formatting moved out
 
 The UART driver previously owned string, hexadecimal and decimal helpers. That
@@ -65,10 +80,9 @@ live output as UART, plus retained early boot history.
 
 ## Limitations
 
-- transmit only;
-- polling only;
+- transmit is polled (no transmit interrupt);
 - no timeout if the hardware stops accepting bytes;
-- no baud-rate or line-control initialization;
+- no baud-rate programming (character format only);
 - the early physical base is QEMU-`virt` specific.
 
 ## Source files

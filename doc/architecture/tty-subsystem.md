@@ -1,6 +1,6 @@
 # TTY, PTY and termios: audit and plan
 
-Status: **Phase 0 (audit) complete and approved. Phase 1 (infrastructure, M1 to M7) complete. Phases 2 to 5 (TTY core, line discipline, termios, job control) built and committed. Phase 6 (PTY, and Terminal.app, nzh, su, sudo and passwd moved onto it) built, not yet committed. Next: Phase 7, hardware backends, or Phase 8, hardening.**
+Status: **Phase 0 (audit) complete and approved. Phase 1 (infrastructure, M1 to M7) complete. Phases 2 to 6 (TTY core, line discipline, termios, job control, PTY with Terminal.app, nzh, su, sudo and passwd on it) built and committed. Phase 7 (UART receive, line errors, `/dev/console` as a serial terminal, getty and login) and Phase 8 (hardening: i386 faults as signals, revoke, lock audit, SMP stress, ABI checks) built and tested on i386 and arm64, not yet committed. The roadmap is complete; section 9 lists what is left out.**
 
 This document is the prerequisite audit, dependency report and roadmap for a
 kernel terminal subsystem (TTY core, line discipline, termios, PTYs, job
@@ -779,9 +779,11 @@ side closing; then Terminal.app and nzh move to it and the password prompt
 stops echoing. Built: see "Phase 6 as built" below.
 
 **Phase 7: hardware backends.** UART receive, `/dev/console`, serial TTY.
+Built: see "Phase 7 as built" below.
 
 **Phase 8: hardening.** Lock audit, SMP stress, ABI check on both
-architectures, limitations written down.
+architectures, limitations written down. Built: see "Phase 8 as built"
+below.
 
 ### Phase 6 as built
 
@@ -896,6 +898,225 @@ remove it (and `system-template.img`, `disk.img`) to pick the new one up.
 Not done: `TIOCPKT`/`TIOCREMOTE`; `ttyname`; `cmd &` (the parser takes no
 operators); ^Z during `log stream`, which runs inside nzh, which ignores
 SIGTSTP.
+
+### Phase 7 as built
+
+**Line errors** (`kern/tty/n_tty.c`, `tty.c`). The parity, framing and break
+handling left out of Phase 3 for want of a driver that reports them:
+`n_tty_receive_error` and, for drivers, `tty_input_error(tty, byte,
+TTY_INPUT_BREAK | PARITY | FRAMING)`, thread context like `tty_input`.
+
+- A break: dropped under `IGNBRK`; under `BRKINT` both queues flushed
+  (unless `NOFLSH`), stopped output restarted and `SIGINT` asked for, with
+  nothing echoed; otherwise read as `\0`, or `\377 \0 \0` under `PARMRK`
+  (even with `IGNPAR`, which POSIX ties to parity alone).
+- A parity or framing error: the byte taken as it is (special characters
+  included) unless `INPCK`; with it, dropped (`IGNPAR`), or read as
+  `\377 \0 byte` (`PARMRK`) or as `\0`. Framing follows `INPCK` as parity
+  does, as on Linux.
+- While `PARMRK` marks errors and `IGNPAR` does not hide them, a real
+  `\377` reads as `\377 \377`.
+- Marks are literal input (never special), echoed, and refused whole in
+  raw mode when they do not all fit. An overrun is not a line error: the
+  byte it is reported with is good and goes through `tty_input`.
+
+**Platform UART** (`platform/uart.h`, `platform/{i386,arm64,x86_64}/uart.c`).
+The interface now has a second client, documented in the header:
+`uart_put_byte` (no newline translation), `uart_get_byte` (byte plus
+`UART_RX_BREAK | PARITY | FRAMING | OVERRUN`), `uart_set_line` (speed, 5-8
+data bits, 1-2 stop bits, parity), `uart_receive_interrupt_attach` and
+`uart_receive_interrupt_enable`. Transmitting and configuring are
+serialized by the console lock (`kconsole_serial_write`,
+`kconsole_serial_set_line` in `kern/console/console.c`), so a change of
+settings never meets a character half sent.
+
+- i386, 16550 on COM1: FIFOs on, receive trigger 14 bytes (fewer raise the
+  character timeout), receive and line-status interrupts, `OUT2` set so the
+  interrupt reaches the PIC, IRQ 4 edge triggered. The handler loops while
+  `IIR` reports something pending. Any speed that divides 115200.
+- arm64, PL011: the interrupt from the Device Tree (`platform->uart_intid`,
+  `uart_irq_flags`; INTID 33, level, on QEMU virt), a GIC SPI to the boot
+  CPU; receive, receive-timeout and the four error interrupts. The handler
+  clears what the UART raised before the client drains. The character
+  format can change; the speed cannot (the divisor needs the reference
+  clock, which is not read), so anything but 115200 is refused.
+- x86_64: `uart_put_byte` and a `uart_set_line` that refuses; no receive.
+
+**The serial terminal** (`kern/tty/serial.c`, `serial.h`). `/dev/console`,
+root's, mode 0600, a terminal whose driver is the console UART. One static
+instance; its driver reference is held for good. `serial_init` runs once
+kernel threads can start (arm64 after `net_start`; i386 first thing in the
+userland phase) and its failure is reported, never fatal: the kernel log
+does not depend on it.
+
+- Input: UART FIFO, interrupt, a 1024-byte ring of bytes and status, the
+  receive thread, `tty_input` / `tty_input_error`. The thread copies from
+  the ring and removes only what the terminal took. Without an interrupt
+  the thread polls the UART every 10 ms.
+- Holding back: a full ring turns the receive interrupt off and leaves input
+  in the UART; a terminal that refuses input stops the thread until its
+  unthrottle operation (a counter, so an unthrottle between the refusal and
+  the thread noticing it is not lost). The thread turns the interrupt back
+  on at half a ring and drains the UART as it does, because a PL011 raises
+  its interrupt as bytes arrive, not while they wait, and QEMU sends nothing
+  into a full FIFO: without that drain the arm64 line deadlocked under a
+  flood (found by the flood test). QEMU's sender waits, so nothing is lost;
+  real hardware overruns its FIFO, and that is counted.
+- Output: polled, 64 bytes at a time under the console lock, one mover at a
+  time (the pty pattern). It goes to the UART only, not to the display sinks
+  or the log history. When it leaves a line unfinished (a prompt), the next
+  log line starts on a fresh line.
+- Settings: `param` maps `c_ospeed`, `CSIZE`, `CSTOPB`, `PARENB`/`PARODD` to
+  the UART and refuses what it cannot make; an input speed other than the
+  output speed is refused; `B0` keeps the line (there are no modem lines);
+  an unchanged line is not reprogrammed. It starts with the defaults plus
+  `CLOCAL`, at 115200.
+- `serial_stats`: received, delivered, breaks, parity, framing, overruns,
+  times held back, interrupts taken.
+
+**Tests.**
+
+- Host (`make test-tty-host`): every rule above as a case (16 cases), and
+  error input mixed into the randomized run.
+- `tty_test`: through the core with the loopback driver: a break under
+  `BRKINT` flushing the line being typed and asking for `SIGINT`; a parity
+  mark, a break mark and a doubled `\377` under `INPCK | PARMRK`.
+- `serial_test` (`kern/tests/serial_test.c`), through the real UART with
+  the host typing: `tools/serial_expect.pl` runs QEMU with `-serial stdio`,
+  passes its output through, and types as `tools/serial_test.script` says,
+  each step only once the kernel prints `ready for <step>` (input with no
+  file open is discarded). A line with a rub-out and Enter, read back edited
+  and its echo checked by the host; ^C asking for `SIGINT`; output written
+  to `/dev/console` seen by the host; an impossible speed and split speeds
+  refused; `VMIN 4` raw with a NUL; 6000 bytes typed while nobody reads for
+  a second, all arriving in order with the line held back at least once and
+  no overrun. i386: `test-i386-boot` case `serial`; arm64: the `serial` row
+  of `make check` (new registry column `TEST_<id>_SERIAL_SCRIPT`, which
+  `tools/check.sh` hands to `serial_expect.pl`).
+
+Verified 2026-11-14: `test-tty-host`; `test-i386-boot` (all but `kernel`,
+the known failure of 10.2), `test-i386-interrupts`, `test-i386-devices`,
+`test-i386-userland`; arm64 `serial`, `tty` and `default`; x86_64 builds.
+
+A login on the console: `getty` and `login`, started by bootd on every
+boot; see `doc/architecture/unix-security.md`, section 8.
+
+Not done: transmit interrupts
+(output is polled with interrupts masked for each 64-byte chunk, about 5 ms
+at a real 115200); modem control and hardware flow control (`CLOCAL` only,
+no `RTS`); PL011 speed changes; `TIOCSBRK`/`TIOCCBRK`; the framebuffer's
+text console as a second terminal.
+
+### Phase 8 as built
+
+**i386 faults are signals** (`kern/i386/syscall_trap.c`, M6's gap). A
+processor exception in ring 3 used to end the process with a status of its
+own (`0x80000000 | vector`), which no `wait` decoded, so a shell could not
+say a program had crashed. It is now the signal POSIX names, mapped as the
+BSDs and Linux do: `#PF`, `#GP`, `#NP`, `#SS`, `#BR`, `#OF` SIGSEGV; `#AC`
+SIGBUS; `#DE`, `#MF`, `#XM` SIGFPE; `#DB`, `#BP` SIGTRAP; anything else
+SIGILL. As on arm64, a program with a handler for it (not blocked) runs the
+handler at the faulting context (`machine_user_signal_push`); otherwise the
+process is killed by the signal and `wait` reports it so. The `int3` and
+`into` gates are now usable from ring 3 (DPL 3, `kern/i386/idt.c`), as on
+Linux: before, a user `int3` arrived as a `#GP` naming gate 3. The log line
+reads `pid N (name) killed by SIGSEGV: #PF Page Fault at ...`.
+
+**Revoke** (`kern/tty/tty.c`, `tty_revoke`; system call `NXU_SYS_REVOKE`,
+`nxu_revoke(path)`), Darwin's `revoke(2)` for terminals, so getty can cut a
+finished session off the console.
+
+- Every open of a terminal now makes a file object of its own (`struct
+  tty_file`), reached through a devfs clone: the terminal's name has only an
+  open, and the file's operations are `g_tty_file_operations`. `/dev/tty`
+  opens the same way. devfs gained room for it: `DEVFS_DEVICE_MAX` 64 to
+  256.
+- The terminal has a generation (`t_generation`); a file remembers the one
+  it was opened in. Revoke waits out an open or last close in progress,
+  moves to the next generation, and does what a last close does (queues
+  emptied, flow control and pending signals forgotten, driver closed); then
+  the session is told as for a hangup (it loses the terminal, its leader
+  gets SIGHUP). The open count restarts at zero, so the next open is a first
+  open and finds the terminal live at once.
+- A file of an older generation reads end of file, fails writes with an I/O
+  error, answers every request with NOT_TTY (`isatty` is false), polls
+  readable and hung up, is no way to the terminal for job control
+  (`tty_from_file` refuses it), and its close only drops its reference. A
+  reader or writer asleep on it wakes and finds it revoked, also after a new
+  session has opened the terminal.
+- The system call takes a path; only the terminal's owner or root may
+  revoke it; anything but a terminal is NOT_SUPPORTED.
+- getty revokes the console after every session and opens it again as the
+  session's controlling terminal.
+
+**Lock-order audit.** Every lock the terminal code takes, checked against
+sections 6.1 to 6.3 by reading each path (tty.c, tty_ioctl.c, tty_jobctl.c,
+n_tty.c, pty.c, serial.c, the loopback driver, the loader's spawn
+attributes):
+
+| Lock | Taken with | Held across | Notes |
+| --- | --- | --- | --- |
+| process table | then a terminal's `t_lock` (`tty_claim_locked`) | no sleep | never the reverse |
+| `t_lock` (irqsave) | wait-queue locks (wakes) | nothing else | no driver call, sleep, print, allocation, readiness post or signal under it; signals are recorded and posted by `tty_run_deferred` after the unlock (6.3) |
+| `p_lock` (pty, irqsave) | wait-queue locks | nothing | dropped around `tty_output_take` and `tty_input` |
+| `s_lock` (serial, irqsave) | UART registers | nothing | the only lock the receive interrupt takes; never held with `t_lock` |
+| console lock (recursive, irqsave) | UART transmit | the bytes of one chunk | taken by `kconsole_serial_write` with no terminal lock held; a print under `t_lock` would nest it inside, never outside |
+| devfs table lock | none | nothing | dropped before every device operation |
+| `p_cwd_lock` | none | a copy | |
+
+Readiness (6.1) is posted only after unlocking, everywhere. Process
+creation (6.2) is unchanged; the loader's controlling-terminal attribute
+calls `tty_from_file` (which now takes `t_lock` briefly) with no process
+table lock held. Teardown (6.3): revoke and hangup reach
+`tty_hangup_session` after every terminal lock is dropped. No violation was
+found.
+
+**SMP stress** (`kern/tests/smp_test.c`, case `tty`, in the arm64 `smp`
+row and in i386's `test-i386-smp`): three writers pinned to different CPUs
+send 12000 tagged bytes each through one loopback terminal, a reader on
+another CPU checks each writer's bytes arrive in order and none are lost;
+meanwhile one thread gets and sets the settings, the window size and the
+queue counts, and another opens and closes a second file on the terminal
+without pause (the open count moves while the session's file stays open).
+Then a reader asleep on one CPU is revoked from another and must wake to end
+of file, and the terminal must be freed. About 0.1 s on four i386 CPUs.
+
+**ABI check** (`kern/syscall/termios_defs.h`): besides the sizes, the field
+offsets of `struct nxu_termios` and `struct nxu_winsize`, the size of
+`nxu_ptyname_t`, and the numbers of the requests that encode an argument
+size (`TIOCGETA` family, `TIOC[GS]WINSZ`, `TIOCPTYGNAME`, `FIONREAD`) are
+static assertions. The header is compiled into both kernels and both
+userlands, so each architecture's compiler checks them.
+
+**Around the terminal**, done with this phase because a login needs them:
+
+- `chdir` and `getcwd` (`NXU_SYS_CHDIR`, `NXU_SYS_GETCWD`): a per-process
+  working directory, a canonical absolute path (`p_cwd`, the VFS looks up by
+  name), inherited by children. Every system call that takes a path resolves
+  it against it (`syscall_copy_path`, `vfs/pathname.c`, host-tested by
+  `make test-vfs-host`). `chdir` needs a directory the caller may search.
+  nzh's `cd` and `pwd` use it, `cd` alone goes home, and a shell started at
+  `/` (Terminal.app) begins at home; login starts the shell in the home
+  directory. Homes moved under the system volume (`/Volumes/mainOS/Users/
+  user`, `/Volumes/mainOS/var/root`, mode 0700), created on both disks,
+  user's owned by user (`tools/disk_home_owners.sh`).
+- utmp, wtmp, `last`, `who`, `/etc/motd` and "Last login": see
+  `doc/architecture/unix-security.md`, section 8.
+
+**Tests**, all in the runs listed under Verification:
+
+- `tty_test`: revoke with a sleeping reader, a new open after it, old files
+  closed without closing the terminal, `tty_from_file` refusing a revoked
+  file.
+- `ptytest` check 15: revoke from user space as the slave's owner; the
+  console, root's, refused to a user.
+- `sigtest`: children killed by SIGSEGV, SIGFPE, SIGILL and SIGTRAP from
+  their faults, and one whose SIGSEGV handler runs; the i386 threads
+  self-test expects the signals (`test-i386-threads`).
+- `console_login.script`: `pwd`, `cd ..`, a relative path handed to a
+  child, `cd` into a file and into root's home refused, `cd` alone; motd,
+  `who`, `last`, "Last login".
+- SMP case `tty`; `make test-vfs-host`.
 
 ## 8. Issues found on the way, tracked separately
 
@@ -1030,12 +1251,73 @@ are not the code's. `tools/tty/test_host.sh` probes for a working ASan and,
 without one, says so and builds with UBSan, bounds checking and stack
 protection instead. The audio script was left as it is.
 
-## 9. Known limitations accepted up front
+### 8.5 Found by the full `make check` of 2026-11-14
 
-- No general `poll`/`select` (risk 5).
+Fixed, because this project caused them:
+
+- **`smp` case `timedwait`** failed every run with "a finished wait left its
+  deadline armed". It checked `waitq_timer_waiters() == 0`, the number of
+  timed waits in the whole machine, and since a5ecbab (job control) a user
+  program's `nxu_sleep_us` is one (`sched_sleep_us_interruptible`), so any
+  service napping at that moment failed it. The case now checks its own
+  sleepers' `wait_timer_armed` instead.
+- **`console-login` on arm64**: `who` waited two minutes for a timed that
+  arm64 never starts (a bootstrap lookup waits for the service to
+  register). utmp asks timed for local time only on a system whose bootd
+  runs it (its plist is installed), and uses UTC otherwise.
+- **`serial` on arm64**: the test kernel also started bootd, whose getty
+  opened `/dev/console`, reset its settings and read the bytes the test was
+  typing. The serial test kernel now starts no bootd, as the SMP user test's
+  does not.
+
+Not caused by this project, reported and left alone:
+
+- **`ipc-process`**: `kern/tests/ipc_process_test.c` prints its success
+  message with a stray newline in the middle and none at the end, so the
+  row's pass line `ipc_process_test: passed` is glued to it ("...reap)passed")
+  and never matches.
+- **`test-network-host`** does not compile: `kern/net/net.c` and
+  `kern/net/netif.c` call `kprintf` without declaring it in the host build
+  (since d53a945).
+- **`test-i386-btrfs`**, 9 cases: the host's fixture tool
+  (`tools/btrfs/corrupt.py`) finds no data extent and no `log_root` in the
+  images it is given, so the guest is booted on images that were never
+  made. A host btrfs-progs difference, before any NXU code runs.
+- **`test-audio-host`**: 8.4.
+- **`smp-user`**: smptest case 6 (IPC across CPUs) ends with its forked
+  child exiting 1 (`nxu_ipc_receive_wait` returned something other than the
+  message) and the parent waiting for ever. Reproduced on the committed tree
+  (61781cc) in a clean worktree, so it predates this work.
+
+## 9. Known limitations
+
+Accepted up front:
+
+- No general `poll`/`select` (risk 5). Readiness notifiers are in place.
 - No fork on i386; job control there is spawn-based.
-- VFS entry remains boot-CPU-bound; the TTY's own locking is SMP-safe, but
-  terminal syscalls do not run in parallel until the VFS does.
+- VFS system calls remain boot-CPU-bound; the TTY's own locking is SMP-safe
+  (the SMP stress case drives it from kernel threads on every CPU), but
+  terminal system calls do not run in parallel until the VFS does.
+
+Left out of the line discipline (n_tty.h): `VSTATUS` (no SIGINFO), `VDSUSP`,
+`ALTWERASE`, `ECHOPRT`, `PENDIN`, `EXTPROC`; their bits are accepted and
+ignored.
+
+Pseudo-terminals: no `TIOCPKT`, `TIOCREMOTE`, `ttyname`; at most 32 pairs.
+
+Serial terminal: transmit is polled (interrupts masked for each 64-byte
+chunk); no modem control or hardware flow control (`CLOCAL` only, no RTS);
+the PL011's speed cannot be changed; no `TIOCSBRK`/`TIOCCBRK`; the
+framebuffer's text console is not a terminal.
+
+Revoke: terminals only (NOT_SUPPORTED for any other file).
+
+Logins: only the primary group is set; no boot or shutdown records in wtmp;
+no `lastlog` file (Last login comes from wtmp, so it forgets what wtmp has
+lost); no remote logins (`ut_host` is always empty).
+
+Shell: nzh has no `&` (jobs are backgrounded with ^Z and `bg`); its prompt
+names the user from `/etc/username`, not the account.
 
 ## 10. Where to resume
 
@@ -1182,7 +1464,7 @@ What Phase 1 built for each, and the choices already made.
   reach a process blocked on a socket until the socket wakes it (M5's known
   limit). (Done; see "Phase 6 as built".)
 
-**Phase 7, hardware backends.**
+**Phase 7, hardware backends.** (Done; see "Phase 7 as built".)
 
 - The UARTs are transmit-only and polled on every architecture. Receive
   needs an interrupt (or a polling kernel thread) feeding a ring, and a
@@ -1191,7 +1473,7 @@ What Phase 1 built for each, and the choices already made.
 - `/dev/console` is a TTY over the UART; `kputc` and the kernel log stay
   independent of it.
 
-**Phase 8, hardening.** Lock-order audit against sections 6.1-6.3, an SMP
+**Phase 8, hardening.** (Done; see "Phase 8 as built".) Lock-order audit against sections 6.1-6.3, an SMP
 stress case in the `smp` suite, an ABI size check on both architectures, and
 the limitations list brought up to date. Worth doing first: i386 faults as
 signals (M6's gap), so a crash under a shell is reported as a signal.

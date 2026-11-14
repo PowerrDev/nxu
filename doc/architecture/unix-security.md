@@ -139,3 +139,64 @@ Each phase is a self-contained, compiling, testable increment.
 - Syscalls `NXU_SYS_GETUID`…`NXU_SYS_SETGROUPS` (89–98) with userland wrappers;
   the read side proves the layer end-to-end.
 - The credential⇄capability bridge in `proc_has_caps`.
+
+## 8. login and getty (2026-11-14)
+
+The native `login` of Phase 5, and the `getty` that runs it on the serial
+console (`/dev/console`, see `doc/architecture/tty-subsystem.md`, "Phase 7 as
+built", for the terminal itself).
+
+- `getty` (`frameworks/BootDaemons.framework/getty.c`, bootd service
+  `com.nxu.getty`, KeepAlive, root; `-no-getty` turns it off). It leads a new
+  session with the terminal as controlling terminal and descriptors 0-2, and
+  for ever: gives the terminal back to root (owner 0:0, mode 0600, default
+  termios, typeahead discarded, its own group in the foreground), shows
+  "sevOS (console)" (with the first word of `/etc/hostname` if there is one)
+  and `login: `, reads a name, runs `login -t <terminal> <name>` and waits.
+  With no exec on i386 it stays as the session leader instead of becoming
+  login. It ignores ^C, ^\, ^Z and SIGHUP; the foreground group it shares
+  with login gets them.
+- `login [-t terminal] [name]` (`login.c`, setuid root, 4755). Everyone
+  authenticates, root included. A name that does not exist is asked for a
+  password and fails like a wrong one; after a second, "Login incorrect", and
+  the name is asked again; three failures end it. On success the terminal
+  becomes the user's (owner uid, group tty 4, mode 0620), then
+  `setgroups(1, gid)`, `setgid`, `setuid`, and the account's shell runs on the
+  terminal (`nxu_spawn_here`) while login waits and ends as it does. ^C or ^\
+  at a prompt ends login; ^Z is ignored.
+- A user's shell has the capabilities the service was given
+  (`AllowFilesystemWrite`), like a shell in Terminal.app.
+
+Test: `tools/console_login.script` against a normal boot, typed by
+`tools/serial_expect.pl` (i386 `test-i386-boot` case `console-login`, arm64
+`make check` row `console-login`): a wrong password refused, `user` logged in
+(`whoami`, `/dev/console` 0620 owned by 1000:4), logout and a new prompt, root
+the same way, ^C at the password prompt bringing the prompt back.
+
+Added since (2026-11-14):
+
+- **Records** (`nxu/utmp.h`, `frameworks/lib/utmp.c`): BSD's utmp
+  (`/var/run/utmp`, one record per terminal, the session on it now) and
+  wtmp (`/var/log/wtmp`, every login and logout, appended), records of one
+  fixed 144-byte layout, times in UTC. login writes the login while still
+  root; getty writes the logout after the session, and at its start clears
+  a session the machine's last run left in utmp (`last` then calls it "gone
+  - no logout").
+- **`last [user]`** and **`who`**, in BSD's format, times in local time
+  from timed (UTC without it).
+- **Last login and the message of the day**: login prints "Last login:
+  <time> on <terminal>" from wtmp (before recording the new login), then
+  `/etc/motd`; a `.hushlogin` in the home directory silences both.
+- **Revoke at logout**: getty revokes the console after every session
+  (`nxu_revoke`, see the TTY design doc, "Phase 8 as built"), so a job the
+  user left running keeps no working descriptor on it and cannot read the
+  next user's typing; then opens it again for the next login.
+- **Home directory**: login changes to it as the user, or says "No home
+  directory" and uses `/`. The homes in `/etc/passwd` now carry the system
+  volume's prefix (`/Volumes/mainOS/Users/user`, `/Volumes/mainOS/var/root`,
+  mode 0700), as the shell field already did; both disks create them and
+  give user's to user.
+
+Not done: supplementary groups from `/etc/group` (only the primary group is
+set); boot records in wtmp and a `lastlog`; the shell is not started as a
+login shell (`-nzh`); nzh's prompt reads `/etc/username`, not the account.
