@@ -12,6 +12,14 @@
  * sched_thread_wait) inside it. Wakeups happen after it is released, so it is
  * never held together with a run queue lock.
  *
+ * Signals: an interruptible sleep does not start while the sleeper has a
+ * signal pending that it would take (waitq_sleep). A signal posted to a thread
+ * that is not asleep yet (still in user mode, or on its way to the sleep) is
+ * only marked pending; nothing else would end a sleep begun after it. The
+ * test is made with the thread already on the queue, so a signal posted after
+ * it finds the thread there and interrupts the sleep (signal_post wakes
+ * interruptible sleepers once the signal is pending).
+ *
  * Timed waits add one lock, g_waitq_timer_lock, which protects the list of
  * threads sleeping with a deadline and their wait_timer_* fields. It is the
  * outermost lock here: the tick holds it while it takes a thread off its queue
@@ -25,6 +33,8 @@
 
 #include <kern/machine/machine_routines.h>
 #include <kern/machine/timer.h>
+#include <kern/process/proc.h>
+#include <kern/process/signal.h>
 #include <kern/sched_prism/sched.h>
 
 #include <stdbool.h>
@@ -98,6 +108,31 @@ waitq_dequeue(waitq_t *queue)
 	return thread;
 }
 
+/* Take `thread` off `queue`, which it is on; queue->lock held. */
+static void
+waitq_unlink_locked(waitq_t *queue, thread_t thread)
+{
+	thread_t previous = thread->sched_links.waitq.prev;
+	thread_t next = thread->sched_links.waitq.next;
+
+	if (previous != 0) {
+		previous->sched_links.waitq.next = next;
+	} else {
+		queue->head = next;
+	}
+
+	if (next != 0) {
+		next->sched_links.waitq.prev = previous;
+	} else {
+		queue->tail = previous;
+	}
+
+	thread->sched_links.waitq.next = 0;
+	thread->sched_links.waitq.prev = 0;
+	thread->wait_queue = 0;
+	thread->wait_interruptible = false;
+}
+
 bool
 waitq_remove(thread_t thread)
 {
@@ -120,25 +155,7 @@ waitq_remove(thread_t thread)
 			continue;
 		}
 
-		thread_t previous = thread->sched_links.waitq.prev;
-		thread_t next = thread->sched_links.waitq.next;
-
-		if (previous != 0) {
-			previous->sched_links.waitq.next = next;
-		} else {
-			queue->head = next;
-		}
-
-		if (next != 0) {
-			next->sched_links.waitq.prev = previous;
-		} else {
-			queue->tail = previous;
-		}
-
-		thread->sched_links.waitq.next = 0;
-		thread->sched_links.waitq.prev = 0;
-		thread->wait_queue = 0;
-		thread->wait_interruptible = false;
+		waitq_unlink_locked(queue, thread);
 
 		nxu_spin_unlock_irqrestore(&queue->lock, irq_state);
 		return true;
@@ -234,6 +251,28 @@ waitq_sleep(waitq_t *queue, bool interruptible, nxu_spinlock_t *guard, uint64_t 
 	}
 
 	waitq_enqueue_locked(queue, thread, interruptible);
+
+	/*
+	 * A signal already pending would wait behind this sleep: the call returns
+	 * "interrupted" instead, and the signal is taken on the way out. On the
+	 * queue first, then the test (the fence orders the two against the
+	 * poster's "pending, then interrupt the sleepers"); see the file header.
+	 */
+	if (interruptible) {
+		proc_t proc = current_proc();
+
+		__atomic_thread_fence(__ATOMIC_SEQ_CST);
+
+		if (proc != 0 && signal_pending_for(proc, thread)) {
+			waitq_unlink_locked(queue, thread);
+			nxu_spin_unlock(&queue->lock);
+
+			if (guard != 0) nxu_spin_unlock(guard);
+
+			ml_irq_restore(irq_state);
+			return false;
+		}
+	}
 
 	bool waiting = sched_thread_wait(thread, false);
 
