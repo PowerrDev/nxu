@@ -35,9 +35,20 @@ ui_service_poll_key(UIServiceHostEvent *event)
 
 	if (event == 0 || !keyboard_take_key(&key)) return false;
 
+	uint32_t character = key.character;
+
+	/*
+	 * Control with a letter or one of @ [ \ ] ^ _ types the control character
+	 * (^C is 3), as on any terminal keyboard: that is what a terminal's line
+	 * discipline acts on.
+	 */
+	if ((key.modifiers & KEYBOARD_MOD_CTRL) != 0U &&
+		((character >= 'a' && character <= 'z') || (character >= '@' && character <= '_')))
+		character &= 0x1FU;
+
 	event->event_type = UI_SERVICE_EVENT_KEY_DOWN;
 	event->button = key.code;
-	event->reserved = key.character;
+	event->reserved = character;
 	return true;
 }
 
