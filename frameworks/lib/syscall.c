@@ -599,6 +599,24 @@ nxu_setsid(void)
 }
 
 int64_t
+nxu_chdir(const char *path)
+{
+	return nxu_syscall1(NXU_SYS_CHDIR, (uint64_t)path);
+}
+
+int64_t
+nxu_getcwd(char *buffer, uint64_t size)
+{
+	return nxu_syscall2(NXU_SYS_GETCWD, (uint64_t)buffer, size);
+}
+
+int64_t
+nxu_revoke(const char *path)
+{
+	return nxu_syscall1(NXU_SYS_REVOKE, (uint64_t)path);
+}
+
+int64_t
 nxu_killpg(uint64_t pgid, uint32_t signal)
 {
 	return nxu_syscall2(NXU_SYS_KILLPG, pgid, signal);

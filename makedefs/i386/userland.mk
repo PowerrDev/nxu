@@ -131,6 +131,10 @@ I386_USER_PROGRAMS := \
     su \
     sudo \
     passwd \
+    login \
+    getty \
+    last \
+    who \
     preferencesd \
     timed \
     storaged \
@@ -173,7 +177,8 @@ I386_USER_PLISTS := \
     frameworks/BootDaemons.framework/Services/com.nxu.preferencesd.plist \
     frameworks/BootDaemons.framework/Services/com.nxu.timed.plist \
     frameworks/BootDaemons.framework/Services/com.nxu.storaged.plist \
-    frameworks/BootDaemons.framework/Services/com.nxu.diskd.plist
+    frameworks/BootDaemons.framework/Services/com.nxu.diskd.plist \
+    frameworks/BootDaemons.framework/Services/com.nxu.getty.plist
 
 # Files whose contents do not depend on the architecture, taken from the
 # arm64 DiskRoot without modifying it.
@@ -184,6 +189,7 @@ I386_DISK_STATIC_FILES := \
     tools/DiskRoot/etc/group \
     tools/DiskRoot/etc/shadow \
     tools/DiskRoot/etc/sudoers \
+    tools/DiskRoot/etc/motd \
     tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.mp3 \
     tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.wav
 
@@ -314,6 +320,15 @@ $(I386_USER_BUILD)/su $(I386_USER_BUILD)/sudo $(I386_USER_BUILD)/passwd: $(I386_
 	$(QUIET_PRINT) "LD" "$@"
 	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
 
+# The programs that keep utmp and wtmp, and read them: the time zone comes from timed.
+$(I386_USER_BUILD)/getty $(I386_USER_BUILD)/last $(I386_USER_BUILD)/who: $(I386_USER_BUILD)/%: $(I386_USER_COMMON_OBJECTS) $(I386_USER_SERVICES_CLIENT) $(I386_USER_BUILD)/$(I386_USER_DAEMON_DIR)/%.o $(I386_USER_BUILD)/frameworks/lib/utmp.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
+	$(QUIET_PRINT) "LD" "$@"
+	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
+
+$(I386_USER_BUILD)/login: $(I386_USER_COMMON_OBJECTS) $(I386_USER_SERVICES_CLIENT) $(I386_USER_BUILD)/$(I386_USER_DAEMON_DIR)/login.o $(I386_USER_BUILD)/frameworks/lib/auth.o $(I386_USER_BUILD)/libk/sha256.o $(I386_USER_BUILD)/frameworks/lib/utmp.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
+	$(QUIET_PRINT) "LD" "$@"
+	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
+
 $(I386_USER_BUILD)/patchd: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/frameworks/BootDaemons.framework/patchd.o $(I386_USER_BUILD)/frameworks/SoftwareUpdate.framework/lib/nsw.o $(I386_USER_BUILD)/frameworks/SoftwareUpdate.framework/lib/manifest.o $(I386_USER_BUILD)/frameworks/CoreFoundation.framework/lib/plist/plist.o $(I386_USER_BUILD)/libk/sha256.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
 	$(QUIET_PRINT) "LD" "$@"
 	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
@@ -334,7 +349,7 @@ $(I386_USER_STAMP): $(I386_USER_BINARIES) $(I386_USER_PLISTS) $(I386_DISK_STATIC
 
 	$(Q)rm -rf $(I386_DISKROOT)
 
-	$(Q)mkdir -p $(I386_DISKROOT)/System/Library/CoreServices $(I386_DISKROOT)/System/Library/BootDaemons $(I386_DISKROOT)/System/Recovery $(I386_DISKROOT)/System/Library/Resources/Audio $(I386_DISKROOT)/var/log $(I386_DISKROOT)/var/db/patchd $(I386_DISKROOT)/etc
+	$(Q)mkdir -p $(I386_DISKROOT)/System/Library/CoreServices $(I386_DISKROOT)/System/Library/BootDaemons $(I386_DISKROOT)/System/Recovery $(I386_DISKROOT)/System/Library/Resources/Audio $(I386_DISKROOT)/var/log $(I386_DISKROOT)/var/db/patchd $(I386_DISKROOT)/etc $(I386_DISKROOT)/var/run $(I386_DISKROOT)/var/root $(I386_DISKROOT)/var/empty $(I386_DISKROOT)/Users/user
 
 	$(Q)cp $(I386_USER_BUILD)/triageOS $(I386_DISKROOT)/System/Recovery/triageOS
 
@@ -344,9 +359,11 @@ $(I386_USER_STAMP): $(I386_USER_BINARIES) $(I386_USER_PLISTS) $(I386_DISK_STATIC
 
 	$(Q)cp tools/DiskRoot/System/README.txt $(I386_DISKROOT)/System/README.txt
 
-	$(Q)cp tools/DiskRoot/etc/passwd tools/DiskRoot/etc/group tools/DiskRoot/etc/shadow tools/DiskRoot/etc/sudoers $(I386_DISKROOT)/etc/
+	$(Q)cp tools/DiskRoot/etc/passwd tools/DiskRoot/etc/group tools/DiskRoot/etc/shadow tools/DiskRoot/etc/sudoers tools/DiskRoot/etc/motd $(I386_DISKROOT)/etc/
 
 	$(Q)chmod 600 $(I386_DISKROOT)/etc/shadow
+
+	$(Q)chmod 700 $(I386_DISKROOT)/var/root
 
 	$(Q)cp tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.mp3 tools/DiskRoot/System/Library/Resources/Audio/Boot_Audio.wav $(I386_DISKROOT)/System/Library/Resources/Audio/
 
@@ -368,11 +385,11 @@ $(I386_USER_STAMP): $(I386_USER_BINARIES) $(I386_USER_PLISTS) $(I386_DISK_STATIC
 
 	$(Q)cp $(I386_USER_BUILD)/nzh $(I386_USER_BUILD)/ping $(I386_USER_BUILD)/ifconfig $(I386_USER_BUILD)/terminaltest $(I386_USER_BUILD)/kpanic $(I386_DISKROOT)/System/Library/CoreServices/
 
-	$(Q)cp $(I386_USER_BUILD)/whoami $(I386_USER_BUILD)/id $(I386_USER_BUILD)/stat $(I386_USER_BUILD)/chmod $(I386_USER_BUILD)/chown $(I386_USER_BUILD)/credtest $(I386_USER_BUILD)/suidhelper $(I386_USER_BUILD)/suidtest $(I386_USER_BUILD)/sigtest $(I386_USER_BUILD)/spawntest $(I386_USER_BUILD)/stty $(I386_USER_BUILD)/ttytest $(I386_USER_BUILD)/ptytest $(I386_USER_BUILD)/restarttest $(I386_USER_BUILD)/su $(I386_USER_BUILD)/sudo $(I386_USER_BUILD)/passwd $(I386_DISKROOT)/System/Library/CoreServices/
+	$(Q)cp $(I386_USER_BUILD)/whoami $(I386_USER_BUILD)/id $(I386_USER_BUILD)/stat $(I386_USER_BUILD)/chmod $(I386_USER_BUILD)/chown $(I386_USER_BUILD)/credtest $(I386_USER_BUILD)/suidhelper $(I386_USER_BUILD)/suidtest $(I386_USER_BUILD)/sigtest $(I386_USER_BUILD)/spawntest $(I386_USER_BUILD)/stty $(I386_USER_BUILD)/ttytest $(I386_USER_BUILD)/ptytest $(I386_USER_BUILD)/restarttest $(I386_USER_BUILD)/su $(I386_USER_BUILD)/sudo $(I386_USER_BUILD)/passwd $(I386_USER_BUILD)/login $(I386_USER_BUILD)/getty $(I386_USER_BUILD)/last $(I386_USER_BUILD)/who $(I386_DISKROOT)/System/Library/CoreServices/
 
 	$(Q)cp $(I386_USER_BUILD)/preferencesd $(I386_USER_BUILD)/timed $(I386_USER_BUILD)/storaged $(I386_USER_BUILD)/diskd $(I386_USER_BUILD)/defaults $(I386_USER_BUILD)/date $(I386_USER_BUILD)/diskutil $(I386_USER_BUILD)/loadtest $(I386_DISKROOT)/System/Library/CoreServices/
 
-	$(Q)chmod 4755 $(I386_DISKROOT)/System/Library/CoreServices/su $(I386_DISKROOT)/System/Library/CoreServices/sudo $(I386_DISKROOT)/System/Library/CoreServices/passwd
+	$(Q)chmod 4755 $(I386_DISKROOT)/System/Library/CoreServices/su $(I386_DISKROOT)/System/Library/CoreServices/sudo $(I386_DISKROOT)/System/Library/CoreServices/passwd $(I386_DISKROOT)/System/Library/CoreServices/login
 
 	$(Q)cp $(I386_USER_PLISTS) $(I386_DISKROOT)/System/Library/BootDaemons/
 
@@ -409,6 +426,7 @@ $(I386_DISK): $(I386_USER_STAMP)
 	$(Q)find $(I386_DISKROOT) -mindepth 1 | sed 's|^$(I386_DISKROOT)||' | while IFS= read -r entry; do \
 		printf 'sif "%s" uid 0\nsif "%s" gid 0\n' "$$entry" "$$entry"; \
 	done > $(I386_BUILD)/chown-root.debugfs
+	$(Q)tools/disk_home_owners.sh $(I386_DISKROOT) >> $(I386_BUILD)/chown-root.debugfs
 	$(Q)PATH="$(I386_E2FS_PATH):$$PATH" $(I386_DEBUGFS) -w -f $(I386_BUILD)/chown-root.debugfs $(I386_DISK) >/dev/null
 
 i386-disk: $(I386_DISK)

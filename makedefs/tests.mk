@@ -12,7 +12,7 @@
 #   make check              build and boot every headless test, then the i386
 #                           suites, and print one pass/fail table (tools/check.sh)
 #   make check-list         the kernel tests `make check` runs (id, timeout, pass line,
-#                           defines, capture, verify, frameworks)
+#                           defines, capture, verify, frameworks, cpus, serial script)
 #   make check-i386-list    the i386 suite targets `make check` runs
 #
 # Every test is a kernel CONFIG of its own (BUILD/<id>/kernel.bin) that is
@@ -42,6 +42,9 @@
 #                         its path. It must exit 0 (make check only; no shell
 #                         quotes, tabs or # in it)
 #   TEST_<id>_SERIAL1     QEMU arguments for a second serial port (default: none)
+#   TEST_<id>_SERIAL_SCRIPT  what the host types into the console UART, for a
+#                         test that reads it (tools/serial_expect.pl; make check
+#                         only: `make test` leaves the typing to you)
 #   TEST_<id>_TEP         set to 1 to boot tepOS alongside, joined by the mailbox
 #                         (tools/with_tepos.sh; TEP=0 turns it off, TEP=1 on)
 
@@ -68,6 +71,8 @@ TEST_IDS := \
     smp \
     smp-user \
     tty \
+    serial \
+    console-login \
     sound \
     tep-mailbox
 
@@ -218,6 +223,7 @@ CHECK_I386_TARGETS := \
 CHECK_HOST_TARGETS := \
     test-audio-host \
     test-tty-host \
+    test-vfs-host \
     test-network-host
 
 
@@ -244,8 +250,8 @@ test-list:
 
 check-list:
 
-	@printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'default' '$(CHECK_TIMEOUT)' '$(CHECK_DEFAULT_PASS)' '-' '-' '-' '-' '4'
-	@$(foreach id,$(CHECK_IDS),printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' '$(id)' '$(or $(TEST_$(id)_TIMEOUT),$(CHECK_TIMEOUT))' '$(TEST_$(id)_PASS)' '$(or $(TEST_$(id)_CFLAGS),-)' '$(if $(TEST_$(id)_CAPTURE),1,-)' '$(or $(TEST_$(id)_VERIFY),-)' '$(or $(TEST_$(id)_FRAMEWORKS),-)' '$(or $(TEST_$(id)_SMP),1)';)
+	@printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'default' '$(CHECK_TIMEOUT)' '$(CHECK_DEFAULT_PASS)' '-' '-' '-' '-' '4' '-'
+	@$(foreach id,$(CHECK_IDS),printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' '$(id)' '$(or $(TEST_$(id)_TIMEOUT),$(CHECK_TIMEOUT))' '$(TEST_$(id)_PASS)' '$(or $(TEST_$(id)_CFLAGS),-)' '$(if $(TEST_$(id)_CAPTURE),1,-)' '$(or $(TEST_$(id)_VERIFY),-)' '$(or $(TEST_$(id)_FRAMEWORKS),-)' '$(or $(TEST_$(id)_SMP),1)' '$(or $(TEST_$(id)_SERIAL_SCRIPT),-)';)
 
 
 check-i386-list:

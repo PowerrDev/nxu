@@ -18,6 +18,7 @@
 #include "shell.h"
 #include "netutil.h"
 
+#include <nxu/pwdb.h>
 #include <nxu/spawn_io.h>
 #include <nxu/string.h>
 #include <nxu/syscall.h>
@@ -26,6 +27,10 @@
 #define NZH_CHILD_MAX 100U
 #define NZH_FORKBOMB_MAX_SECONDS 100U
 
+static void nzh_sync_directory(void);
+static int64_t nzh_chdir_home(void);
+
+/* The working directory as the kernel has it (nxu_getcwd), kept here for the prompt and for joining names. */
 static char g_directory[256] = "/Volumes/mainOS";
 /* Optional prompt identity, read once from /etc/username and /etc/hostname.
  * Empty when unset, in which case the prompt is just "<dir> %". */
@@ -791,18 +796,20 @@ nzh_execute(uint32_t count, const char *const *arguments)
 		}
 		netutil_write("\n");
 	} else if (nxu_streq(command, "pwd")) {
+		nzh_sync_directory();
 		netutil_write(g_directory);
 		netutil_write("\n");
 	} else if (nxu_streq(command, "cd")) {
-		char path[256];
-		nxu_stat_t info;
+		int64_t result = count > 1 ? nxu_chdir(arguments[1]) : nzh_chdir_home();
 
-		if (nzh_path(count > 1 ? arguments[1] : "/Volumes/mainOS", path) && nxu_stat(path, &info) == 0 &&
-			info.type == NXU_STAT_TYPE_DIRECTORY) {
-			memcpy(g_directory, path, nxu_strlen(path) + 1);
-		} else {
+		if (result == -NXU_SYS_E_NOT_DIRECTORY)
+			netutil_write("cd: not a directory\n");
+		else if (result == -NXU_SYS_E_DENIED)
+			netutil_write("cd: permission denied\n");
+		else if (result < 0)
 			netutil_write("cd: directory not found\n");
-		}
+
+		nzh_sync_directory();
 	} else if (nxu_streq(command, "ls")) {
 		nzh_list(count > 1 ? arguments[1] : ".");
 	} else if (nxu_streq(command, "cat")) {
@@ -926,6 +933,28 @@ nzh_format_prompt(char *prompt, uint32_t capacity)
 	nzh_append(prompt, capacity, &length, " % ");
 }
 
+/* The kernel's working directory, which children inherit, copied for the prompt. */
+static void
+nzh_sync_directory(void)
+{
+	char directory[sizeof(g_directory)];
+
+	if (nxu_getcwd(directory, sizeof(directory)) > 0) memcpy(g_directory, directory, nxu_strlen(directory) + 1);
+}
+
+/* `cd` alone: the account's home directory, or the system volume when it has none. */
+static int64_t
+nzh_chdir_home(void)
+{
+	nxu_passwd_t account;
+
+	if (nxu_getpwuid((uint32_t)nxu_geteuid(), &account) == 0 && account.pw_dir[0] != 0 &&
+		nxu_chdir(account.pw_dir) == 0)
+		return 0;
+
+	return nxu_chdir("/Volumes/mainOS");
+}
+
 /* The shell's own signals on a terminal: ^C abandons the line being typed; the job-control ones are the jobs'. */
 static void
 nzh_setup_terminal(void)
@@ -955,6 +984,13 @@ main(uint64_t argc, const char *const *argv)
 	(void)nxu_signal(NXU_SIGINT, nzh_signal);
 	(void)nxu_signal(NXU_SIGTERM, nzh_signal);
 	nzh_setup_terminal();
+
+	/* Started at the root (Terminal.app, a service): begin at home, as a terminal on Darwin does. login has already. */
+	nzh_sync_directory();
+	if (nxu_streq(g_directory, "/")) {
+		(void)nzh_chdir_home();
+		nzh_sync_directory();
+	}
 	nzh_read_config("/Volumes/mainOS/etc/username", g_user, sizeof(g_user));
 	nzh_read_config("/Volumes/mainOS/etc/hostname", g_host, sizeof(g_host));
 	netutil_write("NXU shell (nzh) - type help\n");

@@ -27,8 +27,25 @@
  * distance. IUTF8 makes an erase remove a whole UTF-8 sequence, which takes
  * one column.
  *
- * Not handled here: parity, framing and break conditions (IGNBRK, BRKINT,
- * IGNPAR, PARMRK, INPCK), which need a driver that reports them; VSTATUS and
+ * Line errors. A driver that sees a break, or a byte with a parity or
+ * framing error, hands it over with n_tty_receive_error instead, and termios
+ * says what it becomes:
+ *
+ *   - a break is ignored (IGNBRK); or flushes both ways (unless NOFLSH) and
+ *     asks for SIGINT (BRKINT); or reads as \377 \0 \0 (PARMRK) or as \0;
+ *   - a byte with a parity or framing error is taken as it is unless INPCK
+ *     is set; then it is ignored (IGNPAR), or reads as \377 \0 and the byte
+ *     (PARMRK), or as \0;
+ *   - while PARMRK marks errors (and IGNPAR does not hide them), a valid \377
+ *     reads as \377 \377, so the marks cannot be mistaken for data.
+ *
+ * A framing error follows INPCK and IGNPAR as a parity error does, as on
+ * Linux. An overrun loses bytes before the one it is reported with, and
+ * that byte itself is good; the driver counts it and delivers the byte as
+ * ordinary input. The marks are stored as literal bytes (never special
+ * characters) and echoed like any other input.
+ *
+ * Not handled here: VSTATUS and
  * VDSUSP (there is no SIGINFO, and a delayed suspend belongs to the read
  * path of job control); ALTWERASE, ECHOPRT, PENDIN and EXTPROC. Their bits are
  * accepted and ignored. VMIN and VTIME are read-time policy and are applied
@@ -63,6 +80,9 @@
 
 /* The signals input can ask for; the caller maps them to its own numbers. */
 typedef enum { N_TTY_SIGNAL_INTERRUPT, N_TTY_SIGNAL_QUIT, N_TTY_SIGNAL_SUSPEND } n_tty_signal_t;
+
+/* The line errors a driver can report with a byte (see "Line errors" above). */
+typedef enum { N_TTY_ERROR_BREAK, N_TTY_ERROR_PARITY, N_TTY_ERROR_FRAMING } n_tty_error_t;
 
 /*
  * n_tty_hooks_t
@@ -157,6 +177,16 @@ void n_tty_set_termios(n_tty_t *ldisc, const struct nxu_termios *termios);
  * does not fit, and the driver offers the rest again when there is room.
  */
 uint32_t n_tty_receive(n_tty_t *ldisc, const uint8_t *bytes, uint32_t count);
+
+/*
+ * n_tty_receive_error
+ *
+ * One byte that arrived with a line error (for a break, the byte the
+ * hardware read, normally 0). True when it was dealt with; false when what
+ * it becomes did not fit (non-canonical mode, buffer full), and the driver
+ * offers it again when there is room, as with n_tty_receive.
+ */
+bool n_tty_receive_error(n_tty_t *ldisc, uint8_t c, n_tty_error_t error);
 
 /* How many bytes n_tty_receive is sure to take: unlimited in canonical mode. */
 uint32_t n_tty_receive_room(const n_tty_t *ldisc);

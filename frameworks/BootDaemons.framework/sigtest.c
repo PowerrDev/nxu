@@ -18,6 +18,10 @@
  * still, SIGCONT sent to its group continues it and wait reports that; a
  * default-fatal signal ends a process and wait reports the signal.
  *
+ * Faults: a child that dereferences a null pointer, divides by zero, runs an
+ * undefined instruction or a breakpoint is killed by SIGSEGV, SIGFPE, SIGILL
+ * or SIGTRAP, and wait says so; one with a SIGSEGV handler runs it instead.
+ *
  * The exit status is 0, or the number of the check that failed.
  */
 #include <nxu/spawn_io.h>
@@ -133,6 +137,33 @@ child_main(void)
 	return (int)SIGTEST_CHILD_HANDLED;
 }
 
+/* What a child's SIGSEGV handler exits with. */
+#define SIGTEST_FAULT_HANDLED 43ULL
+
+static void
+on_fault(int signal)
+{
+	(void)signal;
+	(void)nxu_exit(SIGTEST_FAULT_HANDLED);
+}
+
+/* The faulting children. The volatile reads keep the compiler from seeing the fault coming. */
+static int
+fault_main(const char *mode)
+{
+	static volatile uint32_t *volatile null_pointer;
+	static volatile uint32_t zero;
+
+	if (nxu_streq(mode, "fault-segv-handled") && nxu_signal(NXU_SIGSEGV, on_fault) != 0) return 1;
+
+	if (nxu_streq(mode, "fault-segv") || nxu_streq(mode, "fault-segv-handled")) return (int)*null_pointer;
+	if (nxu_streq(mode, "fault-fpe")) return (int)(100U / zero);
+	if (nxu_streq(mode, "fault-ill")) __asm__ volatile("ud2");
+	if (nxu_streq(mode, "fault-trap")) __asm__ volatile("int3");
+
+	return 2;
+}
+
 /* Spawn this program as a child that announces itself; its pid, with its stdout stream in *stream. */
 static int64_t
 spawn_child(const char *mode, int64_t *stream)
@@ -218,6 +249,28 @@ parent_main(void)
 
 	(void)nxu_close((uint64_t)stream);
 
+	/* A processor exception in a child is its signal. */
+	static const struct {
+		const char *mode;
+		uint32_t signal;
+	} faults[] = {{"fault-segv", NXU_SIGSEGV}, {"fault-fpe", NXU_SIGFPE}, {"fault-ill", NXU_SIGILL},
+				  {"fault-trap", NXU_SIGTRAP}};
+
+	for (uint32_t index = 0U; index < sizeof(faults) / sizeof(faults[0]); index++) {
+		child = spawn_child(faults[index].mode, &stream);
+		if (child <= 0) return fail(37, "could not spawn a faulting child");
+		if (nxu_wait((uint64_t)child, &status) != child) return fail(38, "a faulting child was not reaped");
+		if (!NXU_EXIT_WAS_KILLED(status) || NXU_EXIT_TERMSIG(status) != faults[index].signal)
+			return fail(39, faults[index].mode);
+		(void)nxu_close((uint64_t)stream);
+	}
+
+	child = spawn_child("fault-segv-handled", &stream);
+	if (child <= 0) return fail(40, "could not spawn the handling child");
+	if (nxu_wait((uint64_t)child, &status) != child) return fail(41, "the handling child was not reaped");
+	if (status != SIGTEST_FAULT_HANDLED) return fail(42, "a SIGSEGV handler did not run for a fault");
+	(void)nxu_close((uint64_t)stream);
+
 	say("sigtest: handlers, masks, stop, continue and kill all worked\n");
 	return 0;
 }
@@ -226,6 +279,7 @@ int
 main(uint64_t argc, const char *const *argv)
 {
 	if (argc >= 2U && argv != 0 && argv[1] != 0 && nxu_streq(argv[1], "child")) return child_main();
+	if (argc >= 2U && argv != 0 && argv[1] != 0) return fault_main(argv[1]);
 
 	return parent_main();
 }

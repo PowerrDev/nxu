@@ -143,8 +143,15 @@ _Static_assert(sizeof(struct nxu_termios) == 44U, "struct nxu_termios is ABI: it
 #define NXU_NOFLSH 0x80000000U
 
 /* Speeds are bits per second, as on Darwin. */
+#define NXU_B0 0U
+#define NXU_B1200 1200U
+#define NXU_B2400 2400U
+#define NXU_B4800 4800U
 #define NXU_B9600 9600U
+#define NXU_B19200 19200U
 #define NXU_B38400 38400U
+#define NXU_B57600 57600U
+#define NXU_B115200 115200U
 
 /*
  * What a terminal starts with (Darwin's <sys/ttydefaults.h>, plus IUTF8):
@@ -294,5 +301,27 @@ typedef struct {
 /* TIOCFLUSH: which queues. */
 #define NXU_FREAD 0x1U
 #define NXU_FWRITE 0x2U
+
+/*
+ * The ABI, checked wherever this header is compiled: both kernels and both
+ * userlands, arm64 and i386, so a layout or a request number that came out
+ * differently on one of them fails its build. Field offsets, sizes, and the
+ * requests that encode an argument's size.
+ */
+_Static_assert(__builtin_offsetof(struct nxu_termios, c_iflag) == 0U, "termios ABI: c_iflag");
+_Static_assert(__builtin_offsetof(struct nxu_termios, c_oflag) == 4U, "termios ABI: c_oflag");
+_Static_assert(__builtin_offsetof(struct nxu_termios, c_cflag) == 8U, "termios ABI: c_cflag");
+_Static_assert(__builtin_offsetof(struct nxu_termios, c_lflag) == 12U, "termios ABI: c_lflag");
+_Static_assert(__builtin_offsetof(struct nxu_termios, c_cc) == 16U, "termios ABI: c_cc");
+_Static_assert(__builtin_offsetof(struct nxu_termios, c_ispeed) == 36U, "termios ABI: c_ispeed");
+_Static_assert(__builtin_offsetof(struct nxu_termios, c_ospeed) == 40U, "termios ABI: c_ospeed");
+_Static_assert(__builtin_offsetof(struct nxu_winsize, ws_col) == 2U, "winsize ABI: ws_col");
+_Static_assert(__builtin_offsetof(struct nxu_winsize, ws_ypixel) == 6U, "winsize ABI: ws_ypixel");
+_Static_assert(sizeof(nxu_ptyname_t) == 128U, "TIOCPTYGNAME ABI: the name buffer");
+_Static_assert(NXU_TIOCGETA == 0x802c7413U && NXU_TIOCSETA == 0x402c7414U && NXU_TIOCSETAW == 0x402c7415U &&
+				   NXU_TIOCSETAF == 0x402c7416U,
+			   "termios ABI: the TIOCGETA family's request numbers");
+_Static_assert(NXU_TIOCGWINSZ == 0x80087468U && NXU_TIOCSWINSZ == 0x40087467U, "winsize ABI: request numbers");
+_Static_assert(NXU_TIOCPTYGNAME == 0x80807453U && NXU_FIONREAD == 0x8004667fU, "terminal ABI: request numbers");
 
 #endif

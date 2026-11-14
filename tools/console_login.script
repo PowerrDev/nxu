@@ -1,0 +1,101 @@
+# Logging in on the serial console (getty and login on /dev/console), run by
+# tools/serial_expect.pl against a normal boot. getty's banner ends
+# "(console)", a blank line, then "login: ".
+
+# The kernel log shares the line, so a log line (the loader's, for each
+# program started) can come between a command's echo and its output: the
+# waits below match the output alone.
+
+# A wrong password: refused without saying which part was wrong.
+wait (console)\r\n\r\nlogin:
+send user\r
+wait Password:
+send wrong\r
+wait Login incorrect\r\n
+wait login:
+
+# The right one: the message of the day (a first login has no "Last
+# login"), then a shell as user, on a terminal that is now user's.
+send user\r
+wait Password:
+send user\r
+wait Welcome to sevOS.
+wait %
+send who\r
+wait \nuser      console   
+wait %
+send whoami\r
+wait \nuser\r\n
+wait %
+send stat /dev/console\r
+wait mode 020620\r\n  uid 1000  gid 4
+wait %
+
+# The working directory: home after login, changed by cd, and inherited by
+# the programs the shell starts (stat is given a relative path).
+send pwd\r
+wait \n/Volumes/mainOS/Users/user\r\n
+wait %
+send cd ..\r
+wait %
+send pwd\r
+wait \n/Volumes/mainOS/Users\r\n
+wait %
+send stat user\r
+wait user\r\n  type directory  mode 040755\r\n  uid 1000  gid 1000
+wait %
+send cd /dev/console\r
+wait cd: not a directory
+wait %
+send cd /Volumes/mainOS/var/root\r
+wait cd: permission denied
+wait %
+send cd\r
+wait %
+send pwd\r
+wait \n/Volumes/mainOS/Users/user\r\n
+
+# Logging out brings the prompt back, and the terminal is root's again.
+wait %
+send exit\r
+wait (console)\r\n\r\nlogin:
+
+# Root logs in with a password too. last shows user's session, ended,
+# and root's, still going; wtmp is root's.
+send root\r
+wait Password:
+send root\r
+wait %
+send last\r
+wait \nroot      console   
+wait still logged in
+wait \nuser      console   
+wait   (00:0
+wait wtmp begins
+wait %
+send whoami\r
+wait \nroot\r\n
+wait %
+send stat /dev/console\r
+wait mode 020620\r\n  uid 0  gid 4
+wait %
+send exit\r
+wait (console)\r\n\r\nlogin:
+
+# A second login says when the last one was.
+send user\r
+wait Password:
+send user\r
+wait Last login: 
+wait  on console\r\n
+wait %
+send exit\r
+wait (console)\r\n\r\nlogin:
+
+# ^C at the password prompt ends that login; getty asks again.
+send user\r
+wait Password:
+send \x03
+wait (console)\r\n\r\nlogin:
+
+done

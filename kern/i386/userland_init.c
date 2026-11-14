@@ -51,7 +51,9 @@
 #include <kern/tests/thread_process_test.h>
 #include <kern/tests/termios_process_test.h>
 #include <kern/tests/pty_test.h>
+#include <kern/tests/serial_test.h>
 #include <kern/tests/tty_test.h>
+#include <kern/tty/serial.h>
 #include <vfs/btrfs/btrfs_list.h>
 #include <vfs/btrfs/btrfs_selftest.h>
 #include <vfs/vfs.h>
@@ -98,6 +100,8 @@ userland_run_process_test(const char *name)
 		ok = tty_test_run();
 	else if (strcmp(name, "pty") == 0)
 		ok = pty_test_run() && pty_process_test();
+	else if (strcmp(name, "serial") == 0)
+		ok = serial_test_run();
 	else if (strcmp(name, "termios") == 0)
 		ok = termios_process_test();
 	else if (strcmp(name, "restart") == 0)
@@ -147,6 +151,9 @@ bool
 i386_init_userland(const i386_boot_info_t *boot)
 {
 	(void)boot;
+
+	/* /dev/console, on every boot that gets this far. Its failure leaves the kernel log as it is. */
+	if (!serial_init()) kprintf("/dev/console is unavailable\n");
 
 	if (boot_arg_bool("net.test", false)) {
 		if (!net_start()) return false;
@@ -241,7 +248,7 @@ i386_init_userland(const i386_boot_info_t *boot)
 	vfs_dump();
 
 	/*
-	 * "process-test=<ipc|thread|socket|signal|spawn|tty|termios|restart>" runs one of the shared kernel-side
+	 * "process-test=<ipc|thread|socket|signal|spawn|tty|pty|serial|termios|restart>" runs one of the shared kernel-side
 	 * process tests instead of the normal boot. They spawn their own
 	 * processes (the IPC one starts its own bootd as PID 1), so bootd must
 	 * not already be running.

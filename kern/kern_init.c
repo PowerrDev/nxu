@@ -46,7 +46,9 @@
 #include <kern/tests/smp_user_test.h>
 #include <kern/tests/termios_process_test.h>
 #include <kern/tests/pty_test.h>
+#include <kern/tests/serial_test.h>
 #include <kern/tests/tty_test.h>
+#include <kern/tty/serial.h>
 #include <kern/tty/tty.h>
 #include <platform/driverkit.h>
 #include <kern/process/proc.h>
@@ -855,6 +857,15 @@ kern_start_scheduler(const driverkit_config_t *drivers)
 		__asm__ volatile("wfe");
 #endif
 
+#if defined(NXU_SERIAL_TEST)
+	/* The host types into the console UART as the test asks (tools/serial_expect.pl). */
+	if (!serial_test_run()) kern_fail("serial_test_run: failed");
+	kprintf_for(serial_test_run, "passed\n");
+	kprintf("halting (test build)\n");
+	for (;;)
+		__asm__ volatile("wfe");
+#endif
+
 #if defined(NXU_SMP_TEST)
 	/* The secondary CPUs are up and the boot CPU takes interrupts: the SMP suite runs on the boot thread. */
 	if (!smp_test_run()) kern_fail("smp_test: failed");
@@ -929,6 +940,9 @@ kern_init_higher_half(void)
 		kern_fail("network: worker initialization failed");
 	}
 
+	/* /dev/console. Its failure leaves the kernel log as it is, so it is reported, not fatal. */
+	if (!serial_init()) kprintf("/dev/console is unavailable\n");
+
 	if (boot_arg_bool("net.test", false)) {
 		if (!net_test()) {
 			kern_fail("net_test: failed");
@@ -971,11 +985,12 @@ kern_init_higher_half(void)
 
 		boot_test_storage(boot_display);
 
-#if defined(NXU_SMP_USER_TEST)
+#if defined(NXU_SMP_USER_TEST) || defined(NXU_SERIAL_TEST)
 		/*
 		 * The SMP userland test measures how many CPUs really run user threads at
 		 * once, so it runs on an otherwise idle machine: no boot chime thread and
-		 * no bootd with its services competing for the CPUs.
+		 * no bootd with its services competing for the CPUs. The serial test
+		 * types into /dev/console, which bootd's getty would open and read too.
 		 */
 		(void)boot_display;
 		(void)&kern_launch_init_process;

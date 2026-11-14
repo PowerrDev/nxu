@@ -38,7 +38,12 @@
  * the calling process with current_proc()).
  */
 
-#define DEVFS_DEVICE_MAX 64U
+/*
+ * Slots for named devices and for the nameless ones cloning opens make:
+ * every open of a terminal is one (kern/tty/tty.c), as is every
+ * pseudo-terminal master.
+ */
+#define DEVFS_DEVICE_MAX 256U
 
 /* Permission bits of a device registered without any. */
 #define DEVFS_MODE_DEFAULT 0666U

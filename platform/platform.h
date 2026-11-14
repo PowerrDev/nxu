@@ -77,6 +77,14 @@ typedef struct {
 	platform_region_t uart;
 
 	/*
+	 * The console UART's interrupt: its GIC INTID and Device Tree trigger
+	 * flags. uart_intid is 0 when the Device Tree gives none the GIC can
+	 * take, and the serial terminal then polls (kern/tty/serial.c).
+	 */
+	uint32_t uart_intid;
+	uint32_t uart_irq_flags;
+
+	/*
 	 * A second "arm,pl011" in the Device Tree (QEMU virt with two -serial
 	 * options): the serial link to the Trusted Enclave Processor, owned by
 	 * drivers/tep/tep_mailbox.c. Empty when the machine has only the console.

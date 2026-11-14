@@ -93,6 +93,11 @@ typedef struct {
  *
  * t_registered / t_name
  *     Whether the terminal has a name in /dev, and what it is.
+ *
+ * t_generation
+ *     Which files are still the terminal's: one opened when it had another
+ *     generation has been revoked (tty_revoke) and is cut off. t_opens
+ *     counts the current generation's files only.
  */
 struct tty {
 	const tty_driver_operations_t *t_driver; /* fixed */
@@ -114,6 +119,7 @@ struct tty {
 	proc_id_t t_session;
 	proc_id_t t_pgrp;
 	uint32_t t_deliver;
+	uint32_t t_generation;
 
 	n_tty_t t_ldisc;
 	uint8_t *t_input_buffer;
@@ -191,9 +197,31 @@ void tty_stop_output(tty_t tty, bool stop);
  */
 vfs_status_t tty_ioctl(tty_t tty, uint32_t command, void *argument);
 
-/* The file operations of every terminal node, and the open behind them (also /dev/tty's, kern/tty/tty_jobctl.c). */
+/*
+ * struct tty_file
+ *
+ * One open file of a terminal: what the devfs clone of every open points at,
+ * so the terminal can tell its files apart. tf_tty holds the file's
+ * reference on the terminal; tf_generation is the terminal's generation at
+ * the open, and a file whose generation is no longer the terminal's has been
+ * revoked. Both are fixed once the file is open.
+ */
+struct tty_file {
+	tty_t tf_tty;
+	uint32_t tf_generation;
+};
+
+/*
+ * g_tty_devfs_operations / g_tty_file_operations
+ *
+ * A terminal's name in /dev has only an open, which makes a struct tty_file
+ * and redirects the file to it (devfs_clone_t); the file's operations are
+ * g_tty_file_operations. tty_open_file is that open, for /dev/tty's
+ * (kern/tty/tty_jobctl.c) as well.
+ */
 extern const devfs_operations_t g_tty_devfs_operations;
-vfs_status_t tty_file_open(tty_t tty, uint32_t flags);
+extern const devfs_operations_t g_tty_file_operations;
+vfs_status_t tty_open_file(tty_t tty, uint32_t flags, devfs_clone_t *clone);
 
 /*
  * Job control, kern/tty/tty_jobctl.c. See the file header there.

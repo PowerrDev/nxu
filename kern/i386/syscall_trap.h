@@ -39,11 +39,10 @@
 #include <stdint.h>
 
 /*
- * Exit status recorded for a process the kernel terminated because it took
- * a processor exception in ring 3: this base or'd with the vector number
- * (#GP is 0x8000000D). Ordinary exit codes never set the top bit.
+ * A processor exception taken in ring 3 is a signal (i386_trap_user_exception):
+ * SIGSEGV, SIGBUS, SIGFPE, SIGTRAP or SIGILL, which a handler may catch and
+ * which otherwise kills the process, so wait reports it killed by that signal.
  */
-#define I386_USER_FAULT_STATUS_BASE 0x80000000U
 
 /*
  * Test-only extension point. If a hook is installed it sees every

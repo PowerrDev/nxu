@@ -46,6 +46,22 @@ void kputu64(uint64_t value);
 void kputi64(int64_t value);
 
 /*
+ * kconsole_serial_write / kconsole_serial_set_line
+ *
+ * The serial terminal's way onto the console UART (kern/tty/serial.c):
+ * bytes written exactly as given, and a change of line settings, each under
+ * the console lock, so they never land inside a log line and the line never
+ * changes under a character being sent. The bytes go to the UART only, not
+ * to the other sinks or the log history: they are the terminal's, not the
+ * kernel's. When they leave the line unfinished (a shell prompt), the next
+ * log line starts on a line of its own. Thread context.
+ */
+struct uart_line;
+
+void kconsole_serial_write(const void *bytes, uint32_t count);
+bool kconsole_serial_set_line(const struct uart_line *line);
+
+/*
  * Microseconds since the first log line: the clock the log's [ s.fraction ]
  * stamps read, and the closest thing to time since boot on every
  * architecture (i386's TSC under HVF counts from the host's power-on).

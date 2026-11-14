@@ -30,6 +30,11 @@
 #include <kern/sched_prism/processor.h>
 #include <kern/sched_prism/sched.h>
 #include <kern/sched_prism/waitq.h>
+#include <kern/syscall/termios_defs.h>
+#include <kern/tests/tty_loopback.h>
+#include <kern/tty/tty.h>
+#include <vfs/file.h>
+#include <vfs/vfs.h>
 #include <vm/address_space.h>
 #include <vm/pmm.h>
 #include <vm/vm_fault.h>
@@ -1595,11 +1600,35 @@ timed_start(uint32_t mode, uint64_t timeout_us, const nxu_cpuset_t *affinity)
 	return spawn(timed_sleeper, 0, affinity, false) && wait_for(&g_timed.asleep, 1U, 5000000ULL);
 }
 
+/*
+ * The test's own sleeper finished its wait with its deadline disarmed. Not
+ * waitq_timer_waiters() == 0: that counts every timed wait in the machine,
+ * and any user process in nxu_sleep_us, or a terminal read with VTIME, is one.
+ */
+static uint32_t g_timed_left_armed;
+
+static bool
+timed_armed(uint32_t index)
+{
+	return __atomic_load_n(&g_threads[index]->wait_timer_armed, __ATOMIC_ACQUIRE);
+}
+
+static void
+timed_release(void)
+{
+	for (uint32_t index = 0U; index < g_thread_total; index++)
+		if (timed_armed(index)) g_timed_left_armed++;
+
+	release_threads();
+}
+
 static bool
 test_timed_wait(void)
 {
 	const char *name = "timedwait";
 	nxu_cpuset_t set;
+
+	g_timed_left_armed = 0U;
 
 	cpus_only(&set, g_ncpu > 1U ? 1U : 0U);
 
@@ -1608,7 +1637,7 @@ test_timed_wait(void)
 
 	bool finished = wait_for(&g_timed.done, 1U, 5000000ULL);
 
-	release_threads();
+	timed_release();
 
 	if (!check(finished, name, "a wait with a deadline never ended")) return false;
 	if (!check(g_timed.result == WAITQ_TIMED_OUT, name, "an unwoken wait did not report a timeout")) return false;
@@ -1621,7 +1650,7 @@ test_timed_wait(void)
 	pause_us(20000ULL);
 	waitq_wake_all(&g_timed.queue);
 	finished = wait_for(&g_timed.done, 1U, 5000000ULL);
-	release_threads();
+	timed_release();
 
 	if (!check(finished && g_timed.result == WAITQ_WOKEN, name, "a wakeup did not end a timed wait")) return false;
 	if (!check(g_timed.elapsed_us < 5000000ULL, name, "a woken wait still waited for its deadline")) return false;
@@ -1630,7 +1659,7 @@ test_timed_wait(void)
 	if (!check(timed_start(TIMED_PLAIN, 0ULL, &set), name, "could not start the sleeper")) return false;
 
 	finished = wait_for(&g_timed.done, 1U, 5000000ULL);
-	release_threads();
+	timed_release();
 
 	if (!check(finished && g_timed.result == WAITQ_TIMED_OUT, name, "a past deadline was not a timeout")) return false;
 
@@ -1638,7 +1667,7 @@ test_timed_wait(void)
 	if (!check(timed_start(TIMED_STALE_SEQ, 10000000ULL, &set), name, "could not start the sleeper")) return false;
 
 	finished = wait_for(&g_timed.done, 1U, 5000000ULL);
-	release_threads();
+	timed_release();
 
 	if (!check(finished && g_timed.result == WAITQ_WOKEN, name, "a moved sequence did not prevent the sleep"))
 		return false;
@@ -1652,12 +1681,12 @@ test_timed_wait(void)
 		(void)sched_yield();
 
 	finished = wait_for(&g_timed.done, 1U, 5000000ULL);
-	release_threads();
+	timed_release();
 
 	if (!check(finished && g_timed.result == WAITQ_INTERRUPTED, name, "an interrupted timed wait was not reported"))
 		return false;
 
-	if (!check(waitq_timer_waiters() == 0U, name, "a finished wait left its deadline armed")) return false;
+	if (!check(g_timed_left_armed == 0U, name, "a finished wait left its deadline armed")) return false;
 
 	/* (f) wakeups and deadlines racing on several CPUs: every wait ends, as one or the other. */
 	memset((void *)&g_timed, 0, sizeof(g_timed));
@@ -1677,7 +1706,7 @@ test_timed_wait(void)
 	finished = wait_for(&g_timed.done, TIMED_RACE_SLEEPERS, 60000000ULL);
 	__atomic_store_n(&g_timed.stop, 1U, __ATOMIC_RELEASE);
 	finished = wait_for(&g_timed.done, TIMED_RACE_SLEEPERS + 1U, 5000000ULL) && finished;
-	release_threads();
+	timed_release();
 
 	kprintf("%s: race: %u woken, %u timed out\n", name, g_timed.woken, g_timed.timed_out);
 
@@ -1688,7 +1717,7 @@ test_timed_wait(void)
 		return false;
 	if (!check(g_timed.woken != 0U && g_timed.timed_out != 0U, name, "the race did not produce both outcomes"))
 		return false;
-	if (!check(g_timed.queue.head == 0 && waitq_timer_waiters() == 0U, name, "the race left a thread queued or armed"))
+	if (!check(g_timed.queue.head == 0 && g_timed_left_armed == 0U, name, "the race left a thread queued or armed"))
 		return false;
 
 	/* (g) a thread terminated in the middle of a timed wait leaves the queue and the timer behind it. */
@@ -1699,13 +1728,13 @@ test_timed_wait(void)
 	while (g_timed.queue.head == 0 && now_us() < deadline)
 		(void)sched_yield();
 
-	if (!check(g_timed.queue.head != 0 && waitq_timer_waiters() == 1U, name, "the sleeper is not in a timed wait"))
+	if (!check(g_timed.queue.head != 0 && timed_armed(0U), name, "the sleeper is not in a timed wait"))
 		return false;
 
 	bool terminated = sched_thread_terminate(g_threads[0]);
 
 	if (!check(terminated, name, "could not terminate a thread in a timed wait")) return false;
-	if (!check(g_timed.queue.head == 0 && waitq_timer_waiters() == 0U, name,
+	if (!check(g_timed.queue.head == 0 && !timed_armed(0U), name,
 			   "a terminated thread stayed on its queue or kept its deadline"))
 		return false;
 
@@ -1903,6 +1932,251 @@ test_ioready(void)
 	return true;
 }
 
+/* ---- a terminal under load from every CPU -------------------------------- */
+
+/*
+ * Writers on different CPUs stream bytes through one loopback terminal
+ * (what is written comes back as input), each byte tagged with its writer
+ * in the top two bits and a sequence number in the low six; one reader
+ * takes everything and checks that each writer's bytes came in order and
+ * none were lost. Meanwhile a third party changes the settings and the
+ * window size and asks how much is queued, and a fourth opens and closes
+ * another file on the terminal over and over, so the open count moves
+ * while the session's files stay open. At the end a reader asleep on the
+ * terminal is revoked from another CPU and must wake to end of file.
+ */
+#define TTY_STRESS_PATH "/dev/smp-tty"
+#define TTY_STRESS_WRITERS 3U
+#define TTY_STRESS_BYTES 12000U
+#define TTY_STRESS_CHUNK 37U
+
+static struct filedesc g_tty_fd;
+static tty_loopback_t g_tty_loop;
+
+static struct {
+	uint32_t descriptor;
+	volatile uint32_t stop;
+	volatile uint32_t writers_done;
+	volatile uint32_t helpers_done;
+	volatile uint32_t reader_done;
+	volatile uint32_t failures;
+	volatile uint32_t revoked_reader_started;
+	volatile uint32_t revoked_reader_done;
+	volatile uint64_t revoked_read;
+} g_tty_stress;
+
+static void
+tty_stress_writer(void *argument)
+{
+	uint32_t writer = (uint32_t)(uintptr_t)argument;
+	uint8_t chunk[TTY_STRESS_CHUNK];
+	uint32_t sent = 0U;
+
+	while (sent < TTY_STRESS_BYTES) {
+		uint32_t count = TTY_STRESS_BYTES - sent < TTY_STRESS_CHUNK ? TTY_STRESS_BYTES - sent : TTY_STRESS_CHUNK;
+
+		for (uint32_t index = 0U; index < count; index++)
+			chunk[index] = (uint8_t)((writer << 6U) | ((sent + index) & 0x3FU));
+
+		uint64_t written = 0ULL;
+
+		if (vfs_write(&g_tty_fd, g_tty_stress.descriptor, chunk, count, &written) != VFS_STATUS_OK || written == 0ULL) {
+			__atomic_add_fetch(&g_tty_stress.failures, 1U, __ATOMIC_ACQ_REL);
+			break;
+		}
+
+		sent += (uint32_t)written;
+	}
+
+	__atomic_add_fetch(&g_tty_stress.writers_done, 1U, __ATOMIC_ACQ_REL);
+}
+
+static void
+tty_stress_reader(void *argument)
+{
+	(void)argument;
+
+	uint32_t next[TTY_STRESS_WRITERS] = {0};
+	uint32_t seen[TTY_STRESS_WRITERS] = {0};
+	uint64_t total = 0ULL;
+	uint8_t buffer[96];
+
+	while (total < (uint64_t)TTY_STRESS_WRITERS * TTY_STRESS_BYTES) {
+		uint64_t count = 0ULL;
+
+		if (vfs_read(&g_tty_fd, g_tty_stress.descriptor, buffer, sizeof(buffer), &count) != VFS_STATUS_OK ||
+			count == 0ULL) {
+			__atomic_add_fetch(&g_tty_stress.failures, 1U, __ATOMIC_ACQ_REL);
+			break;
+		}
+
+		for (uint64_t index = 0ULL; index < count; index++) {
+			uint32_t writer = buffer[index] >> 6U;
+
+			if (writer >= TTY_STRESS_WRITERS || (buffer[index] & 0x3FU) != (next[writer] & 0x3FU)) {
+				__atomic_add_fetch(&g_tty_stress.failures, 1U, __ATOMIC_ACQ_REL);
+				break;
+			}
+
+			next[writer]++;
+			seen[writer]++;
+		}
+
+		total += count;
+	}
+
+	for (uint32_t writer = 0U; writer < TTY_STRESS_WRITERS; writer++)
+		if (seen[writer] != TTY_STRESS_BYTES) __atomic_add_fetch(&g_tty_stress.failures, 1U, __ATOMIC_ACQ_REL);
+
+	__atomic_store_n(&g_tty_stress.reader_done, 1U, __ATOMIC_RELEASE);
+}
+
+/* Settings, window size and queue sizes, as a program on another CPU would ask and change them. */
+static void
+tty_stress_configurer(void *argument)
+{
+	(void)argument;
+
+	for (uint32_t round = 0U; !__atomic_load_n(&g_tty_stress.stop, __ATOMIC_ACQUIRE); round++) {
+		struct nxu_termios termios;
+		struct nxu_winsize size = {.ws_row = (uint16_t)(24U + round % 8U), .ws_col = 80U};
+		uint32_t queued = 0U;
+
+		if (vfs_ioctl(&g_tty_fd, g_tty_stress.descriptor, NXU_TIOCGETA, &termios) != VFS_STATUS_OK ||
+			vfs_ioctl(&g_tty_fd, g_tty_stress.descriptor, NXU_TIOCSETA, &termios) != VFS_STATUS_OK ||
+			vfs_ioctl(&g_tty_fd, g_tty_stress.descriptor, NXU_TIOCSWINSZ, &size) != VFS_STATUS_OK ||
+			vfs_ioctl(&g_tty_fd, g_tty_stress.descriptor, NXU_FIONREAD, &queued) != VFS_STATUS_OK)
+			__atomic_add_fetch(&g_tty_stress.failures, 1U, __ATOMIC_ACQ_REL);
+
+		(void)tty_take_signals(g_tty_loop.tty);
+		(void)sched_yield();
+	}
+
+	__atomic_add_fetch(&g_tty_stress.helpers_done, 1U, __ATOMIC_ACQ_REL);
+}
+
+/* Other files coming and going while the session's stay open: never the last close. */
+static void
+tty_stress_opener(void *argument)
+{
+	(void)argument;
+
+	while (!__atomic_load_n(&g_tty_stress.stop, __ATOMIC_ACQUIRE)) {
+		uint32_t descriptor;
+
+		if (vfs_open(&g_tty_fd, TTY_STRESS_PATH, VFS_OPEN_READ | VFS_OPEN_NONBLOCK, &descriptor) != VFS_STATUS_OK) {
+			__atomic_add_fetch(&g_tty_stress.failures, 1U, __ATOMIC_ACQ_REL);
+			break;
+		}
+
+		if (vfs_close(&g_tty_fd, descriptor) != VFS_STATUS_OK)
+			__atomic_add_fetch(&g_tty_stress.failures, 1U, __ATOMIC_ACQ_REL);
+
+		(void)sched_yield();
+	}
+
+	__atomic_add_fetch(&g_tty_stress.helpers_done, 1U, __ATOMIC_ACQ_REL);
+}
+
+static void
+tty_stress_revoked_reader(void *argument)
+{
+	(void)argument;
+
+	uint8_t buffer[8];
+	uint64_t count = 1ULL;
+
+	__atomic_store_n(&g_tty_stress.revoked_reader_started, 1U, __ATOMIC_RELEASE);
+
+	if (vfs_read(&g_tty_fd, g_tty_stress.descriptor, buffer, sizeof(buffer), &count) != VFS_STATUS_OK)
+		__atomic_add_fetch(&g_tty_stress.failures, 1U, __ATOMIC_ACQ_REL);
+
+	g_tty_stress.revoked_read = count;
+	__atomic_store_n(&g_tty_stress.revoked_reader_done, 1U, __ATOMIC_RELEASE);
+}
+
+static bool
+test_tty_stress(void)
+{
+	const char *name = "tty";
+	uint32_t baseline = tty_count();
+
+	memset((void *)&g_tty_stress, 0, sizeof(g_tty_stress));
+	filedesc_init(&g_tty_fd);
+
+	if (!check(tty_loopback_create(&g_tty_loop), name, "could not make the terminal")) return false;
+	if (!check(tty_register(g_tty_loop.tty, "smp-tty", 0U, 0U, 0600U), name, "could not publish it")) return false;
+
+	uint32_t descriptor;
+
+	if (!check(vfs_open(&g_tty_fd, TTY_STRESS_PATH, VFS_OPEN_READ | VFS_OPEN_WRITE, &descriptor) == VFS_STATUS_OK,
+			   name, "could not open it"))
+		return false;
+
+	g_tty_stress.descriptor = descriptor;
+
+	/* Raw, so every byte is data and comes back as it went. */
+	struct nxu_termios termios;
+
+	tty_termios_defaults(&termios);
+	termios.c_iflag = 0U;
+	termios.c_oflag = 0U;
+	termios.c_lflag = 0U;
+	termios.c_cc[NXU_VMIN] = 1U;
+	termios.c_cc[NXU_VTIME] = 0U;
+	(void)tty_set_termios(g_tty_loop.tty, &termios);
+
+	nxu_cpuset_t where;
+	bool started = true;
+
+	for (uint32_t writer = 0U; writer < TTY_STRESS_WRITERS && started; writer++) {
+		cpus_only(&where, (writer + 1U) % g_ncpu);
+		started = spawn(tty_stress_writer, (void *)(uintptr_t)writer, &where, false);
+	}
+
+	cpus_only(&where, (TTY_STRESS_WRITERS + 1U) % g_ncpu);
+	started = started && spawn(tty_stress_reader, 0, &where, false);
+	cpus_all(&where);
+	started = started && spawn(tty_stress_configurer, 0, &where, false) && spawn(tty_stress_opener, 0, &where, false);
+
+	if (!started) {
+		__atomic_store_n(&g_tty_stress.stop, 1U, __ATOMIC_RELEASE);
+		kprintf("%s: FAILED: could not start the threads\n", name);
+		return false;
+	}
+
+	bool ok = check(wait_for(&g_tty_stress.writers_done, TTY_STRESS_WRITERS, 30000000ULL), name,
+					"the writers did not finish (a lost wakeup or a deadlock)") &&
+			  check(wait_for(&g_tty_stress.reader_done, 1U, 30000000ULL), name, "the reader did not finish");
+
+	__atomic_store_n(&g_tty_stress.stop, 1U, __ATOMIC_RELEASE);
+	ok = check(wait_for(&g_tty_stress.helpers_done, 2U, 10000000ULL), name, "the helpers did not stop") && ok;
+	ok = ok && check(g_tty_stress.failures == 0U, name, "bytes were lost, reordered, or an operation failed");
+
+	/* A reader asleep on one CPU, the terminal revoked from another. */
+	if (ok) {
+		cpus_only(&where, 1U % g_ncpu);
+		ok = check(spawn(tty_stress_revoked_reader, 0, &where, false), name, "could not start the last reader") &&
+			 wait_for(&g_tty_stress.revoked_reader_started, 1U, 10000000ULL);
+		pause_us(50000ULL);
+		tty_revoke(g_tty_loop.tty);
+		ok = ok &&
+			 check(wait_for(&g_tty_stress.revoked_reader_done, 1U, 10000000ULL), name,
+				   "a reader on another CPU did not wake when the terminal was revoked") &&
+			 check(g_tty_stress.revoked_read == 0ULL, name, "the revoked reader did not see end of file");
+	}
+
+	(void)vfs_close(&g_tty_fd, descriptor);
+	release_threads();
+	tty_detach(g_tty_loop.tty);
+	tty_unregister(g_tty_loop.tty);
+	tty_release(g_tty_loop.tty);
+
+	if (ok) kprintf("%s: %u writers, %u bytes each, through one terminal\n", name, TTY_STRESS_WRITERS, TTY_STRESS_BYTES);
+
+	return ok && check(tty_count() == baseline, name, "the terminal was not freed");
+}
+
 /* ---- the suite ---------------------------------------------------------- */
 
 typedef struct {
@@ -1950,7 +2224,7 @@ smp_test_run(void)
 		{"ioready", test_ioready},	 {"ipi", test_ipi},
 		{"affinity", test_affinity}, {"balance", test_balance},		  {"stress", test_stress},
 		{"memory", test_memory},	 {"usertlb", test_user_tlb},	  {"vmrace", test_fault_vs_unmap},
-		{"cowrace", test_cow_race}};
+		{"cowrace", test_cow_race},	 {"tty", test_tty_stress}};
 
 	return run_cases(cases, sizeof(cases) / sizeof(cases[0]));
 }
@@ -1958,7 +2232,8 @@ smp_test_run(void)
 /*
  * The cross-CPU USER address-space VM subset: TLB shootdown under a reader's
  * cached translation (usertlb), a fault racing an munmap (vmrace), and a
- * concurrent COW break (cowrace). These exercise the vm/pmap.h backend's
+ * concurrent COW break (cowrace); and the terminal under load from several
+ * CPUs (tty), which needs only threads and wait queues. These exercise the vm/pmap.h backend's
  * cross-CPU invalidation and assume neither a per-CPU timer nor full
  * scheduler-placement parity, so a port still bringing those up -- i386, whose
  * secondaries tick off a PIT broadcast -- runs them to validate its user pmap
@@ -1975,7 +2250,8 @@ bool
 smp_test_run_vm(void)
 {
 	static const smp_test_case_t cases[] = {
-		{"usertlb", test_user_tlb}, {"vmrace", test_fault_vs_unmap}, {"cowrace", test_cow_race}};
+		{"usertlb", test_user_tlb}, {"vmrace", test_fault_vs_unmap}, {"cowrace", test_cow_race},
+		{"tty", test_tty_stress}};
 
 	/* Every case here pins work to a second CPU; with one online there is no
 	 * cross-CPU translation to make stale, so the shootdown is trivially correct

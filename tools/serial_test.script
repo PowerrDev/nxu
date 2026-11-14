@@ -1,0 +1,25 @@
+# What the host types for the serial terminal test (kern/tests/serial_test.c),
+# run by tools/serial_expect.pl. Each step waits for the kernel to say it is
+# ready: input that arrives with /dev/console closed is discarded.
+
+# A line with a typo rubbed out, ended by Enter (a carriage return). The echo
+# rubs the typo out with backspace, space, backspace, and ends with CR LF.
+wait serial_test_run: ready for line
+send hellp\x7fo console\r
+wait hellp\x08 \x08o console\r\n
+
+# ^C, echoed as ^C.
+wait serial_test_run: ready for signal
+send \x03
+wait ^C
+
+# Output the kernel wrote to /dev/console.
+wait serial_test_run: written through /dev/console\r\n
+
+# VMIN 4, no processing: a NUL is a byte like any other.
+wait serial_test_run: ready for raw
+send ab\x00c
+
+# More than the line can take while nobody reads.
+wait serial_test_run: ready for flood
+flood 6000

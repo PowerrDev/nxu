@@ -70,6 +70,14 @@ i386_idt_init(void)
 	i386_idt_set_gate(T_SYSCALL, (uint32_t)(uintptr_t)i386_isr_syscall, GDT_KERNEL_CODE_SEL, IDT_GATE_INTERRUPT_USER);
 
 	/*
+	 * int3 and into may be used from ring 3, as on Linux and the BSDs, so a
+	 * program's breakpoint or overflow check traps as itself (SIGTRAP,
+	 * SIGSEGV) instead of as a #GP for a gate it may not use.
+	 */
+	i386_idt_set_gate(T_BREAKPOINT, i386_isr_table[T_BREAKPOINT], GDT_KERNEL_CODE_SEL, IDT_GATE_INTERRUPT_USER);
+	i386_idt_set_gate(T_OVERFLOW, i386_isr_table[T_OVERFLOW], GDT_KERNEL_CODE_SEL, IDT_GATE_INTERRUPT_USER);
+
+	/*
 	 * IPIs and the Local APIC's spurious vector (see kern/i386/apic.c,
 	 * smp.c): kernel-only, ring 0 delivery like every hardware IRQ gate.
 	 */

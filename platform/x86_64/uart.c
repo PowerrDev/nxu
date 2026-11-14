@@ -146,3 +146,36 @@ uart_putc(char character)
 
 	x86_outb(X86_64_UART_COM1 + X86_64_UART_DATA, (uint8_t)character);
 }
+
+/*
+ * Routine:     uart_put_byte
+ * Purpose:
+ *              Emit one byte through COM1 exactly as given, for the shared
+ *              kernel console's raw path.
+ */
+void
+uart_put_byte(uint8_t byte)
+{
+	if (!g_uart_ready) {
+		x86_uart_initialize();
+	}
+
+	while ((x86_inb(X86_64_UART_COM1 + X86_64_UART_LINE_STATUS) & X86_64_UART_TX_EMPTY) == 0U) {
+		__asm__ volatile("pause");
+	}
+
+	x86_outb(X86_64_UART_COM1 + X86_64_UART_DATA, byte);
+}
+
+/*
+ * Routine:     uart_set_line
+ * Purpose:
+ *              Refuse line changes: this port has no serial terminal, and the
+ *              early console keeps COM1 at 115200 8N1.
+ */
+bool
+uart_set_line(const uart_line_t *line)
+{
+	(void)line;
+	return false;
+}

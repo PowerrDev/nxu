@@ -602,6 +602,26 @@ platform_collect_virtio(const platform_t *platform, platform_t *mutable_platform
 	}
 }
 
+/* The console UART is the device node whose first region is platform->uart: take its interrupt. */
+static void
+platform_collect_uart_interrupt(const platform_t *platform, platform_t *mutable_platform)
+{
+	for (uint32_t index = 0U; index < platform->device_node_count; index++) {
+		const platform_device_node_t *node = &platform->device_nodes[index];
+		platform_region_t region;
+		uint32_t intid;
+		uint32_t flags;
+
+		if (!platform_compatible_contains(node->compatible, node->compatible_length, "arm,pl011")) continue;
+		if (!platform_device_reg_get(platform, index, 0U, &region) || region.base != platform->uart.base) continue;
+		if (!platform_read_gic_interrupt(platform, index, &intid, &flags) || intid < 32U) return;
+
+		mutable_platform->uart_intid = intid;
+		mutable_platform->uart_irq_flags = flags;
+		return;
+	}
+}
+
 static void
 platform_end_node(uint32_t depth, void *context)
 {
@@ -829,6 +849,7 @@ platform_discover(const dtb_t *dtb, platform_t *platform)
 
 	if (!platform_resolve_interrupt_parents(platform)) return false;
 	platform_collect_virtio(platform, platform);
+	platform_collect_uart_interrupt(platform, platform);
 
 	return platform->memory_region_count != 0U && platform->uart.size != 0U && platform->gic_distributor.size != 0U &&
 		   platform->gic_redistributor.size != 0U;
@@ -912,6 +933,7 @@ platform_dump(const platform_t *platform)
 	}
 
 	platform_dump_region("UART", &platform->uart);
+	if (platform->uart_intid != 0U) kprintf("UART interrupt: INTID %u\n", (unsigned)platform->uart_intid);
 	if (platform->mailbox_uart.size != 0ULL) platform_dump_region("TEP mailbox UART", &platform->mailbox_uart);
 
 	if (platform->fw_cfg.size != 0ULL) {

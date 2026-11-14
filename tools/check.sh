@@ -92,9 +92,10 @@ first_missing_pass_line() {
 }
 
 # run_kernel_test <id> <timeout> <pass strings> <kernel defines> <capture: 1|-> <verify command|-> <frameworks|-> <cpus>
+#                 <serial script|->
 # "-" stands for an empty column (read would fold empty fields together).
 run_kernel_test() {
-	local id=$1 timeout=$2 pass=$3 cflags=$4 capture=$5 verify=$6 frameworks=$7 cpus=${8:-1}
+	local id=$1 timeout=$2 pass=$3 cflags=$4 capture=$5 verify=$6 frameworks=$7 cpus=${8:-1} script=${9:--}
 	local build_log="$SCRATCH/$id.build.log" serial="$SCRATCH/$id.serial.log"
 	local started=$SECONDS qpid i
 	local audio="-audiodev none,id=snd0" recording="$SCRATCH/$id.wav"
@@ -123,8 +124,16 @@ run_kernel_test() {
 		network_args=(-netdev user,id=nxunet,ipv4=on,ipv6=on -device virtio-net-device,netdev=nxunet -append net.test=1)
 	fi
 
+	# A test that reads the console has the host type into it (tools/serial_expect.pl), and the log is what that passes through.
+	local driver=() console=(-serial file:"$serial") output=/dev/null
+	if [ "$script" != "-" ]; then
+		driver=(perl tools/serial_expect.pl "$timeout" "$script")
+		console=(-serial stdio)
+		output=$serial
+	fi
+
 	: >"$serial"
-	qemu-system-aarch64 \
+	${driver[@]+"${driver[@]}"} qemu-system-aarch64 \
 		-machine virt,gic-version=3 -cpu cortex-a72 -smp "$cpus" -m 512M \
 		-kernel "BUILD/$id/kernel.bin" \
 		-display none -global virtio-mmio.force-legacy=false \
@@ -133,7 +142,7 @@ run_kernel_test() {
 		-device virtio-gpu-device -device virtio-keyboard-device -device virtio-mouse-device \
 		$audio -device virtio-sound-device,audiodev=snd0 \
 		${network_args[@]+"${network_args[@]}"} \
-		-serial file:"$serial" -monitor none -no-reboot >/dev/null 2>&1 </dev/null &
+		"${console[@]}" -monitor none -no-reboot >"$output" 2>&1 </dev/null &
 	qpid=$!
 
 	for ((i = 0; i < timeout; i++)); do
@@ -186,11 +195,11 @@ for target in $host_targets; do
 	fi
 done
 
-while IFS=$'\t' read -r id timeout pass cflags capture verify frameworks smp; do
+while IFS=$'\t' read -r id timeout pass cflags capture verify frameworks smp script; do
 	[ -n "$id" ] || continue
 	selected "$id" || continue
 	echo "check: $id"
-	run_kernel_test "$id" "$timeout" "$pass" "$cflags" "$capture" "$verify" "$frameworks" "$smp"
+	run_kernel_test "$id" "$timeout" "$pass" "$cflags" "$capture" "$verify" "$frameworks" "$smp" "$script"
 done <<EOF
 $registry
 EOF

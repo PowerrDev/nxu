@@ -26,6 +26,9 @@
 
 #define PROC_NAME_MAX 32U
 
+/* Longest working directory, with its terminator: VFS_PATH_MAX. */
+#define PROC_CWD_MAX 256U
+
 /* proc::p_jobevent: a change of state the parent has not collected with wait yet. */
 #define PROC_JOBEVENT_STOPPED (1U << 0U)
 #define PROC_JOBEVENT_CONTINUED (1U << 1U)
@@ -124,6 +127,14 @@ typedef struct {
  *     (bit n = signal n). All threads of a process share both; the blocked
  *     mask is per thread. See kern/process/signal.h.
  *
+ * p_cwd / p_cwd_lock
+ *     The working directory, which relative paths are resolved against: a
+ *     canonical absolute path (vfs/pathname.h), not a vnode, because the VFS
+ *     looks paths up by name from the root. Inherited from the parent; "/"
+ *     for the kernel and PID 1. Only the process changes its own (chdir);
+ *     its threads read it for every path they give, and a child being made
+ *     copies it. p_cwd_lock, taken alone and briefly, covers it.
+ *
  * p_caps
  *     What this process may do to the system beyond computing and IPC: a mask
  *     of NXU_CAP_* (kern/syscall/syscall_defs.h). Default-deny: none, unless
@@ -185,6 +196,9 @@ struct proc {
 	uint32_t p_cont_seq;
 	uint32_t p_sigpending;
 	uint32_t p_caps;
+
+	nxu_spinlock_t p_cwd_lock;
+	char p_cwd[PROC_CWD_MAX];
 
 	struct ucred p_ucred;
 
@@ -318,6 +332,16 @@ proc_id_t proc_ppid(proc_t proc);
 
 /* True when proc holds every capability in caps (NXU_CAP_*). */
 bool proc_has_caps(proc_t proc, uint32_t caps);
+
+/*
+ * proc_get_cwd / proc_set_cwd
+ *
+ * Copy proc's working directory out (PROC_CWD_MAX bytes), and replace it
+ * with `path`, which the caller has made canonical and checked is a
+ * directory it may search. proc_set_cwd is false for a path too long.
+ */
+void proc_get_cwd(proc_t proc, char cwd[PROC_CWD_MAX]);
+bool proc_set_cwd(proc_t proc, const char *path);
 
 /* Replace proc's capability mask. Only for the kernel setting up a process
  * that has not run yet (a test spawn) and for the spawn system call, which

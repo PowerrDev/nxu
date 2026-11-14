@@ -523,11 +523,44 @@ n_tty_receive_delimiter(n_tty_t *ldisc, uint8_t c)
 		(void)n_tty_output_byte(ldisc, '\n');
 }
 
+/* PARMRK marks errors as \377 \0 ..., unless IGNPAR drops them instead. */
+static bool
+n_tty_marks_errors(const n_tty_t *ldisc)
+{
+	return n_tty_iflag(ldisc, NXU_PARMRK) && !n_tty_iflag(ldisc, NXU_IGNPAR);
+}
+
+/*
+ * Store `count` bytes as ordinary input, none of them special, all or none:
+ * outside canonical mode they are refused together when they do not all
+ * fit, so a mark is never split.
+ */
+static bool
+n_tty_receive_literal(n_tty_t *ldisc, const uint8_t *bytes, uint32_t count)
+{
+	if (!n_tty_lflag(ldisc, NXU_ICANON) && ldisc->size - n_tty_used(ldisc) < count) return false;
+
+	for (uint32_t index = 0U; index < count; index++)
+		(void)n_tty_receive_ordinary(ldisc, bytes[index]);
+
+	return true;
+}
+
 /* One byte; false when it was refused and must be offered again. */
 static bool
 n_tty_receive_byte(n_tty_t *ldisc, uint8_t c)
 {
 	if (n_tty_iflag(ldisc, NXU_ISTRIP)) c &= 0x7FU;
+
+	/* A real \377 doubled, so it cannot be read as the start of a mark; it is never special. */
+	if (c == 0xFFU && n_tty_marks_errors(ldisc)) {
+		static const uint8_t doubled[2] = {0xFFU, 0xFFU};
+
+		if (!n_tty_receive_literal(ldisc, doubled, 2U)) return false;
+
+		ldisc->literal_next = false;
+		return true;
+	}
 
 	if (ldisc->literal_next) {
 		if (!n_tty_receive_ordinary(ldisc, c)) return false;
@@ -632,6 +665,48 @@ n_tty_receive(n_tty_t *ldisc, const uint8_t *bytes, uint32_t count)
 		done++;
 
 	return done;
+}
+
+bool
+n_tty_receive_error(n_tty_t *ldisc, uint8_t c, n_tty_error_t error)
+{
+	static const uint8_t nul = 0x00U;
+
+	if (error == N_TTY_ERROR_BREAK) {
+		static const uint8_t marked[3] = {0xFFU, 0x00U, 0x00U};
+
+		if (n_tty_iflag(ldisc, NXU_IGNBRK)) return true;
+
+		if (n_tty_iflag(ldisc, NXU_BRKINT)) {
+			/* As VINTR does, but with nothing to echo: the break was not a character. */
+			if (!n_tty_lflag(ldisc, NXU_NOFLSH)) {
+				n_tty_flush_input(ldisc);
+				if (ldisc->hooks->output_flush != 0) ldisc->hooks->output_flush(ldisc->context);
+			}
+
+			n_tty_set_stopped(ldisc, false);
+			if (ldisc->hooks->signal != 0) ldisc->hooks->signal(ldisc->context, N_TTY_SIGNAL_INTERRUPT);
+			return true;
+		}
+
+		/* A break is marked even under IGNPAR, which is about parity alone. */
+		if (n_tty_iflag(ldisc, NXU_PARMRK)) return n_tty_receive_literal(ldisc, marked, 3U);
+
+		return n_tty_receive_literal(ldisc, &nul, 1U);
+	}
+
+	/* Parity is not checked: the byte is input like any other. */
+	if (!n_tty_iflag(ldisc, NXU_INPCK)) return n_tty_receive_byte(ldisc, c);
+
+	if (n_tty_iflag(ldisc, NXU_IGNPAR)) return true;
+
+	if (n_tty_iflag(ldisc, NXU_PARMRK)) {
+		uint8_t marked[3] = {0xFFU, 0x00U, c};
+
+		return n_tty_receive_literal(ldisc, marked, 3U);
+	}
+
+	return n_tty_receive_literal(ldisc, &nul, 1U);
 }
 
 uint32_t

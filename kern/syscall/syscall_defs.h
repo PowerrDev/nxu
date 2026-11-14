@@ -129,6 +129,11 @@
 #define NXU_SYS_TIME 109ULL
 /* Set a process's quality of service (pid 0: the caller); see NXU_QOS_*. */
 #define NXU_SYS_SET_QOS 110ULL
+/* Change the working directory, which relative paths are taken from; and read it. */
+#define NXU_SYS_CHDIR 111ULL
+#define NXU_SYS_GETCWD 112ULL
+/* Cut every open file of a terminal off from it, as Darwin's revoke(2) does. */
+#define NXU_SYS_REVOKE 113ULL
 
 /*
  * Quality-of-service classes, after XNU's. Each is a band of scheduling

@@ -26,18 +26,25 @@ failures=0
 count=0
 
 # run_case <name> <with disk: yes|no> <boot args> <expected status> <expected output>...
+# With SERIAL_SCRIPT set (SERIAL_SCRIPT=<file> run_case ...), the host types
+# into the console UART as that script says (tools/serial_expect.pl).
 run_case() {
   local name=$1 with_disk=$2 append=$3 want=$4 output status pattern ok=1
   shift 4
 
   local disk_args=()
+  local driver=(perl "$HERE/qemu_watchdog.pl" "$TIMEOUT")
+
+  if [ -n "${SERIAL_SCRIPT:-}" ]; then
+    driver=(perl "$HERE/serial_expect.pl" "$TIMEOUT" "$SERIAL_SCRIPT")
+  fi
 
   if [ "$with_disk" = yes ]; then
     cp "$DISK" "$WORK/disk.img"
     disk_args=(-drive "if=none,format=raw,file=$WORK/disk.img,id=d0" -device virtio-blk-pci,drive=d0,disable-modern=on)
   fi
 
-  output=$(perl "$HERE/qemu_watchdog.pl" "$TIMEOUT" qemu-system-i386 -cpu qemu32,+nx -M pc \
+  output=$("${driver[@]}" qemu-system-i386 -cpu qemu32,+nx -M pc \
     -kernel "$KERNEL" -m 1024M \
     -display none -serial stdio -monitor none -no-reboot \
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
@@ -104,6 +111,20 @@ run_case process-spawn yes "process-test=spawn qemu-exit=1" $STATUS_CLEAN \
 run_case tty yes "process-test=tty qemu-exit=1" $STATUS_CLEAN \
   "tty_init: initialized tty successfully" \
   "userland_run_process_test: tty process test passed"
+
+SERIAL_SCRIPT="$HERE/serial_test.script" run_case serial yes "process-test=serial qemu-exit=1" $STATUS_CLEAN \
+  "serial_init: /dev/console on the console UART, interrupt driven" \
+  "serial_test_run: line is interrupt driven" \
+  "serial_test_run: 6000 bytes, input held back in the UART" \
+  "userland_run_process_test: serial process test passed"
+
+# A normal boot, logged into on the serial console (getty and login); the script ends it, status 0.
+SERIAL_SCRIPT="$HERE/console_login.script" run_case console-login yes "" 0 \
+  "bootd: com.nxu.getty: started" \
+  "Login incorrect" \
+  "uid 1000  gid 4" \
+  "uid 0  gid 4" \
+  "serial_expect.pl: script complete"
 
 run_case pty yes "process-test=pty qemu-exit=1" $STATUS_CLEAN \
   "pty_init: initialized pty successfully" \

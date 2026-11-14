@@ -410,6 +410,7 @@ C_SOURCES := \
     kern/tty/n_tty.c \
     kern/tty/tty_jobctl.c \
     kern/tty/pty.c \
+    kern/tty/serial.c \
     kern/console/display_owner.c \
     kern/tests/ipc_test.c \
     kern/tests/post.c \
@@ -429,6 +430,7 @@ C_SOURCES := \
     kern/tests/tty_test.c \
     kern/tests/tty_loopback.c \
     kern/tests/pty_test.c \
+    kern/tests/serial_test.c \
     kern/tests/termios_process_test.c \
     kern/tests/tep_mailbox_test.c \
     kern/tests/windowserver_process_test.c \
@@ -464,6 +466,7 @@ C_SOURCES := \
     vfs/jbd2.c \
     vfs/file.c \
     vfs/path.c \
+    vfs/pathname.c \
     vfs/ramfs.c \
     vfs/vfs.c \
     vfs/vfs_file.c \
@@ -574,6 +577,11 @@ USER_C_SOURCES := \
     frameworks/BootDaemons.framework/su.c \
     frameworks/BootDaemons.framework/sudo.c \
     frameworks/BootDaemons.framework/passwd.c \
+    frameworks/BootDaemons.framework/login.c \
+    frameworks/BootDaemons.framework/getty.c \
+    frameworks/BootDaemons.framework/last.c \
+    frameworks/BootDaemons.framework/who.c \
+    frameworks/lib/utmp.c \
     frameworks/BootDaemons.framework/playsound.c \
     libk/wav.c \
     frameworks/BootDaemons.framework/sockettest_server.c \
@@ -672,6 +680,10 @@ USER_DAEMONS := \
     $(USER_BUILD)/su \
     $(USER_BUILD)/sudo \
     $(USER_BUILD)/passwd \
+    $(USER_BUILD)/login \
+    $(USER_BUILD)/getty \
+    $(USER_BUILD)/last \
+    $(USER_BUILD)/who \
     $(USER_BUILD)/playsound \
     $(USER_BUILD)/sockettest_server \
     $(USER_BUILD)/sockettest_client \
@@ -693,7 +705,8 @@ USER_SERVICE_PLISTS := \
     frameworks/BootDaemons.framework/Services/com.nxu.windowserver.plist \
     frameworks/BootDaemons.framework/Services/com.nxu.desktop.plist \
     frameworks/BootDaemons.framework/Services/com.nxu.about-sevos.plist \
-    frameworks/BootDaemons.framework/Services/com.nxu.dock.plist
+    frameworks/BootDaemons.framework/Services/com.nxu.dock.plist \
+    frameworks/BootDaemons.framework/Services/com.nxu.getty.plist
 
 # App bundles: each app is a process of its own, not part of the kernel.
 # UIService.framework builds one static archive per app (make nxu-apps:
@@ -1181,6 +1194,25 @@ $(USER_BUILD)/passwd: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemon
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 
+# The clients of the boot services (timed, preferencesd, ...); defined before
+# the first rule that links them, since prerequisites expand when a rule is read.
+USER_SERVICES_CLIENT := $(USER_BUILD)/frameworks/lib/services.o \
+	$(USER_BUILD)/frameworks/CoreFoundation.framework/lib/service/bootstrap_client.o
+
+$(USER_BUILD)/login: $(USER_COMMON_OBJECTS) $(USER_SERVICES_CLIENT) $(USER_BUILD)/frameworks/BootDaemons.framework/login.o $(USER_BUILD)/frameworks/lib/auth.o $(USER_BUILD)/libk/sha256.o $(USER_BUILD)/frameworks/lib/utmp.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+
+$(USER_BUILD)/getty $(USER_BUILD)/last $(USER_BUILD)/who: $(USER_BUILD)/%: $(USER_COMMON_OBJECTS) $(USER_SERVICES_CLIENT) $(USER_BUILD)/frameworks/BootDaemons.framework/%.o $(USER_BUILD)/frameworks/lib/utmp.o
+
+	$(QUIET_PRINT) "LD" "$@"
+
+	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
+
+
 $(USER_BUILD)/playsound: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/playsound.o $(USER_BUILD)/libk/wav.o
 
 	$(QUIET_PRINT) "LD" "$@"
@@ -1230,10 +1262,7 @@ $(USER_BUILD)/about_sevos_service: $(USER_COMMON_OBJECTS) $(USER_BUILD)/framewor
 # copies it with its time kept, so it only looks new when cargo rebuilt it.
 $(UISERVICE_APPS_DIR)/lib%.a: | uiservice-apps-build ;
 
-# The system services' client calls (<nxu/services.h>), for System Settings.
-USER_SERVICES_CLIENT := $(USER_BUILD)/frameworks/lib/services.o \
-	$(USER_BUILD)/frameworks/CoreFoundation.framework/lib/service/bootstrap_client.o
-
+# System Settings links the system services' client calls (USER_SERVICES_CLIENT, above).
 $(USER_BUILD)/apps/%: $(USER_COMMON_OBJECTS) $(USER_APPKIT_OBJECTS) $(USER_SERVICES_CLIENT) $(UISERVICE_APPS_DIR)/lib%.a | uiservice-apps-build
 
 	@mkdir -p $(dir $@)
@@ -1251,7 +1280,10 @@ $(USER_STAGE_STAMP): frameworks/Terminal.framework/Info.plist tools/UI/Icons/Ter
 	@mkdir -p $(DISK_ROOT)/System/Library/CoreServices $(DISK_ROOT)/System/Library/BootDaemons \
 		$(DISK_ROOT)/System/Library/Fonts $(DISK_ROOT)/System/Recovery $(DISK_ROOT)/var/log \
 		$(DISK_ROOT)/var/db/patchd $(DISK_ROOT)/System/Library/Frameworks \
-		$(DISK_ROOT)/Library/Logs/DiagnosticReports $(DISK_ROOT)/Users/Shared/Library/Logs/DiagnosticReports
+		$(DISK_ROOT)/Library/Logs/DiagnosticReports $(DISK_ROOT)/Users/Shared/Library/Logs/DiagnosticReports \
+		$(DISK_ROOT)/var/run $(DISK_ROOT)/var/root $(DISK_ROOT)/var/empty $(DISK_ROOT)/Users/user
+
+	@chmod 700 $(DISK_ROOT)/var/root
 
 	$(QUIET_PRINT) "STAGE" "$(DISK_ROOT)"
 
@@ -1334,7 +1366,13 @@ $(USER_STAGE_STAMP): frameworks/Terminal.framework/Info.plist tools/UI/Icons/Ter
 
 	$(Q)cp $(USER_BUILD)/passwd $(DISK_ROOT)/System/Library/CoreServices/passwd
 
-	$(Q)chmod 4755 $(DISK_ROOT)/System/Library/CoreServices/su $(DISK_ROOT)/System/Library/CoreServices/sudo $(DISK_ROOT)/System/Library/CoreServices/passwd
+	$(Q)cp $(USER_BUILD)/login $(DISK_ROOT)/System/Library/CoreServices/login
+
+	$(Q)cp $(USER_BUILD)/getty $(DISK_ROOT)/System/Library/CoreServices/getty
+
+	$(Q)cp $(USER_BUILD)/last $(USER_BUILD)/who $(DISK_ROOT)/System/Library/CoreServices/
+
+	$(Q)chmod 4755 $(DISK_ROOT)/System/Library/CoreServices/su $(DISK_ROOT)/System/Library/CoreServices/sudo $(DISK_ROOT)/System/Library/CoreServices/passwd $(DISK_ROOT)/System/Library/CoreServices/login
 
 	$(Q)cp $(USER_BUILD)/playsound $(DISK_ROOT)/System/Library/CoreServices/playsound
 
@@ -1522,6 +1560,7 @@ $(DISK): $(USER_STAGE_STAMP)
 	$(Q)find $(DISK_ROOT) -mindepth 1 | sed 's|^$(DISK_ROOT)||' | while IFS= read -r entry; do \
 		printf 'sif "%s" uid 0\nsif "%s" gid 0\n' "$$entry" "$$entry"; \
 	done > $(DISK).chown-root.debugfs
+	$(Q)tools/disk_home_owners.sh $(DISK_ROOT) >> $(DISK).chown-root.debugfs
 	$(Q)PATH="$(E2FS_PATH):$$PATH" $(DEBUGFS) -w -f $(DISK).chown-root.debugfs $(DISK) >/dev/null
 	$(Q)rm -f $(DISK).chown-root.debugfs
 
@@ -1688,7 +1727,7 @@ test-arm64-btrfs: $(KERNEL_IMAGE) $(BTRFS_HOST_TOOL)
 # Sound driver into QEMU's wav backend, then checked on the host) are in the
 # registry in makedefs/tests.mk.
 
-.PHONY: test-audio-host boot-audio test-tty-host
+.PHONY: test-audio-host boot-audio test-tty-host test-vfs-host
 
 test-audio-host:
 
@@ -1700,6 +1739,12 @@ test-audio-host:
 test-tty-host:
 
 	tools/tty/test_host.sh $(BUILD_ROOT)/tty-host
+
+#   make test-vfs-host      path resolution (vfs/pathname.c) natively with the
+#                           sanitizers: relative paths, ., .., slashes, overflow
+test-vfs-host:
+
+	tools/vfs/test_host.sh $(BUILD_ROOT)/vfs-host
 
 
 # The kernel cannot decode MP3: decode the boot chime with macOS afconvert into

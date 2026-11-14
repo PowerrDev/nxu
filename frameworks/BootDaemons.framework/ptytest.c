@@ -32,7 +32,11 @@
  *  12  Escape alone is ignored, and the key after it is not lost;
  *  13  editing in a line wider than the terminal (Left keys into it);
  *  14  `exit`: the shell leaves, the master reads end of file, and the shell's
- *      exit status is 0.
+ *      exit status is 0;
+ *  15  revoke, on a second pair: a file open on the slave is cut off (end of
+ *      file, writes fail, no longer a terminal), a new open of the slave
+ *      works, and the console, which is root's, cannot be revoked by this
+ *      user.
  *
  * The jobs it runs are this program again: "ptytest block" says it is ready
  * and reads lines until one says "bye"; "ptytest password" reads a line with
@@ -252,6 +256,44 @@ fail(int check, const char *what)
 	return check;
 }
 
+/* Check 15: revoke, on a pair of its own, as the user who owns the slave. */
+static int
+check_revoke(void)
+{
+	char name[64];
+	char buffer[16];
+	int master = posix_openpt(NXU_O_READ | NXU_O_WRITE);
+
+	if (master < 0 || grantpt(master) != 0 || unlockpt(master) != 0 || ptsname_r(master, name, sizeof(name)) != 0)
+		return fail(15, "a second pair");
+
+	int64_t old = nxu_open(name, NXU_O_READ | NXU_O_WRITE | NXU_O_NOCTTY);
+
+	if (old < 0) return fail(15, "open the slave");
+	if (nxu_revoke(name) != 0) return fail(15, "the owner could not revoke the slave");
+	if (nxu_read((uint64_t)old, buffer, sizeof(buffer)) != 0) return fail(15, "a revoked file did not read end of file");
+	if (nxu_write((uint64_t)old, "x", 1U) >= 0) return fail(15, "a revoked file could be written");
+	if (isatty((int)old)) return fail(15, "a revoked file is still a terminal");
+
+	int64_t fresh = nxu_open(name, NXU_O_READ | NXU_O_WRITE | NXU_O_NOCTTY);
+
+	if (fresh < 0) return fail(15, "open the slave again after revoke");
+	if (nxu_write((uint64_t)master, "hi\r", 3U) != 3) return fail(15, "type on the master");
+
+	int64_t count = nxu_read((uint64_t)fresh, buffer, sizeof(buffer));
+
+	if (count != 3 || buffer[0] != 'h' || buffer[1] != 'i' || buffer[2] != '\n')
+		return fail(15, "the new file did not read the line typed");
+	if (nxu_read((uint64_t)old, buffer, sizeof(buffer)) != 0) return fail(15, "the revoked file read the new input");
+
+	if (nxu_revoke("/dev/console") != -NXU_SYS_E_DENIED) return fail(15, "a user revoked root's console");
+
+	(void)nxu_close((uint64_t)old);
+	(void)nxu_close((uint64_t)fresh);
+	(void)nxu_close((uint64_t)master);
+	return 0;
+}
+
 static int
 run_checks(void)
 {
@@ -359,6 +401,11 @@ run_checks(void)
 
 	(void)closed;
 	(void)nxu_close((uint64_t)g_master);
+
+	int revoked = check_revoke();
+
+	if (revoked != 0) return revoked;
+
 	say("ptytest: a shell on a pseudo-terminal edits, runs, interrupts, stops and continues jobs\n");
 	return 0;
 }

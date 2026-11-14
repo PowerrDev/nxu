@@ -294,6 +294,28 @@ int64_t nxu_setpgid(uint64_t pid, uint64_t pgid);
 int64_t nxu_getsid(uint64_t pid);
 int64_t nxu_setsid(void);
 
+/*
+ * nxu_chdir / nxu_getcwd
+ *
+ * Change the working directory, which every relative path is taken from
+ * (it must be a directory the caller may search), and read it into
+ * `buffer` (its length is returned; INVALID_ARGUMENT if `size` is too
+ * small). Children start in their parent's.
+ */
+int64_t nxu_chdir(const char *path);
+int64_t nxu_getcwd(char *buffer, uint64_t size);
+
+/*
+ * nxu_revoke
+ *
+ * Cut every file open on the terminal at `path` off from it, as Darwin's
+ * revoke(2): reads on them see end of file and writes fail, and the
+ * terminal's session is hung up. The next open of the path finds the
+ * terminal afresh. Only the terminal's owner or root; NOT_SUPPORTED for
+ * anything but a terminal.
+ */
+int64_t nxu_revoke(const char *path);
+
 int64_t nxu_kill(uint64_t pid, uint32_t signal);
 
 /* A signal to every member of process group pgid (0: the caller's own group). */

@@ -48,6 +48,8 @@
 #include <kern/sched_prism/waitq.h>
 #include <kern/machine/user.h>
 #include <kern/sched_prism/sched.h>
+#include <kern/tty/tty.h>
+#include <vfs/pathname.h>
 #include <vfs/vfs.h>
 #include <vm/user_copy.h>
 #include <vm/pmm.h>
@@ -82,6 +84,31 @@ static syscall_result_t
 syscall_error(syscall_error_t error)
 {
 	return syscall_return(0ULL - (uint64_t)error);
+}
+
+_Static_assert(PROC_CWD_MAX == VFS_PATH_MAX, "a working directory is a path");
+
+/*
+ * syscall_copy_path
+ *
+ * A path argument, copied in and made absolute and canonical against the
+ * caller's working directory (vfs/pathname.h), which is how every system
+ * call that takes a path sees it. 0, or the error to return: a bad address,
+ * or NOT_FOUND for an empty path or one that does not fit.
+ */
+static syscall_error_t
+syscall_copy_path(uint64_t user_path, char path[VFS_PATH_MAX])
+{
+	char given[VFS_PATH_MAX];
+	char cwd[PROC_CWD_MAX];
+
+	if (!vm_copy_string_from_user(given, user_path, sizeof(given))) return SYSCALL_ERROR_BAD_ADDRESS;
+
+	proc_get_cwd(current_proc(), cwd);
+
+	if (!vfs_pathname_resolve(cwd, given, path, VFS_PATH_MAX)) return SYSCALL_ERROR_NOT_FOUND;
+
+	return (syscall_error_t)0;
 }
 
 /* True when the calling process holds every capability in caps (NXU_CAP_*). */
@@ -364,7 +391,8 @@ syscall_exec(uint64_t user_path, uint64_t user_argv)
 {
 #if MACHINE_USER_CONTEXT
 	char path[VFS_PATH_MAX];
-	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	syscall_error_t path_error = syscall_copy_path(user_path, path);
+	if (path_error != 0) return syscall_error(path_error);
 
 	loader_exec_args_t *args = kmalloc(sizeof(*args));
 	if (args == 0) return syscall_error(SYSCALL_ERROR_NO_MEMORY);
@@ -784,7 +812,8 @@ static syscall_result_t
 syscall_open(uint64_t user_path, uint64_t flags)
 {
 	char path[SYSCALL_PATH_BUFFER_SIZE];
-	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	syscall_error_t path_error = syscall_copy_path(user_path, path);
+	if (path_error != 0) return syscall_error(path_error);
 
 	/* The same 32 bits vfs_open sees, so a high bit cannot get past the check. */
 	if (!syscall_open_may_modify(path, (uint32_t)flags)) return syscall_error(SYSCALL_ERROR_DENIED);
@@ -870,7 +899,8 @@ syscall_spawn(uint64_t user_path, uint64_t user_name, uint64_t caps)
 
 	char path[VFS_PATH_MAX];
 	char name[PROC_NAME_MAX];
-	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	syscall_error_t path_error = syscall_copy_path(user_path, path);
+	if (path_error != 0) return syscall_error(path_error);
 
 	if (!vm_copy_string_from_user(name, user_name, sizeof(name))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
 
@@ -973,7 +1003,8 @@ syscall_spawn_attr(uint64_t user_path, uint64_t user_attr)
 	char path[VFS_PATH_MAX];
 	char name[PROC_NAME_MAX];
 
-	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	syscall_error_t path_error = syscall_copy_path(user_path, path);
+	if (path_error != 0) return syscall_error(path_error);
 
 	if (attr.name != 0ULL) {
 		if (!vm_copy_string_from_user(name, attr.name, sizeof(name))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
@@ -1197,7 +1228,8 @@ static syscall_result_t
 syscall_stat(uint64_t user_path, uint64_t user_stat)
 {
 	char path[VFS_PATH_MAX];
-	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	syscall_error_t path_error = syscall_copy_path(user_path, path);
+	if (path_error != 0) return syscall_error(path_error);
 
 	vnode_t vnode;
 	vfs_status_t status = vfs_lookup(path, &vnode);
@@ -1253,6 +1285,82 @@ syscall_stat(uint64_t user_path, uint64_t user_stat)
 }
 
 /*
+ * chdir(path): make a directory the caller may search its working
+ * directory. Only the calling process's own changes; its children inherit
+ * it when they are made.
+ */
+static syscall_result_t
+syscall_chdir(uint64_t user_path)
+{
+	char path[VFS_PATH_MAX];
+	syscall_error_t path_error = syscall_copy_path(user_path, path);
+	if (path_error != 0) return syscall_error(path_error);
+
+	vnode_t vnode;
+	vfs_status_t status = vfs_lookup(path, &vnode);
+	if (status != VFS_STATUS_OK) return syscall_error(syscall_vfs_error(status));
+
+	bool directory = vnode->v_type == VNODE_TYPE_DIRECTORY;
+	vfs_status_t access = directory ? vnode_access(vnode, proc_ucred(current_proc()), VNODE_ACCESS_EXEC) : VFS_STATUS_OK;
+
+	vnode_rele(vnode);
+
+	if (!directory) return syscall_error(SYSCALL_ERROR_NOT_DIRECTORY);
+	if (access != VFS_STATUS_OK) return syscall_error(syscall_vfs_error(access));
+	if (!proc_set_cwd(current_proc(), path)) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
+
+	return syscall_return(0ULL);
+}
+
+/*
+ * revoke(path): cut every open file of the terminal at path off from it
+ * (kern/tty/tty.h, tty_revoke). Its owner or root only, as on Darwin;
+ * NOT_SUPPORTED for anything but a terminal.
+ */
+static syscall_result_t
+syscall_revoke(uint64_t user_path)
+{
+	char path[VFS_PATH_MAX];
+	syscall_error_t path_error = syscall_copy_path(user_path, path);
+	if (path_error != 0) return syscall_error(path_error);
+
+	vnode_t vnode;
+	vfs_status_t status = vfs_lookup(path, &vnode);
+	if (status != VFS_STATUS_OK) return syscall_error(syscall_vfs_error(status));
+
+	const struct ucred *cred = proc_ucred(current_proc());
+	vnode_attr_t attr;
+	bool owner = ucred_is_root(cred) || (vnode_getattr(vnode, &attr) == VFS_STATUS_OK && attr.va_uid == cred->cr_uid);
+	bool terminal = false;
+
+	if (owner) terminal = tty_revoke_vnode(vnode, &status);
+
+	vnode_rele(vnode);
+
+	if (!owner) return syscall_error(SYSCALL_ERROR_DENIED);
+	if (!terminal) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
+	if (status != VFS_STATUS_OK) return syscall_error(syscall_vfs_error(status));
+
+	return syscall_return(0ULL);
+}
+
+/* getcwd(buffer, size): the working directory and its terminator; its length, or INVALID if it does not fit. */
+static syscall_result_t
+syscall_getcwd(uint64_t user_buffer, uint64_t size)
+{
+	char cwd[PROC_CWD_MAX];
+
+	proc_get_cwd(current_proc(), cwd);
+
+	uint64_t length = (uint64_t)strlen(cwd);
+
+	if (size < length + 1ULL) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	if (!vm_copy_to_user(user_buffer, cwd, length + 1ULL)) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+
+	return syscall_return(length);
+}
+
+/*
  * chmod(path, mode): change a file's permission bits. Only the file's owner
  * (effective UID equals the file's uid) or root may do so.
  */
@@ -1260,7 +1368,8 @@ static syscall_result_t
 syscall_chmod(uint64_t user_path, uint64_t mode)
 {
 	char path[VFS_PATH_MAX];
-	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	syscall_error_t path_error = syscall_copy_path(user_path, path);
+	if (path_error != 0) return syscall_error(path_error);
 
 	vnode_t vnode;
 	vfs_status_t status = vfs_lookup(path, &vnode);
@@ -1298,7 +1407,8 @@ syscall_chown(uint64_t user_path, uint64_t uid, uint64_t gid)
 	if (uid > UINT32_MAX || gid > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
 	char path[VFS_PATH_MAX];
-	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	syscall_error_t path_error = syscall_copy_path(user_path, path);
+	if (path_error != 0) return syscall_error(path_error);
 
 	vnode_t vnode;
 	vfs_status_t status = vfs_lookup(path, &vnode);
@@ -1358,7 +1468,8 @@ syscall_mkdir(uint64_t user_path)
 	if (!syscall_has_caps(NXU_CAP_FS_WRITE)) return syscall_error(SYSCALL_ERROR_DENIED);
 
 	char path[VFS_PATH_MAX];
-	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	syscall_error_t path_error = syscall_copy_path(user_path, path);
+	if (path_error != 0) return syscall_error(path_error);
 
 	vfs_status_t status = vfs_mkdir(path);
 	return status == VFS_STATUS_OK ? syscall_return(0ULL) : syscall_error(syscall_vfs_error(status));
@@ -1412,7 +1523,8 @@ syscall_recovery_fs_mount(uint64_t user_filesystem, uint64_t device_index, uint6
 	char path[VFS_PATH_MAX];
 	if (!vm_copy_string_from_user(filesystem, user_filesystem, sizeof(filesystem)))
 		return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
-	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	syscall_error_t path_error = syscall_copy_path(user_path, path);
+	if (path_error != 0) return syscall_error(path_error);
 
 	block_device_t device = block_device_get((uint32_t)device_index);
 	if (device == 0) return syscall_error(SYSCALL_ERROR_NOT_FOUND);
@@ -1427,7 +1539,8 @@ syscall_recovery_fs_unmount(uint64_t user_path)
 	if (!syscall_storage_privileged()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
 
 	char path[VFS_PATH_MAX];
-	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	syscall_error_t path_error = syscall_copy_path(user_path, path);
+	if (path_error != 0) return syscall_error(path_error);
 
 	if (path[0] == '/' && path[1] == '\0') return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
 
@@ -1462,7 +1575,8 @@ syscall_recovery_fs_space_info(uint64_t user_path, uint64_t user_info)
 	if (!syscall_storage_privileged()) return syscall_error(SYSCALL_ERROR_NOT_SUPPORTED);
 
 	char path[VFS_PATH_MAX];
-	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	syscall_error_t path_error = syscall_copy_path(user_path, path);
+	if (path_error != 0) return syscall_error(path_error);
 
 	vfs_space_info_t space;
 	vfs_status_t status = vfs_space_info(path, &space);
@@ -1944,7 +2058,8 @@ syscall_sap_remove_tree(uint64_t user_path)
 	if (!syscall_recovery_privileged()) return syscall_error(SYSCALL_ERROR_DENIED);
 
 	char path[VFS_PATH_MAX];
-	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	syscall_error_t path_error = syscall_copy_path(user_path, path);
+	if (path_error != 0) return syscall_error(path_error);
 
 	vfs_status_t status = sap_remove_tree(current_proc(), path);
 	return status == VFS_STATUS_OK ? syscall_return(0) : syscall_error(syscall_vfs_error(status));
@@ -1954,7 +2069,8 @@ static syscall_result_t
 syscall_sap_delete(uint64_t user_path)
 {
 	char path[VFS_PATH_MAX];
-	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	syscall_error_t path_error = syscall_copy_path(user_path, path);
+	if (path_error != 0) return syscall_error(path_error);
 
 	vfs_status_t status = sap_delete(current_proc(), path);
 	return status == VFS_STATUS_OK ? syscall_return(0) : syscall_error(syscall_vfs_error(status));
@@ -1964,7 +2080,8 @@ static syscall_result_t
 syscall_unlink(uint64_t user_path)
 {
 	char path[VFS_PATH_MAX], canonical[VFS_PATH_MAX];
-	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	syscall_error_t path_error = syscall_copy_path(user_path, path);
+	if (path_error != 0) return syscall_error(path_error);
 
 	if (!sap_canonical_path(path, canonical)) return syscall_error(SYSCALL_ERROR_DENIED);
 
@@ -1984,7 +2101,8 @@ static syscall_result_t
 syscall_rmdir(uint64_t user_path)
 {
 	char path[VFS_PATH_MAX], canonical[VFS_PATH_MAX];
-	if (!vm_copy_string_from_user(path, user_path, sizeof(path))) return syscall_error(SYSCALL_ERROR_BAD_ADDRESS);
+	syscall_error_t path_error = syscall_copy_path(user_path, path);
+	if (path_error != 0) return syscall_error(path_error);
 
 	if (!syscall_has_caps(NXU_CAP_FS_WRITE) || !sap_canonical_path(path, canonical) || sap_protected_path(canonical))
 		return syscall_error(SYSCALL_ERROR_DENIED);
@@ -3147,6 +3265,12 @@ syscall_dispatch_inner(const syscall_request_t *request)
 		return syscall_return(rtc_unix_time());
 	case SYSCALL_SET_QOS:
 		return syscall_set_qos(request->arguments[0], request->arguments[1]);
+	case SYSCALL_CHDIR:
+		return syscall_chdir(request->arguments[0]);
+	case SYSCALL_GETCWD:
+		return syscall_getcwd(request->arguments[0], request->arguments[1]);
+	case SYSCALL_REVOKE:
+		return syscall_revoke(request->arguments[0]);
 	case SYSCALL_EXIT:
 		return syscall_exit(request->arguments[0]);
 	case SYSCALL_WRITE:

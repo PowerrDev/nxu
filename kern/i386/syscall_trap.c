@@ -178,6 +178,57 @@ user_exception_name(uint32_t vector)
 
 }
 
+/*
+ * user_exception_signal
+ *
+ * The signal POSIX raises for a processor exception taken in ring 3, as on
+ * the BSDs and Linux: bad memory references SIGSEGV (a page fault, and the
+ * segment faults, which here only a bad selector or a privileged instruction
+ * cause), misalignment SIGBUS, arithmetic SIGFPE, the debug traps SIGTRAP,
+ * and anything else SIGILL.
+ */
+static uint32_t
+user_exception_signal(uint32_t vector)
+{
+	switch (vector) {
+	case T_PAGE_FAULT:
+	case T_GENERAL_PROTECTION:
+	case T_SEGMENT_NOT_PRESENT:
+	case T_STACK_FAULT:
+	case T_BOUND_RANGE:
+	case T_OVERFLOW:
+		return NXU_SIGSEGV;
+	case T_ALIGNMENT_CHECK:
+		return NXU_SIGBUS;
+	case T_DIVIDE_ERROR:
+	case T_X87_FAULT:
+	case T_SIMD_FAULT:
+		return NXU_SIGFPE;
+	case T_DEBUG:
+	case T_BREAKPOINT:
+		return NXU_SIGTRAP;
+	default:
+		return NXU_SIGILL;
+	}
+}
+
+static const char *
+user_exception_signal_name(uint32_t signal)
+{
+	switch (signal) {
+	case NXU_SIGSEGV:
+		return "SIGSEGV";
+	case NXU_SIGBUS:
+		return "SIGBUS";
+	case NXU_SIGFPE:
+		return "SIGFPE";
+	case NXU_SIGTRAP:
+		return "SIGTRAP";
+	default:
+		return "SIGILL";
+	}
+}
+
 static void
 user_exception_report(const x86_saved_state_t *state, proc_t proc)
 {
@@ -186,8 +237,9 @@ user_exception_report(const x86_saved_state_t *state, proc_t proc)
 	name[0] = '\0';
 	if (proc != 0) (void)proc_get_name(proc, name, sizeof(name));
 
-	kprintf("pid %u (%s) terminated by %s at 0x%x:0x%x\n", (uint32_t)proc_selfpid(), name,
-			user_exception_name(state->trapno), state->cs & 0xFFFFU, state->eip);
+	kprintf("pid %u (%s) killed by %s: %s at 0x%x:0x%x\n", (uint32_t)proc_selfpid(), name,
+			user_exception_signal_name(user_exception_signal(state->trapno)), user_exception_name(state->trapno),
+			state->cs & 0xFFFFU, state->eip);
 
 	if (state->trapno == T_PAGE_FAULT) {
 		IOLog("  cause: %s of 0x%x by user code: %s\n",
@@ -214,13 +266,45 @@ i386_trap_user_exception(x86_saved_state_t *state)
 	/* Nothing to terminate: the kernel's own task has no ring 3 code. */
 	if (proc == 0 || proc == proc_kernel()) return false;
 
+	uint32_t signal = user_exception_signal(state->trapno);
+	thread_t thread = current_thread();
+	machine_thread_t *machine = i386_thread_current_machine();
+
+	/*
+	 * A program with a handler for the signal runs it, at the faulting
+	 * instruction's context, as on arm64 -- unless it has the signal
+	 * blocked, or the handler frame cannot be built, when there is no safe
+	 * way to go on and the process is killed, as POSIX leaves undefined.
+	 */
+	if (thread != 0 && machine != 0 && (thread->sig_blocked & (1U << signal)) == 0U) {
+		nxu_sigaction_t action;
+
+		(void)signal_get_action(proc, signal, &action);
+
+		if (action.handler > NXU_SIG_IGN) {
+			uint32_t previous_mask = thread->sig_blocked;
+
+			machine->user_frame = state;
+
+			bool pushed = machine_user_signal_push(action.handler, action.restorer, signal, previous_mask);
+
+			machine->user_frame = 0;
+
+			if (pushed) {
+				thread->sig_blocked = signal_blocked_mask_for_handler(previous_mask, signal, &action);
+				return true;
+			}
+		}
+	}
+
 	user_exception_report(state, proc);
 
 	/*
-	 * Terminate the whole process as SYS_exit would, then unwind this
-	 * thread's ring 3 excursion. The status marks it as a kernel kill.
+	 * Terminate the whole process as SYS_exit would, killed by the signal,
+	 * so its parent's wait reports it (a shell prints "Segmentation fault");
+	 * then unwind this thread's ring 3 excursion.
 	 */
-	if (!proc_exit_current(I386_USER_FAULT_STATUS_BASE | state->trapno)) {
+	if (!proc_exit_current(NXU_EXIT_KILLED_SIGNAL(signal))) {
 		/*
 		 * A process that is already on its way out (killed while this thread
 		 * was in ring 3) has nothing left to terminate, and its fault is no

@@ -70,6 +70,10 @@
  *     finish. The last close discards whatever is still queued in either
  *     direction.
  *
+ *   - Files. Every open makes a file of its own (struct tty_file), so a
+ *     revoke (tty_revoke) can cut the files of one session off from the
+ *     terminal while it goes on with the next.
+ *
  *   - Hung up (tty_hangup: the line dropped, the other end of a
  *     pseudo-terminal closed). Reads return what is left in the input queue
  *     and then end of file; writes fail with an I/O error; a new open fails
@@ -208,6 +212,20 @@ void tty_unregister(tty_t tty);
  */
 uint32_t tty_input(tty_t tty, const void *bytes, uint32_t count);
 
+/*
+ * tty_input_error
+ *
+ * One byte that arrived with a line error: a break (the byte the hardware
+ * read with it, normally 0), or a byte with a parity or framing error.
+ * termios decides what it becomes (kern/tty/n_tty.h, "Line errors"). True
+ * when it was taken; false when it must be offered again after unthrottle,
+ * as tty_input's refused bytes are. An overrun is not one of these: the byte
+ * it comes with is good and goes through tty_input. Thread context only.
+ */
+typedef enum { TTY_INPUT_BREAK, TTY_INPUT_PARITY, TTY_INPUT_FRAMING } tty_input_error_t;
+
+bool tty_input_error(tty_t tty, uint8_t byte, tty_input_error_t error);
+
 /* How many bytes tty_input is sure to take right now (UINT32_MAX in canonical mode). */
 uint32_t tty_input_room(tty_t tty);
 
@@ -231,6 +249,26 @@ uint32_t tty_output_pending(tty_t tty);
  */
 void tty_hangup(tty_t tty);
 void tty_detach(tty_t tty);
+
+/*
+ * tty_revoke / tty_revoke_vnode
+ *
+ * Darwin's revoke(2) for a terminal: every file open on it now is cut off
+ * from it for good. Reads on those files return end of file and writes fail
+ * with an I/O error (as on a dead vnode); their requests are NOT_TTY, so
+ * they are no terminal any more; a sleeper on one wakes to find it so. The
+ * terminal itself is as if they had all been closed (the driver is closed,
+ * the queues are emptied) and its session is told as for a hangup: the
+ * session loses it, and its leader is sent SIGHUP. The next open starts a
+ * new generation of files, which the old ones are not part of, however
+ * long they stay open. getty revokes the console after each session, so a
+ * job the user left behind cannot read the next user's typing.
+ *
+ * tty_revoke_vnode is the system call's way in: false when `vnode` is not
+ * a terminal's name; otherwise *status says how the revoke went.
+ */
+void tty_revoke(tty_t tty);
+bool tty_revoke_vnode(vnode_t vnode, vfs_status_t *status);
 
 /*
  * tty_termios_defaults / tty_get_termios / tty_set_termios

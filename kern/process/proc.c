@@ -433,6 +433,10 @@ proc_bootstrap(void)
 
 	ucred_init_root(&kernel_proc->p_ucred);
 
+	kernel_proc->p_cwd_lock = (nxu_spinlock_t)NXU_SPINLOCK_INIT;
+	kernel_proc->p_cwd[0] = '/';
+	kernel_proc->p_cwd[1] = '\0';
+
 	kernel_proc->p_refcount = 1U;
 
 	proc_copy_name(kernel_proc->p_comm, "kernel_task");
@@ -570,6 +574,14 @@ proc_create_user_in(proc_t parent, const char *name, uint64_t entry, uint64_t st
 	ucred_copy(&proc->p_ucred, &parent->p_ucred);
 	if (pid == 1U) ucred_init_root(&proc->p_ucred);
 
+	/* The parent's working directory; PID 1 starts at the root, like its credentials. */
+	proc->p_cwd_lock = (nxu_spinlock_t)NXU_SPINLOCK_INIT;
+	proc_get_cwd(parent, proc->p_cwd);
+	if (pid == 1U) {
+		proc->p_cwd[0] = '/';
+		proc->p_cwd[1] = '\0';
+	}
+
 	proc->p_ident.uniqueid = proc_allocate_uniqueid_locked();
 
 	proc->p_ident.idversion = proc_allocate_idversion_locked();
@@ -686,6 +698,9 @@ proc_fork(proc_t parent, proc_t *result)
 	proc->p_caps = parent->p_caps;
 
 	ucred_copy(&proc->p_ucred, &parent->p_ucred);
+
+	proc->p_cwd_lock = (nxu_spinlock_t)NXU_SPINLOCK_INIT;
+	proc_get_cwd(parent, proc->p_cwd);
 	
   memcpy(proc->p_exec_path, parent->p_exec_path, sizeof(proc->p_exec_path));
 	memcpy(proc->p_image_id, parent->p_image_id, sizeof(proc->p_image_id));
@@ -1249,6 +1264,29 @@ proc_has_caps(proc_t proc, uint32_t caps)
 	 * treated as holding every capability. Non-root uses its granted mask. */
 	if (ucred_is_root(&proc->p_ucred)) return true;
 	return (proc->p_caps & caps) == caps;
+}
+
+void
+proc_get_cwd(proc_t proc, char cwd[PROC_CWD_MAX])
+{
+	uint64_t state = nxu_spin_lock_irqsave(&proc->p_cwd_lock);
+
+	memcpy(cwd, proc->p_cwd, PROC_CWD_MAX);
+	nxu_spin_unlock_irqrestore(&proc->p_cwd_lock, state);
+}
+
+bool
+proc_set_cwd(proc_t proc, const char *path)
+{
+	size_t length = strlen(path);
+
+	if (length == 0U || length >= PROC_CWD_MAX || path[0] != '/') return false;
+
+	uint64_t state = nxu_spin_lock_irqsave(&proc->p_cwd_lock);
+
+	memcpy(proc->p_cwd, path, length + 1U);
+	nxu_spin_unlock_irqrestore(&proc->p_cwd_lock, state);
+	return true;
 }
 
 void

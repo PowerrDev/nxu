@@ -614,6 +614,133 @@ test_output(void)
 	CHECK(echoed("\r\n"));
 }
 
+/* ---- line errors -------------------------------------------------------- */
+
+static struct nxu_termios
+with_iflag(struct nxu_termios t, nxu_tcflag_t iflag)
+{
+	t.c_iflag = iflag;
+	return t;
+}
+
+static bool
+error_in(uint8_t c, n_tty_error_t error)
+{
+	return n_tty_receive_error(&g_ld, c, error);
+}
+
+static void
+test_line_errors(void)
+{
+	start("IGNBRK drops a break", with_iflag(raw(), NXU_IGNBRK | NXU_BRKINT));
+	CHECK(error_in(0U, N_TTY_ERROR_BREAK));
+	CHECK(n_tty_available(&g_ld) == 0U && g_fake.signal_count == 0U);
+
+	start("BRKINT flushes both ways and interrupts", cooked());
+	(void)feed("half");
+	(void)echoed("half");
+	(void)write_text("out");
+	CHECK(error_in(0U, N_TTY_ERROR_BREAK));
+	CHECK(g_fake.signal_count == 1U && g_fake.signals[0] == (int)N_TTY_SIGNAL_INTERRUPT);
+	CHECK(g_fake.flushes == 1U && echoed(""));
+	(void)feed("\n");
+	CHECK(READS(64U, "\n"));
+
+	start("BRKINT under NOFLSH keeps the queues", cooked());
+	{
+		struct nxu_termios t = cooked();
+		t.c_lflag |= NXU_NOFLSH;
+		n_tty_set_termios(&g_ld, &t);
+	}
+	(void)feed("keep");
+	CHECK(error_in(0U, N_TTY_ERROR_BREAK));
+	CHECK(g_fake.signal_count == 1U && g_fake.flushes == 0U);
+	(void)feed("\n");
+	CHECK(READS(64U, "keep\n"));
+
+	start("BRKINT restarts stopped output", cooked());
+	(void)feed("\x13");
+	CHECK(g_fake.stopped);
+	CHECK(error_in(0U, N_TTY_ERROR_BREAK));
+	CHECK(!g_fake.stopped);
+
+	start("a break reads as NUL", raw());
+	CHECK(error_in(0U, N_TTY_ERROR_BREAK));
+	CHECK(reads(64U, "\0", 1U));
+
+	start("a break under PARMRK reads as 377 0 0, even with IGNPAR", with_iflag(raw(), NXU_PARMRK | NXU_IGNPAR));
+	CHECK(error_in(0U, N_TTY_ERROR_BREAK));
+	CHECK(reads(64U, "\377\0\0", 3U));
+
+	start("parity is not checked without INPCK", raw());
+	CHECK(error_in('p', N_TTY_ERROR_PARITY));
+	CHECK(error_in('f', N_TTY_ERROR_FRAMING));
+	CHECK(READS(64U, "pf"));
+
+	start("unchecked bytes are still special", cooked());
+	CHECK(error_in(0x03U, N_TTY_ERROR_PARITY));
+	CHECK(g_fake.signal_count == 1U);
+
+	start("INPCK and IGNPAR drop bad bytes", with_iflag(raw(), NXU_INPCK | NXU_IGNPAR | NXU_PARMRK));
+	CHECK(error_in('x', N_TTY_ERROR_PARITY));
+	CHECK(error_in('y', N_TTY_ERROR_FRAMING));
+	CHECK(n_tty_available(&g_ld) == 0U);
+
+	start("INPCK and PARMRK mark bad bytes", with_iflag(raw(), NXU_INPCK | NXU_PARMRK));
+	CHECK(error_in('x', N_TTY_ERROR_PARITY));
+	CHECK(error_in(0x03U, N_TTY_ERROR_FRAMING));
+	CHECK(reads(64U, "\377\0x\377\0\x03", 6U));
+
+	start("INPCK alone reads bad bytes as NUL", with_iflag(raw(), NXU_INPCK));
+	CHECK(error_in('x', N_TTY_ERROR_PARITY));
+	CHECK(reads(64U, "\0", 1U));
+
+	start("PARMRK doubles a real 377", with_iflag(raw(), NXU_PARMRK));
+	(void)n_tty_receive(&g_ld, (const uint8_t[]){'a', 0xFFU, 'b'}, 3U);
+	CHECK(reads(64U, "a\377\377b", 4U));
+
+	start("no doubling under IGNPAR or ISTRIP", with_iflag(raw(), NXU_PARMRK | NXU_IGNPAR));
+	(void)n_tty_receive(&g_ld, (const uint8_t[]){0xFFU}, 1U);
+	CHECK(reads(64U, "\377", 1U));
+	n_tty_set_termios(&g_ld, &(struct nxu_termios){.c_iflag = NXU_PARMRK | NXU_ISTRIP});
+	(void)n_tty_receive(&g_ld, (const uint8_t[]){0xFFU}, 1U);
+	CHECK(reads(64U, "\x7f", 1U));
+
+	start("a mark is refused whole when it does not fit", with_iflag(raw(), NXU_INPCK | NXU_PARMRK));
+	{
+		char many[RING_SIZE - 1U];
+		memset(many, 'r', sizeof(many) - 1U);
+		many[sizeof(many) - 1U] = '\0';
+		CHECK(feed(many) == RING_SIZE - 2U);
+	}
+	CHECK(!error_in('x', N_TTY_ERROR_PARITY));
+	CHECK(n_tty_available(&g_ld) == RING_SIZE - 2U);
+	CHECK(n_tty_read(&g_ld, (uint8_t[8]){0}, 1U) == 1U);
+	CHECK(error_in('x', N_TTY_ERROR_PARITY));
+	CHECK(n_tty_receive_room(&g_ld) == 0U);
+
+	start("a doubled 377 is refused whole too", with_iflag(raw(), NXU_PARMRK));
+	{
+		char many[RING_SIZE];
+		memset(many, 'r', sizeof(many) - 1U);
+		many[sizeof(many) - 1U] = '\0';
+		CHECK(feed(many) == RING_SIZE - 1U);
+	}
+	CHECK(n_tty_receive(&g_ld, (const uint8_t[]){0xFFU}, 1U) == 0U);
+	CHECK(n_tty_available(&g_ld) == RING_SIZE - 1U);
+
+	start("a mark in a canonical line is erased byte by byte", cooked());
+	{
+		struct nxu_termios t = cooked();
+		t.c_iflag |= NXU_INPCK | NXU_PARMRK;
+		n_tty_set_termios(&g_ld, &t);
+	}
+	(void)feed("a");
+	CHECK(error_in('x', N_TTY_ERROR_PARITY));
+	(void)feed("\x7f\n");
+	CHECK(reads(64U, "a\377\0\n", 4U));
+}
+
 /* ---- randomized --------------------------------------------------------- */
 
 static uint32_t g_seed = 0x12345678U;
@@ -665,6 +792,9 @@ test_random(void)
 			uint32_t capacity = random_next() % sizeof(buffer);
 
 			CHECK(n_tty_read(&g_ld, buffer, capacity) <= capacity);
+		} else if (action < 13U && random_next() % 2U == 0U) {
+			(void)n_tty_receive_error(&g_ld, special[random_next() % sizeof(special)],
+									  (n_tty_error_t)(random_next() % 3U));
 		} else if (action < 13U) {
 			uint8_t bytes[16];
 			uint32_t count = random_next() % sizeof(bytes);
@@ -707,6 +837,7 @@ main(void)
 	test_signals();
 	test_raw_and_room();
 	test_output();
+	test_line_errors();
 	test_random();
 
 	if (g_failures != 0U) {

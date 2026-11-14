@@ -622,6 +622,46 @@ test_min_time(uint32_t a)
 	return quiet || fail("raw mode produced output");
 }
 
+/* Line errors a driver reports, through the core: a break, and a parity error marked. */
+static bool
+test_line_errors(uint32_t a)
+{
+	struct nxu_termios termios;
+	uint64_t count = 0ULL;
+	uint8_t buffer[8];
+
+	tty_termios_defaults(&termios);
+	termios.c_iflag |= NXU_BRKINT;
+	termios.c_lflag &= ~NXU_ECHO;
+	(void)tty_set_termios(g_loop.tty, &termios);
+	(void)tty_take_signals(g_loop.tty);
+
+	type("lost");
+	if (!tty_input_error(g_loop.tty, 0U, TTY_INPUT_BREAK)) return fail("a break was refused");
+	if (tty_take_signals(g_loop.tty) != (1U << NXU_SIGINT)) return fail("BRKINT did not ask for SIGINT");
+
+	type("kept\n");
+	if (vfs_read(&g_fd, a, buffer, sizeof(buffer), &count) != VFS_STATUS_OK || count != 5ULL ||
+		memcmp(buffer, "kept\n", 5U) != 0)
+		return fail("BRKINT did not flush the line being typed");
+
+	set_raw();
+	tty_get_termios(g_loop.tty, &termios);
+	termios.c_iflag = NXU_INPCK | NXU_PARMRK;
+	(void)tty_set_termios(g_loop.tty, &termios);
+
+	if (!tty_input_error(g_loop.tty, 'x', TTY_INPUT_PARITY) || !tty_input_error(g_loop.tty, 0U, TTY_INPUT_BREAK))
+		return fail("marked errors were refused");
+
+	type("\xff");
+	if (vfs_read(&g_fd, a, buffer, sizeof(buffer), &count) != VFS_STATUS_OK || count != 8ULL ||
+		memcmp(buffer, "\xff\0x\xff\0\0\xff\xff", 8U) != 0)
+		return fail("PARMRK marks");
+
+	set_raw();
+	return true;
+}
+
 /* One ioctl made by a thread, for the requests that sleep. */
 static struct {
 	uint32_t descriptor;
@@ -862,6 +902,75 @@ test_hangup(uint32_t *a, uint32_t *b)
 	return true;
 }
 
+/*
+ * Revoke: the files open now are cut off for good (a sleeping reader wakes
+ * to end of file, writes fail, requests say NOT_TTY, the terminal cannot be
+ * reached through them), the driver is closed as for a last close, and a
+ * new open finds a live terminal that the old files are no part of: closing
+ * them later does not close it.
+ */
+static bool
+test_revoke(uint32_t *a, uint32_t *b)
+{
+	uint64_t count = 0ULL;
+	uint32_t fresh;
+	uint32_t closes = g_loop.closes;
+	char buffer[8];
+	struct nxu_termios termios;
+
+	set_raw();
+	if (!reader_launch(*a)) return fail("reader did not block before the revoke");
+
+	tty_revoke(g_loop.tty);
+
+	if (!wait_until(&g_reader.done)) return fail("revoke did not wake the reader");
+	if (g_reader.status != VFS_STATUS_OK || g_reader.count != 0ULL)
+		return fail("a reader on a revoked file did not see end of file");
+	if (g_loop.closes != closes + 1U) return fail("revoke did not close the driver");
+
+	if (vfs_write(&g_fd, *b, "x", 1ULL, &count) != VFS_STATUS_IO_ERROR) return fail("write on a revoked file");
+	if (vfs_ioctl(&g_fd, *b, NXU_TIOCGETA, &termios) != VFS_STATUS_NOT_TTY) return fail("a revoked file is a terminal");
+	if (!level_is(*b, IOREADY_READ | IOREADY_HANGUP)) return fail("level of a revoked file");
+
+	file_t old_file = 0;
+
+	if (filedesc_get(&g_fd, *b, &old_file) != VFS_STATUS_OK) return fail("the revoked descriptor is gone");
+
+	tty_t reached = tty_from_file(old_file);
+
+	file_rele(old_file);
+	if (reached != TTY_NULL) {
+		tty_release(reached);
+		return fail("the terminal was reached through a revoked file");
+	}
+
+	/* A new open is the terminal's again, at once, though the old files are still open. */
+	if (vfs_open(&g_fd, TTY_TEST_PATH, VFS_OPEN_READ | VFS_OPEN_WRITE, &fresh) != VFS_STATUS_OK)
+		return fail("open after revoke");
+	set_raw();
+	if (vfs_write(&g_fd, fresh, "up", 2ULL, &count) != VFS_STATUS_OK || count != 2ULL)
+		return fail("write on a new file after revoke");
+	if (vfs_read(&g_fd, *a, buffer, sizeof(buffer), &count) != VFS_STATUS_OK || count != 0ULL)
+		return fail("a revoked file read the new session's input");
+	if (vfs_read(&g_fd, fresh, buffer, sizeof(buffer), &count) != VFS_STATUS_OK || count != 2ULL ||
+		memcmp(buffer, "up", 2U) != 0)
+		return fail("read on a new file after revoke");
+
+	/* The old files' closes are no last close: the new file goes on working. */
+	if (vfs_close(&g_fd, *a) != VFS_STATUS_OK || vfs_close(&g_fd, *b) != VFS_STATUS_OK)
+		return fail("close of revoked files");
+	if (g_loop.closes != closes + 1U) return fail("closing revoked files closed the driver");
+	if (vfs_write(&g_fd, fresh, "ok", 2ULL, &count) != VFS_STATUS_OK ||
+		vfs_read(&g_fd, fresh, buffer, sizeof(buffer), &count) != VFS_STATUS_OK || count != 2ULL)
+		return fail("the new file stopped working when the revoked ones closed");
+
+	*a = fresh;
+	if (vfs_open(&g_fd, TTY_TEST_PATH, VFS_OPEN_READ | VFS_OPEN_WRITE | VFS_OPEN_NONBLOCK, b) != VFS_STATUS_OK)
+		return fail("second open after revoke");
+
+	return true;
+}
+
 static bool
 test_unregister_detach(uint32_t a, uint32_t b, uint32_t baseline)
 {
@@ -920,9 +1029,9 @@ tty_test_run(void)
 	set_raw();
 
 	bool ok = test_names() && test_open_close(&a, &b) && test_basic_io(a, b) && test_blocked_reader(a, b) &&
-			  test_flow(a, b) && test_discipline(b) && test_min_time(a) && test_requests(a, b) &&
+			  test_flow(a, b) && test_discipline(b) && test_min_time(a) && test_line_errors(a) && test_requests(a, b) &&
 			  test_last_close(&a, &b) &&
-			  test_hangup(&a, &b) &&
+			  test_hangup(&a, &b) && test_revoke(&a, &b) &&
 			  test_unregister_detach(a, b, baseline);
 
 	/* Only after a pass is every thread known to have finished. */

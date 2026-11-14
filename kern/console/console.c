@@ -35,6 +35,8 @@ static uint32_t g_kconsole_history_head;
 static uint32_t g_kconsole_history_count;
 static uint64_t g_kconsole_history_sequence;
 static bool g_kconsole_line_start = true;
+/* The serial terminal's last output did not end its line (kconsole_serial_write). */
+static bool g_kconsole_serial_mid_line;
 static bool g_kconsole_timestamp_enabled = true;
 /*
  * Name of the function whose kprintf() is printing right now; it goes at the
@@ -239,6 +241,12 @@ kconsole_emit_timestamp(void)
 static void
 kconsole_begin_line(void)
 {
+	/* Off the serial terminal's unfinished line first, on the UART only, where it is. */
+	if (g_kconsole_serial_mid_line) {
+		uart_putc('\n');
+		g_kconsole_serial_mid_line = false;
+	}
+
 	if (g_kconsole_timestamp_enabled) kconsole_emit_timestamp();
 
 	if (g_kconsole_prefix != 0) {
@@ -249,6 +257,31 @@ kconsole_begin_line(void)
 	}
 
 	g_kconsole_line_start = false;
+}
+
+void
+kconsole_serial_write(const void *bytes, uint32_t count)
+{
+	if (bytes == 0 || count == 0U) return;
+
+	NXU_RLOCK_GUARD(&g_kconsole_lock);
+
+	const uint8_t *data = bytes;
+
+	for (uint32_t index = 0U; index < count; index++)
+		uart_put_byte(data[index]);
+
+	g_kconsole_serial_mid_line = data[count - 1U] != '\n';
+}
+
+bool
+kconsole_serial_set_line(const struct uart_line *line)
+{
+	if (line == 0) return false;
+
+	NXU_RLOCK_GUARD(&g_kconsole_lock);
+
+	return uart_set_line(line);
 }
 
 void

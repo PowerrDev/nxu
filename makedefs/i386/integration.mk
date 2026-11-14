@@ -42,12 +42,14 @@ I386_C_SOURCES += \
     kern/tests/tty_test.c \
     kern/tests/tty_loopback.c \
     kern/tests/pty_test.c \
+    kern/tests/serial_test.c \
     kern/tests/termios_process_test.c \
     kern/tty/tty.c \
     kern/tty/tty_ioctl.c \
     kern/tty/n_tty.c \
     kern/tty/tty_jobctl.c \
     kern/tty/pty.c \
+    kern/tty/serial.c \
     libk/crc32c.c \
     libk/sha256.c \
     libk/mp3.c \
@@ -58,6 +60,7 @@ I386_C_SOURCES += \
     vfs/file.c \
     vfs/jbd2.c \
     vfs/path.c \
+    vfs/pathname.c \
     vfs/ramfs.c \
     vfs/vfs.c \
     vfs/vfs_file.c \

@@ -338,8 +338,8 @@ tty_job_ioctl(tty_t tty, uint32_t command, void *argument, bool *handled)
 
 /*
  * /dev/tty is whichever terminal controls the opener's session: the open is
- * redirected to that terminal (devfs_clone_t), as a cloning device's would be,
- * so every later operation and the close reach the terminal itself.
+ * that terminal's own (tty_open_file), so the file is one of the terminal's
+ * like any other, revoked with them.
  */
 static vfs_status_t
 tty_dev_tty_open(void *context, uint32_t flags, devfs_clone_t *clone)
@@ -351,12 +351,7 @@ tty_dev_tty_open(void *context, uint32_t flags, devfs_clone_t *clone)
 
 	if (proc == 0 || !proc_job_get(proc, &job) || job.ctty == TTY_NULL) return VFS_STATUS_NO_DEVICE;
 
-	vfs_status_t status = tty_file_open(job.ctty, flags | VFS_OPEN_NOCTTY);
-
-	if (status == VFS_STATUS_OK) {
-		clone->operations = &g_tty_devfs_operations;
-		clone->context = job.ctty;
-	}
+	vfs_status_t status = tty_open_file(job.ctty, flags | VFS_OPEN_NOCTTY, clone);
 
 	/* The open file holds its own reference now. */
 	tty_release(job.ctty);

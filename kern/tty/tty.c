@@ -73,19 +73,27 @@ static uint32_t g_tty_count;
 static bool g_tty_initialized;
 
 static vfs_status_t tty_devfs_open(void *context, uint32_t flags, devfs_clone_t *clone);
-static void tty_devfs_close(void *context);
-static vfs_status_t tty_devfs_read(void *context, void *buffer, uint64_t size, uint32_t ioflags, uint64_t *read_size);
-static vfs_status_t tty_devfs_write(void *context, const void *buffer, uint64_t size, uint32_t ioflags,
-									uint64_t *written_size);
-static vfs_status_t tty_devfs_ioctl(void *context, uint32_t command, void *argument);
-static vfs_status_t tty_devfs_poll(void *context, uint32_t *ready, struct ioready **source);
+static void tty_file_close(void *context);
+static vfs_status_t tty_file_read(void *context, void *buffer, uint64_t size, uint32_t ioflags, uint64_t *read_size);
+static vfs_status_t tty_file_write(void *context, const void *buffer, uint64_t size, uint32_t ioflags,
+								   uint64_t *written_size);
+static vfs_status_t tty_file_ioctl(void *context, uint32_t command, void *argument);
+static vfs_status_t tty_file_poll(void *context, uint32_t *ready, struct ioready **source);
 
-const devfs_operations_t g_tty_devfs_operations = {.open = tty_devfs_open,
-												   .close = tty_devfs_close,
-												   .read = tty_devfs_read,
-												   .write = tty_devfs_write,
-												   .ioctl = tty_devfs_ioctl,
-												   .poll = tty_devfs_poll};
+const devfs_operations_t g_tty_devfs_operations = {.open = tty_devfs_open};
+
+const devfs_operations_t g_tty_file_operations = {.close = tty_file_close,
+												  .read = tty_file_read,
+												  .write = tty_file_write,
+												  .ioctl = tty_file_ioctl,
+												  .poll = tty_file_poll};
+
+/* A file of an earlier generation: revoked; t_lock held. */
+static bool
+tty_file_revoked_locked(const struct tty_file *file)
+{
+	return file->tf_generation != file->tf_tty->t_generation;
+}
 
 /* ---- queues ------------------------------------------------------------- */
 
@@ -668,11 +676,15 @@ tty_unregister(tty_t tty)
 
 /* ---- the driver's side -------------------------------------------------- */
 
-uint32_t
-tty_input(tty_t tty, const void *bytes, uint32_t count)
+/*
+ * tty_receive
+ *
+ * What tty_input and tty_input_error share: `count` bytes through the line
+ * discipline, or, with `error` set, one byte with that line error.
+ */
+static uint32_t
+tty_receive(tty_t tty, const uint8_t *bytes, uint32_t count, const n_tty_error_t *error)
 {
-	if (tty == TTY_NULL || bytes == 0 || count == 0U) return 0U;
-
 	uint64_t state = tty_lock(tty);
 
 	/* Nobody to read it, nobody ever will, or the receiver is off: taken and dropped, so the driver does not hold it back. */
@@ -682,7 +694,12 @@ tty_input(tty_t tty, const void *bytes, uint32_t count)
 	}
 
 	uint32_t received = tty->t_ldisc.received;
-	uint32_t taken = n_tty_receive(&tty->t_ldisc, bytes, count);
+	uint32_t taken;
+
+	if (error != 0)
+		taken = n_tty_receive_error(&tty->t_ldisc, bytes[0], *error) ? 1U : 0U;
+	else
+		taken = n_tty_receive(&tty->t_ldisc, bytes, count);
 
 	/* Refused, or full now: either way the driver hears when reading makes room. */
 	if (taken < count || n_tty_receive_room(&tty->t_ldisc) == 0U) tty->t_throttled = true;
@@ -698,6 +715,26 @@ tty_input(tty_t tty, const void *bytes, uint32_t count)
 	tty_run_deferred(tty, &deferred);
 
 	return taken;
+}
+
+uint32_t
+tty_input(tty_t tty, const void *bytes, uint32_t count)
+{
+	if (tty == TTY_NULL || bytes == 0 || count == 0U) return 0U;
+
+	return tty_receive(tty, bytes, count, 0);
+}
+
+bool
+tty_input_error(tty_t tty, uint8_t byte, tty_input_error_t error)
+{
+	if (tty == TTY_NULL) return false;
+
+	n_tty_error_t kind = error == TTY_INPUT_BREAK	 ? N_TTY_ERROR_BREAK
+						 : error == TTY_INPUT_PARITY ? N_TTY_ERROR_PARITY
+													 : N_TTY_ERROR_FRAMING;
+
+	return tty_receive(tty, &byte, 1U, &kind) == 1U;
 }
 
 uint32_t
@@ -776,10 +813,104 @@ tty_detach(tty_t tty)
 	tty_hangup_internal(tty, true);
 }
 
+/*
+ * What the last close leaves behind, which a new first open must not find:
+ * queued input and output, flow control, signals not yet taken; t_lock held.
+ */
+static void
+tty_forget_session_state_locked(tty_t tty)
+{
+	tty->t_throttled = false;
+	tty->t_stopped = false;
+	tty->t_ldisc.stopped = false;
+	tty->t_signals = 0U;
+	tty->t_deferred = 0U;
+	n_tty_flush_input(&tty->t_ldisc);
+	tty_queue_flush(&tty->t_output);
+}
+
+/*
+ * tty_revoke
+ *
+ * Every file open on the terminal stops being its file, and the terminal
+ * is as if they had all been closed: see tty.h. An open or last close in
+ * progress is waited out first, so the file it makes or ends belongs to one
+ * generation or the other, never both.
+ */
+void
+tty_revoke(tty_t tty)
+{
+	if (tty == TTY_NULL) return;
+
+	uint64_t state = tty_lock(tty);
+
+	while (tty->t_transition && !tty->t_detached) {
+		uint32_t seq = waitq_seq(&tty->t_state);
+
+		tty_unlock(tty, state);
+		(void)waitq_block_deadline(&tty->t_state, seq, false, WAITQ_NO_DEADLINE);
+		state = tty_lock(tty);
+	}
+
+	bool open = tty->t_opens != 0U;
+
+	tty->t_generation++;
+	tty->t_opens = 0U;
+
+	if (open) {
+		tty->t_transition = true;
+		tty_forget_session_state_locked(tty);
+	}
+
+	/* Sleepers on the old files wake to find them revoked. */
+	waitq_wake_all(&tty->t_readers);
+	waitq_wake_all(&tty->t_writers);
+
+	bool call = open && tty->t_driver->close != 0 && !tty->t_detached;
+
+	tty_unlock(tty, state);
+
+	ioready_post(&tty->t_ready, IOREADY_HANGUP | IOREADY_READ | IOREADY_WRITE);
+
+	if (call) tty->t_driver->close(tty, tty->t_driver_context);
+
+	if (open) {
+		state = tty_lock(tty);
+		tty->t_transition = false;
+		if (!tty->t_detached) tty->t_hungup = false;
+		waitq_wake_all(&tty->t_state);
+		tty_unlock(tty, state);
+	}
+
+	/* As a hangup does: the session loses the terminal, and its leader hears. */
+	tty_hangup_session(tty);
+}
+
+bool
+tty_revoke_vnode(vnode_t vnode, vfs_status_t *status)
+{
+	const devfs_operations_t *operations;
+	void *context;
+
+	if (!devfs_device_of(vnode, &operations, &context) || operations != &g_tty_devfs_operations) return false;
+
+	tty_t tty = context;
+
+	if (!tty_reference(tty)) {
+		*status = VFS_STATUS_NO_DEVICE;
+		return true;
+	}
+
+	tty_revoke(tty);
+	tty_release(tty);
+	*status = VFS_STATUS_OK;
+	return true;
+}
+
 /* ---- the files' side ---------------------------------------------------- */
 
 /*
- * tty_devfs_open
+ * tty_file_open
  *
  * The file's reference first, so nothing below can lose the terminal. Then
  * wait out a driver open or close in progress; then either join the files
@@ -787,8 +918,8 @@ tty_detach(tty_t tty)
  * keeping everyone else out until it answers. A terminal whose first open
  * finds it hung up by a previous session starts afresh.
  */
-vfs_status_t
-tty_file_open(tty_t tty, uint32_t flags)
+static vfs_status_t
+tty_file_open(tty_t tty, uint32_t flags, uint32_t *generation)
 {
 	(void)flags;
 
@@ -816,6 +947,7 @@ tty_file_open(tty_t tty, uint32_t flags)
 
 	if (tty->t_opens != 0U) {
 		tty->t_opens++;
+		*generation = tty->t_generation;
 		tty_unlock(tty, state);
 		return VFS_STATUS_OK;
 	}
@@ -832,6 +964,7 @@ tty_file_open(tty_t tty, uint32_t flags)
 	if (status == VFS_STATUS_OK && tty->t_detached) status = VFS_STATUS_NO_DEVICE;
 	if (status == VFS_STATUS_OK) tty->t_opens = 1U;
 
+	*generation = tty->t_generation;
 	tty->t_transition = false;
 	waitq_wake_all(&tty->t_state);
 	tty_unlock(tty, state);
@@ -841,13 +974,32 @@ tty_file_open(tty_t tty, uint32_t flags)
 	return status;
 }
 
-/* The devfs open: the file's open, then the controlling terminal, if this opener is to acquire one. */
+vfs_status_t
+tty_open_file(tty_t tty, uint32_t flags, devfs_clone_t *clone)
+{
+	struct tty_file *file = kmalloc(sizeof(*file));
+
+	if (file == 0) return VFS_STATUS_NO_MEMORY;
+
+	vfs_status_t status = tty_file_open(tty, flags, &file->tf_generation);
+
+	if (status != VFS_STATUS_OK) {
+		(void)kfree(file);
+		return status;
+	}
+
+	/* The reference tty_file_open took is the file's from now on. */
+	file->tf_tty = tty;
+	clone->operations = &g_tty_file_operations;
+	clone->context = file;
+	return VFS_STATUS_OK;
+}
+
+/* The open of a terminal's name: the file, then the controlling terminal, if this opener is to acquire one. */
 static vfs_status_t
 tty_devfs_open(void *context, uint32_t flags, devfs_clone_t *clone)
 {
-	(void)clone;
-
-	vfs_status_t status = tty_file_open(context, flags);
+	vfs_status_t status = tty_open_file(context, flags, clone);
 
 	if (status == VFS_STATUS_OK) tty_job_open(context, flags);
 
@@ -861,23 +1013,44 @@ tty_from_file(file_t file)
 	void *context;
 
 	if (file == 0 || file->f_type == FILE_TYPE_SOCKET || file->f_vnode == 0) return TTY_NULL;
-	if (!devfs_device_of(file->f_vnode, &operations, &context) || operations != &g_tty_devfs_operations) return TTY_NULL;
+	if (!devfs_device_of(file->f_vnode, &operations, &context) || operations != &g_tty_file_operations) return TTY_NULL;
 
-	return tty_reference(context) ? context : TTY_NULL;
+	/* A revoked file is no way to the terminal any more. */
+	struct tty_file *open = context;
+	tty_t tty = open->tf_tty;
+	uint64_t state = tty_lock(tty);
+	bool revoked = tty_file_revoked_locked(open);
+
+	tty_unlock(tty, state);
+
+	return !revoked && tty_reference(tty) ? tty : TTY_NULL;
 }
 
 /*
- * tty_devfs_close
+ * tty_file_close
  *
  * Called once per file, after every other operation on it has returned. The
  * last close flushes both queues and closes the driver; an open that arrives
  * meanwhile waits for it (t_transition) and then opens the driver again.
  */
 static void
-tty_devfs_close(void *context)
+tty_file_close(void *context)
 {
-	tty_t tty = context;
+	struct tty_file *file = context;
+	tty_t tty = file->tf_tty;
+	uint32_t generation = file->tf_generation;
+
+	(void)kfree(file);
+
 	uint64_t state = tty_lock(tty);
+	bool revoked = generation != tty->t_generation;
+
+	/* A revoked file was let go of when it was revoked: only its reference is left. */
+	if (revoked) {
+		tty_unlock(tty, state);
+		tty_release(tty);
+		return;
+	}
 
 	if (tty->t_opens > 1U) {
 		tty->t_opens--;
@@ -888,13 +1061,7 @@ tty_devfs_close(void *context)
 
 	tty->t_opens = 0U;
 	tty->t_transition = true;
-	tty->t_throttled = false;
-	tty->t_stopped = false;
-	tty->t_ldisc.stopped = false;
-	tty->t_signals = 0U;
-	tty->t_deferred = 0U;
-	n_tty_flush_input(&tty->t_ldisc);
-	tty_queue_flush(&tty->t_output);
+	tty_forget_session_state_locked(tty);
 
 	bool call = tty->t_driver->close != 0 && !tty->t_detached;
 
@@ -942,7 +1109,7 @@ tty_read_ready(const tty_t tty, uint32_t capacity, bool timed_out)
 }
 
 /*
- * tty_devfs_read
+ * tty_file_read
  *
  * Wait until the mode says the read can finish (tty_read_ready), then take
  * from the line discipline: one line at most in canonical mode, up to
@@ -951,13 +1118,22 @@ tty_read_ready(const tty_t tty, uint32_t capacity, bool timed_out)
  * would have to wait for the first byte. The wait is interruptible.
  */
 static vfs_status_t
-tty_devfs_read(void *context, void *buffer, uint64_t size, uint32_t ioflags, uint64_t *read_size)
+tty_file_read(void *context, void *buffer, uint64_t size, uint32_t ioflags, uint64_t *read_size)
 {
-	tty_t tty = context;
+	struct tty_file *file = context;
+	tty_t tty = file->tf_tty;
 
 	*read_size = 0ULL;
 
 	if (size == 0ULL) return VFS_STATUS_OK;
+
+	/* Revoked: end of file, as Darwin's dead vnodes read. */
+	uint64_t state = tty_lock(tty);
+	bool revoked = tty_file_revoked_locked(file);
+
+	tty_unlock(tty, state);
+
+	if (revoked) return VFS_STATUS_OK;
 
 	vfs_status_t allowed = tty_job_check(tty, TTY_JOB_READ);
 
@@ -967,14 +1143,15 @@ tty_devfs_read(void *context, void *buffer, uint64_t size, uint32_t ioflags, uin
 	uint64_t deadline = WAITQ_NO_DEADLINE;
 	uint32_t received_mark = 0U;
 	bool timed_out = false;
-	uint64_t state = tty_lock(tty);
+
+	state = tty_lock(tty);
 
 	while (!tty_read_ready(tty, capacity, timed_out)) {
 		const n_tty_t *ldisc = &tty->t_ldisc;
 		bool canonical = (ldisc->termios.c_lflag & NXU_ICANON) != 0U;
 		uint32_t available = canonical ? 0U : n_tty_available(ldisc);
 
-		if (tty->t_hungup) break;
+		if (tty->t_hungup || tty_file_revoked_locked(file)) break;
 
 		if ((ioflags & VNODE_IO_NONBLOCK) != 0U) {
 			if (available != 0U) break;
@@ -1012,6 +1189,12 @@ tty_devfs_read(void *context, void *buffer, uint64_t size, uint32_t ioflags, uin
 			timed_out = true;
 	}
 
+	/* Revoked while it waited: the input is the next session's, not this file's. */
+	if (tty_file_revoked_locked(file)) {
+		tty_unlock(tty, state);
+		return VFS_STATUS_OK;
+	}
+
 	uint32_t taken = n_tty_read(&tty->t_ldisc, buffer, capacity);
 	bool unthrottle = tty->t_throttled && n_tty_receive_room(&tty->t_ldisc) != 0U && !tty->t_detached &&
 					  tty->t_driver->unthrottle != 0;
@@ -1028,7 +1211,7 @@ tty_devfs_read(void *context, void *buffer, uint64_t size, uint32_t ioflags, uin
 }
 
 /*
- * tty_devfs_write
+ * tty_file_write
  *
  * Output processing into the output queue, as much as fits, starting the
  * driver after each step and waiting for room while there is more. A write
@@ -1037,23 +1220,32 @@ tty_devfs_read(void *context, void *buffer, uint64_t size, uint32_t ioflags, uin
  * taken and discarded.
  */
 static vfs_status_t
-tty_devfs_write(void *context, const void *buffer, uint64_t size, uint32_t ioflags, uint64_t *written_size)
+tty_file_write(void *context, const void *buffer, uint64_t size, uint32_t ioflags, uint64_t *written_size)
 {
-	tty_t tty = context;
+	struct tty_file *file = context;
+	tty_t tty = file->tf_tty;
 	const uint8_t *bytes = buffer;
 	uint64_t done = 0ULL;
 	vfs_status_t status = VFS_STATUS_OK;
 
 	*written_size = 0ULL;
 
+	uint64_t state = tty_lock(tty);
+	bool revoked = tty_file_revoked_locked(file);
+
+	tty_unlock(tty, state);
+
+	/* Revoked: writes fail, as on a dead vnode. */
+	if (revoked) return VFS_STATUS_IO_ERROR;
+
 	vfs_status_t allowed = tty_job_check(tty, TTY_JOB_WRITE);
 
 	if (allowed != VFS_STATUS_OK) return allowed;
 
-	uint64_t state = tty_lock(tty);
+	state = tty_lock(tty);
 
 	while (done < size) {
-		if (tty->t_hungup) {
+		if (tty->t_hungup || tty_file_revoked_locked(file)) {
 			status = VFS_STATUS_IO_ERROR;
 			break;
 		}
@@ -1106,29 +1298,39 @@ tty_devfs_write(void *context, const void *buffer, uint64_t size, uint32_t iofla
 	return done != 0ULL ? VFS_STATUS_OK : status;
 }
 
+/* A revoked file is no terminal: every request is NOT_TTY, so isatty says so too. */
 static vfs_status_t
-tty_devfs_ioctl(void *context, uint32_t command, void *argument)
+tty_file_ioctl(void *context, uint32_t command, void *argument)
 {
-	return tty_ioctl(context, command, argument);
+	struct tty_file *file = context;
+	tty_t tty = file->tf_tty;
+	uint64_t state = tty_lock(tty);
+	bool revoked = tty_file_revoked_locked(file);
+
+	tty_unlock(tty, state);
+
+	return revoked ? VFS_STATUS_NOT_TTY : tty_ioctl(tty, command, argument);
 }
 
 /*
- * tty_devfs_poll
+ * tty_file_poll
  *
  * Readable when the line discipline has something a read can take (a whole
- * line in canonical mode) or once hung up (a read then returns end of file);
- * writable with room in the output queue and the line up.
+ * line in canonical mode) or once hung up or revoked (a read then returns
+ * end of file); writable with room in the output queue and the line up.
  */
 static vfs_status_t
-tty_devfs_poll(void *context, uint32_t *ready, struct ioready **source)
+tty_file_poll(void *context, uint32_t *ready, struct ioready **source)
 {
-	tty_t tty = context;
+	struct tty_file *file = context;
+	tty_t tty = file->tf_tty;
 	uint32_t mask = 0U;
 	uint64_t state = tty_lock(tty);
+	bool down = tty->t_hungup || tty_file_revoked_locked(file);
 
-	if (n_tty_readable(&tty->t_ldisc) || tty->t_hungup) mask |= IOREADY_READ;
-	if (!tty->t_hungup && tty_queue_room(&tty->t_output) != 0U) mask |= IOREADY_WRITE;
-	if (tty->t_hungup) mask |= IOREADY_HANGUP;
+	if (n_tty_readable(&tty->t_ldisc) || down) mask |= IOREADY_READ;
+	if (!down && tty_queue_room(&tty->t_output) != 0U) mask |= IOREADY_WRITE;
+	if (down) mask |= IOREADY_HANGUP;
 
 	tty_unlock(tty, state);
 

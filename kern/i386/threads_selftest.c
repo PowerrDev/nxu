@@ -800,16 +800,17 @@ typedef struct {
 	const char *name;
 	void (*entry)(void);
 	uint32_t vector;
+	uint32_t signal;
 } selftest_fault_t;
 
 static bool
 test_ring3_faults(void)
 {
 	static const selftest_fault_t faults[] = {
-		{"ring3-cli", i386_selftest_user_fault_cli, T_GENERAL_PROTECTION},
-		{"ring3-ud2", i386_selftest_user_fault_ud2, T_INVALID_OPCODE},
-		{"ring3-div0", i386_selftest_user_fault_div0, T_DIVIDE_ERROR},
-		{"ring3-segment", i386_selftest_user_fault_segment, T_GENERAL_PROTECTION}};
+		{"ring3-cli", i386_selftest_user_fault_cli, T_GENERAL_PROTECTION, NXU_SIGSEGV},
+		{"ring3-ud2", i386_selftest_user_fault_ud2, T_INVALID_OPCODE, NXU_SIGILL},
+		{"ring3-div0", i386_selftest_user_fault_div0, T_DIVIDE_ERROR, NXU_SIGFPE},
+		{"ring3-segment", i386_selftest_user_fault_segment, T_GENERAL_PROTECTION, NXU_SIGSEGV}};
 
 	for (uint32_t index = 0U; index < sizeof(faults) / sizeof(faults[0]); index++) {
 		selftest_process_t process;
@@ -819,8 +820,8 @@ test_ring3_faults(void)
 		SELFTEST_CHECK(selftest_spawn(faults[index].name, faults[index].entry, 0U, &process),
 					   "spawn a faulting process");
 		SELFTEST_CHECK(selftest_reap(&process, &status), "the faulting process is terminated and reaped");
-		SELFTEST_CHECK(status == (uint64_t)(I386_USER_FAULT_STATUS_BASE | faults[index].vector),
-					   "exit status records the fault vector");
+		SELFTEST_CHECK(status == NXU_EXIT_KILLED_SIGNAL(faults[index].signal),
+					   "the faulting process is killed by the fault's signal");
 		SELFTEST_CHECK(thread_count() == baseline, "the faulting thread is gone");
 		SELFTEST_CHECK(current_thread() == sched_bootstrap_thread(), "the kernel carries on");
 	}
