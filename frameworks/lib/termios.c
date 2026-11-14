@@ -11,7 +11,8 @@
  * happens here is only the translation from POSIX's names and argument
  * conventions to the kernel's, and the two pieces POSIX defines in terms of
  * other calls: TCSASOFT, and tcflow's TCIOFF and TCION, which send the stop
- * and start characters down the line.
+ * and start characters down the line. The pseudo-terminal calls are here too,
+ * being requests on a terminal's other end.
  */
 #include <termios.h>
 
@@ -224,4 +225,44 @@ isatty(int descriptor)
 	struct termios termios;
 
 	return tcgetattr(descriptor, &termios) == 0 ? 1 : 0;
+}
+
+int
+posix_openpt(int flags)
+{
+	int64_t master = nxu_open("/dev/ptmx", (uint64_t)(uint32_t)flags);
+
+	return master < 0 ? -1 : (int)master;
+}
+
+int
+grantpt(int master)
+{
+	return termios_request(master, NXU_TIOCPTYGRANT, 0);
+}
+
+int
+unlockpt(int master)
+{
+	return termios_request(master, NXU_TIOCPTYUNLK, 0);
+}
+
+int
+ptsname_r(int master, char *buffer, size_t size)
+{
+	nxu_ptyname_t name;
+
+	if (buffer == 0 || termios_request(master, NXU_TIOCPTYGNAME, &name) != 0) return -1;
+
+	size_t length = 0;
+
+	while (length < sizeof(name.name) && name.name[length] != '\0')
+		length++;
+
+	if (length == sizeof(name.name) || length >= size) return -1;
+
+	for (size_t index = 0; index <= length; index++)
+		buffer[index] = name.name[index];
+
+	return 0;
 }

@@ -208,4 +208,24 @@ int tcgetsid(int descriptor);
 /* 1 when `descriptor` is a terminal, 0 when it is not (POSIX puts this in <unistd.h>). */
 int isatty(int descriptor);
 
+/*
+ * Pseudo-terminals (POSIX puts these in <stdlib.h>), on Darwin's requests.
+ *
+ * posix_openpt
+ *     Open a new pair's master; `flags` are NXU_O_* (NXU_O_READ |
+ *     NXU_O_WRITE | NXU_O_NOCTTY, normally). The descriptor, or -1.
+ *
+ * grantpt / unlockpt
+ *     Give the slave to the caller's real user, and let it be opened.
+ *
+ * ptsname_r
+ *     The slave's path, into `buffer` of `size` bytes (NXU_PTY_NAME_MAX is
+ *     always enough). 0, or -1 if it does not fit. There is no ptsname: it
+ *     would need static storage, and nothing here has any.
+ */
+int posix_openpt(int flags);
+int grantpt(int master);
+int unlockpt(int master);
+int ptsname_r(int master, char *buffer, size_t size);
+
 #endif
