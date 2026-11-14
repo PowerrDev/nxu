@@ -4,7 +4,7 @@
 /*
  * sudo -- run a single command as root. The caller must be listed in
  * /etc/sudoers and authenticates with their own password (root is not asked);
- * sudo then becomes root and runs the command, relaying the terminal to it.
+ * sudo then becomes root and runs the command on the caller's terminal.
  *
  * Switching to root needs privilege, so sudo must be installed setuid-root
  * (chmod 4755), exactly like su.
@@ -35,24 +35,6 @@ basename_of(const char *path)
 	for (const char *p = path; *p != '\0'; p++)
 		if (*p == '/') base = p + 1;
 	return base;
-}
-
-static int64_t
-read_line(char *buffer, uint32_t capacity)
-{
-	uint32_t length = 0U;
-	while (length + 1U < capacity) {
-		char c;
-		int64_t count = nxu_read(0ULL, &c, 1ULL);
-		if (count <= 0) {
-			if (length == 0U) return -1;
-			break;
-		}
-		if (c == '\n' || c == '\r') break;
-		buffer[length++] = c;
-	}
-	buffer[length] = '\0';
-	return (int64_t)length;
 }
 
 /* Is `name` listed in /etc/sudoers? One name per line; '#' starts a comment. */
@@ -129,12 +111,19 @@ main(uint64_t argc, const char *const *argv)
 
 	/* A non-root caller proves it is really them with their own password. */
 	if (nxu_getuid() != 0) {
-		say("[sudo] password for ");
-		say(caller.pw_name);
-		say(": ");
+		char prompt[96];
+		uint32_t used = 0;
+		const char *parts[] = {"[sudo] password for ", caller.pw_name, ": "};
+
+		for (uint32_t part = 0; part < 3; part++) {
+			for (const char *c = parts[part]; *c != '\0' && used + 1U < sizeof(prompt); c++)
+				prompt[used++] = *c;
+		}
+
+		prompt[used] = '\0';
+
 		char password[128];
-		int64_t length = read_line(password, sizeof(password));
-		say("\n");
+		int64_t length = nxu_read_password(prompt, password, sizeof(password));
 		if (length < 0 || !nxu_authenticate(caller.pw_name, password)) {
 			say("sudo: authentication failure\n");
 			return 1;
@@ -155,28 +144,22 @@ main(uint64_t argc, const char *const *argv)
 	for (uint64_t i = 2ULL; i < argc && count < NXU_EXEC_ARGV_MAX; i++) child_argv[count++] = argv[i];
 	child_argv[count] = 0;
 
-	int64_t stream = -1;
-	int64_t child = nxu_spawn_io(path, child_argv, &stream);
-	if (child < 0) {
+	/*
+	 * The command runs on sudo's own descriptors, in this job: on a terminal
+	 * ^C and ^Z reach it from the line discipline. sudo only waits, ignoring
+	 * the keyboard's interrupt and quit itself, and ends as the command does.
+	 */
+	(void)nxu_signal(NXU_SIGINT, (void (*)(int))NXU_SIG_IGN);
+	(void)nxu_signal(NXU_SIGQUIT, (void (*)(int))NXU_SIG_IGN);
+
+	int64_t command = nxu_spawn_here(path, child_argv);
+
+	if (command < 0) {
 		say("sudo: ");
 		say(argv[1]);
 		say(": command not found\n");
 		return 1;
 	}
 
-	uint64_t status = 0ULL;
-	int64_t result;
-	do {
-		char buffer[512];
-		int64_t n = nxu_read_poll((uint32_t)stream, buffer, sizeof(buffer));
-		if (n > 0) (void)nxu_write(1ULL, buffer, (uint64_t)n);
-
-		n = nxu_read_poll(0U, buffer, sizeof(buffer));
-		if (n > 0) (void)nxu_write((uint64_t)stream, buffer, (uint64_t)n);
-
-		result = nxu_waitpid((uint64_t)child, &status);
-		if (result == -NXU_SYS_E_AGAIN) (void)nxu_sleep_us(1000ULL);
-	} while (result == -NXU_SYS_E_AGAIN);
-
-	return (int)(status & 0xFFULL);
+	return nxu_wait_as_own(command) < 0 ? 1 : 0;
 }

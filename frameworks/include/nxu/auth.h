@@ -63,4 +63,17 @@ int nxu_pwsalt(uint8_t *salt);
  */
 int nxu_shadow_set(const char *name, const char *crypt);
 
+/*
+ * nxu_read_password
+ *
+ * Show `prompt` and read one line without echoing it, as Darwin's
+ * readpassphrase does: on the controlling terminal (/dev/tty) when there is
+ * one, else on standard input and output. Echo is off only for the read; the
+ * terminal's settings are put back before returning, also when ^C, ^\ or ^Z
+ * cuts the read short, after which that signal is sent again so it has the
+ * effect it would have had. Not a terminal: the line is read as it comes.
+ * Returns the line's length (without the newline), or -1.
+ */
+int64_t nxu_read_password(const char *prompt, char *buffer, uint32_t capacity);
+
 #endif

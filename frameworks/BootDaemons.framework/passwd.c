@@ -25,24 +25,6 @@ say(const char *text)
 	(void)nxu_write(1ULL, text, length);
 }
 
-static int64_t
-read_line(char *buffer, uint32_t capacity)
-{
-	uint32_t length = 0U;
-	while (length + 1U < capacity) {
-		char c;
-		int64_t count = nxu_read(0ULL, &c, 1ULL);
-		if (count <= 0) {
-			if (length == 0U) return -1;
-			break;
-		}
-		if (c == '\n' || c == '\r') break;
-		buffer[length++] = c;
-	}
-	buffer[length] = '\0';
-	return (int64_t)length;
-}
-
 int
 main(uint64_t argc, const char *const *argv)
 {
@@ -67,24 +49,19 @@ main(uint64_t argc, const char *const *argv)
 			say("passwd: you may only change your own password\n");
 			return 1;
 		}
-		say("Current password: ");
 		char current[128];
-		int64_t length = read_line(current, sizeof(current));
-		say("\n");
+		int64_t length = nxu_read_password("Current password: ", current, sizeof(current));
 		if (length < 0 || !nxu_authenticate(caller.pw_name, current)) {
 			say("passwd: authentication failure\n");
 			return 1;
 		}
 	}
 
-	say("New password: ");
 	char first[128];
-	int64_t first_len = read_line(first, sizeof(first));
-	say("\n");
-	say("Retype new password: ");
+	int64_t first_len = nxu_read_password("New password: ", first, sizeof(first));
 	char second[128];
-	(void)read_line(second, sizeof(second));
-	say("\n");
+
+	if (nxu_read_password("Retype new password: ", second, sizeof(second)) < 0) second[0] = '\0';
 
 	if (first_len <= 0) {
 		say("passwd: an empty password is not allowed\n");

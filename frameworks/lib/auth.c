@@ -9,6 +9,9 @@
 
 #ifndef NXU_AUTH_HOST
 #include <nxu/syscall.h>
+#include <termios.h>
+
+#include <stdbool.h>
 #endif
 
 #include <sha256.h>
@@ -374,4 +377,102 @@ nxu_shadow_set(const char *name, const char *crypt)
 	(void)nxu_close((uint64_t)wfd);
 	return ok ? 0 : -1;
 }
+#endif
+
+#ifndef NXU_AUTH_HOST
+
+/* The signals that can cut a password read short from the keyboard, and what the program had for each. */
+static const uint32_t g_password_signals[] = {NXU_SIGINT, NXU_SIGQUIT, NXU_SIGTSTP, NXU_SIGHUP, NXU_SIGTERM};
+
+#define PASSWORD_SIGNAL_COUNT (sizeof(g_password_signals) / sizeof(g_password_signals[0]))
+
+static volatile uint32_t g_password_signal;
+
+static void
+password_signal(int signal)
+{
+	g_password_signal = (uint32_t)signal;
+}
+
+static void
+password_write(int64_t descriptor, const char *text)
+{
+	(void)nxu_write((uint64_t)descriptor, text, auth_strlen(text));
+}
+
+int64_t
+nxu_read_password(const char *prompt, char *buffer, uint32_t capacity)
+{
+	if (buffer == 0 || capacity == 0) return -1;
+
+	int64_t terminal = nxu_open("/dev/tty", NXU_O_READ | NXU_O_WRITE);
+	int64_t input = terminal >= 0 ? terminal : 0;
+	int64_t output = terminal >= 0 ? terminal : 1;
+	struct termios saved;
+	bool quiet = tcgetattr((int)input, &saved) == 0;
+	nxu_sigaction_t previous[PASSWORD_SIGNAL_COUNT];
+
+	/* Caught, not restarted: a read the signal interrupts returns, and the terminal is put back first. */
+	g_password_signal = 0;
+
+	for (uint32_t index = 0; index < PASSWORD_SIGNAL_COUNT; index++) {
+		nxu_sigaction_t action = {.handler = (uintptr_t)password_signal,
+								  .restorer = (uintptr_t)nxu_sigreturn_trampoline};
+
+		(void)nxu_sigaction(g_password_signals[index], &action, &previous[index]);
+	}
+
+	if (quiet) {
+		struct termios silent = saved;
+
+		silent.c_lflag &= ~(tcflag_t)(ECHO | ECHONL);
+		quiet = tcsetattr((int)input, TCSAFLUSH, &silent) == 0;
+	}
+
+	if (prompt != 0) password_write(output, prompt);
+
+	uint32_t length = 0;
+	bool ended = false;
+
+	while (g_password_signal == 0) {
+		char character;
+		int64_t count = nxu_read((uint64_t)input, &character, 1);
+
+		if (count == -NXU_SYS_E_INTERRUPTED) continue;
+
+		if (count <= 0) {
+			ended = length == 0;
+			break;
+		}
+
+		if (character == '\n' || character == '\r') break;
+		if (length + 1 < capacity) buffer[length++] = character;
+	}
+
+	buffer[length] = 0;
+
+	if (quiet) {
+		(void)tcsetattr((int)input, TCSAFLUSH, &saved);
+		password_write(output, "\n");
+	}
+
+	for (uint32_t index = 0; index < PASSWORD_SIGNAL_COUNT; index++)
+		(void)nxu_sigaction(g_password_signals[index], &previous[index], 0);
+
+	if (terminal >= 0) (void)nxu_close((uint64_t)terminal);
+
+	uint32_t signal = g_password_signal;
+
+	/* The signal's own effect, now that the terminal is as it was: usually the end of the program. */
+	if (signal != 0) {
+		for (uint32_t index = 0; index < capacity; index++)
+			buffer[index] = 0;
+
+		(void)nxu_kill((uint64_t)nxu_getpid(), signal);
+		return -1;
+	}
+
+	return ended ? -1 : (int64_t)length;
+}
+
 #endif
