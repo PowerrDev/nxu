@@ -534,10 +534,12 @@ socket_read(socket_t s, void *buffer, uint64_t length)
 	while (s->ring_count == 0U && !s->peer_closed) {
 		/* Sequence taken under the lock, after the condition was checked: a wakeup made
 		 * after the unlock (the waker changes the condition under this same lock, then wakes)
-		 * moves it and the sleep below returns at once instead of missing it. */
+		 * moves it and the sleep below returns at once instead of missing it. The sleep is
+		 * interruptible: nothing has been read yet, so a signal simply ends the call (and
+		 * the system call layer restarts it if the handler asked for that). */
 		uint32_t seq = waitq_seq(&s->waiters);
 		nxu_spin_unlock(&s->lock);
-		(void)waitq_block_seq(&s->waiters, seq, false);
+		if (!waitq_block_seq(&s->waiters, seq, true)) return SOCKET_INTERRUPTED;
 		nxu_spin_lock(&s->lock);
 	}
 
@@ -569,6 +571,7 @@ socket_write(socket_t s, const void *buffer, uint64_t length)
 
 	const uint8_t *src = (const uint8_t *)buffer;
 	uint64_t written = 0ULL;
+	bool interrupted = false;
 
 	nxu_spin_lock(&target->lock);
 
@@ -582,7 +585,14 @@ socket_write(socket_t s, const void *buffer, uint64_t length)
 			 * moves it and the sleep below returns at once instead of missing it. */
 			uint32_t seq = waitq_seq(&target->waiters);
 			nxu_spin_unlock(&target->lock);
-			(void)waitq_block_seq(&target->waiters, seq, false);
+
+			/* A signal ends the write: with the count so far, or as interrupted if there is none. */
+			if (!waitq_block_seq(&target->waiters, seq, true)) {
+				interrupted = true;
+				nxu_spin_lock(&target->lock);
+				break;
+			}
+
 			nxu_spin_lock(&target->lock);
 			continue;
 		}
@@ -600,6 +610,7 @@ socket_write(socket_t s, const void *buffer, uint64_t length)
 	if (written > 0ULL) ioready_post(&target->ready, IOREADY_READ);
 
 	if (written > 0ULL) return (int64_t)written;
+	if (interrupted) return SOCKET_INTERRUPTED;
 
 	return length == 0ULL ? 0 : -1;
 }

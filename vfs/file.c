@@ -437,6 +437,7 @@ file_read(file_t file, void *buffer, uint64_t size, uint32_t ioflags, uint64_t *
 
 		/* socket_read_poll: -2 is "nothing yet, the peer is still there". */
 		if (result == -2) return VFS_STATUS_WOULD_BLOCK;
+		if (result == SOCKET_INTERRUPTED) return VFS_STATUS_INTERRUPTED;
 		if (result < 0) return VFS_STATUS_IO_ERROR;
 		*read_size = (uint64_t)result;
 		return VFS_STATUS_OK;
@@ -474,6 +475,7 @@ file_write(file_t file, const void *buffer, uint64_t size, uint32_t ioflags, uin
 
 	if (file->f_type == FILE_TYPE_SOCKET) {
 		int64_t result = socket_write(file->f_socket, buffer, size);
+		if (result == SOCKET_INTERRUPTED) return VFS_STATUS_INTERRUPTED;
 		if (result < 0) return VFS_STATUS_IO_ERROR;
 		*written_size = (uint64_t)result;
 		return VFS_STATUS_OK;

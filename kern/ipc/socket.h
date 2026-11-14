@@ -74,9 +74,12 @@ bool socket_accept(socket_t listener, bool block, socket_t *result);
 /*
  * Reads up to length bytes already written by socket's peer, blocking while
  * the receive ring is empty and the peer hasn't closed. Returns 0 once the
- * peer has closed and every byte it sent has been drained (EOF), or -1 if
- * socket itself is not a connected end.
+ * peer has closed and every byte it sent has been drained (EOF), -1 if
+ * socket itself is not a connected end, or SOCKET_INTERRUPTED if a signal
+ * cut the wait short before any byte arrived.
  */
+#define SOCKET_INTERRUPTED (-3)
+
 /* Nonblocking read: -2 means empty with a live peer; zero means EOF. */
 int64_t socket_read_poll(socket_t socket, void *buffer, uint64_t length);
 
@@ -85,8 +88,8 @@ int64_t socket_read(socket_t socket, void *buffer, uint64_t length);
 /*
  * Writes up to length bytes into the peer's receive ring, blocking while it
  * is full. Returns -1 if socket is not connected or its peer has already
- * closed (possibly after a nonzero partial write, whose count is returned
- * instead).
+ * closed, and SOCKET_INTERRUPTED if a signal cut a wait for room short; in
+ * either case a nonzero partial write returns its count instead.
  */
 int64_t socket_write(socket_t socket, const void *buffer, uint64_t length);
 
