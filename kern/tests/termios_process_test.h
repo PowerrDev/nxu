@@ -21,4 +21,7 @@ bool termios_process_test(void);
 /* Run restarttest on a loopback terminal at /dev/ttyrestart the same way. */
 bool restart_process_test(void);
 
+/* Run ptytest, which makes its own pseudo-terminal and drives a shell on it, the same way. */
+bool pty_process_test(void);
+
 #endif

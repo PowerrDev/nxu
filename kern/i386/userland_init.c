@@ -97,7 +97,7 @@ userland_run_process_test(const char *name)
 	else if (strcmp(name, "tty") == 0)
 		ok = tty_test_run();
 	else if (strcmp(name, "pty") == 0)
-		ok = pty_test_run();
+		ok = pty_test_run() && pty_process_test();
 	else if (strcmp(name, "termios") == 0)
 		ok = termios_process_test();
 	else if (strcmp(name, "restart") == 0)

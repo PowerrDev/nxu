@@ -107,6 +107,8 @@ run_case tty yes "process-test=tty qemu-exit=1" $STATUS_CLEAN \
 
 run_case pty yes "process-test=pty qemu-exit=1" $STATUS_CLEAN \
   "pty_init: initialized pty successfully" \
+  "ptytest: a shell on a pseudo-terminal edits, runs, interrupts, stops and continues jobs" \
+  "pty_process_test: a shell on a pseudo-terminal edits, runs, interrupts, stops and continues jobs" \
   "userland_run_process_test: pty process test passed"
 
 run_case termios yes "process-test=termios qemu-exit=1" $STATUS_CLEAN \

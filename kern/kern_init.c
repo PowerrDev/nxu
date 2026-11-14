@@ -848,6 +848,8 @@ kern_start_scheduler(const driverkit_config_t *drivers)
 	kprintf_for(termios_process_test, "passed\n");
 	if (!restart_process_test()) kern_fail("restart_process_test: failed");
 	kprintf_for(restart_process_test, "passed\n");
+	if (!pty_process_test()) kern_fail("pty_process_test: failed");
+	kprintf_for(pty_process_test, "passed\n");
 	kprintf("halting (test build)\n");
 	for (;;)
 		__asm__ volatile("wfe");

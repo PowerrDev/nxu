@@ -11,6 +11,9 @@
  *                ttytest.c, stty.c), on /dev/ttytest
  *   restarttest  system calls interrupted by signals, restarted or not
  *                (restarttest.c), on /dev/ttyrestart
+ *   ptytest      a shell on a pseudo-terminal, driven from the master as
+ *                Terminal.app drives it (ptytest.c); it makes its own
+ *                terminal, so it gets no loopback one
  *
  * The terminal is the loopback test driver (kern/tests/tty_loopback.h), open
  * to everyone: the programs run as an ordinary user holding no capabilities,
@@ -44,7 +47,9 @@ static tty_loopback_t g_terminal;
  * Put a loopback terminal at /dev/`device`, open to everyone, run the program
  * `name` from CoreServices on it as an ordinary user, and take the terminal
  * down again the way a driver that goes away does. True when the program
- * exited 0 and the terminal was then freed (every file on it closed).
+ * exited 0 and the terminal was then freed (every file on it closed). With
+ * no `device`, the program runs without one, and every terminal it made must
+ * be gone once it has exited.
  */
 static bool
 run_on_terminal(const char *name, const char *device)
@@ -59,12 +64,14 @@ run_on_terminal(const char *name, const char *device)
 	memcpy(path, CORESERVICES, prefix);
 	memcpy(path + prefix, name, length + 1U);
 
-	if (!tty_loopback_create(&g_terminal)) {
+	if (device == 0) {
+		g_terminal.tty = TTY_NULL;
+	} else if (!tty_loopback_create(&g_terminal)) {
 		kprintf("cannot create the terminal for %s\n", name);
 		return false;
 	}
 
-	if (!tty_register(g_terminal.tty, device, 0U, 0U, 0666U)) {
+	if (device != 0 && !tty_register(g_terminal.tty, device, 0U, 0U, 0666U)) {
 		kprintf("cannot register /dev/%s\n", device);
 		tty_release(g_terminal.tty);
 		return false;
@@ -91,11 +98,13 @@ run_on_terminal(const char *name, const char *device)
 		ok = false;
 	}
 
-	tty_unregister(g_terminal.tty);
-	tty_detach(g_terminal.tty);
-	tty_release(g_terminal.tty);
+	if (device != 0) {
+		tty_unregister(g_terminal.tty);
+		tty_detach(g_terminal.tty);
+		tty_release(g_terminal.tty);
+	}
 
-	if (ok && (!g_terminal.released || tty_count() != terminals)) {
+	if (ok && ((device != 0 && !g_terminal.released) || tty_count() != terminals)) {
 		kprintf("the terminal of %s was not freed: a file on it stayed open\n", name);
 		ok = false;
 	}
@@ -118,5 +127,14 @@ restart_process_test(void)
 	if (!run_on_terminal("restarttest", "ttyrestart")) return false;
 
 	kprintf("interrupted system calls are restarted, or not, as SA_RESTART and the call say\n");
+	return true;
+}
+
+bool
+pty_process_test(void)
+{
+	if (!run_on_terminal("ptytest", 0)) return false;
+
+	kprintf("a shell on a pseudo-terminal edits, runs, interrupts, stops and continues jobs\n");
 	return true;
 }
