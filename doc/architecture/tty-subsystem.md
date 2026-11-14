@@ -1,6 +1,6 @@
 # TTY, PTY and termios: audit and plan
 
-Status: **Phase 0 (audit) complete and approved. Phase 1 (infrastructure, M1 to M7) complete. Phases 2 to 4 (TTY core, line discipline, termios) built. Next: Phase 5, job control.**
+Status: **Phase 0 (audit) complete and approved. Phase 1 (infrastructure, M1 to M7) complete. Phases 2 to 5 (TTY core, line discipline, termios, job control) built and committed. Phase 6 (PTY, and Terminal.app, nzh, su, sudo and passwd moved onto it) built, not yet committed. Next: Phase 7, hardware backends, or Phase 8, hardening.**
 
 This document is the prerequisite audit, dependency report and roadmap for a
 kernel terminal subsystem (TTY core, line discipline, termios, PTYs, job
@@ -776,12 +776,126 @@ hangup, session-leader exit, `/dev/tty`.
 
 **Phase 6: PTY.** `/dev/ptmx`, slave nodes, lock/grant, hangup on either
 side closing; then Terminal.app and nzh move to it and the password prompt
-stops echoing.
+stops echoing. Built: see "Phase 6 as built" below.
 
 **Phase 7: hardware backends.** UART receive, `/dev/console`, serial TTY.
 
 **Phase 8: hardening.** Lock audit, SMP stress, ABI check on both
 architectures, limitations written down.
+
+### Phase 6 as built
+
+**Prerequisites.**
+
+- Socket reads and writes sleep interruptibly (`kern/ipc/socket.c`):
+  `SOCKET_INTERRUPTED`, mapped to `VFS_STATUS_INTERRUPTED` by `vfs/file.c`,
+  so the system call layer restarts them under `SA_RESTART` as it does a
+  terminal's. A write that had moved bytes returns the short count.
+- **An interruptible sleep no longer starts with a signal pending**
+  (`waitq_sleep`, `kern/sched_prism/waitq.c`). Before, a signal posted to a
+  thread that was not asleep yet (in user mode between two system calls, or
+  on its way to the sleep) was only marked pending, and the sleep that
+  followed waited for something else to end it. Callers that knew
+  (`wait`, SAP, crash) tested `signal_pending_for` first; the terminal,
+  sockets and the PTY did not. The test is now made once, in `waitq_sleep`,
+  after the thread is on the queue, so a signal posted after it still finds
+  the thread there. Found by `ptytest`: ^C typed right after a job printed
+  its prompt was lost about one run in two; 0 in 21 since.
+- Ctrl with a letter or `@ [ \ ] ^ _` is folded into the control
+  character in the desktop's key events (`ui_service_poll_key`,
+  `drivers/video/ui_service_login.c`). No app received ^C before; the
+  terminal's `character == 3` test could never fire.
+
+**Kernel** (`kern/tty/pty.c`, `pty.h`).
+
+- `/dev/ptmx` is a cloning device: each open makes a pair, the opener's file
+  being the master (a nameless devfs node), the slave registered as
+  `/dev/ttysNNN`, owned by the opener's real user, group `tty` (4, added to
+  `/etc/group`), mode 0620. At most `PTY_MAX` (32) pairs.
+- Darwin's requests (`termios_defs.h`): `TIOCPTYGNAME`, `TIOCPTYGRANT`,
+  `TIOCPTYUNLK`. The slave refuses to open (DENIED) until unlocked. The
+  master also takes `TIOCGETA`/`TIOCSETA*`, `TIOCFLUSH`, `TIOC[GS]WINSZ`
+  (the emulator's window size, and so `SIGWINCH`), and `FIONREAD`; it is no
+  one's controlling terminal, so job-control requests are NOT_TTY there.
+- The master has a ring of its own, filled from the terminal's output queue
+  by the driver's start operation (one mover at a time). That keeps output
+  the slave wrote just before its last close, which the terminal discards at
+  that close; a full ring leaves output in the terminal's queue, so the
+  slave's writers still wait for the master.
+- The slave's last close: the master reads what is left, then end of file,
+  and readiness reports a hangup. The master's close: the slave is detached
+  (its session gets SIGHUP), its name goes, and the pair is freed with the
+  slave's last file.
+
+**User space.**
+
+- `<termios.h>`: `posix_openpt`, `grantpt`, `unlockpt`, `ptsname_r`.
+- `nxu_spawn_pty` (`spawn_io.c`): a pair, the child leading a new session
+  with the slave as descriptors 0-2 and controlling terminal, in the
+  foreground, with the window size set. `nxu_spawn_here` (descriptors 0-2
+  and group inherited) and `nxu_wait_as_own` (end as the child ended) for
+  su and sudo.
+- **Terminal.app** spawns nzh with `nxu_spawn_pty` and is only an emulator
+  (its socket path and local line editor are gone): keys go to the master
+  as a terminal keyboard sends them (Return CR, Backspace DEL, cursor keys
+  CSI), and output is drawn with `\r`, `\b`, `\t`, `ESC [ K`, `ESC [ J`
+  (0 and 2), `ESC [ H`, `ESC [ n A/B/C/D`. The cursor row is kept apart from
+  the bottom row, so it can move up into the screen; it wraps when a
+  character is written past the last column, as terminals do.
+- **nzh**, on a terminal: a line editor of its own (`line_edit.c`: raw mode
+  for the length of a line, history, cursor keys, ^A ^E ^U ^K ^W ^L ^D, Tab
+  completion; a line wider than the terminal is redrawn across its rows,
+  using the width from `TIOCGWINSZ`; Escape alone is told from a cursor key
+  by a tenth-of-a-second `VTIME` read), the terminal's settings put back
+  before a command runs; each
+  command a job in its own group, in the foreground from its spawn
+  (`NXU_SPAWN_SETPGROUP | NXU_SPAWN_SETFG`); waits with `WAIT_UNTRACED`;
+  takes the foreground back after, restoring its saved settings if the job
+  stopped or was killed; `jobs`, `fg` and `bg`, background jobs reaped (and
+  a reader stopped by `SIGTTIN` reported) before each prompt. It ignores
+  `SIGQUIT`, `SIGTSTP`, `SIGTTIN`, `SIGTTOU`; ^C at the prompt abandons the
+  line. Not on a terminal it reads plain lines and runs commands on its own
+  descriptors without job control; the per-child socket relay and in-band
+  ^C byte are gone, and both architectures spawn the same way.
+- **Passwords**: `nxu_read_password` (`frameworks/lib/auth.c`), Darwin's
+  `readpassphrase` in essence: on `/dev/tty`, echo off for the read, the
+  settings restored even when ^C, ^\, ^Z, SIGHUP or SIGTERM cuts it short,
+  then that signal sent again. su, sudo and passwd use it. su and sudo run
+  the shell or command on their own descriptors (`nxu_spawn_here`), in
+  their job, ignoring the keyboard's interrupt and quit, and end as it ends;
+  the socket relay is gone.
+- The arm64 disk (`$(DISK)` in the top-level Makefile) now installs su, sudo
+  and passwd setuid root and rewrites every inode's owner to root, as the
+  i386 disk always did; before, su could not change identity on arm64.
+
+**Tests.**
+
+- `pty_test` (kernel, `kern/tests/pty_test.c`): pairs and names, slave
+  attributes, locked until unlocked, typing and echo, `FIONREAD`, echo off
+  from the master, the window size, a blocked master woken, a stream larger
+  than the ring and the queue together, the slave's last words after its
+  close then end of file and hangup, the master's close hanging the slave
+  up, every pair freed. i386: `test-i386-boot` case `pty`; arm64: the `tty`
+  row.
+- `ptytest` (user program, run by `pty_process_test` as an ordinary user):
+  starts nzh on a pseudo-terminal and drives the master as Terminal.app does
+  (14 checks): a command and its output, a corrected line, ^C to a job, ^Z
+  then `fg`, the history, a no-echo read, su refusing a wrong password
+  without showing it, ^C at su's prompt leaving echo on, `su user` and
+  `whoami` on the same terminal, `bg` with the job stopped again by
+  `SIGTTIN`, Escape alone, editing a line wider than the terminal, and
+  `exit` giving end of file and status 0. On failure it prints what the
+  master read. Passes on i386 (`pty` case) and arm64 (`tty` row).
+
+Desktop: Terminal.app on the PTY checked by hand on the i386 desktop
+(2026-11-13): editing keys, history, ^C, ^Z with `fg`/`bg`, wide lines,
+silent password prompts in su, sudo and passwd, ^D and `exit`. A desktop
+that keeps an `ssd.img` from before the change still runs the old userland;
+remove it (and `system-template.img`, `disk.img`) to pick the new one up.
+
+Not done: `TIOCPKT`/`TIOCREMOTE`; `ttyname`; `cmd &` (the parser takes no
+operators); ^Z during `log stream`, which runs inside nzh, which ignores
+SIGTSTP.
 
 ## 8. Issues found on the way, tracked separately
 
@@ -1066,7 +1180,7 @@ What Phase 1 built for each, and the choices already made.
   passes its tests.
 - Before this phase, make socket sleeps interruptible, or Ctrl-C will not
   reach a process blocked on a socket until the socket wakes it (M5's known
-  limit).
+  limit). (Done; see "Phase 6 as built".)
 
 **Phase 7, hardware backends.**
 
