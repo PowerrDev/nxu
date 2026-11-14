@@ -78,7 +78,6 @@ socket_process_test(void)
 		return false;
 	}
 
-	kprintf("two-process streaming socket round trip passed (listen, connect, accept, stream > \n"
-		   "4096 bytes, reply, reap)");
+	kprintf("two-process streaming socket round trip passed (listen, connect, accept, stream > 4096 bytes, reply, reap)\n");
 	return true;
 }
