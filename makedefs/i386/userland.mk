@@ -290,7 +290,7 @@ $(I386_USER_BUILD)/ping $(I386_USER_BUILD)/ifconfig $(I386_USER_BUILD)/terminalt
 	$(QUIET_PRINT) "LD" "$@"
 	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
 
-$(I386_USER_BUILD)/nzh: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/frameworks/Terminal.framework/nzh.o $(I386_USER_BUILD)/frameworks/Terminal.framework/shell_parse.o $(I386_USER_BUILD)/frameworks/Terminal.framework/netutil.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
+$(I386_USER_BUILD)/nzh: $(I386_USER_COMMON_OBJECTS) $(I386_USER_BUILD)/frameworks/Terminal.framework/nzh.o $(I386_USER_BUILD)/frameworks/Terminal.framework/shell_parse.o $(I386_USER_BUILD)/frameworks/Terminal.framework/line_edit.o $(I386_USER_BUILD)/frameworks/Terminal.framework/netutil.o $(I386_USER_RUNTIME) makedefs/user-i386.ld
 	$(QUIET_PRINT) "LD" "$@"
 	$(Q)$(LD) $(I386_USER_LDFLAGS) $(filter %.o,$^) $(I386_USER_RUNTIME) -o $@
 

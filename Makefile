@@ -520,6 +520,7 @@ USER_C_SOURCES := \
     frameworks/Terminal.framework/terminaltest.c \
     frameworks/Terminal.framework/nzh.c \
     frameworks/Terminal.framework/shell_parse.c \
+    frameworks/Terminal.framework/line_edit.c \
     frameworks/Terminal.framework/netutil.c \
     frameworks/Terminal.framework/ping.c \
     frameworks/Terminal.framework/ifconfig.c \
@@ -846,7 +847,7 @@ $(USER_BUILD)/ping $(USER_BUILD)/ifconfig $(USER_BUILD)/terminaltest $(USER_BUIL
 	$(QUIET_PRINT) "LD" "$@"
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
-$(USER_BUILD)/nzh: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/Terminal.framework/nzh.o $(USER_BUILD)/frameworks/Terminal.framework/shell_parse.o $(USER_BUILD)/frameworks/Terminal.framework/netutil.o
+$(USER_BUILD)/nzh: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/Terminal.framework/nzh.o $(USER_BUILD)/frameworks/Terminal.framework/shell_parse.o $(USER_BUILD)/frameworks/Terminal.framework/line_edit.o $(USER_BUILD)/frameworks/Terminal.framework/netutil.o
 	$(QUIET_PRINT) "LD" "$@"
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 

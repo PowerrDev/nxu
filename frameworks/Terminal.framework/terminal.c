@@ -2,16 +2,28 @@
  * Copyright (c) 2026 NXU Project. All rights reserved.
  *
  * A desktop terminal for nzh with macOS-style tabs. Each tab owns an nzh shell
- * over a local stream socket (canonical input, redirected child output). The GUI
- * reads every tab's shell each loop so background tabs keep running; only the
- * active tab's screen is drawn. A tab bar (active pill, flat tabs with dividers,
- * hover-reveal close, a busy spinner and a "+") sits below the titlebar.
+ * on a pseudo-terminal of its own: the tab holds the master, and the shell's
+ * session has the slave as its controlling terminal. Keys go to the master as
+ * the bytes a terminal keyboard sends (cursor keys as escape sequences); the
+ * kernel's line discipline does the echo and the signal characters, and the
+ * shell does its line editing. What the master reads is drawn as it comes,
+ * with carriage return, backspace, tab and the few escape sequences the shell
+ * uses (erase to end of line, clear, home, cursor left and right).
+ *
+ * The screen is a ring of TERMINAL_HISTORY_ROWS rows. `bottom` is the last
+ * row written (the screen is the TERMINAL_ROWS rows ending there), `row` and
+ * `column` the cursor, which can be moved up into the screen (ESC [ A) and
+ * comes back down with newlines; a row is new, and cleared, only when the
+ * cursor goes past the bottom. Like any terminal, it wraps when a character
+ * is written past the last column, not when the last column is filled.
+ *
+ * The GUI reads every tab's shell each loop so background tabs keep running;
+ * only the active tab's screen is drawn. A tab bar (active pill, flat tabs with
+ * dividers, hover-reveal close, a busy spinner and a "+") sits below the
+ * titlebar.
  */
-#include "shell.h"
 
-#if defined(__i386__)
 #include <nxu/spawn_io.h>
-#endif
 
 #include "terminal_font.h"
 #include <nxu/string.h>
@@ -22,7 +34,6 @@
 #define TERMINAL_HISTORY_ROWS 256U
 #define TERMINAL_WIDTH 672U
 #define TERMINAL_HEIGHT 416U
-#define TERMINAL_COMMAND_HISTORY 32U
 
 /* The tab bar occupies the top of the content area; the grid sits below it. */
 #define TAB_BAR_HEIGHT 37U
@@ -52,21 +63,14 @@ typedef struct {
 	int64_t shell_pid;
 	int64_t stream;
 
+	/* The pseudo-terminal master: keys are written to it, the shell's output read from it. */
 	char rows[TERMINAL_HISTORY_ROWS][TERMINAL_COLUMNS];
 	uint64_t row;
+	uint64_t bottom;
 	uint32_t column;
 	uint32_t scroll;
 
-	char line[NZH_LINE_MAX];
-	uint32_t length;
-	uint32_t cursor;
-
-	char history[TERMINAL_COMMAND_HISTORY][NZH_LINE_MAX];
-	uint32_t history_count;
-	uint32_t history_position;
-	char saved_line[NZH_LINE_MAX];
-
-	char escape[8];
+	char escape[16];
 	uint32_t escape_length;
 	bool escaping;
 
@@ -86,7 +90,6 @@ static int32_t g_hover_tab = -1;  /* tab under the pointer, or -1 */
 static bool g_hover_close = false; /* pointer is over that tab's close affordance */
 static bool g_hover_plus = false;
 
-static char g_socket_name[64];
 
 static terminal_tab_t *
 active_tab(void)
@@ -98,24 +101,132 @@ active_tab(void)
 /* Terminal emulation (per tab).                                             */
 /* ------------------------------------------------------------------------- */
 
+/* The row the cursor is on, ready to be written into. */
+static char *
+terminal_row(terminal_tab_t *tab)
+{
+	return tab->rows[tab->row % TERMINAL_HISTORY_ROWS];
+}
+
+/* The first row on screen: the TERMINAL_ROWS rows end at the bottom one. */
+static uint64_t
+terminal_screen_top(const terminal_tab_t *tab)
+{
+	return tab->bottom >= TERMINAL_ROWS - 1 ? tab->bottom - (TERMINAL_ROWS - 1) : 0;
+}
+
+/* Down a row, to column 0: within the screen, or onto a new, empty bottom row. */
+static void
+terminal_newline(terminal_tab_t *tab)
+{
+	tab->row++;
+	tab->column = 0;
+
+	if (tab->row > tab->bottom) {
+		tab->bottom = tab->row;
+		memset(terminal_row(tab), ' ', TERMINAL_COLUMNS);
+	}
+}
+
+/*
+ * One finished escape sequence: CSI with at most one number, then a letter.
+ * What is not understood is dropped.
+ */
+static void
+terminal_escape(terminal_tab_t *tab)
+{
+	const char *sequence = tab->escape;
+	uint32_t length = tab->escape_length;
+
+	if (length < 2 || sequence[0] != '[') return;
+
+	uint32_t number = 0;
+	bool given = false;
+
+	for (uint32_t index = 1; index + 1 < length; index++) {
+		if (sequence[index] < '0' || sequence[index] > '9') continue;
+
+		number = number * 10U + (uint32_t)(sequence[index] - '0');
+		given = true;
+	}
+
+	uint32_t count = given && number != 0 ? number : 1;
+
+	switch (sequence[length - 1]) {
+	case 'K':
+		/* Erase from the cursor to the end of the line (0, the default), or the whole line (2). */
+		if (number == 2) {
+			memset(terminal_row(tab), ' ', TERMINAL_COLUMNS);
+		} else if (tab->column < TERMINAL_COLUMNS) {
+			memset(terminal_row(tab) + tab->column, ' ', TERMINAL_COLUMNS - tab->column);
+		}
+		break;
+
+	case 'J':
+		if (number == 2) {
+			/* The whole screen, and with it the scrollback. */
+			memset(tab->rows, ' ', sizeof(tab->rows));
+			tab->row = 0;
+			tab->bottom = 0;
+			tab->column = 0;
+			tab->scroll = 0;
+		} else if (number == 0) {
+			/* From the cursor to the end of the screen: the rest of this row, and every row below it goes. */
+			if (tab->column < TERMINAL_COLUMNS)
+				memset(terminal_row(tab) + tab->column, ' ', TERMINAL_COLUMNS - tab->column);
+
+			tab->bottom = tab->row;
+		}
+		break;
+
+	case 'H':
+		/* Home: the top left of what is on screen. */
+		tab->row = terminal_screen_top(tab);
+		tab->column = 0;
+		break;
+
+	case 'A':
+		tab->row = tab->row >= terminal_screen_top(tab) + count ? tab->row - count : terminal_screen_top(tab);
+		if (tab->column == TERMINAL_COLUMNS) tab->column = TERMINAL_COLUMNS - 1;
+		break;
+
+	case 'B':
+		tab->row = tab->row + count <= tab->bottom ? tab->row + count : tab->bottom;
+		if (tab->column == TERMINAL_COLUMNS) tab->column = TERMINAL_COLUMNS - 1;
+		break;
+
+	case 'C':
+		tab->column = tab->column + count < TERMINAL_COLUMNS ? tab->column + count : TERMINAL_COLUMNS - 1;
+		break;
+
+	case 'D':
+		tab->column = tab->column > count ? tab->column - count : 0;
+		break;
+
+	default:
+		break;
+	}
+}
+
 static void
 terminal_append(terminal_tab_t *tab, char character)
 {
+	g_dirty = true;
+
 	if (tab->escaping) {
 		if (tab->escape_length + 1 < sizeof(tab->escape)) {
 			tab->escape[tab->escape_length++] = character;
 			tab->escape[tab->escape_length] = 0;
 		}
 
-		if ((character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z') ||
-			tab->escape_length + 1 == sizeof(tab->escape)) {
-			if (nxu_streq(tab->escape, "[2J")) {
-				memset(tab->rows, ' ', sizeof(tab->rows));
-				tab->row = 0;
-				tab->column = 0;
-				tab->scroll = 0;
-			}
+		bool final = (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z') ||
+					 character == '~' || tab->escape_length + 1 == sizeof(tab->escape);
 
+		/* ESC followed by anything but [ is a two-byte sequence. */
+		if (tab->escape_length == 1 && character != '[') final = true;
+
+		if (final) {
+			terminal_escape(tab);
 			tab->escaping = false;
 			tab->escape_length = 0;
 		}
@@ -123,36 +234,44 @@ terminal_append(terminal_tab_t *tab, char character)
 		return;
 	}
 
-	if (character == '\033') {
+	switch (character) {
+	case '\033':
 		tab->escaping = true;
 		tab->escape_length = 0;
 		return;
+
+	case '\r':
+		tab->column = 0;
+		return;
+
+	case '\b':
+		if (tab->column > 0) tab->column--;
+		return;
+
+	case '\a':
+		return;
+
+	case '\t':
+		do {
+			terminal_append(tab, ' ');
+		} while (tab->column % 8U != 0 && tab->column < TERMINAL_COLUMNS);
+		return;
+
+	default:
+		break;
 	}
 
-	if (character == '\r') {
-		tab->column = 0;
+	if (character == '\n') {
+		terminal_newline(tab);
 		return;
 	}
 
-	if (character == '\n' || tab->column == TERMINAL_COLUMNS) {
-		tab->row++;
-		tab->column = 0;
-		memset(tab->rows[tab->row % TERMINAL_HISTORY_ROWS], ' ', TERMINAL_COLUMNS);
-	}
+	if ((uint8_t)character < 32) return;
 
-	if (character != '\n' && (uint8_t)character >= 32) {
-		tab->rows[tab->row % TERMINAL_HISTORY_ROWS][tab->column++] = character;
-	}
+	/* The wrap a full row was waiting for. */
+	if (tab->column == TERMINAL_COLUMNS) terminal_newline(tab);
 
-	g_dirty = true;
-}
-
-static void
-terminal_text(terminal_tab_t *tab, const char *text)
-{
-	while (*text != 0) {
-		terminal_append(tab, *text++);
-	}
+	terminal_row(tab)[tab->column++] = character;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -392,14 +511,11 @@ draw_content(terminal_tab_t *tab)
 {
 	fill_rect(0, (int32_t)CONTENT_TOP, (int32_t)TERMINAL_WIDTH, (int32_t)TERMINAL_HEIGHT, COLOR_TERM_BG);
 
-	uint64_t last = tab->row >= tab->scroll ? tab->row - tab->scroll : 0;
-	if (tab->scroll == 0) {
-		last += (tab->column + tab->length) / TERMINAL_COLUMNS;
-	}
-
+	/* The screen, or `scroll` rows further back into the scrollback. */
+	uint64_t last = tab->bottom >= tab->scroll ? tab->bottom - tab->scroll : 0;
 	uint64_t first = last >= TERMINAL_ROWS - 1 ? last - TERMINAL_ROWS + 1 : 0;
 
-	for (uint32_t row = 0; row < TERMINAL_ROWS && first + row <= last && first + row <= tab->row; row++) {
+	for (uint32_t row = 0; row < TERMINAL_ROWS && first + row <= last; row++) {
 		const char *text = tab->rows[(first + row) % TERMINAL_HISTORY_ROWS];
 
 		for (uint32_t column = 0; column < TERMINAL_COLUMNS; column++) {
@@ -408,31 +524,15 @@ draw_content(terminal_tab_t *tab)
 		}
 	}
 
-	if (tab->scroll == 0) {
-		for (uint32_t index = 0; index <= tab->length; index++) {
-			uint32_t position = tab->column + index;
-			uint64_t row = tab->row - first + position / TERMINAL_COLUMNS;
-			uint32_t column = position % TERMINAL_COLUMNS;
+	/* The cursor block, over the character under it; past the last column it stays on the last. */
+	if (tab->row < first || tab->row > last) return;
 
-			if (row >= TERMINAL_ROWS) {
-				break;
-			}
+	uint32_t column = tab->column < TERMINAL_COLUMNS ? tab->column : TERMINAL_COLUMNS - 1;
+	int32_t cx = 16 + (int32_t)(column * CELL_W);
+	int32_t cy = (int32_t)CONTENT_TOP + 16 + (int32_t)((tab->row - first) * CELL_H);
 
-			int32_t cx = 16 + (int32_t)(column * CELL_W);
-			int32_t cy = (int32_t)CONTENT_TOP + 16 + (int32_t)(row * CELL_H);
-
-			if (index < tab->length) {
-				terminal_glyph(cx, cy, (uint8_t)tab->line[index], COLOR_INPUT);
-			}
-
-			if (index == tab->cursor) {
-				fill_rect(cx, cy, (int32_t)CELL_W, (int32_t)CELL_H, COLOR_INPUT);
-				if (index < tab->length) {
-					terminal_glyph(cx, cy, (uint8_t)tab->line[index], COLOR_TERM_BG);
-				}
-			}
-		}
-	}
+	fill_rect(cx, cy, (int32_t)CELL_W, (int32_t)CELL_H, COLOR_INPUT);
+	terminal_glyph(cx, cy, (uint8_t)terminal_row(tab)[column], COLOR_TERM_BG);
 }
 
 static void
@@ -450,213 +550,94 @@ terminal_draw(uint32_t connection)
 }
 
 /* ------------------------------------------------------------------------- */
-/* Input editing (active tab).                                               */
+/* Keys (active tab).                                                        */
 /* ------------------------------------------------------------------------- */
 
-static void
-terminal_recall(terminal_tab_t *tab, bool previous)
-{
-	if (tab->history_count == 0) {
-		return;
-	}
-
-	if (tab->history_position == tab->history_count) {
-		memcpy(tab->saved_line, tab->line, sizeof(tab->line));
-	}
-
-	if (previous && tab->history_position > 0) {
-		tab->history_position--;
-	} else if (!previous && tab->history_position < tab->history_count) {
-		tab->history_position++;
-	}
-
-	memcpy(tab->line,
-		   tab->history_position == tab->history_count ? tab->saved_line
-													   : tab->history[tab->history_position % TERMINAL_COMMAND_HISTORY],
-		   sizeof(tab->line));
-	tab->length = nxu_strlen(tab->line);
-	tab->cursor = tab->length;
-}
-
-static void
-terminal_complete(terminal_tab_t *tab)
-{
-	for (uint32_t index = 0; index < tab->length; index++) {
-		if (tab->line[index] == ' ') {
-			return;
-		}
-	}
-
-	int64_t descriptor = nxu_open("/Volumes/mainOS/System/Library/CoreServices", NXU_O_READ);
-
-	if (descriptor < 0) {
-		return;
-	}
-
-	nxu_dirent_t entry;
-	char match[NZH_LINE_MAX] = {0};
-	uint32_t matches = 0;
-
-	while (nxu_readdir(descriptor, &entry) > 0) {
-		uint32_t index = 0;
-
-		while (index < tab->length && entry.name[index] == tab->line[index]) {
-			index++;
-		}
-
-		if (index == tab->length && entry.name[0] != '.' && nxu_strlen(entry.name) + 2 < sizeof(match)) {
-			memcpy(match, entry.name, nxu_strlen(entry.name) + 1);
-			matches++;
-		}
-	}
-
-	(void)nxu_close(descriptor);
-
-	if (matches == 1) {
-		tab->length = nxu_strlen(match);
-		memcpy(tab->line, match, tab->length);
-		tab->line[tab->length++] = ' ';
-		tab->line[tab->length] = 0;
-		tab->cursor = tab->length;
-	}
-}
-
-/* Returns false if the tab's shell connection is gone (the tab should close). */
+/*
+ * A key: the bytes a terminal keyboard sends, written to the master. Return
+ * is CR and Backspace is DEL, as the line discipline expects; the cursor
+ * keys are the usual CSI sequences. False when the shell's side is gone (the
+ * tab should close).
+ */
 static bool
 terminal_key(terminal_tab_t *tab, const nxu_ui_message_t *message)
 {
 	uint32_t key = message->button;
 	uint32_t character = message->character;
+	const char *sequence = 0;
+	char byte;
 
-	if (character == 3) {
-#if defined(__i386__)
-		char interrupt = 3;
-		(void)nxu_write(tab->stream, &interrupt, 1);
-#else
-		(void)nxu_kill(tab->shell_pid, NXU_SIGINT);
-#endif
-		tab->length = 0;
-		tab->cursor = 0;
-		tab->line[0] = 0;
-		terminal_text(tab, "^C\n");
-	} else if (key == 103 || key == 108) {
-		terminal_recall(tab, key == 103);
-	} else if (key == 105 && tab->cursor > 0) {
-		tab->cursor--;
-	} else if (key == 106 && tab->cursor < tab->length) {
-		tab->cursor++;
-	} else if (key == 102) {
-		tab->cursor = 0;
-	} else if (key == 107) {
-		tab->cursor = tab->length;
-	} else if ((key == 14 || character == 8 || character == 127) && tab->cursor > 0) {
-		memmove(tab->line + tab->cursor - 1, tab->line + tab->cursor, tab->length - tab->cursor + 1);
-		tab->cursor--;
-		tab->length--;
-	} else if (key == 111 && tab->cursor < tab->length) {
-		memmove(tab->line + tab->cursor, tab->line + tab->cursor + 1, tab->length - tab->cursor);
-		tab->length--;
-	} else if (key == 15 || character == '\t') {
-		terminal_complete(tab);
-	} else if (key == 28 || character == '\n' || character == '\r') {
-		tab->line[tab->length] = 0;
-		terminal_text(tab, tab->line);
-		terminal_append(tab, '\n');
-
-		if (tab->length != 0) {
-			if (tab->history_count == TERMINAL_COMMAND_HISTORY) {
-				memmove(tab->history[0], tab->history[1], sizeof(tab->history) - sizeof(tab->history[0]));
-				tab->history_count--;
-			}
-			memcpy(tab->history[tab->history_count++], tab->line, tab->length + 1);
-		}
-
-		tab->history_position = tab->history_count;
-		tab->line[tab->length++] = '\n';
-		if (nxu_write(tab->stream, tab->line, tab->length) != (int64_t)tab->length) {
-			return false;
-		}
-		tab->last_output_frame = g_frame; /* a command was launched */
-
-		tab->length = 0;
-		tab->cursor = 0;
-		tab->line[0] = 0;
-	} else if (character >= 32 && character < 127 && tab->length + 2 < sizeof(tab->line)) {
-		memmove(tab->line + tab->cursor + 1, tab->line + tab->cursor, tab->length - tab->cursor + 1);
-		tab->line[tab->cursor++] = character;
-		tab->length++;
+	switch (key) {
+	case 103:
+		sequence = "\033[A";
+		break;
+	case 108:
+		sequence = "\033[B";
+		break;
+	case 106:
+		sequence = "\033[C";
+		break;
+	case 105:
+		sequence = "\033[D";
+		break;
+	case 102:
+		sequence = "\033[H";
+		break;
+	case 107:
+		sequence = "\033[F";
+		break;
+	case 111:
+		sequence = "\033[3~";
+		break;
+	default:
+		break;
 	}
+
+	if (sequence == 0) {
+		if (key == 14 || character == '\b') {
+			byte = 0x7F;
+		} else if (key == 28 || character == '\n') {
+			byte = '\r';
+		} else if (character != 0 && character < 128) {
+			byte = (char)character;
+		} else {
+			return true;
+		}
+	}
+
+	const char *bytes = sequence != 0 ? sequence : &byte;
+	uint64_t length = sequence != 0 ? nxu_strlen(sequence) : 1;
 
 	tab->scroll = 0;
 	g_dirty = true;
-	return true;
+	return nxu_write(tab->stream, bytes, length) == (int64_t)length;
 }
 
 /* ------------------------------------------------------------------------- */
 /* Tab lifecycle.                                                            */
 /* ------------------------------------------------------------------------- */
 
-/* Spawn an nzh shell for `tab`; `index` disambiguates its socket. */
+/* Start an nzh shell for `tab` on a pseudo-terminal of its own, sized to the window. */
 static bool
-spawn_shell(terminal_tab_t *tab, uint32_t index)
+spawn_shell(terminal_tab_t *tab)
 {
 	memset(tab, 0, sizeof(*tab));
 	memset(tab->rows, ' ', sizeof(tab->rows));
 	tab->stream = -1;
 
-#if defined(__i386__)
-	(void)index;
 	const char *arguments[] = {"nzh", 0};
-	int64_t stream = -1;
-	int64_t shell_pid = nxu_spawn_io("/Volumes/mainOS/System/Library/CoreServices/nzh", arguments, &stream);
+	struct nxu_winsize size = {.ws_row = TERMINAL_ROWS,
+							   .ws_col = TERMINAL_COLUMNS,
+							   .ws_xpixel = TERMINAL_COLUMNS * CELL_W,
+							   .ws_ypixel = TERMINAL_ROWS * CELL_H};
+	int64_t master = -1;
+	int64_t shell = nxu_spawn_pty("/Volumes/mainOS/System/Library/CoreServices/nzh", arguments, &size, &master);
 
-	if (shell_pid <= 0 || stream < 0) {
-		return false;
-	}
-#else
-	char name[64];
-	uint32_t length = 0;
-	for (const char *source = g_socket_name; *source != 0; source++) {
-		name[length++] = *source;
-	}
-	name[length++] = '.';
-	name[length++] = "0123456789abcdef"[index & 15U];
-	name[length] = 0;
-
-	int64_t listener = nxu_socket_listen(name, 1);
-	if (listener < 0) {
-		return false;
-	}
-
-	int64_t shell_pid = nxu_fork();
-	if (shell_pid == 0) {
-		(void)nxu_close(listener);
-		int64_t stream = nxu_socket_connect(name);
-
-		if (stream < 0 || nxu_dup2(stream, 0) < 0 || nxu_dup2(stream, 1) < 0 || nxu_dup2(stream, 2) < 0) {
-			nxu_exit(2);
-		}
-		(void)nxu_close(stream);
-		(void)nxu_exec("/Volumes/mainOS/System/Library/CoreServices/nzh", 0);
-		nxu_exit(3);
-	}
-
-	if (shell_pid < 0) {
-		(void)nxu_close(listener);
-		return false;
-	}
-
-	int64_t stream = nxu_socket_accept(listener);
-	(void)nxu_close(listener);
-	if (stream < 0) {
-		(void)nxu_kill(shell_pid, NXU_SIGTERM);
-		return false;
-	}
-#endif
+	if (shell <= 0) return false;
 
 	tab->used = true;
-	tab->shell_pid = shell_pid;
-	tab->stream = stream;
+	tab->shell_pid = shell;
+	tab->stream = master;
 	return true;
 }
 
@@ -694,7 +675,7 @@ new_tab(void)
 		return;
 	}
 
-	if (!spawn_shell(&g_tabs[g_tab_count], g_tab_count)) {
+	if (!spawn_shell(&g_tabs[g_tab_count])) {
 		return;
 	}
 
@@ -792,18 +773,7 @@ pointer_down(int32_t x, int32_t y)
 int
 main(void)
 {
-	/* A bounded, unique local rendezvous base from this process's PID. */
-	uint32_t length = 0;
-	for (const char *source = "com.nxu.terminal."; *source != 0; source++) {
-		g_socket_name[length++] = *source;
-	}
-	uint32_t pid = nxu_getpid();
-	for (int32_t shift = 28; shift >= 0; shift -= 4) {
-		g_socket_name[length++] = "0123456789abcdef"[(pid >> shift) & 15U];
-	}
-	g_socket_name[length] = 0;
-
-	if (!spawn_shell(&g_tabs[0], 0)) {
+	if (!spawn_shell(&g_tabs[0])) {
 		return 4;
 	}
 	g_tab_count = 1;
@@ -932,7 +902,7 @@ main(void)
 				terminal_tab_t *tab = active_tab();
 				int32_t scroll = (int32_t)tab->scroll + (message.delta > 0 ? 3 : -3);
 				uint32_t limit =
-					tab->row < TERMINAL_HISTORY_ROWS - TERMINAL_ROWS ? (uint32_t)tab->row : TERMINAL_HISTORY_ROWS - TERMINAL_ROWS;
+					tab->bottom < TERMINAL_HISTORY_ROWS - TERMINAL_ROWS ? (uint32_t)tab->bottom : TERMINAL_HISTORY_ROWS - TERMINAL_ROWS;
 				tab->scroll = scroll < 0 ? 0 : (uint32_t)scroll > limit ? limit : (uint32_t)scroll;
 				g_dirty = true;
 				break;

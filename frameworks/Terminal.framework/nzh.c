@@ -1,25 +1,30 @@
 /*
  * Copyright (c) 2026 NXU Project. All rights reserved.
  *
- * NXU's small interactive shell. Terminal supplies canonical input, editing,
- * and history. This process parses commands and owns foreground children.
+ * NXU's small interactive shell.
+ *
+ * On a terminal (Terminal.app gives it a pseudo-terminal) it is a Unix shell:
+ * it edits the command line itself (line_edit.c), runs each command as a job
+ * in a process group of its own on the same terminal, gives that group the
+ * foreground while it runs and takes it back when it ends or stops. ^C and ^Z
+ * reach the job from the line discipline, not from the shell; a stopped job
+ * waits in the job table for `fg`. The shell ignores the job-control signals
+ * itself, as interactive shells do.
+ *
+ * On anything else (a file, a socket) it reads plain lines and runs each
+ * command with the same standard descriptors, in its own process group,
+ * without job control: there is no terminal to give the foreground of.
  */
 #include "shell.h"
 #include "netutil.h"
 
-#if defined(__i386__)
 #include <nxu/spawn_io.h>
-#endif
-
 #include <nxu/string.h>
 #include <nxu/syscall.h>
+#include <termios.h>
 
 #define NZH_CHILD_MAX 100U
 #define NZH_FORKBOMB_MAX_SECONDS 100U
-
-#if defined(__i386__)
-static int64_t g_streams[NZH_CHILD_MAX];
-#endif
 
 static char g_directory[256] = "/Volumes/mainOS";
 /* Optional prompt identity, read once from /etc/username and /etc/hostname.
@@ -29,11 +34,33 @@ static char g_host[64];
 static volatile uint32_t g_children[NZH_CHILD_MAX];
 static volatile bool g_interrupted;
 
+/* Standard input is a terminal: jobs, the line editor, the terminal's own ^C. */
+static bool g_tty;
+static uint32_t g_shell_pgid;
+static struct termios g_shell_termios;
+static nzh_editor_t g_editor;
+
+/* Jobs not in the foreground: stopped, or running after `bg`. A job is one process group of at most two processes. */
+#define NZH_JOB_MAX 8U
+#define NZH_JOB_PROCESSES 2U
+
+typedef struct {
+	uint32_t pgid;
+	uint32_t pids[NZH_JOB_PROCESSES];
+	uint32_t count;
+	bool running; /* continued in the background by `bg` */
+	char name[32];
+} nzh_job_t;
+
+static nzh_job_t g_jobs[NZH_JOB_MAX];
+
 static void
 nzh_signal(int signal)
 {
 	g_interrupted = signal == NXU_SIGINT;
-	for (uint32_t index = 0; index < NZH_CHILD_MAX; index++) {
+
+	/* On a terminal the line discipline signals the foreground job itself. */
+	for (uint32_t index = 0; !g_tty && index < NZH_CHILD_MAX; index++) {
 		if (g_children[index] != 0) {
 			(void)nxu_kill(g_children[index], signal);
 		}
@@ -98,8 +125,38 @@ nzh_executable(const char *name, char path[256])
 	return false;
 }
 
+/*
+ * Start a job's process with the shell's descriptors 0-2. On a terminal it
+ * joins group `pgid` (0: a new group named after it), and that group has the
+ * foreground from the start, so the job never runs, even for a moment, as a
+ * background one. Elsewhere it simply shares the shell's group.
+ */
 static int64_t
-nzh_launch(const char *name, const char *const *arguments)
+nzh_spawn_job(const char *path, const char *const *arguments, uint32_t pgid)
+{
+	char strings[NXU_EXEC_ARGV_BYTES];
+	nxu_spawn_attr_t attr = {.size = sizeof(attr), .caps = (uint32_t)nxu_get_caps()};
+
+	if (g_tty) {
+		attr.flags = NXU_SPAWN_SETPGROUP | NXU_SPAWN_SETFG;
+		attr.pgid = pgid;
+	}
+
+	if (!nxu_spawn_pack_arguments(arguments, strings, sizeof(strings), &attr.argc, &attr.arguments_size))
+		return -NXU_SYS_E_INVALID_ARGUMENT;
+
+	attr.arguments = (uint64_t)(uintptr_t)strings;
+	attr.name = (uint64_t)(uintptr_t)arguments[0];
+	attr.descriptor_count = 3;
+
+	for (uint32_t descriptor = 0; descriptor < 3; descriptor++)
+		attr.descriptors[descriptor] = (nxu_spawn_fd_t){.child = descriptor, .parent = descriptor};
+
+	return nxu_spawn_attr(path, &attr);
+}
+
+static int64_t
+nzh_launch(const char *name, const char *const *arguments, uint32_t pgid)
 {
 	char path[256];
 
@@ -110,23 +167,7 @@ nzh_launch(const char *name, const char *const *arguments)
 		return -1;
 	}
 
-#if defined(__i386__)
-	uint32_t slot = 0;
-	while (slot < NZH_CHILD_MAX && g_children[slot] != 0) slot++;
-	if (slot == NZH_CHILD_MAX) return -1;
-	int64_t child = nxu_spawn_io(path, arguments, &g_streams[slot]);
-#else
-	int64_t child = nxu_fork();
-
-	if (child == 0) {
-		(void)nxu_exec(path, arguments);
-		netutil_write("nzh: could not execute ");
-		netutil_write(name);
-		netutil_write("\n");
-		(void)nxu_exit(127);
-	}
-
-#endif
+	int64_t child = nzh_spawn_job(path, arguments, pgid);
 
 	if (child < 0) {
 		netutil_write("nzh: could not create child process\n");
@@ -135,61 +176,249 @@ nzh_launch(const char *name, const char *const *arguments)
 	return child;
 }
 
+/* The shell's terminal back: the foreground, and its settings if a job stopped while it had them changed. */
 static void
-nzh_wait(uint32_t slot)
+nzh_take_terminal(bool restore)
 {
-	uint64_t status = 0;
-	int64_t result;
+	if (!g_tty) return;
 
-#if defined(__i386__)
-	/* Drain both children: paired diagnostics may produce output concurrently. */
-	do {
-		char buffer[512];
-		for (uint32_t index = 0; index < NZH_CHILD_MAX; index++) {
-			if (g_children[index] != 0 && g_streams[index] >= 0) {
-				int64_t count = nxu_read_poll(g_streams[index], buffer, sizeof(buffer));
-				if (count > 0) {
-					(void)nxu_write(1, buffer, count);
-				}
-			}
-		}
-		int64_t count = nxu_read_poll(0, buffer, sizeof(buffer));
-		if (count > 0 && g_streams[slot] >= 0) {
-			if (buffer[0] == 3) {
-				nzh_signal(NXU_SIGINT);
-			} else {
-				(void)nxu_write(g_streams[slot], buffer, count);
-			}
-		}
-		result = nxu_waitpid(g_children[slot], &status);
-		if (result == -NXU_SYS_E_AGAIN) {
-			(void)nxu_sleep_us(1000);
-		}
-	} while (result == -NXU_SYS_E_AGAIN);
+	(void)tcsetpgrp(0, (int)g_shell_pgid);
 
-	/* Deliver the tail of stdout after the child exits. */
-	char buffer[512];
-	int64_t count;
-	while ((count = nxu_read_poll(g_streams[slot], buffer, sizeof(buffer))) > 0) {
-		(void)nxu_write(1, buffer, count);
+	if (restore) {
+		(void)tcsetattr(0, TCSADRAIN, &g_shell_termios);
+	} else {
+		(void)tcgetattr(0, &g_shell_termios);
 	}
-	(void)nxu_close(g_streams[slot]);
-	g_streams[slot] = -1;
-#else
-	do {
-		result = nxu_wait(g_children[slot], &status);
-	} while (result == -NXU_SYS_E_INTERRUPTED);
+}
 
-#endif
+static void
+nzh_job_report(uint32_t number, const char *state, const char *name)
+{
+	netutil_write("[");
+	netutil_number(number + 1U);
+	netutil_write("]  ");
+	netutil_write(state);
+	netutil_write("  ");
+	netutil_write(name);
+	netutil_write("\n");
+}
 
-	g_children[slot] = 0;
+/*
+ * Wait for the foreground job in g_children[0..count): until each process
+ * has exited, or one of them stops (^Z), in which case the job goes into the
+ * table for `fg`. Either way the shell takes the terminal back, with the
+ * settings it had if the job stopped or was killed (it may have been killed
+ * with echo off); a job that simply exits keeps what it set, as `stty` must.
+ */
+static void
+nzh_wait_job(uint32_t count, const char *name)
+{
+	bool stopped = false;
+	bool killed = false;
+
+	for (uint32_t slot = 0; slot < count; slot++) {
+		if (g_children[slot] == 0) continue;
+
+		uint64_t status = 0;
+		int64_t result;
+
+		do {
+			result = nxu_wait_options(g_children[slot], &status, NXU_WAIT_UNTRACED);
+		} while (result == -NXU_SYS_E_INTERRUPTED);
+
+		if (result >= 0 && NXU_WAIT_WAS_STOPPED(status)) {
+			stopped = true;
+			continue;
+		}
+
+		g_children[slot] = 0;
+
+		if (result >= 0 && NXU_EXIT_WAS_KILLED(status)) {
+			uint32_t signal = (uint32_t)(status & 0xFFULL);
+
+			killed = true;
+
+			/* ^C ends a job quietly; any other signal is worth a word. */
+			if (signal != NXU_SIGINT) {
+				netutil_write("nzh: ");
+				netutil_write(name);
+				netutil_write(" killed by signal ");
+				netutil_number(signal);
+				netutil_write("\n");
+			}
+		} else if (result < 0 || status != 0) {
+			netutil_write("nzh: command exited with status ");
+			netutil_number(status);
+			netutil_write("\n");
+		}
+	}
+
 	g_interrupted = false;
+	nzh_take_terminal(stopped || killed);
 
-	if (result < 0 || status != 0) {
-		netutil_write("nzh: command exited with status ");
-		netutil_number(status);
-		netutil_write("\n");
+	if (!stopped) return;
+
+	uint32_t number = 0;
+
+	while (number < NZH_JOB_MAX && g_jobs[number].pgid != 0)
+		number++;
+
+	nzh_job_t job = {.pgid = (uint32_t)nxu_getpgid(g_children[0] != 0 ? g_children[0] : g_children[1])};
+
+	for (uint32_t slot = 0; slot < count; slot++) {
+		if (g_children[slot] != 0 && job.count < NZH_JOB_PROCESSES) job.pids[job.count++] = g_children[slot];
+
+		g_children[slot] = 0;
 	}
+
+	uint64_t length = nxu_strlen(name);
+
+	if (length >= sizeof(job.name)) length = sizeof(job.name) - 1;
+
+	memcpy(job.name, name, length);
+	job.name[length] = 0;
+
+	netutil_write("\n");
+
+	if (number == NZH_JOB_MAX) {
+		/* No room to keep it: a job nobody can bring back would only linger. */
+		(void)nxu_killpg(job.pgid, NXU_SIGKILL);
+		(void)nxu_killpg(job.pgid, NXU_SIGCONT);
+		netutil_write("nzh: too many stopped jobs; killed ");
+		netutil_write(job.name);
+		netutil_write("\n");
+		return;
+	}
+
+	g_jobs[number] = job;
+	nzh_job_report(number, "suspended", job.name);
+}
+
+static void nzh_reap_jobs(void);
+
+/* `jobs`: every job not in the foreground, as they are now. */
+static void
+nzh_jobs(void)
+{
+	nzh_reap_jobs();
+
+	for (uint32_t number = 0; number < NZH_JOB_MAX; number++) {
+		if (g_jobs[number].pgid != 0)
+			nzh_job_report(number, g_jobs[number].running ? "running" : "suspended", g_jobs[number].name);
+	}
+}
+
+/*
+ * Before each prompt: what became of the jobs in the background. A process
+ * that exited is reaped, and a job none of whose processes is left is done;
+ * one that stopped (a background job that read the terminal gets SIGTTIN)
+ * is suspended again, for `fg`.
+ */
+static void
+nzh_reap_jobs(void)
+{
+	for (uint32_t number = 0; number < NZH_JOB_MAX; number++) {
+		nzh_job_t *job = &g_jobs[number];
+
+		if (job->pgid == 0 || !job->running) continue;
+
+		for (uint32_t index = 0; index < job->count;) {
+			uint64_t status = 0;
+			int64_t result = nxu_wait_options(job->pids[index], &status, NXU_WAIT_UNTRACED | NXU_WAIT_NOHANG);
+
+			if (result >= 0 && NXU_WAIT_WAS_STOPPED(status)) {
+				job->running = false;
+				nzh_job_report(number, "suspended", job->name);
+			}
+
+			if (result == -NXU_SYS_E_AGAIN || (result >= 0 && NXU_WAIT_WAS_STOPPED(status))) {
+				index++;
+				continue;
+			}
+
+			/* Exited, or gone some other way: no longer part of the job. */
+			job->pids[index] = job->pids[--job->count];
+		}
+
+		if (job->count == 0) {
+			nzh_job_report(number, "done", job->name);
+			job->pgid = 0;
+		}
+	}
+}
+
+/* The job `fg` or `bg` means: %n, n, or with none the most recent. */
+static bool
+nzh_pick_job(uint32_t count, const char *const *arguments, const char *command, uint32_t *number)
+{
+	*number = NZH_JOB_MAX;
+	nzh_reap_jobs();
+
+	if (!g_tty) {
+		netutil_write(command);
+		netutil_write(": no job control without a terminal\n");
+		return false;
+	}
+
+	if (count > 1) {
+		const char *text = arguments[1][0] == '%' ? arguments[1] + 1 : arguments[1];
+
+		if (text[0] >= '1' && text[0] <= '9' && text[1] == 0) *number = (uint32_t)(text[0] - '1');
+	} else {
+		for (uint32_t candidate = 0; candidate < NZH_JOB_MAX; candidate++) {
+			if (g_jobs[candidate].pgid != 0) *number = candidate;
+		}
+	}
+
+	if (*number >= NZH_JOB_MAX || g_jobs[*number].pgid == 0) {
+		netutil_write(command);
+		netutil_write(": no such job\n");
+		return false;
+	}
+
+	return true;
+}
+
+/* `bg [%n]`: a stopped job continues, in the background. */
+static void
+nzh_background(uint32_t count, const char *const *arguments)
+{
+	uint32_t number;
+
+	if (!nzh_pick_job(count, arguments, "bg", &number)) return;
+
+	nzh_job_t *job = &g_jobs[number];
+
+	if (job->running) {
+		netutil_write("bg: job already in background\n");
+		return;
+	}
+
+	job->running = true;
+	(void)nxu_killpg(job->pgid, NXU_SIGCONT);
+	nzh_job_report(number, "continued", job->name);
+}
+
+/* `fg [%n]`: a stopped or background job back in the foreground, continued. */
+static void
+nzh_foreground(uint32_t count, const char *const *arguments)
+{
+	uint32_t number;
+
+	if (!nzh_pick_job(count, arguments, "fg", &number)) return;
+
+	nzh_job_t job = g_jobs[number];
+
+	g_jobs[number].pgid = 0;
+	netutil_write(job.name);
+	netutil_write("\n");
+
+	for (uint32_t slot = 0; slot < job.count; slot++)
+		g_children[slot] = job.pids[slot];
+
+	(void)tcsetpgrp(0, (int)job.pgid);
+	(void)nxu_killpg(job.pgid, NXU_SIGCONT);
+	nzh_wait_job(job.count, job.name);
 }
 
 static void
@@ -512,15 +741,12 @@ nzh_forkbomb(uint32_t count, const char *const *arguments)
 	netutil_write(" second(s); Ctrl-C stops them\n");
 
 	for (uint32_t slot = 0; slot < workers; slot++) {
-		int64_t child;
-#if defined(__i386__)
 		const char *worker_arguments[] = {"nzh", "--forkbomb-worker", seconds_text, 0};
-		child = nxu_spawn_io("/Volumes/mainOS/System/Library/CoreServices/nzh", worker_arguments,
-						 &g_streams[slot]);
-#else
-		child = nxu_fork();
-		if (child == 0) (void)nxu_exit(nzh_forkbomb_worker(seconds));
-#endif
+
+		/* One job: ^C from the line discipline stops every worker. */
+		int64_t child = nzh_spawn_job("/Volumes/mainOS/System/Library/CoreServices/nzh", worker_arguments,
+									  slot == 0 ? 0U : g_children[0]);
+
 		if (child < 0) {
 			netutil_write("forkbomb: process limit reached after ");
 			netutil_number(started);
@@ -531,7 +757,8 @@ nzh_forkbomb(uint32_t count, const char *const *arguments)
 		started++;
 	}
 
-	for (uint32_t slot = 0; slot < started; slot++) nzh_wait(slot);
+	nzh_wait_job(started, "forkbomb");
+
 	netutil_write("forkbomb: workers finished\n");
 }
 
@@ -546,14 +773,14 @@ nzh_execute(uint32_t count, const char *const *arguments)
 
 	if (nxu_streq(command, "help")) {
 		netutil_write(
-			"nzh: help commands echo pwd cd ls cat rm clear nvram log forkbomb exit\n"
+			"nzh: help commands echo pwd cd ls cat rm clear nvram log forkbomb jobs fg bg exit\n"
 			"NVRAM: nvram [boot-args|boot-args=VALUE] (QEMU firmware boot-args are read-only)\n"
 			"Logs: log show (unified system log since boot), log stream (follow live, Ctrl-C to stop)\n"
 			"Files: rm [-f] [-d] [--] path ...; -d removes empty directories\n"
 			"Stress: forkbomb [workers 1-100] [seconds 1-100] (bounded process/CPU load)\n"
 			"Network: ping [-4|-6] [-c count] address; ifconfig\n"
 			"Tests: ipctest, sockettest, terminaltest, threadtest, proctest, smptest, and installed executables\n"
-			"Terminal: arrows edit/history, Tab completes commands, Ctrl-C interrupts\n"
+			"Terminal: arrows edit/history, Tab completes commands, Ctrl-C interrupts, Ctrl-Z suspends (fg, bg resume)\n"
 			"Quoted arguments and escapes supported; pipelines and scripting are not implemented.\n");
 	} else if (nxu_streq(command, "echo")) {
 		for (uint32_t index = 1; index < count; index++) {
@@ -588,6 +815,12 @@ nzh_execute(uint32_t count, const char *const *arguments)
 		nzh_remove(count, arguments);
 	} else if (nxu_streq(command, "clear")) {
 		netutil_write("\033[2J\033[H");
+	} else if (nxu_streq(command, "jobs")) {
+		nzh_jobs();
+	} else if (nxu_streq(command, "fg")) {
+		nzh_foreground(count, arguments);
+	} else if (nxu_streq(command, "bg")) {
+		nzh_background(count, arguments);
 	} else if (nxu_streq(command, "forkbomb")) {
 		nzh_forkbomb(count, arguments);
 	} else if (nxu_streq(command, "nvram")) {
@@ -601,25 +834,25 @@ nzh_execute(uint32_t count, const char *const *arguments)
 		const char *client = nxu_streq(command, "ipctest") ? "ipctest_b" : "sockettest_client";
 		const char *server_args[] = {server, 0};
 		const char *client_args[] = {client, 0};
-		int64_t first = nzh_launch(server, server_args);
+		int64_t first = nzh_launch(server, server_args, 0);
 
 		if (first > 0) {
 			g_children[0] = first;
-			int64_t second = nzh_launch(client, client_args);
+			int64_t second = nzh_launch(client, client_args, (uint32_t)first);
 			if (second > 0) {
 				g_children[1] = second;
-				nzh_wait(1);
 			} else {
 				(void)nxu_kill(first, NXU_SIGTERM);
 			}
-			nzh_wait(0);
+
+			nzh_wait_job(2, command);
 		}
 	} else {
-		int64_t child = nzh_launch(command, arguments);
+		int64_t child = nzh_launch(command, arguments, 0);
 
 		if (child > 0) {
 			g_children[0] = child;
-			nzh_wait(0);
+			nzh_wait_job(1, command);
 		}
 	}
 
@@ -657,29 +890,59 @@ nzh_read_config(const char *path, char *buffer, uint32_t capacity)
 	buffer[length] = 0;
 }
 
-/* "user@host dir %" when an identity is set, otherwise "dir %". `dir` is the
+static void
+nzh_append(char *buffer, uint32_t capacity, uint32_t *length, const char *text)
+{
+	while (*text != 0 && *length + 1 < capacity)
+		buffer[(*length)++] = *text++;
+
+	buffer[*length] = 0;
+}
+
+/* "user@host dir % " when an identity is set, otherwise "dir % ". `dir` is the
  * last component of the current directory. */
 static void
-nzh_write_prompt(void)
+nzh_format_prompt(char *prompt, uint32_t capacity)
 {
 	const char *dir = g_directory;
+	uint32_t length = 0;
+
 	for (const char *cursor = g_directory; *cursor != 0; cursor++) {
 		if (*cursor == '/' && *(cursor + 1) != 0) {
 			dir = cursor + 1;
 		}
 	}
 
+	prompt[0] = 0;
+
 	if (g_user[0] != 0 && g_host[0] != 0) {
-		netutil_write(g_user);
-		netutil_write("@");
-		netutil_write(g_host);
-		netutil_write(" ");
+		nzh_append(prompt, capacity, &length, g_user);
+		nzh_append(prompt, capacity, &length, "@");
+		nzh_append(prompt, capacity, &length, g_host);
+		nzh_append(prompt, capacity, &length, " ");
 	}
-	netutil_write(dir);
-	netutil_write(" % ");
+
+	nzh_append(prompt, capacity, &length, dir);
+	nzh_append(prompt, capacity, &length, " % ");
 }
 
-#if defined(__i386__)
+/* The shell's own signals on a terminal: ^C abandons the line being typed; the job-control ones are the jobs'. */
+static void
+nzh_setup_terminal(void)
+{
+	g_tty = isatty(0) != 0;
+
+	if (!g_tty) return;
+
+	g_shell_pgid = (uint32_t)nxu_getpgid(0);
+	(void)nxu_signal(NXU_SIGQUIT, (void (*)(int))NXU_SIG_IGN);
+	(void)nxu_signal(NXU_SIGTSTP, (void (*)(int))NXU_SIG_IGN);
+	(void)nxu_signal(NXU_SIGTTIN, (void (*)(int))NXU_SIG_IGN);
+	(void)nxu_signal(NXU_SIGTTOU, (void (*)(int))NXU_SIG_IGN);
+	(void)tcsetpgrp(0, (int)g_shell_pgid);
+	(void)tcgetattr(0, &g_shell_termios);
+}
+
 int
 main(uint64_t argc, const char *const *argv)
 {
@@ -688,66 +951,30 @@ main(uint64_t argc, const char *const *argv)
 		if (!nzh_parse_bounded(argv[2], 1U, NZH_FORKBOMB_MAX_SECONDS, &seconds)) return 2;
 		return (int)nzh_forkbomb_worker(seconds);
 	}
-#else
-int
-main(void)
-{
-#endif
+
 	(void)nxu_signal(NXU_SIGINT, nzh_signal);
 	(void)nxu_signal(NXU_SIGTERM, nzh_signal);
+	nzh_setup_terminal();
 	nzh_read_config("/Volumes/mainOS/etc/username", g_user, sizeof(g_user));
 	nzh_read_config("/Volumes/mainOS/etc/hostname", g_host, sizeof(g_host));
 	netutil_write("NXU shell (nzh) - type help\n");
 
 	for (;;) {
-		nzh_write_prompt();
+		char prompt[160];
 		char line[NZH_LINE_MAX];
-		uint32_t length = 0;
-		bool overflow = false;
-		bool interrupted = false;
 
-		for (;;) {
-			char character;
-			int64_t result = nxu_read_poll(0, &character, 1);
+		nzh_format_prompt(prompt, sizeof(prompt));
+		nzh_reap_jobs();
 
-			if (g_interrupted) {
-				g_interrupted = false;
-				interrupted = true;
-				break;
-			}
+		/* A terminal gets the line editor; anything else is read a line at a time (nzh_edit_line does both). */
+		int result = nzh_edit_line(&g_editor, prompt, line, sizeof(line), &g_interrupted);
 
-			if (result == -NXU_SYS_E_AGAIN) {
-				(void)nxu_sleep_us(1000);
-				continue;
-			}
+		if (result == NZH_EDIT_EOF) return 0;
+		if (result == NZH_EDIT_INTERRUPTED) continue;
 
-			if (result <= 0) {
-				return 0;
-			}
-
-			if (character == 3) {
-				interrupted = true;
-				break;
-			}
-
-			if (character == '\n') {
-				break;
-			}
-
-			if (length + 1 < sizeof(line)) {
-				line[length++] = character;
-			} else {
-				overflow = true;
-			}
-		}
-
-		if (interrupted) {
-			continue;
-		}
-
-		line[length] = 0;
+		line[result] = 0;
 		const char *arguments[NZH_ARGUMENT_MAX + 1];
-		int count = overflow ? -1 : nzh_parse(line, arguments);
+		int count = nzh_parse(line, arguments);
 
 		if (count < 0) {
 			netutil_write("nzh: invalid quoting, unsupported operator, or command too long\n");
