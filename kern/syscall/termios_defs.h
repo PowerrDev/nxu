@@ -261,6 +261,36 @@ _Static_assert(sizeof(struct nxu_winsize) == 8U, "struct nxu_winsize is ABI: its
 #define NXU_TIOCSPGRP NXU_IOW(NXU_TTY_IOC_GROUP, 118U, int32_t)
 #define NXU_TIOCGSID NXU_IOR(NXU_TTY_IOC_GROUP, 99U, int32_t)
 
+/*
+ * Pseudo-terminal master requests (Darwin's numbers), on a descriptor opened
+ * from /dev/ptmx. They are what posix_openpt's companions are made of.
+ *
+ * TIOCPTYGNAME
+ *     The path of the slave ("/dev/ttys000"), NUL-terminated (ptsname).
+ *
+ * TIOCPTYGRANT
+ *     Give the slave to the caller's real user, group tty, mode 0620
+ *     (grantpt).
+ *
+ * TIOCPTYUNLK
+ *     Allow the slave to be opened (unlockpt). Until then opening it fails
+ *     with NXU_SYS_E_DENIED.
+ *
+ * The master also takes TIOCGETA, TIOCSETA, TIOCSETAW, TIOCSETAF, TIOCFLUSH,
+ * TIOCGWINSZ and TIOCSWINSZ, which act on the slave's terminal, and
+ * FIONREAD, which counts output the slave has written and the master not yet
+ * read.
+ */
+#define NXU_PTY_NAME_MAX 128U
+
+typedef struct {
+	char name[NXU_PTY_NAME_MAX];
+} nxu_ptyname_t;
+
+#define NXU_TIOCPTYGNAME NXU_IOR(NXU_TTY_IOC_GROUP, 83U, nxu_ptyname_t)
+#define NXU_TIOCPTYGRANT NXU_IO(NXU_TTY_IOC_GROUP, 84U)
+#define NXU_TIOCPTYUNLK NXU_IO(NXU_TTY_IOC_GROUP, 82U)
+
 /* TIOCFLUSH: which queues. */
 #define NXU_FREAD 0x1U
 #define NXU_FWRITE 0x2U

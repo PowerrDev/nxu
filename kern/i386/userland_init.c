@@ -50,6 +50,7 @@
 #include <kern/tests/sound_test.h>
 #include <kern/tests/thread_process_test.h>
 #include <kern/tests/termios_process_test.h>
+#include <kern/tests/pty_test.h>
 #include <kern/tests/tty_test.h>
 #include <vfs/btrfs/btrfs_list.h>
 #include <vfs/btrfs/btrfs_selftest.h>
@@ -95,6 +96,8 @@ userland_run_process_test(const char *name)
 		ok = spawn_process_test();
 	else if (strcmp(name, "tty") == 0)
 		ok = tty_test_run();
+	else if (strcmp(name, "pty") == 0)
+		ok = pty_test_run();
 	else if (strcmp(name, "termios") == 0)
 		ok = termios_process_test();
 	else if (strcmp(name, "restart") == 0)

@@ -45,6 +45,7 @@
 #include <kern/tests/smp_test.h>
 #include <kern/tests/smp_user_test.h>
 #include <kern/tests/termios_process_test.h>
+#include <kern/tests/pty_test.h>
 #include <kern/tests/tty_test.h>
 #include <kern/tty/tty.h>
 #include <platform/driverkit.h>
@@ -841,6 +842,8 @@ kern_start_scheduler(const driverkit_config_t *drivers)
 	/* Terminals sleep and wake like any device: the tests need the scheduler and the tick, and ttytest the disk. */
 	if (!tty_test_run()) kern_fail("tty_test_run: failed");
 	kprintf_for(tty_test_run, "passed\n");
+	if (!pty_test_run()) kern_fail("pty_test_run: failed");
+	kprintf_for(pty_test_run, "passed\n");
 	if (!termios_process_test()) kern_fail("termios_process_test: failed");
 	kprintf_for(termios_process_test, "passed\n");
 	if (!restart_process_test()) kern_fail("restart_process_test: failed");

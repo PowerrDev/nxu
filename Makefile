@@ -406,6 +406,7 @@ C_SOURCES := \
     kern/tty/tty_ioctl.c \
     kern/tty/n_tty.c \
     kern/tty/tty_jobctl.c \
+    kern/tty/pty.c \
     kern/console/display_owner.c \
     kern/tests/ipc_test.c \
     kern/tests/post.c \
@@ -424,6 +425,7 @@ C_SOURCES := \
     kern/tests/sound_test.c \
     kern/tests/tty_test.c \
     kern/tests/tty_loopback.c \
+    kern/tests/pty_test.c \
     kern/tests/termios_process_test.c \
     kern/tests/tep_mailbox_test.c \
     kern/tests/windowserver_process_test.c \

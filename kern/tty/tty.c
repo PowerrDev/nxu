@@ -60,6 +60,7 @@
 #include <kern/syscall/syscall_defs.h>
 #include <kern/process/signal.h>
 #include <kern/syscall/termios_defs.h>
+#include <kern/tty/pty.h>
 #include <vfs/devfs.h>
 #include <vfs/file.h>
 
@@ -494,6 +495,8 @@ tty_init(void)
 		kprintf("cannot publish /dev/tty\n");
 		return;
 	}
+
+	if (!pty_init()) return;
 
 	kprintf("initialized tty successfully\n");
 }

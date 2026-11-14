@@ -1,4 +1,5 @@
 wheel:x:0:root
+tty:x:4:
 staff:x:20:
 user:x:1000:user
 nobody:x:65534:
