@@ -880,12 +880,16 @@ pmm_enter_higher_half(void)
 	}
 
 	uint64_t bitmap_virtual;
+	uint64_t references_virtual;
 
-	if (!vm_kmap_phys_to_direct((uint64_t)g_pmm.bitmap, &bitmap_virtual)) {
+	/* Both live in the early carve-out, addressed physically until now: move both, or the counts are reached through TTBR0, which is about to go. */
+	if (!vm_kmap_phys_to_direct((uint64_t)g_pmm.bitmap, &bitmap_virtual) ||
+		!vm_kmap_phys_to_direct((uint64_t)(uintptr_t)g_pmm.extra_references, &references_virtual)) {
 		return false;
 	}
 
 	g_pmm.bitmap = (uint8_t *)bitmap_virtual;
+	g_pmm.extra_references = (uint16_t *)(uintptr_t)references_virtual;
 	g_pmm.higher_half = true;
 
 	return true;
