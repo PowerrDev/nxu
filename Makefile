@@ -127,6 +127,9 @@ DISK_ROOT ?= tools/DiskRoot
 DISK_FORMAT_STAMP ?= tools/.nxu-ext4-jbd2-format
 
 MKFS_EXT4 ?= mkfs.ext4
+DEBUGFS ?= debugfs
+# Where Homebrew puts e2fsprogs, which it does not link into PATH.
+E2FS_PATH := /usr/local/opt/e2fsprogs/sbin:/opt/homebrew/opt/e2fsprogs/sbin
 
 E2FSCK ?= e2fsck
 
@@ -1331,6 +1334,8 @@ $(USER_STAGE_STAMP): frameworks/Terminal.framework/Info.plist tools/UI/Icons/Ter
 
 	$(Q)cp $(USER_BUILD)/passwd $(DISK_ROOT)/System/Library/CoreServices/passwd
 
+	$(Q)chmod 4755 $(DISK_ROOT)/System/Library/CoreServices/su $(DISK_ROOT)/System/Library/CoreServices/sudo $(DISK_ROOT)/System/Library/CoreServices/passwd
+
 	$(Q)cp $(USER_BUILD)/playsound $(DISK_ROOT)/System/Library/CoreServices/playsound
 
 	$(Q)cp $(USER_BUILD)/sockettest_server $(DISK_ROOT)/System/Library/CoreServices/sockettest_server
@@ -1505,10 +1510,20 @@ $(DISK): $(USER_STAGE_STAMP)
 
 	$(Q)truncate -s $(DISK_SIZE) $(DISK)
 
-	$(Q)$(MKFS_EXT4) -F -q -b 4096 -I 256 \
+	$(Q)PATH="$(E2FS_PATH):$$PATH" $(MKFS_EXT4) -F -q -b 4096 -I 256 \
 		-O has_journal,metadata_csum,^metadata_csum_seed,^dir_index,^orphan_file,^fast_commit \
-		-E lazy_itable_init=0,lazy_journal_init=0 \
+		-E lazy_itable_init=0,lazy_journal_init=0,root_owner=0:0 \
 		-L NXU -d $(DISK_ROOT) $(DISK)
+
+	# mkfs -d stamps files with the host build user's uid; the OS expects system
+	# files to be root-owned (setuid-exec reads the file owner: su, sudo and
+	# passwd are setuid root). Rewrite every inode's owner to root in the image,
+	# as the i386 disk rule does.
+	$(Q)find $(DISK_ROOT) -mindepth 1 | sed 's|^$(DISK_ROOT)||' | while IFS= read -r entry; do \
+		printf 'sif "%s" uid 0\nsif "%s" gid 0\n' "$$entry" "$$entry"; \
+	done > $(DISK).chown-root.debugfs
+	$(Q)PATH="$(E2FS_PATH):$$PATH" $(DEBUGFS) -w -f $(DISK).chown-root.debugfs $(DISK) >/dev/null
+	$(Q)rm -f $(DISK).chown-root.debugfs
 
 
 $(DISK_FORMAT_STAMP):
