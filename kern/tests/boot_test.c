@@ -16,7 +16,7 @@
 #include <kern/console/console.h>
 #include <kern/console/ioregistry.h>
 #include <kern/process/proc.h>
-#include <kern/tests/about_sevos_process_test.h>
+#include <kern/tests/about_groveos_process_test.h>
 #include <kern/tests/fault_process_test.h>
 #include <kern/tests/ipc_process_test.h>
 #include <kern/tests/process_control_test.h>
@@ -263,11 +263,11 @@ boot_test_storage(display_device_t *boot_display)
 		__asm__ volatile("wfe");
 #endif
 
-#if defined(NXU_ABOUT_SEVOS_PROCESS_TEST)
+#if defined(NXU_ABOUT_GROVEOS_PROCESS_TEST)
 	if (boot_display != 0 && !boot_splash_finish()) boot_test_fail("boot_splash_finish: completion failed");
 
-	if (!about_sevos_process_test()) boot_test_fail("about_sevos_process_test: failed");
-	kprintf_for(about_sevos_process_test, "passed\n");
+	if (!about_groveos_process_test()) boot_test_fail("about_groveos_process_test: failed");
+	kprintf_for(about_groveos_process_test, "passed\n");
 	kprintf("halting (test build)\n");
 	for (;;)
 		__asm__ volatile("wfe");

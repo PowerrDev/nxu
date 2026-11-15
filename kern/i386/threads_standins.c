@@ -30,6 +30,7 @@
 
 #include <kern/boot/boot_args.h>
 #include <kern/boot/boot_mode.h>
+#include <kern/update/erase.h>
 #include <kern/console/display_owner.h>
 #include <kern/loader/elf.h>
 #include <kern/memory/heap.h>
@@ -448,6 +449,12 @@ boot_args_raw(void)
 
 STANDIN bool
 boot_mode_is_triage_os(void)
+{
+	return false;
+}
+
+STANDIN bool
+boot_erase_running(void)
 {
 	return false;
 }

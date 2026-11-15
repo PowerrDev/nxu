@@ -1,13 +1,13 @@
-# sevOS recovery UI
+# groveOS recovery UI
 
-sevOS has two intentionally separate graphical foundations.
+groveOS has two intentionally separate graphical foundations.
 
 ```text
 normal boot                         recovery boot
 -----------                         -------------
 UIService.framework                        Recovery.framework
     |                                   |
-main sevOS applications             StartupOptionsUI
+main groveOS applications             StartupOptionsUI
     |                                   |
 main UI service                     triageOS (PID 1)
     |                                   |
@@ -15,7 +15,7 @@ normal display/input path           recovery-only syscall surface
 ```
 
 The boundary is architectural, not a naming convention. `triageOS` does not
-link UIService.framework and normal sevOS UI code does not link Recovery.framework.
+link UIService.framework and normal groveOS UI code does not link Recovery.framework.
 The kernel accepts the direct recovery display and input syscalls only after
 startup recovery mode has been selected.
 
@@ -71,7 +71,7 @@ Recovery.framework/
 
 StartupOptionsUI is the renamed recovery descendant of ArmOS `libarmui`. It
 uses process-owned ARGB buffers and the bootstrap raster fonts. It does not use
-sevOS UIService.framework, WindowServer, or the main UI service.
+groveOS UIService.framework, WindowServer, or the main UI service.
 
 `RecoveryServices` adapts the older triageOS service calls to the NXU userspace
 ABI. Filesystem path metadata, seeked reads, directory creation, copying,
@@ -95,10 +95,10 @@ image contains raw ext4 and has no partition table to delete.
 GPT initialization and partition creation still report `not supported`. Block
 health, mount enumeration, filesystem space queries and verification are wired
 to the kernel storage stack.
-The Reinstall sevOS action explicitly reports that system-image installation is
+The Reinstall groveOS action explicitly reports that system-image installation is
 not implemented.
 
-triageOS is currently staged on the same ext4 system image as sevOS. A future
+triageOS is currently staged on the same ext4 system image as groveOS. A future
 recovery-volume milestone should move `/System/Recovery` to an independently
 bootable recovery filesystem before treating it as a corruption-resistant
 recovery environment.

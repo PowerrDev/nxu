@@ -91,7 +91,7 @@ run_case() {
 
 run_case boot "qemu-exit=1" $STATUS_CLEAN \
 	"i386_init_interrupts: pic remapped to vectors 32-47, all lines masked" \
-	"i386_init_interrupts: pit channel 0 armed at 100 Hz on IRQ 0, interrupts disabled" \
+	"i386_init_interrupts: pit channel 0 armed at 1000 Hz on IRQ 0, interrupts disabled" \
 	"i386_init: boot phases complete" \
 	"!interrupts self-test"
 

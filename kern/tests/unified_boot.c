@@ -41,7 +41,7 @@
 
 /* Arguments that keep bootd from starting the services that would each become the display server. */
 #define UNIFIED_BOOT_NO_WINDOWSERVER "-no-windowserver"
-#define UNIFIED_BOOT_NO_ABOUT_SEVOS "-no-about-sevos"
+#define UNIFIED_BOOT_NO_ABOUT_GROVEOS "-no-about-groveos"
 
 typedef enum { UNIFIED_PENDING, UNIFIED_RUNNING, UNIFIED_PASSED, UNIFIED_FAILED } unified_state_t;
 
@@ -236,12 +236,12 @@ unified_boot_prepare(void)
 		return;
 	}
 
-	if (!boot_args_append(UNIFIED_BOOT_NO_WINDOWSERVER) || !boot_args_append(UNIFIED_BOOT_NO_ABOUT_SEVOS)) {
+	if (!boot_args_append(UNIFIED_BOOT_NO_WINDOWSERVER) || !boot_args_append(UNIFIED_BOOT_NO_ABOUT_GROVEOS)) {
 		UNIFIED_BOOT_LOG("the boot arguments are full: bootd will start services that claim the display\n");
 		return;
 	}
 
-	UNIFIED_BOOT_LOG("the UI session owns the display: bootd starts without windowserver and about-sevos\n");
+	UNIFIED_BOOT_LOG("the UI session owns the display: bootd starts without windowserver and about-groveos\n");
 }
 
 void

@@ -65,11 +65,12 @@
 #define T_IPI_CPU_STOP 0xF1U
 
 /*
- * A private i386 mechanism, not one of kern/ipi.h's logical IPI types: this
- * port has no per-CPU Local APIC timer (see apic.h's file comment), so a
- * secondary's scheduler tick is a broadcast from the boot CPU's own PIT
- * handler (kern/i386/smp.c's smp_tick_others()) instead of a real local
- * interrupt. Dispatched straight to sched_tick(), not through smp_handle_ipi.
+ * A private i386 mechanism, not one of kern/ipi.h's logical IPI types: when
+ * the PIT drives the machine (no usable Local APIC timer, see
+ * kern/i386/rtclock.c), a secondary's scheduler tick is a broadcast from the
+ * boot CPU's PIT handler (kern/i386/smp.c's smp_tick_others()) instead of a
+ * local interrupt. Unused once the Local APIC timers run. Dispatched
+ * straight to sched_tick(), not through smp_handle_ipi.
  */
 #define T_IPI_TICK 0xF2U
 
@@ -81,6 +82,13 @@
  * smp_handle_ipi.
  */
 #define T_IPI_SHOOTDOWN 0xF3U
+
+/*
+ * The Local APIC timer (kern/i386/lapic_timer.c): each CPU's own event timer
+ * interrupt, in TSC-deadline or one-shot mode. One priority class below the
+ * IPIs (0xE_ vs 0xF_), so an IPI is never held up behind it.
+ */
+#define T_LAPIC_TIMER 0xEFU
 
 #define T_LAPIC_SPURIOUS 0xFFU
 
@@ -153,6 +161,14 @@ void i386_isr_ipi_cpu_stop(void);
 void i386_isr_ipi_tick(void);
 void i386_isr_ipi_shootdown(void);
 void i386_isr_lapic_spurious(void);
+void i386_isr_lapic_timer(void);
+
+/*
+ * The Local APIC timer interrupt (T_LAPIC_TIMER), on the CPU it fired on.
+ * Weak default in trap.c (acknowledge and ignore); kern/i386/lapic_timer.c
+ * provides the real one.
+ */
+void i386_trap_lapic_timer(x86_saved_state_t *state);
 
 /* Common C entry point for every stub. */
 void i386_trap_handler(x86_saved_state_t *state);

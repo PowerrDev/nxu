@@ -37,7 +37,7 @@ def main():
     shutil.copytree(ROOT / 'tools/DiskRoot', diskroot)
     jobs = diskroot / 'System/Library/BootDaemons'
     jobs.mkdir(parents=True, exist_ok=True)
-    test_executable = '/Volumes/mainOS/Applications/Crash Test.app/Contents/SevOS/Crash Test' if args.ui else '/Volumes/mainOS/System/Library/CoreServices/crashtest'
+    test_executable = '/Volumes/mainOS/Applications/Crash Test.app/Contents/GroveOS/Crash Test' if args.ui else '/Volumes/mainOS/System/Library/CoreServices/crashtest'
     test_job = f'<plist version="1.0"><dict>\n<key>Label</key><string>com.nxu.crashtest</string>\n<key>Program</key><string>{test_executable}</string>\n<key>RunAtLoad</key><true/>\n</dict></plist>'
     disk = scratch / 'disk.img'
     config = 'crashd-ui-check' if args.ui else 'crashd-check'
@@ -60,8 +60,8 @@ def main():
                 check=True,
             )
             contents = diskroot / 'Applications/Crash Test.app/Contents'
-            (contents / 'SevOS').mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(ROOT / 'BUILD/userland/crashtest', contents / 'SevOS/Crash Test')
+            (contents / 'GroveOS').mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / 'BUILD/userland/crashtest', contents / 'GroveOS/Crash Test')
             (contents / 'Info.plist').write_text(
                 '<plist version="1.0"><dict><key>CFBundleName</key><string>Crash Test</string><key>CFBundleIdentifier</key><string>com.nxu.crashtest</string><key>CFBundleExecutable</key><string>Crash Test</string></dict></plist>',
             )

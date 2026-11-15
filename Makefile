@@ -17,6 +17,10 @@ include makedefs/MakeInc.rules
 # from the system Python used by the rest of the build.
 FONT_PYTHON := .venv-fonts/bin/python3
 
+# The picture a fresh system shows: behind the first-boot greeting and the
+# lock screen (built into the kernel), and on the desktop until one is chosen.
+DEFAULT_WALLPAPER := tools/DiskRoot/Library/Caches/Wallpapers/GoldenGate.jpg
+
 $(FONT_PYTHON): tools/requirements-fonts.txt
 	$(Q)python3 -m venv .venv-fonts
 	$(Q).venv-fonts/bin/python3 -m pip install -r tools/requirements-fonts.txt
@@ -342,6 +346,7 @@ C_SOURCES := \
     platform/arm64/services/ui_service.c \
     drivers/video/ui_service_login.c \
     drivers/video/keystore_manager.c \
+    drivers/video/setup_assistant.c \
     drivers/video/login_wallpaper.c \
     drivers/video/ui_service_activity.c \
     drivers/video/ui_session_manager.c \
@@ -373,6 +378,8 @@ C_SOURCES := \
     kern/boot/boot_args.c \
     kern/boot/recovery_volume.c \
     kern/update/update.c \
+    kern/update/erase.c \
+    kern/boot/startup_disk.c \
     drivers/block/file_image.c \
     frameworks/SoftwareUpdate.framework/lib/manifest.c \
     frameworks/CoreFoundation.framework/lib/plist/plist.c \
@@ -396,6 +403,10 @@ C_SOURCES := \
     kern/sched_prism/run_queue.c \
     kern/sched_prism/waitq.c \
     kern/sched_prism/sched.c \
+    kern/sched_prism/sched_timer.c \
+    kern/clock/clock.c \
+    kern/clock/timer_call.c \
+    kern/clock/etimer.c \
     kern/process/task.c \
     kern/memory/heap.c \
     kern/ipc/ipc_init.c \
@@ -434,7 +445,7 @@ C_SOURCES := \
     kern/tests/termios_process_test.c \
     kern/tests/tep_mailbox_test.c \
     kern/tests/windowserver_process_test.c \
-    kern/tests/about_sevos_process_test.c \
+    kern/tests/about_groveos_process_test.c \
     kern/tests/unified_boot.c \
     kern/syscall/syscall.c \
     kern/process/thread.c \
@@ -549,6 +560,7 @@ USER_C_SOURCES := \
     frameworks/BootDaemons.framework/problemreporter.c \
     frameworks/BootDaemons.framework/crashtest.c \
     frameworks/BootDaemons.framework/patchd.c \
+    frameworks/BootDaemons.framework/patchd_reset.c \
     frameworks/SoftwareUpdate.framework/lib/nsw.c \
     frameworks/SoftwareUpdate.framework/lib/manifest.c \
     frameworks/BootDaemons.framework/ipctest_a.c \
@@ -588,7 +600,7 @@ USER_C_SOURCES := \
     frameworks/BootDaemons.framework/sockettest_client.c \
     frameworks/BootDaemons.framework/windowserver_service.c \
     frameworks/BootDaemons.framework/wstest_client.c \
-    frameworks/BootDaemons.framework/about_sevos_service.c \
+    frameworks/BootDaemons.framework/about_groveos_service.c \
     frameworks/AppKit.framework/app_main.c \
     frameworks/Recovery.framework/lib/RecoveryServices.c \
     frameworks/Recovery.framework/StartupOptionsUI/drawing.c \
@@ -692,7 +704,7 @@ USER_DAEMONS := \
     $(USER_BUILD)/CoreGraphics.so \
     $(USER_BUILD)/DesktopService.so \
     $(USER_BUILD)/wstest_client \
-    $(USER_BUILD)/about_sevos_service
+    $(USER_BUILD)/about_groveos_service
 
 
 USER_SERVICE_PLISTS := \
@@ -704,7 +716,7 @@ USER_SERVICE_PLISTS := \
     frameworks/BootDaemons.framework/Services/com.nxu.patchd.plist \
     frameworks/BootDaemons.framework/Services/com.nxu.windowserver.plist \
     frameworks/BootDaemons.framework/Services/com.nxu.desktop.plist \
-    frameworks/BootDaemons.framework/Services/com.nxu.about-sevos.plist \
+    frameworks/BootDaemons.framework/Services/com.nxu.about-groveos.plist \
     frameworks/BootDaemons.framework/Services/com.nxu.dock.plist \
     frameworks/BootDaemons.framework/Services/com.nxu.getty.plist
 
@@ -720,7 +732,7 @@ USER_SERVICE_PLISTS := \
 # which quotes them, uses the real paths.
 UISERVICE_APPS_DIR := $(UISERVICE_DIR)/build/apps
 
-USER_APP_BUNDLES := voyager activity-monitor system-settings about-sevos dock
+USER_APP_BUNDLES := voyager activity-monitor system-settings about-groveos dock
 
 USER_APPS := $(addprefix $(USER_BUILD)/apps/,$(USER_APP_BUNDLES))
 
@@ -740,9 +752,9 @@ USER_APP_activity-monitor_ICON := ActivityMonitor.icns
 USER_APP_system-settings_BUNDLE := Applications/System Settings.app
 USER_APP_system-settings_EXEC := System Settings
 USER_APP_system-settings_ICON := SystemSettings.icns
-USER_APP_about-sevos_BUNDLE := System/Library/CoreServices/About sevOS.app
-USER_APP_about-sevos_EXEC := About sevOS
-USER_APP_about-sevos_ICON :=
+USER_APP_about-groveos_BUNDLE := System/Library/CoreServices/About groveOS.app
+USER_APP_about-groveos_EXEC := About groveOS
+USER_APP_about-groveos_ICON :=
 USER_APP_dock_BUNDLE := System/Library/CoreServices/Dock.app
 USER_APP_dock_EXEC := Dock
 USER_APP_dock_ICON :=
@@ -831,12 +843,14 @@ $(BUILD)/%.o: %.S
 
 	$(Q)$(CC) $(ASFLAGS) -c $< -o $@
 
-$(BUILD)/login_wallpaper.qoi: tools/UI/Backgrounds/Sonoma.jpg tools/make_login_wallpaper.py $(FONT_PYTHON)
+$(BUILD)/login_wallpaper.qoi: $(DEFAULT_WALLPAPER) tools/make_login_wallpaper.py $(FONT_PYTHON)
 	$(Q)$(FONT_PYTHON) tools/make_login_wallpaper.py --source $< --output $@
 
 $(BUILD)/drivers/video/login_wallpaper_asset.o: drivers/video/login_wallpaper_asset.S $(BUILD)/login_wallpaper.qoi $(BUILD)/.kernel-flags
 	@mkdir -p $(dir $@)
-	$(Q)$(CC) $(ASFLAGS) '-DNXU_LOGIN_WALLPAPER_QOI="$(BUILD)/login_wallpaper.qoi"' -c $< -o $@
+	@# ccache hashes the preprocessed source, not what .incbin pulls in: it would
+	@# hand back an object with the previous picture.
+	$(Q)CCACHE_DISABLE=1 $(CC) $(ASFLAGS) '-DNXU_LOGIN_WALLPAPER_QOI="$(BUILD)/login_wallpaper.qoi"' -c $< -o $@
 
 
 $(USER_BUILD)/%.o: %.c Makefile
@@ -910,7 +924,7 @@ $(USER_BUILD)/WindowServer.so: $(WINDOWSERVER_PIC_SOURCES) frameworks/Runtime.fr
 COREGRAPHICS_PIC_DIR := $(USER_BUILD)/coregraphics-pic
 COREGRAPHICS_PIC_SOURCES := $(shell rg --files $(UISERVICE_DIR)/crates -g '*.rs' -g '*.toml')
 COREGRAPHICS_PIC_ASSETS := $(shell rg --files $(UISERVICE_DIR)/assets) \
-	tools/UI/Backgrounds/Sonoma.jpg \
+	$(DEFAULT_WALLPAPER) \
 	tools/DiskRoot/System/Library/Fonts/SF-Pro-Text-Regular.ttf \
 	tools/DiskRoot/System/Library/Fonts/SF-Pro-Text-Semibold.ttf
 
@@ -980,8 +994,8 @@ $(USER_BUILD)/terminal_font.h: tools/generate_terminal_font.py tools/generate_re
 $(USER_BUILD)/frameworks/Terminal.framework/terminal.o: $(USER_BUILD)/terminal_font.h
 $(USER_BUILD)/frameworks/Terminal.framework/terminal.o: USER_CFLAGS += -I$(USER_BUILD)
 
-$(BUILD)/drivers/video/keystore_manager.o: $(USER_BUILD)/reporter_fonts.h
-$(BUILD)/drivers/video/keystore_manager.o: CFLAGS += -I$(USER_BUILD)
+$(BUILD)/drivers/video/keystore_manager.o $(BUILD)/drivers/video/setup_assistant.o: $(USER_BUILD)/reporter_fonts.h
+$(BUILD)/drivers/video/keystore_manager.o $(BUILD)/drivers/video/setup_assistant.o: CFLAGS += -I$(USER_BUILD)
 
 $(BUILD)/kern/security/sap.o: $(USER_BUILD)/reporter_fonts.h
 $(BUILD)/kern/security/sap.o: CFLAGS += -I$(USER_BUILD)
@@ -1001,6 +1015,7 @@ $(USER_BUILD)/logd: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.
 
 
 $(USER_BUILD)/patchd: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/BootDaemons.framework/patchd.o \
+	$(USER_BUILD)/frameworks/BootDaemons.framework/patchd_reset.o \
 	$(USER_BUILD)/frameworks/SoftwareUpdate.framework/lib/nsw.o \
 	$(USER_BUILD)/frameworks/SoftwareUpdate.framework/lib/manifest.o \
 	$(USER_BUILD)/frameworks/CoreFoundation.framework/lib/plist/plist.o $(USER_BUILD)/libk/sha256.o
@@ -1251,7 +1266,7 @@ $(USER_BUILD)/wstest_client: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/Cor
 	$(Q)$(USER_LD) $(USER_LDFLAGS) $^ -o $@
 
 
-$(USER_BUILD)/about_sevos_service: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/CoreFoundation.framework/lib/service/bootstrap_client.o $(USER_BUILD)/frameworks/BootDaemons.framework/about_sevos_service.o
+$(USER_BUILD)/about_groveos_service: $(USER_COMMON_OBJECTS) $(USER_BUILD)/frameworks/CoreFoundation.framework/lib/service/bootstrap_client.o $(USER_BUILD)/frameworks/BootDaemons.framework/about_groveos_service.o
 
 	$(QUIET_PRINT) "LD" "$@"
 
@@ -1282,6 +1297,8 @@ $(USER_STAGE_STAMP): frameworks/Terminal.framework/Info.plist tools/UI/Icons/Ter
 		$(DISK_ROOT)/var/db/patchd $(DISK_ROOT)/System/Library/Frameworks \
 		$(DISK_ROOT)/Library/Logs/DiagnosticReports $(DISK_ROOT)/Users/Shared/Library/Logs/DiagnosticReports \
 		$(DISK_ROOT)/var/run $(DISK_ROOT)/var/root $(DISK_ROOT)/var/empty $(DISK_ROOT)/Users/user
+
+	@printf 'mainOS\n' > $(DISK_ROOT)/var/db/patchd/startup-disk
 
 	@chmod 700 $(DISK_ROOT)/var/root
 
@@ -1320,8 +1337,8 @@ $(USER_STAGE_STAMP): frameworks/Terminal.framework/Info.plist tools/UI/Icons/Ter
 	$(Q)cp $(USER_BUILD)/smptest $(DISK_ROOT)/System/Library/CoreServices/smptest
 	$(Q)cp $(USER_BUILD)/top $(DISK_ROOT)/System/Library/CoreServices/top
 	$(Q)cp $(USER_BUILD)/ping $(USER_BUILD)/ifconfig $(USER_BUILD)/nzh $(USER_BUILD)/terminaltest $(USER_BUILD)/kpanic $(DISK_ROOT)/System/Library/CoreServices/
-	$(Q)mkdir -p "$(DISK_ROOT)/Applications/Terminal.app/Contents/SevOS"
-	$(Q)cp $(USER_BUILD)/terminal "$(DISK_ROOT)/Applications/Terminal.app/Contents/SevOS/Terminal"
+	$(Q)mkdir -p "$(DISK_ROOT)/Applications/Terminal.app/Contents/GroveOS"
+	$(Q)cp $(USER_BUILD)/terminal "$(DISK_ROOT)/Applications/Terminal.app/Contents/GroveOS/Terminal"
 	$(Q)cp frameworks/Terminal.framework/Info.plist "$(DISK_ROOT)/Applications/Terminal.app/Contents/Info.plist"
 	$(Q)mkdir -p "$(DISK_ROOT)/Applications/Terminal.app/Contents/Resources"
 	$(Q)cp tools/UI/Icons/Terminal.png "$(DISK_ROOT)/Applications/Terminal.app/Contents/Resources/Terminal.png"
@@ -1394,7 +1411,7 @@ $(USER_STAGE_STAMP): frameworks/Terminal.framework/Info.plist tools/UI/Icons/Ter
 
 	$(Q)cp $(USER_BUILD)/wstest_client $(DISK_ROOT)/System/Library/CoreServices/wstest_client
 
-	$(Q)cp $(USER_BUILD)/about_sevos_service $(DISK_ROOT)/System/Library/CoreServices/about_sevos_service
+	$(Q)cp $(USER_BUILD)/about_groveos_service $(DISK_ROOT)/System/Library/CoreServices/about_groveos_service
 
 	$(Q)cp $(USER_SERVICE_PLISTS) $(DISK_ROOT)/System/Library/BootDaemons/
 
@@ -1412,8 +1429,8 @@ $(USER_STAGE_STAMP): frameworks/Terminal.framework/Info.plist tools/UI/Icons/Ter
 # stage_app(app, executable, disk root): the executable into its bundle, and
 # the icon its Info.plist names into Contents/Resources.
 define stage_app
-	$(Q)mkdir -p "$(3)/$(USER_APP_$(1)_BUNDLE)/Contents/SevOS"
-	$(Q)cp "$(2)" "$(3)/$(USER_APP_$(1)_BUNDLE)/Contents/SevOS/$(USER_APP_$(1)_EXEC)"
+	$(Q)mkdir -p "$(3)/$(USER_APP_$(1)_BUNDLE)/Contents/GroveOS"
+	$(Q)cp "$(2)" "$(3)/$(USER_APP_$(1)_BUNDLE)/Contents/GroveOS/$(USER_APP_$(1)_EXEC)"
 	$(if $(USER_APP_$(1)_ICON),$(Q)mkdir -p "$(3)/$(USER_APP_$(1)_BUNDLE)/Contents/Resources" && cp "$(3)/System/Library/Resources/Images/$(USER_APP_$(1)_ICON)" "$(3)/$(USER_APP_$(1)_BUNDLE)/Contents/Resources/")
 
 endef
@@ -1460,7 +1477,7 @@ apply-assets:
 		cp tools/DiskRoot/System/Library/Resources/Images/DefaultWallpaper.jpg "$(UISERVICE_DIR)/assets/Backgrounds/DefaultWallpaper.jpg"; \
 	fi
 
-	@echo "Applied sevOS UIService assets to $(UISERVICE_DIR)/assets"
+	@echo "Applied groveOS UIService assets to $(UISERVICE_DIR)/assets"
 
 
 recovery-assets:
@@ -1499,7 +1516,7 @@ uiservice-build:
 	$(MAKE) -C $(UISERVICE_DIR) BUILD_JOBS=$(BUILD_JOBS) \
 		INTER_REGULAR="$(abspath tools/DiskRoot/System/Library/Fonts/SF-Pro-Text-Regular.ttf)" \
 		INTER_SEMIBOLD="$(abspath tools/DiskRoot/System/Library/Fonts/SF-Pro-Text-Semibold.ttf)" \
-		BACKGROUND="$(abspath tools/UI/Backgrounds/Sonoma.jpg)" nxu
+		BACKGROUND="$(abspath $(DEFAULT_WALLPAPER))" nxu
 
 uiservice-apps-build:
 

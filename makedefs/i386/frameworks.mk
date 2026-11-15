@@ -29,7 +29,7 @@ I386_COREGRAPHICS_PIC = $(I386_USER_BUILD)/coregraphics-pic
 I386_GUI_BUILD_TOOLS := tools/build_gui_pic.py tools/audit_gui_frameworks.py tools/gui_elf.py \
 	frameworks/Runtime.framework/rust/allocator.rs frameworks/Runtime.framework/rust/panic.rs
 
-COREGRAPHICS_PIC_ASSETS += tools/UI/Backgrounds/Sonoma.jpg \
+COREGRAPHICS_PIC_ASSETS += $(DEFAULT_WALLPAPER) \
 	tools/DiskRoot/System/Library/Fonts/SF-Pro-Text-Regular.ttf \
 	tools/DiskRoot/System/Library/Fonts/SF-Pro-Text-Semibold.ttf
 

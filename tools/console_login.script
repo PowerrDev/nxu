@@ -19,7 +19,7 @@ wait login:
 send user\r
 wait Password:
 send user\r
-wait Welcome to sevOS.
+wait Welcome to groveOS.
 wait %
 send who\r
 wait \nuser      console   

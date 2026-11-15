@@ -66,6 +66,10 @@
 #include <kern/boot/boot_args.h>
 #include <kern/console/console.h>
 #include <kern/sched_prism/sched.h>
+
+#include <kern/clock/clock.h>
+#include <kern/clock/etimer.h>
+#include <kern/clock/timer_call.h>
 #include <kern/sched_prism/waitq.h>
 #include <kern/ipi.h>
 #include <kern/machine/cpu.h>
@@ -121,10 +125,11 @@ sched_user_running_reset_peak(void)
 }
 
 /*
- * Timed sleep. There is no per-thread timer: sleepers wait on one queue, the boot
- * CPU's tick wakes them all while there are any, and each re-checks its own
- * deadline and goes back to sleep if it is not due. Coarse (a tick, 10 ms) and
- * cheap for the few callers it has.
+ * Timed sleep. Sleepers wait on one queue, each with its own deadline
+ * (waitq_block_deadline): a timer call that ends the sleep when it is due,
+ * to the microsecond with a deadline event timer, to the tick with a
+ * periodic one. Nothing wakes the queue as a whole; a sleeper woken early
+ * (an interrupted wait) re-checks its deadline and sleeps again.
  *
  * Until the first tick nothing would wake them: the kernel's process tests
  * (boot_test_storage) run user processes before kern_start_scheduler starts
@@ -165,7 +170,7 @@ sched_sleep_us(uint64_t microseconds)
 
 		if (timer_get_microseconds() >= deadline) break;
 
-		if (!waitq_block_seq(&g_sched_sleep_queue, seq, false)) break;
+		if (waitq_block_deadline(&g_sched_sleep_queue, seq, false, deadline) == WAITQ_INTERRUPTED) break;
 	}
 
 	(void)__atomic_sub_fetch(&g_sched_sleepers, 1U, __ATOMIC_ACQ_REL);
@@ -197,6 +202,22 @@ sched_sleep_us_interruptible(uint64_t microseconds, bool *interrupted)
 	}
 
 	return true;
+}
+
+void
+sched_deadline_tick(void)
+{
+	if (!g_sched.initialized || etimer_deadline_mode()) return;
+
+	/* This interrupt runs timer calls, so timed waits work from the first one, not only from the first tick. */
+	__atomic_store_n(&g_sched_ticking, true, __ATOMIC_RELEASE);
+	(void)timer_call_expire(0U, clock_uptime_us());
+}
+
+void
+sched_set_ticking(void)
+{
+	__atomic_store_n(&g_sched_ticking, true, __ATOMIC_RELEASE);
 }
 
 bool
@@ -235,7 +256,7 @@ sched_sleep_until_kicked_seq(uint64_t microseconds, uint32_t kicks, bool interru
 
 		if (__atomic_load_n(&g_sched_kicks, __ATOMIC_ACQUIRE) != kicks || timer_get_microseconds() >= deadline) break;
 
-		if (!waitq_block_seq(&g_sched_kick_queue, seq, interruptible)) {
+		if (waitq_block_deadline(&g_sched_kick_queue, seq, interruptible, deadline) == WAITQ_INTERRUPTED) {
 			completed = false;
 			break;
 		}
@@ -613,10 +634,19 @@ sched_starvation_scan(run_queue_t *runq, uint32_t now)
 																	   : 0U;
 
 			if (lift <= priority) {
-				/* Not starved (or already that high): back where it was, at
-				 * the head of its line. */
+				/*
+				 * Not starved (or already that high): back where it was, at
+				 * the head of its line, and still waiting since when it was
+				 * queued. The enqueue stamps the time afresh; keeping that
+				 * stamp would restart the wait of the thread at the head of
+				 * each line at every scan, and the one that has waited longest
+				 * could never be lifted.
+				 */
+				uint32_t queued_at = thread->runq_enqueued_tick;
+
 				if (!run_queue_enqueue(runq, thread, RUN_QUEUE_HEAD))
 					sched_fatal("run_queue_enqueue: starvation scan re-enqueue failed");
+				thread->runq_enqueued_tick = queued_at;
 				break;
 			}
 
@@ -820,6 +850,44 @@ sched_prepare_new_thread(thread_t thread)
 }
 
 /*
+ * sched_idle_loop
+ *
+ * What every CPU's idle thread does: sleep until an interrupt, and switch to
+ * work at the interrupt's return (i386_trap_exit and arm64's equivalent call
+ * sched_preempt at the idle thread's safe point).
+ *
+ * Work can also be waiting with no interrupt on its way. sched_switch can
+ * land here with preemption_pending set, for a thread queued while it had the
+ * run queue unlocked (see the comment where it recomputes the flag): whoever
+ * queued it saw the flag already set and sent no IPI. A busy CPU's request to
+ * pull work (balance_requested) can likewise have arrived while this CPU was
+ * still busy. With a periodic tick the next tick's return path took care of
+ * both within a tick; an idle CPU on a deadline event timer takes no ticks,
+ * so it must look before it sleeps. The look and the sleep are one step with
+ * interrupts masked (cpu_idle_halt), so anything that arrives after the look
+ * wakes the sleep.
+ */
+static __attribute__((noreturn)) void
+sched_idle_loop(void)
+{
+	for (;;) {
+		ml_irq_disable();
+
+		processor_t processor = current_processor();
+
+		if (__atomic_load_n(&processor->preemption_pending, __ATOMIC_ACQUIRE) ||
+			__atomic_load_n(&processor->balance_requested, __ATOMIC_ACQUIRE)) {
+			if (!sched_preempt()) sched_clear_preemption();
+
+			ml_irq_enable();
+			continue;
+		}
+
+		cpu_idle_halt();
+	}
+}
+
+/*
  * sched_idle_continue
  */
 static __attribute__((noreturn)) void
@@ -827,9 +895,7 @@ sched_idle_continue(void *parameter)
 {
 	(void)parameter;
 
-	for (;;) {
-		cpu_wait_for_interrupt();
-	}
+	sched_idle_loop();
 }
 
 /*
@@ -1216,6 +1282,9 @@ sched_switch(sched_switch_reason_t reason)
 
 	nxu_spin_unlock(&processor->runq_lock);
 
+	/* The scheduler's tick follows the CPU: one while it runs a thread, none while it idles (sched_timer.c). */
+	if (thread_is_idle(current) != thread_is_idle(next)) sched_timer_dispatch(processor, thread_is_idle(next), now_us);
+
 	machine_thread_switch_context(&current->machine, &next->machine);
 
 	/*
@@ -1238,6 +1307,9 @@ sched_bootstrap(task_t kernel_task)
 	if (kernel_task == 0 || !task_is_kernel(kernel_task)) return false;
 
 	if (!processor_bootstrap()) return false;
+
+	/* Timed waits enter timer calls from the first tick on; their queues must exist before it. */
+	timer_call_init();
 
 	memset(&g_sched, 0, sizeof(g_sched));
 
@@ -1346,10 +1418,7 @@ sched_cpu_idle(void)
 
 	__atomic_store_n(&processor->state, PROCESSOR_IDLE, __ATOMIC_RELEASE);
 
-	for (;;) {
-		ml_irq_enable();
-		cpu_wait_for_interrupt();
-	}
+	sched_idle_loop();
 }
 
 bool
@@ -1791,6 +1860,40 @@ sched_balance(processor_t self)
 	(void)sched_migrate_one(busiest, self);
 }
 
+/*
+ * sched_idle_helper_locked
+ *
+ * An idle CPU that may run one of the threads waiting on
+ * `self`'s run queue (self's runq_lock held), or 0. Scans the queue only when
+ * something waits and some CPU is idle; most ticks return at the first test.
+ */
+static processor_t
+sched_idle_helper_locked(processor_t self)
+{
+	if (self->runq.count == 0U) return 0;
+
+	uint32_t count = processor_count();
+
+	for (uint32_t cpu = 0U; cpu < count; cpu++) {
+		processor_t candidate = processor_by_id(cpu);
+
+		if (candidate == 0 || candidate == self || !processor_is_online(candidate)) continue;
+
+		if (__atomic_load_n(&candidate->state, __ATOMIC_ACQUIRE) != PROCESSOR_IDLE) continue;
+
+		for (uint32_t priority = 0U; priority < RUN_QUEUE_COUNT; priority++) {
+			if ((self->runq.bitmap & (1ULL << priority)) == 0ULL) continue;
+
+			for (thread_t thread = self->runq.queues[priority].head; thread != 0;
+				 thread = thread->sched_links.runq.next) {
+				if (sched_cpu_may_run(thread, cpu)) return candidate;
+			}
+		}
+	}
+
+	return 0;
+}
+
 void
 sched_tick(void)
 {
@@ -1841,30 +1944,39 @@ sched_tick(void)
 		sched_mlfq_boost_locked(processor);
 	}
 
-	/* The clock queued threads' waits are measured on, and the guard that
-	 * keeps strict QoS bands from starving the lower ones. */
-	if (processor->cpu_id == 0U) run_queue_clock_advance();
-
+	/* The guard that keeps strict QoS bands from starving the lower ones (waits measured on run_queue_clock). */
 	if (processor->sched_ticks % SCHED_STARVATION_SCAN_TICKS == 0U &&
 		sched_starvation_scan(&processor->runq, run_queue_clock()) != 0U) {
 		__atomic_store_n(&processor->preemption_pending, true, __ATOMIC_RELEASE);
 	}
 
+	/*
+	 * Idle CPUs take no ticks with a deadline event timer, so they no longer
+	 * balance on their own: a CPU with threads waiting that an idle CPU may
+	 * run asks that CPU to come and pull one.
+	 */
+	processor_t idle_helper = sched_timer_enabled() ? sched_idle_helper_locked(processor) : 0;
+
 	nxu_spin_unlock(&processor->runq_lock);
 
-	/* Timed sleepers (sched_sleep_us) are checked on the boot CPU's tick. */
-	if (processor->cpu_id == 0U) __atomic_store_n(&g_sched_ticking, true, __ATOMIC_RELEASE);
-
-	if (processor->cpu_id == 0U && __atomic_load_n(&g_sched_sleepers, __ATOMIC_ACQUIRE) != 0U) {
-		waitq_wake_all(&g_sched_sleep_queue);
+	/*
+	 * Asked again on every tick while the work waits: a request the idle CPU
+	 * could not act on (it was busy for a moment when the IPI came) is not
+	 * lost, and an idle CPU used to look on each of its own ticks anyway.
+	 */
+	if (idle_helper != 0) {
+		__atomic_store_n(&idle_helper->balance_requested, true, __ATOMIC_RELEASE);
+		ipi_send(idle_helper->cpu_id, IPI_RESCHEDULE);
 	}
 
-	if (processor->cpu_id == 0U && __atomic_load_n(&g_sched_kick_sleepers, __ATOMIC_ACQUIRE) != 0U) {
-		waitq_wake_all(&g_sched_kick_queue);
+	/*
+	 * With a periodic event timer the boot CPU's tick is also what runs the
+	 * timer calls, which end timed waits: they work from the first one on.
+	 */
+	if (processor->cpu_id == 0U && !etimer_deadline_mode()) {
+		__atomic_store_n(&g_sched_ticking, true, __ATOMIC_RELEASE);
+		(void)timer_call_expire(0U, clock_uptime_us());
 	}
-
-	/* Waits with a deadline (waitq_block_deadline) are ended here too. */
-	if (processor->cpu_id == 0U) waitq_timer_tick(timer_get_microseconds());
 
 	if (processor->ticks % SCHED_BALANCE_INTERVAL_TICKS == 0U) sched_balance(processor);
 
@@ -1874,6 +1986,22 @@ sched_tick(void)
 bool
 sched_preempt(void)
 {
+	/*
+	 * A busy CPU asked this idle one to pull work (sched_tick): the
+	 * reschedule IPI that carried the request brings it here, at the idle
+	 * thread's safe point, and a thread pulled here is switched to below.
+	 */
+	if (g_sched.initialized) {
+		processor_t processor = current_processor();
+
+		if (__atomic_load_n(&processor->balance_requested, __ATOMIC_ACQUIRE) &&
+			__atomic_exchange_n(&processor->balance_requested, false, __ATOMIC_ACQ_REL)) {
+			thread_t active = processor->active_thread;
+
+			if (active != 0 && thread_is_idle(active)) sched_balance(processor);
+		}
+	}
+
 	if (!sched_preemption_pending()) return true;
 
 	return sched_switch(SCHED_SWITCH_PREEMPT);
@@ -1945,6 +2073,13 @@ sched_run_queue_self_test(void)
 	return run_queue_validate(&runq);
 }
 
+/* A scheduler self-test check failed: say where, so a failure on a boot log can be found. */
+#define SCHED_SELF_TEST_FAIL()                                \
+	do {                                                      \
+		kprintf("check at line %u failed\n", (uint32_t)__LINE__); \
+		return false;                                         \
+	} while (0)
+
 /*
  * sched_mlfq_test_thread
  */
@@ -1976,9 +2111,9 @@ sched_mlfq_self_test(void)
 
 	/* A thread starts life at the top queue (Rule 3). */
 	sched_mlfq_test_thread(&hog, SCHED_MLFQ_TOP_LEVEL);
-	if (hog.mlfq_level != SCHED_MLFQ_TOP_LEVEL) return false;
+	if (hog.mlfq_level != SCHED_MLFQ_TOP_LEVEL) SCHED_SELF_TEST_FAIL();
 
-	if (hog.sched_pri != sched_mlfq_level_priority(SCHED_MLFQ_TOP_LEVEL)) return false;
+	if (hog.sched_pri != sched_mlfq_level_priority(SCHED_MLFQ_TOP_LEVEL)) SCHED_SELF_TEST_FAIL();
 
 	/*
 	 * Rule 4: a CPU-bound thread that keeps exhausting its quantum drops
@@ -1986,16 +2121,16 @@ sched_mlfq_self_test(void)
 	 * never falls off the bottom.
 	 */
 	for (uint8_t level = SCHED_MLFQ_TOP_LEVEL; level < SCHED_MLFQ_BOTTOM_LEVEL; level++) {
-		if (hog.mlfq_level != level) return false;
+		if (hog.mlfq_level != level) SCHED_SELF_TEST_FAIL();
 
-		if (hog.quantum_remaining != sched_mlfq_level_quantum(level)) return false;
+		if (hog.quantum_remaining != sched_mlfq_level_quantum(level)) SCHED_SELF_TEST_FAIL();
 
 		sched_mlfq_assign(&hog, (uint8_t)(hog.mlfq_level + 1U));
 	}
-	if (hog.mlfq_level != SCHED_MLFQ_BOTTOM_LEVEL) return false;
+	if (hog.mlfq_level != SCHED_MLFQ_BOTTOM_LEVEL) SCHED_SELF_TEST_FAIL();
 
 	sched_mlfq_assign(&hog, (uint8_t)(hog.mlfq_level + 1U));
-	if (hog.mlfq_level != SCHED_MLFQ_BOTTOM_LEVEL) return false;
+	if (hog.mlfq_level != SCHED_MLFQ_BOTTOM_LEVEL) SCHED_SELF_TEST_FAIL();
 
 	/*
 	 * A thread that yields every tick never runs out its quantum (each
@@ -2008,24 +2143,24 @@ sched_mlfq_self_test(void)
 		uint32_t ticks = sched_mlfq_level_quantum(level);
 
 		for (uint32_t tick = 1U; tick <= ticks; tick++) {
-			if (hog.mlfq_level != level) return false;
+			if (hog.mlfq_level != level) SCHED_SELF_TEST_FAIL();
 
 			bool demoted = sched_mlfq_charge_tick(&hog, 0);
 
-			if (demoted != (tick == ticks)) return false;
+			if (demoted != (tick == ticks)) SCHED_SELF_TEST_FAIL();
 
 			/* The yield: the next dispatch grants a whole quantum again. */
 			if (!demoted) hog.quantum_remaining = sched_mlfq_level_quantum(level);
 		}
-		if (hog.mlfq_level != level + 1U) return false;
+		if (hog.mlfq_level != level + 1U) SCHED_SELF_TEST_FAIL();
 
-		if (hog.mlfq_ticks != 0U) return false;
+		if (hog.mlfq_ticks != 0U) SCHED_SELF_TEST_FAIL();
 	}
 
 	/* The bottom level has nowhere lower to go. */
 	for (uint32_t tick = 0U; tick < sched_mlfq_level_quantum(SCHED_MLFQ_BOTTOM_LEVEL) * 2U; tick++) {
 		(void)sched_mlfq_charge_tick(&hog, 0);
-		if (hog.mlfq_level != SCHED_MLFQ_BOTTOM_LEVEL) return false;
+		if (hog.mlfq_level != SCHED_MLFQ_BOTTOM_LEVEL) SCHED_SELF_TEST_FAIL();
 	}
 
 	/* Sleeping clears the allotment, so a thread that blocks between short bursts stays where it is. */
@@ -2033,14 +2168,14 @@ sched_mlfq_self_test(void)
 
 	for (uint32_t round = 0U; round < 8U; round++) {
 		for (uint32_t tick = 1U; tick < sched_mlfq_level_quantum(SCHED_MLFQ_TOP_LEVEL); tick++) {
-			if (sched_mlfq_charge_tick(&hog, 0)) return false;
+			if (sched_mlfq_charge_tick(&hog, 0)) SCHED_SELF_TEST_FAIL();
 
 			hog.quantum_remaining = sched_mlfq_level_quantum(SCHED_MLFQ_TOP_LEVEL);
 		}
 
 		sched_mlfq_blocked(&hog);
 	}
-	if (hog.mlfq_level != SCHED_MLFQ_TOP_LEVEL) return false;
+	if (hog.mlfq_level != SCHED_MLFQ_TOP_LEVEL) SCHED_SELF_TEST_FAIL();
 
 	/*
 	 * Rule 5: threads parked below the top queue, and the currently
@@ -2050,27 +2185,27 @@ sched_mlfq_self_test(void)
 	sched_mlfq_test_thread(&queued_bottom, SCHED_MLFQ_BOTTOM_LEVEL);
 	sched_mlfq_test_thread(&running, SCHED_MLFQ_BOTTOM_LEVEL);
 
-	if (!run_queue_enqueue(&test_processor.runq, &queued_mid, RUN_QUEUE_TAIL)) return false;
+	if (!run_queue_enqueue(&test_processor.runq, &queued_mid, RUN_QUEUE_TAIL)) SCHED_SELF_TEST_FAIL();
 
-	if (!run_queue_enqueue(&test_processor.runq, &queued_bottom, RUN_QUEUE_TAIL)) return false;
+	if (!run_queue_enqueue(&test_processor.runq, &queued_bottom, RUN_QUEUE_TAIL)) SCHED_SELF_TEST_FAIL();
 
 	test_processor.active_thread = &running;
 
 	sched_mlfq_boost_locked(&test_processor);
 
-	if (queued_mid.mlfq_level != SCHED_MLFQ_TOP_LEVEL) return false;
+	if (queued_mid.mlfq_level != SCHED_MLFQ_TOP_LEVEL) SCHED_SELF_TEST_FAIL();
 
-	if (queued_bottom.mlfq_level != SCHED_MLFQ_TOP_LEVEL) return false;
+	if (queued_bottom.mlfq_level != SCHED_MLFQ_TOP_LEVEL) SCHED_SELF_TEST_FAIL();
 
-	if (running.mlfq_level != SCHED_MLFQ_TOP_LEVEL) return false;
+	if (running.mlfq_level != SCHED_MLFQ_TOP_LEVEL) SCHED_SELF_TEST_FAIL();
 
-	if (queued_mid.sched_pri != sched_mlfq_level_priority(SCHED_MLFQ_TOP_LEVEL)) return false;
+	if (queued_mid.sched_pri != sched_mlfq_level_priority(SCHED_MLFQ_TOP_LEVEL)) SCHED_SELF_TEST_FAIL();
 
-	if (queued_mid.runq != &test_processor.runq) return false;
+	if (queued_mid.runq != &test_processor.runq) SCHED_SELF_TEST_FAIL();
 
-	if (queued_bottom.runq != &test_processor.runq) return false;
+	if (queued_bottom.runq != &test_processor.runq) SCHED_SELF_TEST_FAIL();
 
-	if (!run_queue_validate(&test_processor.runq)) return false;
+	if (!run_queue_validate(&test_processor.runq)) SCHED_SELF_TEST_FAIL();
 
 	return sched_qos_self_test();
 }
@@ -2107,7 +2242,7 @@ sched_qos_self_test_body(void)
 		uint16_t floor = sched_qos_priority(order[index], SCHED_MLFQ_BOTTOM_LEVEL);
 		uint16_t below = sched_qos_priority(order[index + 1U], SCHED_MLFQ_TOP_LEVEL);
 
-		if (floor <= below) return false;
+		if (floor <= below) SCHED_SELF_TEST_FAIL();
 	}
 
 	static struct task background_task;
@@ -2131,40 +2266,43 @@ sched_qos_self_test_body(void)
 	/* A fresh background thread is still below an interactive one that has
 	 * sunk all the way down its band. */
 	sched_mlfq_assign(&interactive, SCHED_MLFQ_BOTTOM_LEVEL);
-	if (background.sched_pri >= interactive.sched_pri) return false;
+	if (background.sched_pri >= interactive.sched_pri) SCHED_SELF_TEST_FAIL();
 
 	/* Starvation: queued long enough ago, the background thread is lifted
 	 * above everything; queued just now, it is left alone. */
 	memset(&test_processor, 0, sizeof(test_processor));
 	run_queue_init(&test_processor.runq);
 
-	if (!run_queue_enqueue(&test_processor.runq, &background, RUN_QUEUE_TAIL)) return false;
+	if (!run_queue_enqueue(&test_processor.runq, &background, RUN_QUEUE_TAIL)) SCHED_SELF_TEST_FAIL();
 
 	uint32_t queued_at = background.runq_enqueued_tick;
 
-	if (sched_starvation_scan(&test_processor.runq, queued_at + 1U) != 0U) return false;
-	if (background.qos_promoted) return false;
+	if (sched_starvation_scan(&test_processor.runq, queued_at + 1U) != 0U) SCHED_SELF_TEST_FAIL();
+	if (background.qos_promoted) SCHED_SELF_TEST_FAIL();
 
-	if (sched_starvation_scan(&test_processor.runq, queued_at + SCHED_STARVATION_TICKS) != 1U) return false;
-	if (!background.qos_promoted || background.sched_pri != SCHED_STARVATION_PRIORITY) return false;
-	if (run_queue_peek(&test_processor.runq) != &background) return false;
+	/* A scan that leaves a thread where it was does not restart its wait. */
+	if (background.runq_enqueued_tick != queued_at) SCHED_SELF_TEST_FAIL();
+
+	if (sched_starvation_scan(&test_processor.runq, queued_at + SCHED_STARVATION_TICKS) != 1U) SCHED_SELF_TEST_FAIL();
+	if (!background.qos_promoted || background.sched_pri != SCHED_STARVATION_PRIORITY) SCHED_SELF_TEST_FAIL();
+	if (run_queue_peek(&test_processor.runq) != &background) SCHED_SELF_TEST_FAIL();
 
 	/* Donation: a background task that an interactive one sent a message
 	 * to runs interactive until it is done, then at its own class again. */
 	sched_task_qos_donate(&background_task, NXU_QOS_USER_INTERACTIVE);
-	if (sched_task_effective_qos(&background_task) != NXU_QOS_USER_INTERACTIVE) return false;
+	if (sched_task_effective_qos(&background_task) != NXU_QOS_USER_INTERACTIVE) SCHED_SELF_TEST_FAIL();
 	sched_task_qos_donate(&background_task, NXU_QOS_UTILITY);
-	if (sched_task_effective_qos(&background_task) != NXU_QOS_USER_INTERACTIVE) return false;
+	if (sched_task_effective_qos(&background_task) != NXU_QOS_USER_INTERACTIVE) SCHED_SELF_TEST_FAIL();
 	sched_task_qos_handling(&background_task, (uint8_t)NXU_QOS_COUNT);
-	if (sched_task_effective_qos(&background_task) != NXU_QOS_BACKGROUND) return false;
+	if (sched_task_effective_qos(&background_task) != NXU_QOS_BACKGROUND) SCHED_SELF_TEST_FAIL();
 	/* Never lowers: an interactive task handling a utility request stays. */
 	sched_task_qos_handling(&interactive_task, NXU_QOS_UTILITY);
-	if (sched_task_effective_qos(&interactive_task) != NXU_QOS_USER_INTERACTIVE) return false;
+	if (sched_task_effective_qos(&interactive_task) != NXU_QOS_USER_INTERACTIVE) SCHED_SELF_TEST_FAIL();
 
 	/* The next level change gives it its own band back. */
 	(void)run_queue_remove(&test_processor.runq, &background);
 	sched_mlfq_assign(&background, SCHED_MLFQ_TOP_LEVEL);
-	if (background.qos_promoted || background.sched_pri != sched_qos_priority(NXU_QOS_BACKGROUND, 0U)) return false;
+	if (background.qos_promoted || background.sched_pri != sched_qos_priority(NXU_QOS_BACKGROUND, 0U)) SCHED_SELF_TEST_FAIL();
 
 	return run_queue_validate(&test_processor.runq);
 }

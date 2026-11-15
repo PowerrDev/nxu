@@ -58,6 +58,7 @@ typedef enum {
 	WS_ACTION_CURSOR_KIND,
 	WS_ACTION_CURSOR,
 	WS_ACTION_DISPLAY_SIZE,
+	WS_ACTION_CLIENT_ALPHA,
 } wsmsg_action_t;
 
 typedef struct {

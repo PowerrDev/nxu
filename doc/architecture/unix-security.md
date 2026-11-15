@@ -151,7 +151,7 @@ built", for the terminal itself).
   session with the terminal as controlling terminal and descriptors 0-2, and
   for ever: gives the terminal back to root (owner 0:0, mode 0600, default
   termios, typeahead discarded, its own group in the foreground), shows
-  "sevOS (console)" (with the first word of `/etc/hostname` if there is one)
+  "groveOS (console)" (with the first word of `/etc/hostname` if there is one)
   and `login: `, reads a name, runs `login -t <terminal> <name>` and waits.
   With no exec on i386 it stays as the session leader instead of becoming
   login. It ignores ^C, ^\, ^Z and SIGHUP; the foreground group it shares

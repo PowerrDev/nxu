@@ -58,6 +58,7 @@ deviates from that rule in two places; both are recorded in
 - [Roadmap to userland](roadmap-to-userland.md) — planned work, not implemented
   functionality.
 - [Software updates](software-update.md) — NSW packages and verified recovery preparation.
+- [Erase and Startup Disk](erase-and-startup-disk.md): Erase All Content and Settings from the recovery factory payload, and the one-shot Recovery startup disk.
 - [Root services](root-services.md) — PID 1, logd, patchd and recovery behavior.
 - [Testing](testing.md) — `make check`, the test registry, and how to add a test.
 - [Service property lists](service-plists.md) — declarative bootd job schema and plist parser limits.
@@ -86,6 +87,7 @@ deviates from that rule in two places; both are recorded in
 - [Threads](kern/threads.md) — thread lifetime, state, stacks and machine state.
 - [Process control](kern/process-control.md) — user-fault containment, signals, `fork` and `exec`.
 - [Scheduler](kern/scheduler.md) — processor object, priority run queue and quantum core.
+- [Timers](kern/timers.md): the monotonic clock, per-CPU timer calls, the event timer, the scheduler's deadlines and the i386 Local APIC timer.
 
 ## Virtual filesystem (`vfs`)
 

@@ -83,7 +83,7 @@ reads the data to the end of the file. `make test-i386-sound` does the same on
 i386, in both interrupt and polling mode, and boots with no sound device. See
 [VirtIO Sound](drivers/virtio-sound.md).
 
-The graphical tests (`ui-*`, `windowserver-*`, `about-sevos-process`) and
+The graphical tests (`ui-*`, `windowserver-*`, `about-groveos-process`) and
 `journal-crash` need a display or a person, so none of them are in `make check`.
 `everything` is the exception: the
 UI session draws into the virtio-gpu framebuffer, so it runs headless too.
@@ -152,12 +152,12 @@ unified_boot_summary: all 5 test(s) passed
 | boot chime, bootd, logd, patchd | yes | the normal boot |
 | `ui-about`, `windowserver-about` | no | the same desktop as `ui-voyager`; there is one desktop per boot |
 | `windowserver-process` | no | a second display server: the userland WindowServer claims the display (`nxu_display_claim`, one owner) that the UI session already draws to |
-| `about-sevos-process` | no | needs that userland WindowServer to draw into |
+| `about-groveos-process` | no | needs that userland WindowServer to draw into |
 | `fault-process` | no | exists to fault user processes on purpose |
 | `journal-crash` | no | halts the kernel after crashing mid-transaction on purpose |
 
-bootd's own plists start `windowserver_service` and `about_sevos_service` in a
-normal boot; the unified boot appends `-no-windowserver -no-about-sevos` to the
+bootd's own plists start `windowserver_service` and `about_groveos_service` in a
+normal boot; the unified boot appends `-no-windowserver -no-about-groveos` to the
 boot arguments (`boot_args_append`, the switches those plists already honour) so
 they do not fight the UI session for the display.
 

@@ -4,13 +4,12 @@
 /*
  * File:        kern/i386/apic.h
  *
- * Local APIC: this port's only use of it is IPIs (kern/ipi.h) and the
- * universal INIT-SIPI-SIPI startup algorithm that brings a secondary CPU out
- * of real mode (kern/i386/smp.c). No IOAPIC, no LAPIC timer mode: every
- * existing device IRQ stays on the legacy 8259 PIC, delivered to the boot
- * CPU only, exactly as before SMP (see doc/i386/smp.md's known gaps); a
- * secondary's own scheduler tick arrives as a broadcast IPI from the boot
- * CPU's PIT handler (kern/i386/smp.c), not a per-CPU LAPIC timer.
+ * Local APIC: IPIs (kern/ipi.h), the universal INIT-SIPI-SIPI startup
+ * algorithm that brings a secondary CPU out of real mode (kern/i386/smp.c),
+ * and each CPU's own timer (kern/i386/lapic_timer.c, which programs the
+ * timer registers through apic_read_register/apic_write_register). No
+ * IOAPIC: every device IRQ stays on the legacy 8259 PIC, delivered to the
+ * boot CPU only (see doc/i386/smp.md's known gaps).
  */
 
 #ifndef NXU_KERN_I386_APIC_H
@@ -28,6 +27,24 @@
  * which apic_enable_local() does.
  */
 bool apic_init(uint32_t physical_address);
+
+/*
+ * apic_map_local
+ *
+ * Make sure the Local APIC is usable on a machine apic_init has not set up
+ * (a uniprocessor boot, which never reads an MP table): find it from the
+ * IA32_APIC_BASE MSR, globally enable it, map its window and software-enable
+ * it on the boot CPU. Returns false if the CPU has no Local APIC (CPUID).
+ * Does nothing more once the window is mapped.
+ */
+bool apic_map_local(void);
+
+/* Whether the Local APIC window is mapped (apic_init or apic_map_local succeeded). */
+bool apic_is_mapped(void);
+
+/* A Local APIC register of the calling CPU, by its offset in the window. The window must be mapped. */
+uint32_t apic_read_register(uint32_t offset);
+void apic_write_register(uint32_t offset, uint32_t value);
 
 /* Set the spurious-vector register's software-enable bit on the calling CPU. */
 void apic_enable_local(void);

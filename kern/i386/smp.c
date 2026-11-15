@@ -43,13 +43,17 @@
  * paging is enabled but before the jump to the higher half.
  */
 
+#include <kern/clock/etimer.h>
+#include <kern/clock/timer_call.h>
 #include <kern/i386/apic.h>
+#include <kern/i386/lapic_timer.h>
 #include <kern/i386/boot_info.h>
 #include <kern/i386/gdt.h>
 #include <kern/i386/idt.h>
 #include <kern/i386/mp_table.h>
 #include <kern/i386/pmap.h>
 #include <kern/i386/smp.h>
+#include <kern/i386/startup.h>
 #include <kern/i386/timer.h>
 #include <kern/i386/trap.h>
 #include <kern/i386/vm_param.h>
@@ -156,6 +160,9 @@ i386_smp_secondary_main(uint32_t cpu_id, processor_t cpu)
 	kprintf("cpu%u: PAE and %s protections validated\n", cpu_id, pmap_nx_enabled() ? "NX" : "write");
 
 	apic_enable_local();
+
+	/* This CPU's own event timer, before it can take an interrupt (nothing if the PIT is kept). */
+	lapic_timer_cpu_start();
 
 	/*
 	 * Every CPU resets with IF clear, and nothing on the path here (the
@@ -566,13 +573,20 @@ smp_boot_secondaries(void)
 
 /* ---- boot phase ---------------------------------------------------------- */
 
+void i386_rtclock_init(void);
+bool i386_rtclock_init_complete(uint32_t online);
+
 bool
 i386_init_smp(const i386_boot_info_t *boot)
 {
 	(void)boot;
 
-	(void)smp_boot_secondaries();
-	return true;
+	/* The boot CPU's event timer first: each secondary starts its own as it comes up. */
+	i386_rtclock_init();
+
+	uint32_t online = smp_boot_secondaries();
+
+	return i386_rtclock_init_complete(online);
 }
 
 /*
@@ -672,12 +686,19 @@ i386_init_smp_selftest(const i386_boot_info_t *boot)
 
 	if (ok) kprintf("cpu count and IPI round trip ok\n");
 
+	/*
+	 * The timers: timer call queues on a synthetic clock, then live deadlines
+	 * and sleeps on this CPU's event timer, judged on latency only in a test
+	 * run (test=smp), not in every boot's power-on self-test.
+	 */
+	bool timers = timer_call_self_test() && etimer_self_test(!i386_startup_tests_enabled());
+
+	if (timers) kprintf("timer self-tests passed on the %s\n", etimer_hw_name());
+	ok &= timers;
+
 	/* The cross-CPU VM subset of kern/tests/smp_test.c: usertlb exercises this
 	 * port's TLB shootdown by mutating a page another CPU still has cached;
-	 * cowrace/vmrace/memory the fork, fault and shared-page paths. The full
-	 * suite's scheduler/timer cases assume arm64's per-CPU timer model, which
-	 * this port (PIT-broadcast ticks) does not share, so only the VM subset
-	 * runs here. */
+	 * cowrace/vmrace/memory the fork, fault and shared-page paths. */
 	ok &= smp_test_run_vm();
 
 	return ok;

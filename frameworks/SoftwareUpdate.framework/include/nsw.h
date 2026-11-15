@@ -21,6 +21,32 @@ typedef struct {
 #define NSW_INSTALL_PENDING NSW_RECOVERY_ROOT "/InstallPending"
 #define NSW_INSTALL_READY NSW_RECOVERY_ROOT "/InstallReady"
 
+/*
+ * Erase All Content and Settings. patchd queues an erase on the recovery
+ * volume; at the next boot the kernel starts the recovery volume's patchd as
+ * PID 1 with NSW_ERASE_ARGUMENT, which wipes /Volumes/mainOS and reinstalls
+ * it from the verified factory payload. See doc/erase-and-startup-disk.md.
+ */
+#define NSW_ERASE_ROOT NSW_RECOVERY_ROOT "/Erase"
+#define NSW_ERASE_QUEUED NSW_ERASE_ROOT "/Queued"
+#define NSW_ERASE_FAILED NSW_ERASE_ROOT "/Failed"
+#define NSW_ERASE_LOG NSW_ERASE_ROOT "/Log.txt"
+#define NSW_ERASE_MARKER "erase-all-content-and-settings\n"
+#define NSW_ERASE_PROGRAM NSW_RECOVERY_ROOT "/System/Recovery/patchd"
+#define NSW_ERASE_ARGUMENT "--erase-all-content-and-settings"
+#define NSW_FACTORY_ROOT NSW_RECOVERY_ROOT "/System/Recovery/Factory"
+#define NSW_FACTORY_FILES NSW_FACTORY_ROOT "/Root"
+#define NSW_FACTORY_MANIFEST NSW_FACTORY_ROOT "/FactoryManifest"
+#define NSW_FACTORY_MANIFEST_HASH NSW_FACTORY_ROOT "/FactoryManifest.sha256"
+
+/*
+ * Startup Disk. The choice lives on the recovery volume (NVRAM cannot be
+ * written under QEMU); patchd mirrors it on the system volume for System
+ * Settings. Recovery is honoured once, then the kernel resets it to mainOS.
+ */
+#define NSW_STARTUP_DISK NSW_RECOVERY_ROOT "/System/StartupDisk"
+#define NSW_STARTUP_DISK_MIRROR "/Volumes/mainOS/var/db/patchd/startup-disk"
+
 typedef struct {
 	char build[64];
 	char transaction[96];

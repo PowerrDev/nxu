@@ -41,10 +41,19 @@ nest. The `intid` of `irq_register`/`irq_dispatch` is the PIC line, 0..15.
   same handler and context twice, or a full chain (8), is refused. arm64
   keeps one owner per INTID and is unchanged. PCI INTx is level triggered:
   a driver claiming a line should call `pic_set_level_triggered(irq, true)`.
-* **Tick.** `i386_init_interrupts` starts IRQ0 at 100 Hz (`I386_TIMER_HZ`)
+* **Tick.** `i386_init_interrupts` starts IRQ0 at 1000 Hz (`I386_TIMER_HZ`)
   and leaves IF clear. `timer_start_periodic` may be called again to change
   the rate; it resets the count and opens IRQ0. The IRQ0 handler counts the
-  tick and then calls the weak `sched_tick()`. Ticks are counted, not time:
+  interrupt; every tenth (`I386_SCHED_HZ`, 100 Hz) it calls the weak
+  `sched_tick()` and ticks the other CPUs, so quanta and CPU time are those
+  of a 100 Hz tick, and on the rest it calls the weak
+  `sched_deadline_tick()`, which only runs the timer calls that are due
+  (timed waits among them). The PIT drives the machine like this until the
+  `smp` phase, where each CPU's Local APIC timer takes over and IRQ0 is
+  masked (see [Timers](../kern/timers.md)); it stays only when no Local APIC
+  timer mode works, or with `timer.mode=pit`. The Local APIC timer has its
+  own vector, `T_LAPIC_TIMER` (0xEF).
+  Ticks are counted, not time:
   use `timer_get_microseconds()` for wall time. The TSC is calibrated
   against PIT channel 2 by keeping the shortest of eight ~5 ms countdowns,
   since a stalled host can only make a sample longer.

@@ -9,6 +9,7 @@
 
 #include <kern/i386/apic.h>
 
+#include <kern/i386/cpu.h>
 #include <kern/i386/pmap.h>
 #include <kern/i386/timer.h>
 #include <kern/i386/trap.h>
@@ -37,7 +38,14 @@
 #define APIC_ICR_DEST_SHORTHAND_ALL_BUT_SELF 0xC0000U
 #define APIC_ICR_DELIVERY_STATUS_PENDING 0x01000U
 
+#define APIC_BASE_MSR 0x1BU
+#define APIC_BASE_MSR_ENABLE 0x800U
+#define APIC_BASE_MSR_ADDRESS 0xFFFFF000U
+
+#define CPUID_1_EDX_APIC (1U << 9U)
+
 static volatile uint8_t *g_apic_base;
+static uint32_t g_apic_physical;
 
 static uint32_t
 apic_read(uint32_t offset)
@@ -70,6 +78,19 @@ apic_init(uint32_t physical_address)
 {
 	void *virtual_address;
 
+	/* Already mapped (apic_map_local, for the timer): the MP table names the same window. */
+	if (g_apic_base != 0) {
+		if (physical_address != g_apic_physical) {
+			kprintf("MP table puts the Local APIC at phys 0x%x, but it is mapped from 0x%x\n", physical_address,
+					g_apic_physical);
+			return false;
+		}
+
+		kprintf("Local APIC at phys 0x%x already mapped at %p, id %u\n", physical_address, (void *)g_apic_base,
+				apic_id());
+		return true;
+	}
+
   kprintf("checking for APIC MMIO window...\n");
 
 	if (!pmap_map_mmio((uint64_t)physical_address, APIC_MMIO_SIZE, &virtual_address)) {
@@ -80,6 +101,7 @@ apic_init(uint32_t physical_address)
   kprintf("initializing APIC\n");
 
 	g_apic_base = (volatile uint8_t *)virtual_address;
+	g_apic_physical = physical_address;
 
 	apic_enable_local();
 
@@ -87,6 +109,48 @@ apic_init(uint32_t physical_address)
 			(void *)g_apic_base, apic_id(), T_LAPIC_SPURIOUS);
 
 	return true;
+}
+
+bool
+apic_map_local(void)
+{
+	if (g_apic_base != 0) return true;
+
+	uint32_t registers[4];
+
+	cpu_cpuid(1U, registers);
+
+	if ((registers[3] & CPUID_1_EDX_APIC) == 0U) {
+		kprintf("this CPU has no Local APIC\n");
+		return false;
+	}
+
+	uint64_t base = cpu_rdmsr(APIC_BASE_MSR);
+
+	if ((base & APIC_BASE_MSR_ENABLE) == 0ULL) {
+		kprintf("Local APIC globally disabled by firmware, enabling it\n");
+		cpu_wrmsr(APIC_BASE_MSR, base | APIC_BASE_MSR_ENABLE);
+	}
+
+	return apic_init((uint32_t)base & APIC_BASE_MSR_ADDRESS);
+}
+
+bool
+apic_is_mapped(void)
+{
+	return g_apic_base != 0;
+}
+
+uint32_t
+apic_read_register(uint32_t offset)
+{
+	return apic_read(offset);
+}
+
+void
+apic_write_register(uint32_t offset, uint32_t value)
+{
+	apic_write(offset, value);
 }
 
 void

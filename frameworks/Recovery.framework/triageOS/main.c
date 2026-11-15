@@ -220,7 +220,7 @@ main(void)
 
 		triage_action_t action = triage_ui_take_action(&ui);
 		if (action == TRIAGE_ACTION_REINSTALL) {
-			triage_ui_show_message(&ui, "Reinstall sevOS",
+			triage_ui_show_message(&ui, "Reinstall groveOS",
 								   "System image installation is not implemented in NXU recovery yet.");
 			redraw = true;
 		}

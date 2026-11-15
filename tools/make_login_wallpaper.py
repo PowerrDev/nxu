@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Copyright (c) 2026 NXU Project. All rights reserved.
 
-Resize the Sonoma wallpaper and encode it as a compact QOI kernel asset.
+Resize the default wallpaper and encode it as a compact QOI kernel asset.
 """
 from __future__ import annotations
 

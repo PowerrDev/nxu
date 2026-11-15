@@ -113,5 +113,5 @@ boot_mode_is_triage_os(void)
 const char *
 boot_mode_name(void)
 {
-	return g_boot_mode == BOOT_MODE_TRIAGE_OS ? "triageOS" : "sevOS";
+	return g_boot_mode == BOOT_MODE_TRIAGE_OS ? "triageOS" : "groveOS";
 }

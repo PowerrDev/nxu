@@ -32,9 +32,18 @@
 
 #include <stdint.h>
 
-/* IRQ line of the PIT, and the periodic rate started at boot (as arm64). */
+/*
+ * IRQ line of the PIT, and the periodic rate started at boot. The PIT drives
+ * the machine until the "smp" phase hands each CPU over to its own Local
+ * APIC timer (kern/i386/rtclock.c), and for good when no Local APIC timer
+ * mode works. It runs ten times faster than the scheduler ticks
+ * (I386_SCHED_HZ, as arm64's timer): every interrupt runs the timer calls
+ * that are due, so timed waits end to the millisecond, and every tenth also
+ * charges the scheduler its tick, so quanta and CPU time are as before.
+ */
 #define I386_TIMER_IRQ 0U
-#define I386_TIMER_HZ 100U
+#define I386_TIMER_HZ 1000U
+#define I386_SCHED_HZ 100U
 
 /* IRQ line of the CMOS real-time clock, on the slave PIC. */
 #define I386_RTC_IRQ 8U

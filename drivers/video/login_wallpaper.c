@@ -4,7 +4,8 @@
 /*
  * File:        drivers/video/login_wallpaper.c
  *
- * Decode and scale the embedded login wallpaper into the primary framebuffer.
+ * Decode and scale a QOI login wallpaper (the embedded one, or the login copy
+ * of the picture chosen in System Settings) into the primary framebuffer.
  */
 #include <drivers/video/login_wallpaper.h>
 
@@ -85,10 +86,15 @@ login_wallpaper_read_pixel(const uint8_t **cursor, const uint8_t *end, uint8_t *
 bool
 login_wallpaper_draw(display_device_t *display)
 {
-	const uint8_t *cursor = nxu_login_wallpaper_start;
-	const uint8_t *end = nxu_login_wallpaper_end;
-	if (display == 0 || display->framebuffer == 0 || display->width == 0U || display->height == 0U ||
-		display->width > LOGIN_WALLPAPER_MAX_WIDTH || display->height > LOGIN_WALLPAPER_MAX_HEIGHT ||
+	return login_wallpaper_draw_qoi(display, nxu_login_wallpaper_start, nxu_login_wallpaper_end);
+}
+
+bool
+login_wallpaper_draw_qoi(display_device_t *display, const uint8_t *start, const uint8_t *end)
+{
+	const uint8_t *cursor = start;
+	if (cursor == 0 || end == 0 || end < cursor || display == 0 || display->framebuffer == 0 || display->width == 0U ||
+		display->height == 0U || display->width > LOGIN_WALLPAPER_MAX_WIDTH || display->height > LOGIN_WALLPAPER_MAX_HEIGHT ||
 		display->stride < display->width || (size_t)(end - cursor) < 14U || memcmp(cursor, "qoif", 4U) != 0)
 		return false;
 

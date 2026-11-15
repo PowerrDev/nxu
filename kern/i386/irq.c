@@ -28,6 +28,7 @@
  * and boots without the scheduler linked; the tick is then only counted.
  */
 __attribute__((weak)) void sched_tick(void);
+__attribute__((weak)) void sched_deadline_tick(void);
 
 /*
  * kern/i386/smp.c's broadcast to every other online CPU (kern/i386/smp.h).
@@ -56,7 +57,16 @@ i386_timer_irq(uint32_t intid, void *context)
 	(void)intid;
 	(void)context;
 
+	static uint32_t since_tick;
+
 	timer_handle_interrupt();
+
+	/* Between the scheduler's ticks only the timed waits that are due end. */
+	if (++since_tick < I386_TIMER_HZ / I386_SCHED_HZ) {
+		if (sched_deadline_tick != 0) sched_deadline_tick();
+		return;
+	}
+	since_tick = 0U;
 
 	if (sched_tick != 0) sched_tick();
 

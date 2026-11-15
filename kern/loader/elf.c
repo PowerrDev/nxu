@@ -14,6 +14,7 @@
 #include <kern/loader/elf_format.h>
 #include <kern/loader/segment_cache.h>
 #include <kern/machine/cache.h>
+#include <kern/machine/timer.h>
 #include <kern/ipc/ipc_init.h>
 #include <kern/ipc/ipc_port.h>
 #include <kern/ipc/ipc_space.h>
@@ -147,6 +148,22 @@ loader_map_segment(vm_address_space_t *map, const loader_segment_t *segment)
 	return LOADER_STATUS_OK;
 }
 
+/*
+ * loader_preemption_point
+ *
+ * The kernel does not preempt a thread running in it, and loading an app is
+ * a megabyte or more of reading and hashing: on one CPU, everything else --
+ * the desktop drawing its frames -- would wait the whole spawn out. Between
+ * pages the loader holds no lock (it already sleeps here on disk reads), so
+ * it gives the CPU to a higher-priority thread that is waiting for it, the
+ * way the trap path would on the way back to user mode.
+ */
+static void
+loader_preemption_point(void)
+{
+	if (sched_preemption_pending() && !sched_preempt()) sched_clear_preemption();
+}
+
 static loader_status_t
 loader_copy_segment(vnode_t vnode, vm_address_space_t *map, const loader_segment_t *segment, sha256_context_t *identity)
 {
@@ -172,6 +189,7 @@ loader_copy_segment(vnode_t vnode, vm_address_space_t *map, const loader_segment
 
 		sha256_update(identity, (const void *)(kernel_address + page_offset), chunk);
 		copied += chunk;
+		loader_preemption_point();
 	}
 	if ((segment->flags & ELF_PF_X) != 0U) {
 		uint64_t start_mapping = segment->virtual_address & ~(PMM_PAGE_SIZE - 1ULL);
@@ -281,6 +299,7 @@ loader_place_segment(vnode_t vnode, const char *path, uint64_t file_identity, vm
 			}
 
 			copied += chunk;
+			loader_preemption_point();
 		}
 
 		loader_segment_cache_commit(entry);
@@ -303,6 +322,7 @@ loader_place_segment(vnode_t vnode, const char *path, uint64_t file_identity, vm
 
 		sha256_update(identity, (const void *)(kernel_address + page_offset), chunk);
 		hashed += chunk;
+		loader_preemption_point();
 	}
 
 	if (!loader_segment_cache_map(entry, map, page_start, protection)) {
@@ -632,12 +652,14 @@ loader_spawn_internal(proc_t parent, const char *path, const loader_spawn_reques
 
 	const char *name = request->name;
 	uint32_t caps = request->caps;
+	uint64_t started_us = timer_get_microseconds();
 
 	vnode_t vnode;
 	vfs_status_t lookup_status = vfs_lookup(path, &vnode);
 	if (lookup_status == VFS_STATUS_NOT_FOUND) return LOADER_STATUS_NOT_FOUND;
 
 	if (lookup_status != VFS_STATUS_OK) return LOADER_STATUS_IO_ERROR;
+	uint64_t looked_up_us = timer_get_microseconds();
 
 	if (vnode->v_type != VNODE_TYPE_REGULAR) {
 		vnode_rele(vnode);
@@ -751,6 +773,7 @@ loader_spawn_internal(proc_t parent, const char *path, const loader_spawn_reques
 	}
 
 	if (caps != LOADER_CAPS_DEFAULT) proc_set_caps(proc, caps);
+	uint64_t created_us = timer_get_microseconds();
 
 	/* Before setuid-exec below, so an executable that asks for its owner's identity still gets it. */
 	if (request->set_identity) {
@@ -801,6 +824,8 @@ loader_spawn_internal(proc_t parent, const char *path, const loader_spawn_reques
 
 		status = loader_place_segment(vnode, path, vnode->v_size, map, &programs[index], &identity);
 	}
+	uint64_t placed_us = timer_get_microseconds();
+	uint64_t file_kib = vnode->v_size / 1024ULL;
 	if (status == LOADER_STATUS_OK) status = loader_map_stack(map);
 
 	if (status == LOADER_STATUS_OK) status = loader_configure_process(parent, proc, request, header.entry);
@@ -847,6 +872,14 @@ loader_spawn_internal(proc_t parent, const char *path, const loader_spawn_reques
 		loader_discard_process(parent, proc);
 		return status;
 	}
+
+	/* What a launch costs: the caller waits all of it, and on one CPU so does everything else. */
+	uint64_t done_us = timer_get_microseconds();
+	kprintf("pid %u %s: loaded in %llu us (lookup %llu, header and process %llu, %llu KiB placed in %llu, start %llu)\n",
+			proc->p_ident.pid, name, (unsigned long long)(done_us - started_us),
+			(unsigned long long)(looked_up_us - started_us), (unsigned long long)(created_us - looked_up_us),
+			(unsigned long long)file_kib, (unsigned long long)(placed_us - created_us),
+			(unsigned long long)(done_us - placed_us));
 
 	kverbosef("pid %u %s from %s, entry 0x%llx%s\n", proc->p_ident.pid, request->name, dynamic_main != 0 ? dynamic_main : path,
 			  (unsigned long long)header.entry, dynamic_main != 0 ? " (dynamically linked, through dyrld)" : "");

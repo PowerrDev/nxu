@@ -89,7 +89,7 @@ When the mailbox port exists, the desktop is locked behind the passcode
 host runs `UIServiceRunLogin` (UIService.framework's `ui-login`), a fullscreen
 screen over the blurred wallpaper:
 
-- **First boot** (tepOS has no passcode): "welcome to sevOS" in Borel, the
+- **First boot** (tepOS has no passcode): "welcome to groveOS" in Borel, the
   script face armOS's setup greets with, then "Create a passcode" (typed
   twice). It is set with `tep_auth_set` and the desktop starts.
 - **Every later boot:** "Enter your passcode", checked with `tep_auth_verify`.

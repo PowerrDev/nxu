@@ -9,6 +9,7 @@
     WS_Resize_Window;
     WS_Set_Window_Shadow;
     WS_Set_Window_Opaque_Interior;
+    WS_Set_Window_Client_Alpha;
     WS_Set_Window_Key;
     WS_Set_Shadow_Scale;
     WS_Focus_Window;

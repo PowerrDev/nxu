@@ -9,6 +9,7 @@
 #ifndef NXU_KERN_THREAD_H
 #define NXU_KERN_THREAD_H
 
+#include <kern/clock/timer_call.h>
 #include <kern/cpuset.h>
 #include <kern/syscall/crash_defs.h>
 #include <kern/lock.h>
@@ -258,16 +259,14 @@ struct thread {
 	bool wait_interrupted;
 
 	/*
-	 * A wait with a deadline (waitq_block_deadline). While wait_timer_armed
-	 * the thread is on the list of timed waiters, linked through
-	 * wait_timer_next/prev, and the scheduler tick ends its wait once
-	 * wait_deadline (microseconds, timer_get_microseconds) has passed, saying
-	 * so in wait_timed_out. All four are protected by the timed-waiter lock
-	 * in kern/sched_prism/waitq.c.
+	 * A wait with a deadline (waitq_block_deadline). wait_timer is the timer
+	 * call (kern/clock/timer_call.h) that ends the wait at its deadline,
+	 * pending while wait_timer_armed; its callback takes the thread off its
+	 * wait queue and says so in wait_timed_out, which the thread reads once
+	 * it has cancelled the call synchronously. A zeroed thread has a valid,
+	 * never-entered call.
 	 */
-	uint64_t wait_deadline;
-	struct thread *wait_timer_next;
-	struct thread *wait_timer_prev;
+	struct timer_call wait_timer;
 	bool wait_timer_armed;
 	bool wait_timed_out;
 

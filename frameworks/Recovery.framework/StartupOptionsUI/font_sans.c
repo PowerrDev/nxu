@@ -7,7 +7,7 @@
  *
  * Recovery deliberately carries this small pre-rasterized family in the
  * triageOS image so startup options can render text without loading the normal
- * sevOS UI or font stack.
+ * groveOS UI or font stack.
  */
 static const uint8_t g_font_11_pixels[4731] = {
 	0U,	  247U, 29U,  0U,	244U, 25U,	0U,	  241U, 21U,  0U,	238U, 18U,	0U,	  235U, 14U,  0U,	91U,  4U,	0U,

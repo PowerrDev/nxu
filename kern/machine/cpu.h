@@ -10,6 +10,10 @@
  *
  *   cpu_relax()               hint that the caller is spinning on a lock
  *   cpu_wait_for_interrupt()  stop the core until an interrupt is taken
+ *   cpu_idle_halt()           with interrupts masked: unmask them and stop
+ *                             the core until one comes, as one step, so an
+ *                             interrupt that arrives in between is not
+ *                             missed (the idle loop's sleep)
  *   cpu_wait_for_event()      stop the core in a loop that never expects to
  *                             run again (panic and fatal-error parking)
  */

@@ -2,10 +2,15 @@
  * Copyright (c) 2026 NXU Project. All rights reserved.
  */
 /*
- * su -- start a shell as another user (default root). The target is looked up
- * in /etc/passwd; su switches its group and user IDs to that account and then
- * runs the account's shell on the caller's terminal, waiting for it. Exiting
- * the shell returns to the caller.
+ * su -- start a shell as another user (default root).
+ *
+ *     su [-l] [name]
+ *
+ * The target is looked up in /etc/passwd; su switches its groups, group and
+ * user IDs to that account and then runs the account's shell on the caller's
+ * terminal, waiting for it. Exiting the shell returns to the caller. With -l
+ * (or -) the shell starts in the account's home directory, as a login would
+ * (Terminal opens its tabs this way, as the computer's user).
  *
  * Switching identity needs privilege: the real root may become anyone, while a
  * non-root caller must give the target account's password (read without echo,
@@ -16,7 +21,9 @@
 #include <nxu/spawn_io.h>
 #include <nxu/pwdb.h>
 #include <nxu/auth.h>
+#include <nxu/string.h>
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #define SU_DEFAULT_SHELL "/Volumes/mainOS/System/Library/CoreServices/nzh"
@@ -44,7 +51,14 @@ basename_of(const char *path)
 int
 main(uint64_t argc, const char *const *argv)
 {
-	const char *target = (argc >= 2U) ? argv[1] : "root";
+	bool login_shell = false;
+	uint64_t next = 1U;
+
+	if (next < argc && (nxu_streq(argv[next], "-l") || nxu_streq(argv[next], "-"))) {
+		login_shell = true;
+		next++;
+	}
+	const char *target = next < argc ? argv[next] : "root";
 
 	nxu_passwd_t pw;
 	if (nxu_getpwnam(target, &pw) != 0) {
@@ -68,11 +82,17 @@ main(uint64_t argc, const char *const *argv)
 		}
 	}
 
-	/* Group first: once the effective UID leaves root, the gid can no longer
-	 * be changed. */
-	if (nxu_setgid(pw.pw_gid) < 0 || nxu_setuid(pw.pw_uid) < 0) {
+	/* Groups first: once the effective UID leaves root, they can no longer be
+	 * changed. The supplementary list too, or the caller's (root's wheel)
+	 * would come along. */
+	if (nxu_setgroups(1U, &pw.pw_gid) < 0 || nxu_setgid(pw.pw_gid) < 0 || nxu_setuid(pw.pw_uid) < 0) {
 		say("su: could not switch identity\n");
 		return 1;
+	}
+
+	if (login_shell && (pw.pw_dir[0] == '\0' || nxu_chdir(pw.pw_dir) < 0)) {
+		say("su: no home directory, starting in /\n");
+		(void)nxu_chdir("/");
 	}
 
 	const char *shell = pw.pw_shell[0] != '\0' ? pw.pw_shell : SU_DEFAULT_SHELL;

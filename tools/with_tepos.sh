@@ -113,7 +113,7 @@ fi
 
 (cd "$TEP_DIR" && exec qemu-system-aarch64 -machine virt,secure=off,virtualization=off,gic-version=2 -cpu cortex-a53 -m 1024 \
 	-nographic -serial "$TEP_CONSOLE_ARG" -serial unix:"$SOCKS/tepos.sock",server=on,wait=off \
-	-monitor none $TEP_DEVICES $TEP_RESET_ARGS -kernel build/boot/sel4-image.elf) >"$LOGS/qemu.log" 2>&1 </dev/null &
+	-monitor none $TEP_DEVICES $TEP_RESET_ARGS -kernel "$TEP_BUILD_DIR/boot/sel4-image.elf") >"$LOGS/qemu.log" 2>&1 </dev/null &
 tep_pid=$!
 
 python3 "$TEP_DIR/tools/mailbox_link.py" --nxu "$SOCKS/nxu.sock" --tepos "$SOCKS/tepos.sock" 2>"$LOGS/link.log" &

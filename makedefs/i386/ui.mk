@@ -5,6 +5,7 @@ I386_C_SOURCES += \
     kern/aqua/window_server.c \
     drivers/video/ui_service_login.c \
     drivers/video/keystore_manager.c \
+    drivers/video/setup_assistant.c \
     drivers/video/login_wallpaper.c \
     drivers/video/ui_service_activity.c \
     drivers/video/ui_session_manager.c \
@@ -57,12 +58,15 @@ endif
 endif
 
 # Factory templates are created once. Existing guest SSDs survive rebuilds.
+# The recovery partition also carries the fresh system template as the
+# factory payload "Erase All Content and Settings" reinstalls (see
+# doc/erase-and-startup-disk.md); run-i386-desktop builds the template first.
 $(I386_DESKTOP_RAMDISK):
 	$(Q)python3 tools/make_recovery_image.py --arch i386 --build-root $(I386_DESKTOP_BUILD_ROOT) --output $@
 
 $(I386_DESKTOP_RECOVERY): | $(I386_DESKTOP_RAMDISK)
 	$(MAKE) $(I386_DESKTOP_BUILD_ROOT)/i386/user/triageOS BUILD_ROOT=$(I386_DESKTOP_BUILD_ROOT) UISERVICE=0 WINDOWSERVER=0 I386_GUI_FRAMEWORKS=1
-	$(Q)python3 tools/make_recovery_volume.py --ramdisk-image $(I386_DESKTOP_RAMDISK) --recovery-program $(I386_DESKTOP_BUILD_ROOT)/i386/user/triageOS $(if $(strip $(I386_RECOVERY_DISK)),--seed-image "$(I386_RECOVERY_DISK)",) --output $@
+	$(Q)python3 tools/make_recovery_volume.py --ramdisk-image $(I386_DESKTOP_RAMDISK) --recovery-program $(I386_DESKTOP_BUILD_ROOT)/i386/user/triageOS $(if $(strip $(I386_RECOVERY_DISK)),--seed-image "$(I386_RECOVERY_DISK)",) $(if $(wildcard $(I386_DESKTOP_TEMPLATE)),--factory-image $(I386_DESKTOP_TEMPLATE),) --output $@
 
 $(I386_DESKTOP_SSD): | $(I386_DESKTOP_RECOVERY) $(I386_DESKTOP_SYSTEM_SEED)
 	$(Q)python3 tools/make_system_disk.py --system-image $(I386_DESKTOP_SYSTEM_SEED) --recovery-image $(I386_DESKTOP_RECOVERY) --output $@
@@ -146,8 +150,8 @@ endif
 $(I386_BUILD)/user/reporter_fonts.h: tools/generate_reporter_fonts.py tools/generate_recovery_fonts.py $(USER_SYSTEM_FONTS) $(FONT_PYTHON)
 	$(Q)$(FONT_PYTHON) tools/generate_reporter_fonts.py --output $@
 
-$(I386_BUILD)/drivers/video/keystore_manager.o $(I386_BUILD)/kern/security/sap.o: $(I386_BUILD)/user/reporter_fonts.h
-$(I386_BUILD)/drivers/video/keystore_manager.o $(I386_BUILD)/kern/security/sap.o: I386_CFLAGS += -I$(I386_USER_BUILD)
+$(I386_BUILD)/drivers/video/keystore_manager.o $(I386_BUILD)/drivers/video/setup_assistant.o $(I386_BUILD)/kern/security/sap.o: $(I386_BUILD)/user/reporter_fonts.h
+$(I386_BUILD)/drivers/video/keystore_manager.o $(I386_BUILD)/drivers/video/setup_assistant.o $(I386_BUILD)/kern/security/sap.o: I386_CFLAGS += -I$(I386_USER_BUILD)
 
 .PHONY: run-i386-recovery
 run-i386-recovery:

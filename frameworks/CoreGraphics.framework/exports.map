@@ -29,6 +29,7 @@
     CG_Set_Window_Shadow;
     CG_Set_Window_Key;
     CG_Set_Window_Opaque_Interior;
+    CG_Set_Window_Client_Alpha;
     CG_Set_Shadow_Scale;
     CG_Pointer_Move;
     CG_Set_Cursor_Kind;

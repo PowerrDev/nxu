@@ -37,7 +37,7 @@
 #define SCHED_MLFQ_TOP_LEVEL 0U
 #define SCHED_MLFQ_BOTTOM_LEVEL (SCHED_MLFQ_LEVELS - 1U)
 
-/* ~4 seconds at the 100 Hz kernel timer. */
+/* ~4 seconds of SCHED_TICK_US (kern/sched_prism/run_queue.h) ticks. */
 #define SCHED_MLFQ_BOOST_INTERVAL_TICKS 400U
 
 typedef enum { SCHED_HEADQ, SCHED_TAILQ } sched_queue_placement_t;
@@ -200,6 +200,41 @@ bool sched_sleep_us_interruptible(uint64_t microseconds, bool *interrupted);
  * the tick, so before this they wait by yielding instead.
  */
 bool sched_is_ticking(void);
+
+/*
+ * sched_set_ticking
+ *
+ * Timed waits can end from now on: the event timer has started delivering
+ * timer calls (kern/sched_prism/sched_timer.c). The first scheduler tick on
+ * the boot CPU says the same with a periodic event timer.
+ */
+void sched_set_ticking(void);
+
+/*
+ * sched_timer_init / sched_timer_enabled / sched_timer_dispatch
+ *
+ * The scheduler's deadlines on a deadline event timer (see
+ * kern/sched_prism/sched_timer.c): a tick every SCHED_TICK_US while a CPU
+ * runs a thread, none while it is idle. sched_timer_init connects them, once,
+ * on the boot CPU, after etimer_init (it does nothing with a periodic event
+ * timer, whose tick keeps driving the scheduler). sched_timer_dispatch is
+ * sched_switch's: this CPU is switching to its idle thread (`idle_next`) or
+ * to a thread. Interrupts masked.
+ */
+void sched_timer_init(void);
+bool sched_timer_enabled(void);
+void sched_timer_dispatch(processor_t processor, bool idle_next, uint64_t now);
+
+/*
+ * sched_deadline_tick
+ *
+ * With a periodic event timer: runs the timer calls that are due (timed
+ * waits among them) without charging the scheduler a tick. For a periodic
+ * interrupt that comes more often than the scheduler ticks (i386's PIT when
+ * the Local APIC timer cannot be used), so timer calls run to the
+ * interrupt's period rather than the tick's. Boot CPU, interrupt context.
+ */
+void sched_deadline_tick(void);
 
 /*
  * sched_sleep_until_kicked / sched_kick_sleepers

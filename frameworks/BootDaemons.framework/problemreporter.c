@@ -217,7 +217,7 @@ main(void)
 								 .max_width = WIDTH,
 								 .max_height = HEIGHT + 32,
 								 .titlebar_height = 32,
-								 .corner_radius = 8};
+								 .corner_radius = 52};
 		copy(info.name, sizeof(info.name), "Problem Reporter");
 
 		int64_t connection = nxu_ui_connect(&info);

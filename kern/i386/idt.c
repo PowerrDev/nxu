@@ -90,13 +90,15 @@ i386_idt_init(void)
 					  IDT_GATE_INTERRUPT);
 	i386_idt_set_gate(T_LAPIC_SPURIOUS, (uint32_t)(uintptr_t)i386_isr_lapic_spurious, GDT_KERNEL_CODE_SEL,
 					  IDT_GATE_INTERRUPT);
+	i386_idt_set_gate(T_LAPIC_TIMER, (uint32_t)(uintptr_t)i386_isr_lapic_timer, GDT_KERNEL_CODE_SEL,
+					  IDT_GATE_INTERRUPT);
 
 	g_idt_pointer.limit = (uint16_t)(sizeof(g_idt) - 1U);
 	g_idt_pointer.base = (uint32_t)(uintptr_t)g_idt;
 
 	__asm__ volatile("lidt %0" : : "m"(g_idt_pointer) : "memory");
 
-	kprintf("%u gates at %p, exceptions 0-%u, irqs %u-%u, syscall 0x%x, ipi 0x%x-0x%x, spurious 0x%x\n",
+	kprintf("%u gates at %p, exceptions 0-%u, irqs %u-%u, syscall 0x%x, ipi 0x%x-0x%x, timer 0x%x, spurious 0x%x\n",
 			IDT_ENTRY_COUNT, (void *)g_idt, T_EXCEPTION_COUNT - 1U, T_IRQ_BASE, T_IRQ_BASE + T_IRQ_COUNT - 1U,
-			T_SYSCALL, T_IPI_RESCHEDULE, T_IPI_CPU_STOP, T_LAPIC_SPURIOUS);
+			T_SYSCALL, T_IPI_RESCHEDULE, T_IPI_CPU_STOP, T_LAPIC_TIMER, T_LAPIC_SPURIOUS);
 }

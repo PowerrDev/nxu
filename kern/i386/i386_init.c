@@ -25,6 +25,7 @@
 #include <kern/i386/io.h>
 #include <kern/i386/multiboot.h>
 #include <kern/i386/timer.h>
+#include <kern/clock/clock.h>
 #include <kern/i386/trap.h>
 
 #include <kern/console/console.h>
@@ -242,6 +243,7 @@ i386_init(uint32_t magic, const multiboot_info_t *info)
 	IOLog("%s [%s]\n", NXU_KERNEL_VERSION, sizeof(void *) == 8U ? "x86_64" : "i386");
 
 	(void)timer_calibrate();
+	(void)clock_init();
 
 	i386_print_cpu();
 

@@ -1,3 +1,5 @@
+#include "patchd_reset.h"
+
 #include <frameworks/SoftwareUpdate.framework/include/nsw.h>
 
 #include <nxu/string.h>
@@ -273,11 +275,16 @@ main(uint64_t argc, const char *const *argv)
 		if (argc == 3 && nxu_streq(argv[1], "--install")) {
 			return patchd_install(argv[2]) ? 0 : 1;
 		}
+		/* Started by the kernel from the recovery volume as PID 1; see patchd_reset.c. */
+		if (argc == 2 && nxu_streq(argv[1], NSW_ERASE_ARGUMENT)) {
+			return patchd_erase_run();
+		}
 		patchd_log("usage: patchd --prepare PACKAGE.nsw | --install BUILD\n");
 		return 2;
 	}
 
 	patchd_log("patchd: integrity repair service started\n");
+	patchd_startup_disk_sync();
 	uint64_t started = (uint64_t)nxu_uptime_us();
 	bool confirmed = false;
 	uint64_t last_check = 0ULL;
@@ -292,6 +299,8 @@ main(uint64_t argc, const char *const *argv)
 			forced = patchd_repair_requested();
 			patchd_prepare_requested();
 			patchd_install_requested();
+			patchd_erase_requested();
+			patchd_startup_disk_requested();
 		}
 
 		if (forced || now - last_check >= PATCHD_INTERVAL_US) {

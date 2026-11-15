@@ -13,6 +13,8 @@
 #include <kern/boot/boot_args.h>
 #include <kern/boot/recovery_volume.h>
 #include <kern/update/update.h>
+#include <kern/update/erase.h>
+#include <kern/boot/startup_disk.h>
 #include <kern/boot/boot_chime.h>
 #include <kern/boot/boot_mode.h>
 #include <kern/boot/splash.h>
@@ -611,7 +613,7 @@ kern_init_memory(void)
  *
  * Recovery startup selection is deliberately independent from UIService.framework.
  * Shift+R is sampled against the raw input queue while this kernel-owned
- * splash is visible, before either sevOS or triageOS userspace starts.
+ * splash is visible, before either groveOS or triageOS userspace starts.
  *
  * Returns the primary display (or 0 when there is none) for the later
  * stages that hand the framebuffer over.
@@ -754,6 +756,8 @@ kern_mount_system_volume(void)
 	if (!boot_update_install()) {
 		kern_fail("patchd: cannot recover the interrupted system update");
 	}
+	boot_startup_disk_init();
+	boot_erase_init();
 }
 
 /*
@@ -782,7 +786,25 @@ kern_launch_init_process(display_device_t *boot_display)
 	}
 
 	kprintf("selected environment: %s\n", boot_mode_name());
+
+	/*
+	 * An erase queued in System Settings: patchd from the recovery volume is
+	 * PID 1 for this boot. Nothing takes the screen over, so the boot log
+	 * stays up on it and patchd's per-file lines scroll by under the logo.
+	 */
+	if (!recovery_boot && boot_erase_pending()) {
+		if (boot_display != 0) boot_splash_set_status("Erasing All Content and Settings");
+		if (boot_erase_spawn(&g_boot_process) == LOADER_STATUS_OK) {
+			kprintf("patchd PID %u ready for scheduler dispatch\n", g_boot_process->p_ident.pid);
+			return;
+		}
+
+		g_boot_process = 0;
+		kprintf("starting bootd instead; the system volume was not changed\n");
+	}
+
 	if (boot_display != 0 && !boot_splash_finish()) kern_fail("boot_splash_finish: completion failed");
+
 	kprintf("loading ");
 	kputs(init_path);
 	kputln(" as PID 1");
@@ -996,7 +1018,8 @@ kern_init_higher_half(void)
 		(void)&kern_launch_init_process;
 #else
 		/* The file the chime plays is readable now; the thread starts playing once the scheduler runs. */
-		boot_chime_start();
+		/* Not while erasing: the chime would hold a file on the volume being wiped. */
+		if (!boot_erase_pending()) boot_chime_start();
 		kern_launch_init_process(boot_display);
 		boot_update_watch_start();
 #endif

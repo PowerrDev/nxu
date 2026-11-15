@@ -1397,30 +1397,44 @@ ext4_extent_entries(const ext4_inode_t *inode)
 	return ext4_le16(inode->block + 0x02U);
 }
 
+static uint32_t ext4_inode_group(ext4_mount_data_t *data, uint32_t inode_number);
+
+/*
+ * Whether this driver can change the inode's extent tree: the four extents
+ * in the inode itself, or one level of leaf blocks under it (up to four
+ * leaves of a block each). Deeper trees are read but not written.
+ */
 static bool
-ext4_extent_root_writable(const ext4_inode_t *inode)
+ext4_extent_tree_writable(const ext4_inode_t *inode)
 {
-	return ext4_extent_node_valid(inode->block, sizeof(inode->block), 0U) &&
+	uint16_t depth = ext4_le16(inode->block + 0x06U);
+
+	return depth <= 1U && ext4_extent_node_valid(inode->block, sizeof(inode->block), depth) &&
 		   ext4_le16(inode->block + 0x04U) == EXT4_ROOT_EXTENT_CAPACITY;
 }
 
+/* The extents one leaf block holds: what is left of it after the header and the checksum tail. */
+static uint16_t
+ext4_extent_leaf_capacity(const ext4_mount_data_t *data)
+{
+	return (uint16_t)((data->block_size - 12U - 4U) / 12U);
+}
+
 /*
- * ext4_extent_insert_root_locked:
+ * ext4_extent_insert_node:
  *
- * Insert one initialized block mapping into a depth-zero inode extent root.
- * Adjacent logical and physical blocks are merged whenever possible. The
- * writable foundation deliberately stops at the four extents resident in
- * inode.i_block; extent-tree node allocation belongs to a later scalability
- * pass and does not affect the VFS contract.
+ * Insert one initialized block mapping into a depth-zero extent node (the
+ * inode root or a leaf block) that holds at most capacity extents. Adjacent
+ * logical and physical blocks are merged whenever possible. NO_SPACE when
+ * the node is full and the mapping merges with nothing.
  */
 static vfs_status_t
-ext4_extent_insert_root_locked(ext4_inode_t *inode, uint32_t logical, uint64_t physical)
+ext4_extent_insert_node(uint8_t *node, uint16_t capacity, uint32_t logical, uint64_t physical)
 {
-	if (!ext4_extent_root_writable(inode)) return VFS_STATUS_NOT_SUPPORTED;
-	uint16_t entries = ext4_extent_entries(inode);
+	uint16_t entries = ext4_le16(node + 0x02U);
 
 	for (uint16_t index = 0U; index < entries; index++) {
-		uint8_t *extent = inode->block + 12U + (uint32_t)index * 12U;
+		uint8_t *extent = node + 12U + (uint32_t)index * 12U;
 		uint32_t first = ext4_le32(extent + 0x00U);
 		uint16_t length = ext4_le16(extent + 0x04U);
 		if (length == 0U || length > 32768U) return VFS_STATUS_NOT_SUPPORTED;
@@ -1442,11 +1456,11 @@ ext4_extent_insert_root_locked(ext4_inode_t *inode, uint32_t logical, uint64_t p
 		}
 	}
 
-	if (entries >= EXT4_ROOT_EXTENT_CAPACITY) return VFS_STATUS_NO_SPACE;
+	if (entries >= capacity) return VFS_STATUS_NO_SPACE;
 
 	uint16_t insert = entries;
 	for (uint16_t index = 0U; index < entries; index++) {
-		uint8_t *extent = inode->block + 12U + (uint32_t)index * 12U;
+		uint8_t *extent = node + 12U + (uint32_t)index * 12U;
 		if (logical < ext4_le32(extent + 0x00U)) {
 			insert = index;
 			break;
@@ -1454,16 +1468,160 @@ ext4_extent_insert_root_locked(ext4_inode_t *inode, uint32_t logical, uint64_t p
 	}
 
 	for (uint16_t index = entries; index > insert; index--) {
-		memcpy(inode->block + 12U + (uint32_t)index * 12U, inode->block + 12U + (uint32_t)(index - 1U) * 12U, 12U);
+		memcpy(node + 12U + (uint32_t)index * 12U, node + 12U + (uint32_t)(index - 1U) * 12U, 12U);
 	}
 
-	uint8_t *extent = inode->block + 12U + (uint32_t)insert * 12U;
+	uint8_t *extent = node + 12U + (uint32_t)insert * 12U;
 	ext4_set_le32(extent + 0x00U, logical);
 	ext4_set_le16(extent + 0x04U, 1U);
 	ext4_set_le16(extent + 0x06U, (uint16_t)(physical >> 32U));
 	ext4_set_le32(extent + 0x08U, (uint32_t)physical);
-	ext4_set_le16(inode->block + 0x02U, (uint16_t)(entries + 1U));
+	ext4_set_le16(node + 0x02U, (uint16_t)(entries + 1U));
 	return VFS_STATUS_OK;
+}
+
+static void
+ext4_extent_leaf_init(const ext4_mount_data_t *data, uint8_t *leaf)
+{
+	memset(leaf, 0, data->block_size);
+	ext4_set_le16(leaf + 0x00U, EXT4_EXTENT_MAGIC);
+	ext4_set_le16(leaf + 0x02U, 0U);
+	ext4_set_le16(leaf + 0x04U, ext4_extent_leaf_capacity(data));
+	ext4_set_le16(leaf + 0x06U, 0U);
+}
+
+/* Stage a leaf block, with its checksum, in the running transaction. */
+static bool
+ext4_extent_leaf_write_locked(ext4_mount_data_t *data, const ext4_inode_t *inode, uint64_t block, uint8_t *leaf)
+{
+	if (data->metadata_csum) ext4_set_le32(leaf + data->block_size - 4U, ext4_extent_block_checksum(data, inode, leaf));
+	return ext4_write_metadata_block_locked(data, block, leaf);
+}
+
+/* Point root index entry `index` at leaf block `block`, whose first extent starts at `first`. */
+static void
+ext4_extent_set_index(ext4_inode_t *inode, uint16_t index, uint32_t first, uint64_t block)
+{
+	uint8_t *entry = inode->block + 12U + (uint32_t)index * 12U;
+
+	ext4_set_le32(entry + 0x00U, first);
+	ext4_set_le32(entry + 0x04U, (uint32_t)block);
+	ext4_set_le16(entry + 0x08U, (uint16_t)(block >> 32U));
+	ext4_set_le16(entry + 0x0AU, 0U);
+}
+
+/*
+ * ext4_extent_insert_locked:
+ *
+ * Insert one initialized block mapping into the inode's extent tree. Up to
+ * four extents live in the inode itself. A fifth moves them all into a leaf
+ * block and makes the inode root an index of leaves (depth one); a full leaf
+ * gets a new leaf beside it (splitting it in two unless the mapping goes at
+ * its end). Four leaves of a block each is as far as this goes: well over a
+ * thousand extents, against the four that fit before. Any leaf block it
+ * takes is counted in the inode's blocks.
+ */
+static vfs_status_t
+ext4_extent_insert_locked(ext4_mount_data_t *data, ext4_inode_t *inode, uint32_t logical, uint64_t physical)
+{
+	if (!ext4_extent_tree_writable(inode)) return VFS_STATUS_NOT_SUPPORTED;
+
+	uint16_t depth = ext4_le16(inode->block + 0x06U);
+	uint16_t capacity = ext4_extent_leaf_capacity(data);
+	uint32_t group = ext4_inode_group(data, inode->number);
+	vfs_status_t status;
+
+	if (depth == 0U) {
+		status = ext4_extent_insert_node(inode->block, EXT4_ROOT_EXTENT_CAPACITY, logical, physical);
+		if (status != VFS_STATUS_NO_SPACE) return status;
+	}
+
+	uint8_t *leaf = kmalloc(data->block_size);
+	uint8_t *other = kmalloc(data->block_size);
+	if (leaf == 0 || other == 0) {
+		if (leaf != 0) (void)kfree(leaf);
+		if (other != 0) (void)kfree(other);
+		return VFS_STATUS_NO_SPACE;
+	}
+
+	if (depth == 0U) {
+		/* The root is full: its extents move down into a leaf, the root indexes it. */
+		uint64_t block;
+		status = ext4_allocate_block_locked(data, group, &block);
+		if (status == VFS_STATUS_OK) {
+			ext4_extent_leaf_init(data, leaf);
+			memcpy(leaf + 12U, inode->block + 12U, (uint32_t)EXT4_ROOT_EXTENT_CAPACITY * 12U);
+			ext4_set_le16(leaf + 0x02U, EXT4_ROOT_EXTENT_CAPACITY);
+			status = ext4_extent_insert_node(leaf, capacity, logical, physical);
+		}
+		if (status == VFS_STATUS_OK && !ext4_extent_leaf_write_locked(data, inode, block, leaf)) status = VFS_STATUS_IO_ERROR;
+		if (status == VFS_STATUS_OK) {
+			ext4_initialize_extent_root(inode);
+			ext4_set_le16(inode->block + 0x02U, 1U);
+			ext4_set_le16(inode->block + 0x06U, 1U);
+			ext4_extent_set_index(inode, 0U, ext4_le32(leaf + 12U), block);
+			inode->blocks_512 += data->block_size / BLOCK_SECTOR_SIZE;
+		}
+		(void)kfree(leaf);
+		(void)kfree(other);
+		return status;
+	}
+
+	/* Depth one: the leaf whose range takes logical (the first, for one before them all). */
+	uint16_t entries = ext4_extent_entries(inode);
+	uint16_t chosen = 0U;
+	for (uint16_t index = 0U; index < entries; index++) {
+		if (ext4_le32(inode->block + 12U + (uint32_t)index * 12U) <= logical) chosen = index;
+	}
+	uint8_t *entry = inode->block + 12U + (uint32_t)chosen * 12U;
+	uint64_t block = ((uint64_t)ext4_le16(entry + 0x08U) << 32U) | ext4_le32(entry + 0x04U);
+
+	status = VFS_STATUS_OK;
+	if (block == 0ULL || block >= data->blocks_count || !ext4_read_block_locked(data, block, leaf) ||
+		!ext4_verify_extent_block_checksum(data, inode, leaf) || !ext4_extent_node_valid(leaf, data->block_size - 4U, 0U))
+		status = VFS_STATUS_IO_ERROR;
+
+	if (status == VFS_STATUS_OK) {
+		status = ext4_extent_insert_node(leaf, capacity, logical, physical);
+		if (status == VFS_STATUS_OK) {
+			if (!ext4_extent_leaf_write_locked(data, inode, block, leaf)) status = VFS_STATUS_IO_ERROR;
+			else ext4_extent_set_index(inode, chosen, ext4_le32(leaf + 12U), block);
+		} else if (status == VFS_STATUS_NO_SPACE && entries < EXT4_ROOT_EXTENT_CAPACITY) {
+			/* A new leaf after this one: the mapping alone when it goes at the end (an append), else the upper half. */
+			uint64_t added;
+			status = ext4_allocate_block_locked(data, group, &added);
+			if (status == VFS_STATUS_OK) {
+				uint16_t count = ext4_le16(leaf + 0x02U);
+				uint32_t last_first = ext4_le32(leaf + 12U + (uint32_t)(count - 1U) * 12U);
+				uint16_t keep = logical > last_first ? count : (uint16_t)(count / 2U);
+
+				ext4_extent_leaf_init(data, other);
+				memcpy(other + 12U, leaf + 12U + (uint32_t)keep * 12U, (uint32_t)(count - keep) * 12U);
+				ext4_set_le16(other + 0x02U, (uint16_t)(count - keep));
+				memset(leaf + 12U + (uint32_t)keep * 12U, 0, (uint32_t)(count - keep) * 12U);
+				ext4_set_le16(leaf + 0x02U, keep);
+
+				bool upper = keep == count || logical >= ext4_le32(other + 12U);
+				status = ext4_extent_insert_node(upper ? other : leaf, capacity, logical, physical);
+				if (status == VFS_STATUS_OK && (!ext4_extent_leaf_write_locked(data, inode, block, leaf) ||
+												!ext4_extent_leaf_write_locked(data, inode, added, other)))
+					status = VFS_STATUS_IO_ERROR;
+				if (status == VFS_STATUS_OK) {
+					for (uint16_t index = entries; index > chosen + 1U; index--)
+						memcpy(inode->block + 12U + (uint32_t)index * 12U, inode->block + 12U + (uint32_t)(index - 1U) * 12U, 12U);
+					ext4_extent_set_index(inode, chosen, ext4_le32(leaf + 12U), block);
+					ext4_extent_set_index(inode, (uint16_t)(chosen + 1U), ext4_le32(other + 12U), added);
+					ext4_set_le16(inode->block + 0x02U, (uint16_t)(entries + 1U));
+					inode->blocks_512 += data->block_size / BLOCK_SECTOR_SIZE;
+				} else {
+					(void)ext4_free_block_locked(data, added);
+				}
+			}
+		}
+	}
+	(void)kfree(leaf);
+	(void)kfree(other);
+	return status;
 }
 
 /*
@@ -1473,19 +1631,80 @@ ext4_extent_insert_root_locked(ext4_inode_t *inode, uint32_t logical, uint64_t p
  * or equal to first_free. Extents crossing the boundary are shortened in
  * place. The number of released filesystem blocks is returned to the caller.
  */
+/*
+ * ext4_extent_release_tree_locked:
+ *
+ * Free every block below one extent node: the data blocks its leaf extents
+ * map and, for an index node, its child extent blocks themselves. Used only to
+ * release a whole file, so nothing is rewritten in place. Files written by
+ * other ext4 implementations (mkfs, debugfs, a host) often have extent trees
+ * deeper than the inode root, and without this they could never be removed.
+ * Each level gets its own copy of its node: the shared block buffer is reused
+ * by the bitmap updates in ext4_free_block_locked.
+ */
 static vfs_status_t
-ext4_extent_release_from_locked(ext4_mount_data_t *data, ext4_inode_t *inode, uint32_t first_free, uint32_t *released)
+ext4_extent_release_tree_locked(ext4_mount_data_t *data, const ext4_inode_t *inode, const uint8_t *node,
+								uint32_t capacity, uint16_t depth, uint32_t *released)
 {
-	if (released == 0) return VFS_STATUS_INVALID;
-	*released = 0U;
-	if (!ext4_extent_root_writable(inode)) return VFS_STATUS_NOT_SUPPORTED;
+	if (!ext4_extent_node_valid(node, capacity, depth)) return VFS_STATUS_IO_ERROR;
+	uint16_t entries = ext4_le16(node + 0x02U);
 
-	uint16_t entries = ext4_extent_entries(inode);
+	if (depth == 0U) {
+		for (uint16_t index = 0U; index < entries; index++) {
+			const uint8_t *extent = node + 12U + (uint32_t)index * 12U;
+			uint16_t encoded_length = ext4_le16(extent + 0x04U);
+			uint32_t length = encoded_length <= 32768U ? encoded_length : (uint32_t)encoded_length - 32768U;
+			if (length == 0U) return VFS_STATUS_IO_ERROR;
+			uint64_t start = ((uint64_t)ext4_le16(extent + 0x06U) << 32U) | ext4_le32(extent + 0x08U);
+			if (start + length > data->blocks_count) return VFS_STATUS_IO_ERROR;
+			for (uint32_t offset = 0U; offset < length; offset++) {
+				vfs_status_t status = ext4_free_block_locked(data, start + offset);
+				if (status != VFS_STATUS_OK) return status;
+				(*released)++;
+			}
+		}
+		return VFS_STATUS_OK;
+	}
+
+	uint8_t *child_node = kmalloc(data->block_size);
+	if (child_node == 0) return VFS_STATUS_NO_SPACE;
+	vfs_status_t status = VFS_STATUS_OK;
+	for (uint16_t index = 0U; index < entries && status == VFS_STATUS_OK; index++) {
+		const uint8_t *entry = node + 12U + (uint32_t)index * 12U;
+		uint64_t child = ((uint64_t)ext4_le16(entry + 0x08U) << 32U) | ext4_le32(entry + 0x04U);
+		if (child == 0ULL || child >= data->blocks_count) {
+			status = VFS_STATUS_IO_ERROR;
+			break;
+		}
+		if (!ext4_read_block_locked(data, child, child_node) ||
+			!ext4_verify_extent_block_checksum(data, inode, child_node)) {
+			status = VFS_STATUS_IO_ERROR;
+			break;
+		}
+		status = ext4_extent_release_tree_locked(data, inode, child_node, data->block_size - 4U, depth - 1U,
+												 released);
+		if (status == VFS_STATUS_OK) status = ext4_free_block_locked(data, child);
+		if (status == VFS_STATUS_OK) (*released)++;
+	}
+	(void)kfree(child_node);
+	return status;
+}
+
+/*
+ * Free the blocks of a depth-zero node's extents from logical block
+ * first_free on, shortening an extent that crosses it and dropping those
+ * wholly past it. capacity is how many extents the node holds.
+ */
+static vfs_status_t
+ext4_extent_trim_node_locked(ext4_mount_data_t *data, uint8_t *node, uint16_t capacity, uint32_t first_free,
+							 uint32_t *released)
+{
+	uint16_t entries = ext4_le16(node + 0x02U);
 	uint16_t output = 0U;
 
 	for (uint16_t index = 0U; index < entries; index++) {
 		uint8_t current[12];
-		memcpy(current, inode->block + 12U + (uint32_t)index * 12U, sizeof(current));
+		memcpy(current, node + 12U + (uint32_t)index * 12U, sizeof(current));
 
 		uint32_t first = ext4_le32(current + 0x00U);
 		uint16_t length = ext4_le16(current + 0x04U);
@@ -1494,7 +1713,7 @@ ext4_extent_release_from_locked(ext4_mount_data_t *data, ext4_inode_t *inode, ui
 		uint64_t end = (uint64_t)first + length;
 
 		if (end <= first_free) {
-			memcpy(inode->block + 12U + (uint32_t)output * 12U, current, sizeof(current));
+			memcpy(node + 12U + (uint32_t)output * 12U, current, sizeof(current));
 			output++;
 			continue;
 		}
@@ -1509,14 +1728,80 @@ ext4_extent_release_from_locked(ext4_mount_data_t *data, ext4_inode_t *inode, ui
 
 		if (keep != 0U) {
 			ext4_set_le16(current + 0x04U, (uint16_t)keep);
-			memcpy(inode->block + 12U + (uint32_t)output * 12U, current, sizeof(current));
+			memcpy(node + 12U + (uint32_t)output * 12U, current, sizeof(current));
 			output++;
 		}
 	}
 
-	for (uint16_t index = output; index < EXT4_ROOT_EXTENT_CAPACITY; index++) {
-		memset(inode->block + 12U + (uint32_t)index * 12U, 0, 12U);
+	for (uint16_t index = output; index < capacity; index++) {
+		memset(node + 12U + (uint32_t)index * 12U, 0, 12U);
 	}
+	ext4_set_le16(node + 0x02U, output);
+	return VFS_STATUS_OK;
+}
+
+static vfs_status_t
+ext4_extent_release_from_locked(ext4_mount_data_t *data, ext4_inode_t *inode, uint32_t first_free, uint32_t *released)
+{
+	if (released == 0) return VFS_STATUS_INVALID;
+	*released = 0U;
+
+	/* Releasing the whole file works for any tree depth; shortening a file
+	 * still needs the extents to sit in the inode root. */
+	uint16_t root_depth = ext4_le16(inode->block + 0x06U);
+	if (first_free == 0U && root_depth != 0U && root_depth <= EXT4_EXTENT_MAX_DEPTH) {
+		vfs_status_t status =
+			ext4_extent_release_tree_locked(data, inode, inode->block, sizeof(inode->block), root_depth, released);
+		if (status != VFS_STATUS_OK) return status;
+		ext4_initialize_extent_root(inode);
+		return VFS_STATUS_OK;
+	}
+
+	if (!ext4_extent_tree_writable(inode)) return VFS_STATUS_NOT_SUPPORTED;
+
+	if (root_depth == 0U) return ext4_extent_trim_node_locked(data, inode->block, EXT4_ROOT_EXTENT_CAPACITY, first_free, released);
+
+	/* Depth one: trim each leaf; a leaf left empty is freed and drops out of the index. */
+	uint8_t *leaf = kmalloc(data->block_size);
+	if (leaf == 0) return VFS_STATUS_NO_SPACE;
+
+	uint16_t entries = ext4_extent_entries(inode);
+	uint16_t output = 0U;
+	vfs_status_t status = VFS_STATUS_OK;
+	for (uint16_t index = 0U; index < entries && status == VFS_STATUS_OK; index++) {
+		uint8_t entry[12];
+		memcpy(entry, inode->block + 12U + (uint32_t)index * 12U, sizeof(entry));
+		uint64_t block = ((uint64_t)ext4_le16(entry + 0x08U) << 32U) | ext4_le32(entry + 0x04U);
+
+		if (block == 0ULL || block >= data->blocks_count || !ext4_read_block_locked(data, block, leaf) ||
+			!ext4_verify_extent_block_checksum(data, inode, leaf) || !ext4_extent_node_valid(leaf, data->block_size - 4U, 0U)) {
+			status = VFS_STATUS_IO_ERROR;
+			break;
+		}
+		status = ext4_extent_trim_node_locked(data, leaf, ext4_le16(leaf + 0x04U), first_free, released);
+		if (status != VFS_STATUS_OK) break;
+
+		if (ext4_le16(leaf + 0x02U) == 0U) {
+			status = ext4_free_block_locked(data, block);
+			if (status == VFS_STATUS_OK) (*released)++;
+			continue;
+		}
+		if (!ext4_extent_leaf_write_locked(data, inode, block, leaf)) {
+			status = VFS_STATUS_IO_ERROR;
+			break;
+		}
+		memcpy(inode->block + 12U + (uint32_t)output * 12U, entry, sizeof(entry));
+		output++;
+	}
+	(void)kfree(leaf);
+	if (status != VFS_STATUS_OK) return status;
+
+	if (output == 0U) {
+		ext4_initialize_extent_root(inode);
+		return VFS_STATUS_OK;
+	}
+	for (uint16_t index = output; index < EXT4_ROOT_EXTENT_CAPACITY; index++)
+		memset(inode->block + 12U + (uint32_t)index * 12U, 0, 12U);
 	ext4_set_le16(inode->block + 0x02U, output);
 	return VFS_STATUS_OK;
 }
@@ -1551,12 +1836,12 @@ ext4_inode_ensure_block_locked(ext4_mount_data_t *data, ext4_inode_t *inode, uin
 		return VFS_STATUS_OK;
 	}
 
-	if (!ext4_extent_root_writable(inode)) return VFS_STATUS_NOT_SUPPORTED;
+	if (!ext4_extent_tree_writable(inode)) return VFS_STATUS_NOT_SUPPORTED;
 	uint64_t allocated;
 	status = ext4_allocate_block_locked(data, ext4_inode_group(data, inode->number), &allocated);
 	if (status != VFS_STATUS_OK) return status;
 
-	status = ext4_extent_insert_root_locked(inode, logical, allocated);
+	status = ext4_extent_insert_locked(data, inode, logical, allocated);
 	if (status != VFS_STATUS_OK) {
 		(void)ext4_free_block_locked(data, allocated);
 		return status;
@@ -2459,7 +2744,7 @@ ext4_write(vnode_t vnode, uint64_t offset, const void *buffer, uint64_t size, ui
 	ext4_node_t *node = ext4_node(vnode);
 	if (data == 0 || node == 0) return VFS_STATUS_INVALID;
 
-	if (!ext4_extent_root_writable(&node->inode)) return VFS_STATUS_NOT_SUPPORTED;
+	if (!ext4_extent_tree_writable(&node->inode)) return VFS_STATUS_NOT_SUPPORTED;
 	uint64_t end = offset + size;
 	if ((end - 1ULL) / data->block_size > UINT32_MAX) return VFS_STATUS_NOT_SUPPORTED;
 
@@ -2539,7 +2824,7 @@ ext4_truncate(vnode_t vnode, uint64_t size)
 	ext4_node_t *node = ext4_node(vnode);
 	if (data == 0 || node == 0) return VFS_STATUS_INVALID;
 
-	if (!ext4_extent_root_writable(&node->inode)) return VFS_STATUS_NOT_SUPPORTED;
+	if (!ext4_extent_tree_writable(&node->inode)) return VFS_STATUS_NOT_SUPPORTED;
 	if (size == node->inode.size) return VFS_STATUS_OK;
 
 	ext4_lock(data);

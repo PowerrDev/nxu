@@ -51,7 +51,7 @@ main(void)
 	static const char *bundles[] = {
 		"/Applications/Voyager.app",
 		"/Applications/Activity Monitor.app",
-		"/System/Library/CoreServices/About sevOS.app",
+		"/System/Library/CoreServices/About groveOS.app",
 	};
 	for (uint32_t i = 0; i < 3; i++)
 		if (nxu_ui_control(NXU_UI_CONTROL_LAUNCH, (uint64_t)(uintptr_t)bundles[i]) < 0) return 4;
@@ -60,7 +60,7 @@ main(void)
 	while ((uint64_t)nxu_uptime_us() < deadline) {
 		if (!snapshot(&count)) return 5;
 		if (contains(count, "Dock") && contains(count, "Voyager") && contains(count, "Activity Monitor") &&
-			contains(count, "About sevOS")) {
+			contains(count, "About groveOS")) {
 			static const char passed[] =
 				"production-session: PASS Dock launches, app processes and activity snapshots\n";
 			(void)nxu_write(1, passed, sizeof(passed) - 1);

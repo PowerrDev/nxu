@@ -6,7 +6,7 @@ whatever static outline it is handed; it does not pick an optical size per point
 size. macOS, by contrast, renders small UI text with the *Text* optical variant
 of SF Pro and emphasised text at Semibold (Apple's semibold is wght 590, not
 600). Feeding the renderer the *Display* variant at Regular/Medium is the reason
-sevOS chrome reads lighter and thinner than macOS.
+groveOS chrome reads lighter and thinner than macOS.
 
 This tool pins the `opsz` axis of the system variable font (`SFNS.ttf`) to its
 Text extreme (17) and the `wght` axis to 400 / 590, flattening the result to a

@@ -56,9 +56,9 @@ main(int argc, char **argv)
 	assert(bootd_job_init(&job, &compositor, "ui.userland=1 -x", true) && job.state == BOOTD_JOB_LOADED);
 	assert(bootd_job_init(&job, &compositor, "-no-windowserver", false) && job.state == BOOTD_JOB_DISABLED);
 
-	service_config_t demo = load(argv[1], "about-sevos");
+	service_config_t demo = load(argv[1], "about-groveos");
 	assert(bootd_job_init(&job, &demo, "ui.userland=1", false) && job.state == BOOTD_JOB_DISABLED);
-	assert(bootd_job_init(&job, &demo, "-about-sevos-demo", false) && job.state == BOOTD_JOB_LOADED);
+	assert(bootd_job_init(&job, &demo, "-about-groveos-demo", false) && job.state == BOOTD_JOB_LOADED);
 	service_config_t crash = load(argv[1], "crashtest");
 	assert(bootd_job_init(&job, &crash, "ui.userland=1", false) && job.state == BOOTD_JOB_DISABLED);
 	assert(bootd_job_init(&job, &crash, "crash.test=1", false) && job.state == BOOTD_JOB_LOADED);

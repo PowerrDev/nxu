@@ -5,7 +5,7 @@
  * File:        frameworks/AppKit.framework/app_main.c
  *
  * main() of every app bundle's executable (/Applications/<Name>.app/Contents/
- * SevOS/<Name>, and the Dock). The app itself is a static library from
+ * GroveOS/<Name>, and the Dock). The app itself is a static library from
  * UIService.framework (bundles/<app>) exporting UIApplicationMain; this runs
  * it on a stack of its own, because the process's initial stack is 16 KiB on
  * i386 (no demand paging there) and an app's first frame parses fonts.

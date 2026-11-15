@@ -19,6 +19,8 @@
 
 I386_C_SOURCES += \
     kern/i386/apic.c \
+    kern/i386/lapic_timer.c \
+    kern/i386/rtclock.c \
     kern/i386/mp_table.c \
     kern/i386/smp.c
 
@@ -34,3 +36,13 @@ I386_SMP_TEST_CPUS ?= 4
 test-i386-smp: $(I386_KERNEL)
 
 	I386_SMP_TEST_CPUS=$(I386_SMP_TEST_CPUS) tools/test_i386_smp.sh $(I386_KERNEL)
+
+.PHONY: test-i386-timer
+
+# The event timer in each way it can come up: Local APIC one-shot on 4 CPUs
+# and on 1, the PIT when a requested mode is missing or forced, and without a
+# Local APIC at all (tools/test_i386_timer.sh). I386_TIMER_TEST_DEADLINE_QEMU
+# adds a TSC-deadline case on an accelerator that delivers it.
+test-i386-timer: $(I386_KERNEL)
+
+	tools/test_i386_timer.sh $(I386_KERNEL)

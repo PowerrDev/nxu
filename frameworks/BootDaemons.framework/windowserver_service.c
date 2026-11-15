@@ -52,6 +52,13 @@ static uint32_t g_display_width;
 static uint32_t g_display_height;
 static uint32_t *g_shadow_framebuffer;
 
+/*
+ * The longest a client's uncommitted changes hold the screen: long enough to
+ * cover a window coming up under emulation, short enough that a client that
+ * stalls (or never presents) cannot freeze it.
+ */
+#define WINDOWSERVER_BURST_US 250000
+
 static void
 windowserver_log(const char *message)
 {
@@ -157,6 +164,32 @@ windowserver_pump_input(void)
 	if (received < 0) g_pointer_baseline = false;
 }
 
+/* Log a request or present that took a whole frame or more: a hitch's cause. */
+static void
+windowserver_slow(const char *what, uint32_t opcode, int64_t took_us)
+{
+	char line[96];
+	char digits[24];
+	uint32_t length = 0;
+	const char *parts[] = {"windowserver: ", what, " ", 0, " took ", 0, " us\n"};
+
+	if (took_us < 16667) return;
+	char *cursor = digits + sizeof(digits) - 1;
+	*cursor = 0;
+	uint64_t value = (uint64_t)took_us;
+	do {
+		*--cursor = (char)('0' + value % 10U);
+		value /= 10U;
+	} while (value);
+	char op[4] = {(char)('0' + opcode / 10U % 10U), (char)('0' + opcode % 10U), 0, 0};
+	parts[3] = op;
+	parts[5] = cursor;
+	for (uint32_t i = 0; i < sizeof(parts) / sizeof(parts[0]); i++)
+		for (const char *c = parts[i]; *c && length + 1 < sizeof(line); c++) line[length++] = *c;
+	line[length] = 0;
+	windowserver_log(line);
+}
+
 static void
 windowserver_action(const wsmsg_request_t *request, wsmsg_reply_t *reply)
 {
@@ -197,6 +230,10 @@ windowserver_action(const wsmsg_request_t *request, wsmsg_reply_t *reply)
 
 	case WS_ACTION_OPAQUE_INTERIOR:
 		accepted = WS_Set_Window_Opaque_Interior(window, a[0] != 0);
+		break;
+
+	case WS_ACTION_CLIENT_ALPHA:
+		accepted = WS_Set_Window_Client_Alpha(window, a[0] != 0);
 		break;
 
 	case WS_ACTION_SHADOW_SCALE:
@@ -410,6 +447,7 @@ windowserver_handle_request(const wsmsg_request_t *incoming, uint64_t size, cons
 		case WS_ACTION_SHADOW:
 		case WS_ACTION_KEY:
 		case WS_ACTION_OPAQUE_INTERIOR:
+		case WS_ACTION_CLIENT_ALPHA:
 			handle = &request.action.window_id;
 			break;
 		default:
@@ -520,6 +558,9 @@ main(void)
 
 	windowserver_log("windowserver: registered as " WS_BOOTSTRAP_LABEL ", serving requests\n");
 
+	/* When the client calls not yet followed by a present began (0: none). */
+	int64_t burst_since_us = 0;
+
 	for (;;) {
 		uint32_t sequence = (uint32_t)nxu_event_wait(0, 0);
 		wsmsg_request_t request = {0};
@@ -531,12 +572,20 @@ main(void)
 		nxu_ipc_peer_t sender;
 		int64_t received =
 			nxu_ipc_receive_peer((uint32_t)service_name, &request, sizeof(request), &xfer_name, &xfer_type, &sender);
-
 		if (received >= 0) {
 			did_work = true;
+			/* A client's changes are a transaction (like Core Animation's):
+			 * the first opens it, its present commits it. A window coming
+			 * up is a dozen calls with drawing between them. */
+			if (request.opcode == WSMSG_PRESENT)
+				burst_since_us = 0;
+			else if (burst_since_us == 0)
+				burst_since_us = nxu_uptime_us();
 
 			wsmsg_reply_t reply;
+			int64_t handling = nxu_uptime_us();
 			windowserver_handle_request(&request, (uint64_t)received, &sender, &reply);
+			windowserver_slow("request", request.opcode, nxu_uptime_us() - handling);
 
 			if (xfer_type == NXU_IPC_XFER_PORT && xfer_name != 0U) {
 				(void)nxu_ipc_send(xfer_name, &reply, sizeof(reply), 0U);
@@ -547,11 +596,26 @@ main(void)
 		windowserver_reap_windows();
 		windowserver_pump_input();
 
-		/* Re-presents every iteration so cursor motion and the "shake to
-		 * locate" animation stay live between client redraws; WS_Present
-		 * itself is a no-op (no pacing spin, no syscall) when nothing is
-		 * damaged, so this costs nothing on an idle desktop. */
-		if (WS_Present()) did_work = true;
+		/*
+		 * Composite once a frame, not once a request. A client changing
+		 * several things (creating a window, rendering it, making it key,
+		 * the old key window's title bar, the menu bar) sends a request for
+		 * each and asks to present at the end; compositing after every one
+		 * of them redrew the same big damaged area a dozen times over and
+		 * held the desktop for a few hundred milliseconds whenever an app
+		 * opened, and showed it half made. So once a client starts changing
+		 * things this waits for its present, for WINDOWSERVER_BURST_US at
+		 * most (a client that never asks, or stalls). Otherwise it presents every pass, which
+		 * keeps the cursor and the "shake to locate" animation live;
+		 * WS_Present is a no-op (no pacing spin, no syscall) when nothing is
+		 * damaged.
+		 */
+		int64_t now = nxu_uptime_us();
+		if (burst_since_us == 0 || now - burst_since_us >= WINDOWSERVER_BURST_US) {
+			burst_since_us = 0;
+			if (WS_Present()) did_work = true;
+			windowserver_slow("present", 0, nxu_uptime_us() - now);
+		}
 
 		/* Replies wake clients directly; do not add a timer tick per RPC. */
 		if (did_work)

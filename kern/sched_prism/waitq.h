@@ -140,11 +140,12 @@ bool waitq_block_unlock(waitq_t *queue, bool interruptible, nxu_spinlock_t *guar
  *     the condition once more, as above. A deadline already in the past
  *     returns this without sleeping.
  *
- * Deadlines are checked on the scheduler tick, so a wait ends within a tick or
- * two after its deadline, never before it. However the wait ends, the thread is
- * off the queue and no longer has a deadline on return; a thread terminated in
- * the middle of one leaves both the queue and the list of timed waiters before
- * it is reclaimed (sched_thread_terminate).
+ * The deadline is a timer call (kern/clock/timer_call.h): with a deadline
+ * event timer the wait ends within microseconds after it, with a periodic one
+ * within a tick, never before it. However the wait ends, the thread is off
+ * the queue and its deadline can no longer fire on return; a thread
+ * terminated in the middle of one has its deadline cancelled before it is
+ * reclaimed (sched_thread_terminate).
  */
 typedef enum { WAITQ_WOKEN, WAITQ_INTERRUPTED, WAITQ_TIMED_OUT } waitq_result_t;
 
@@ -153,15 +154,12 @@ typedef enum { WAITQ_WOKEN, WAITQ_INTERRUPTED, WAITQ_TIMED_OUT } waitq_result_t;
 waitq_result_t waitq_block_deadline(waitq_t *queue, uint32_t seq, bool interruptible, uint64_t deadline);
 
 /*
- * waitq_timer_tick / waitq_timer_cancel
+ * waitq_timer_cancel
  *
- * The scheduler's half of waitq_block_deadline. waitq_timer_tick ends the wait
- * of every thread whose deadline is at or before `now`; the scheduler calls it
- * from the boot CPU's tick. waitq_timer_cancel forgets a thread's deadline;
- * the scheduler calls it when it terminates a thread, before the thread can be
- * reclaimed. It returns only once no tick is still looking at the thread.
+ * Forget a thread's deadline: the scheduler calls it when it terminates a
+ * thread, before the thread can be reclaimed. It returns only once the
+ * deadline's callback is not running anywhere.
  */
-void waitq_timer_tick(uint64_t now);
 void waitq_timer_cancel(thread_t thread);
 
 /* How many threads are sleeping with a deadline right now (diagnostics and tests). */

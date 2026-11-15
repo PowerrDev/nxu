@@ -448,6 +448,13 @@ i386_trap_exit(x86_saved_state_t *state)
 	(void)state;
 }
 
+/* No Local APIC timer driver linked: nothing programs the timer, but acknowledge a stray one all the same. */
+__attribute__((weak)) void
+i386_trap_lapic_timer(x86_saved_state_t *state)
+{
+	(void)state;
+}
+
 void
 i386_trap_handler(x86_saved_state_t *state)
 {
@@ -455,8 +462,14 @@ i386_trap_handler(x86_saved_state_t *state)
 	if (vector == T_PAGE_FAULT) statistics_note_page_fault(x86_saved_state_is_user(state));
 
 	if ((vector >= T_IRQ_BASE && vector < T_IRQ_BASE + T_IRQ_COUNT) || vector == T_IPI_RESCHEDULE ||
-		vector == T_IPI_CPU_STOP || vector == T_IPI_TICK || vector == T_IPI_SHOOTDOWN)
+		vector == T_IPI_CPU_STOP || vector == T_IPI_TICK || vector == T_IPI_SHOOTDOWN || vector == T_LAPIC_TIMER)
 		statistics_note_interrupt();
+
+	if (vector == T_LAPIC_TIMER) {
+		i386_trap_lapic_timer(state);
+		i386_trap_exit(state);
+		return;
+	}
 
 	if (vector == T_BREAKPOINT && !x86_saved_state_is_user(state)) {
 		/* A kernel breakpoint resumes after the int3; nothing is wrong. */

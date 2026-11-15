@@ -54,7 +54,7 @@ I386_WALLPAPER_SOURCES := $(wildcard tools/DiskRoot/Library/Caches/Wallpapers/*)
 I386_SYSTEM_WALLPAPER := tools/UI/Backgrounds/Sonoma.jpg
 I386_WALLPAPERS := $(I386_BUILD)/wallpapers
 
-$(I386_WALLPAPERS)/stamp: $(I386_WALLPAPER_SOURCES) $(I386_SYSTEM_WALLPAPER) tools/make_wallpapers.py $(FONT_PYTHON)
+$(I386_WALLPAPERS)/stamp: $(I386_WALLPAPER_SOURCES) $(I386_SYSTEM_WALLPAPER) tools/make_wallpapers.py tools/make_login_wallpaper.py $(FONT_PYTHON)
 
 	$(QUIET_PRINT) "WALLPAPER" "$(I386_WALLPAPERS)"
 
@@ -70,8 +70,8 @@ $(I386_WALLPAPERS)/stamp: $(I386_WALLPAPER_SOURCES) $(I386_SYSTEM_WALLPAPER) too
 $(I386_USER_STAMP): $(I386_USER_BUILD)/terminal frameworks/Terminal.framework/Info.plist tools/UI/Icons/Terminal.png $(I386_USER_APPS) $(USER_SYSTEM_FONTS) frameworks/BootDaemons.framework/Services/com.nxu.dock.plist $(I386_WALLPAPERS)/stamp
 
 define I386_USER_EXTRA_STAGE
-	$(Q)mkdir -p "$(I386_DISKROOT)/Applications/Terminal.app/Contents/SevOS"
-	$(Q)cp $(I386_USER_BUILD)/terminal "$(I386_DISKROOT)/Applications/Terminal.app/Contents/SevOS/Terminal"
+	$(Q)mkdir -p "$(I386_DISKROOT)/Applications/Terminal.app/Contents/GroveOS"
+	$(Q)cp $(I386_USER_BUILD)/terminal "$(I386_DISKROOT)/Applications/Terminal.app/Contents/GroveOS/Terminal"
 	$(Q)cp frameworks/Terminal.framework/Info.plist "$(I386_DISKROOT)/Applications/Terminal.app/Contents/Info.plist"
 	$(Q)mkdir -p "$(I386_DISKROOT)/Applications/Terminal.app/Contents/Resources"
 	$(Q)cp tools/UI/Icons/Terminal.png "$(I386_DISKROOT)/Applications/Terminal.app/Contents/Resources/Terminal.png"

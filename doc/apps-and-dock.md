@@ -1,6 +1,6 @@
 # App bundles and the Dock
 
-sevOS apps are processes. Each lives in a bundle on the system volume, the Dock
+groveOS apps are processes. Each lives in a bundle on the system volume, the Dock
 starts them, and they put their windows on the desktop through the kernel's UI
 session calls. The desktop itself (UIService's window manager, menu bar and
 WindowServer) still runs in the kernel, but no app is linked into it any more.
@@ -10,11 +10,11 @@ WindowServer) still runs in the kernel, but no app is linked into it any more.
 ```text
 /Applications/Voyager.app/Contents/
     Info.plist                     name, executable, icon
-    SevOS/Voyager                  the app's executable
+    GroveOS/Voyager                  the app's executable
     Resources/Voyager.icns         its icon
 /Applications/Activity Monitor.app/Contents/...
-/System/Library/CoreServices/Dock.app/Contents/{Info.plist,SevOS/Dock}
-/System/Library/CoreServices/About sevOS.app/Contents/...
+/System/Library/CoreServices/Dock.app/Contents/{Info.plist,GroveOS/Dock}
+/System/Library/CoreServices/About groveOS.app/Contents/...
 /System/Library/Preferences/com.nxu.dock.plist   what the Dock keeps
 /System/Library/BootDaemons/com.nxu.dock.plist   bootd starts the Dock
 /System/Library/Fonts/SF-Pro-Display-{Regular,Medium}.otf   read by every app at start
@@ -31,9 +31,9 @@ the executables are built and staged by `make userland` (see
 | Key | Meaning |
 | --- | --- |
 | `CFBundleName` | The name the Dock shows over the icon. Defaults to the bundle's name without `.app`. |
-| `CFBundleExecutable` | The executable in `Contents/SevOS`. Defaults to the same. |
+| `CFBundleExecutable` | The executable in `Contents/GroveOS`. Defaults to the same. |
 | `CFBundleIconFile` | The icon in `Contents/Resources`; `.icns` is added when it has no extension. |
-| `LSUIElement` | `true`: an agent app (About sevOS). The Dock starts it when asked and never shows it. |
+| `LSUIElement` | `true`: an agent app (About groveOS). The Dock starts it when asked and never shows it. |
 | `CFBundleIdentifier`, `CFBundleVersion` | Informational. |
 
 ### com.nxu.dock.plist
@@ -59,10 +59,10 @@ tile (the smallest at least as big, all modern `.icns` images are PNGs), inflate
 with `miniz_oxide`, scaled down by area in premultiplied alpha. On a kernel
 without the desktop it sleeps for good rather than letting bootd restart it.
 
-Clicking an app starts `Contents/SevOS/<CFBundleExecutable>` with `nxu_spawn`,
+Clicking an app starts `Contents/GroveOS/<CFBundleExecutable>` with `nxu_spawn`,
 or, if it runs, asks the desktop to bring it forward
 (`NXU_UI_CONTROL_ACTIVATE`, only the Dock may). The Dock starts every app,
-including the About sevOS the system menu opens and the apps Voyager opens
+including the About groveOS the system menu opens and the apps Voyager opens
 (the desktop sends it `NXU_UI_MSG_LAUNCH`), so it knows which run: it reaps them with `waitpid` and
 shows a dot under the running ones.
 

@@ -139,6 +139,14 @@ i386_isr_ipi_shootdown:
 
 	.text
 	.p2align 4
+	.global i386_isr_lapic_timer
+i386_isr_lapic_timer:
+	pushl $0
+	pushl $0xEF
+	jmp i386_trap_common
+
+	.text
+	.p2align 4
 	.global i386_isr_lapic_spurious
 i386_isr_lapic_spurious:
 	/* Spurious by architectural definition: no EOI, nothing to acknowledge. */

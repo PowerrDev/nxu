@@ -160,6 +160,10 @@ Legacy raw-disk development remains available through
 `I386_PARTITIONED_DISK=0`; in that mode `I386_RECOVERY_DISK` attaches the old
 separate recovery disk and supplies `recovery.volume=1`.
 
+The recovery partition also holds the factory payload used by Erase All
+Content and Settings, and the stored Startup Disk choice. See
+[Erase and Startup Disk](erase-and-startup-disk.md).
+
 For custom images, use `tools/make_recovery_volume.py` to create a recovery
 filesystem from a ramdisk, optional seed and optional `--package` inputs, then
 `tools/make_system_disk.py --system-image SYSTEM.img --recovery-image RECOVERY.img
@@ -207,7 +211,7 @@ architecture-independent journal. It logs directories and each changed file:
 patchd: backing up /Volumes/mainOS/System/Library/CoreServices/bootd
 patchd: applying patches to /Volumes/mainOS/System/
 patchd: applying patches to /Volumes/mainOS/System/Library/CoreServices/bootd
-patchd: applying patches to /Volumes/mainOS/Applications/Terminal.app/Contents/SevOS/Terminal
+patchd: applying patches to /Volumes/mainOS/Applications/Terminal.app/Contents/GroveOS/Terminal
 ```
 
 Each copied file is checked against its SHA-256 digest. Copy or sync failures

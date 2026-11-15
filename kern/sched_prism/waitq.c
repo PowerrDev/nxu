@@ -20,17 +20,22 @@
  * it finds the thread there and interrupts the sleep (signal_post wakes
  * interruptible sleepers once the signal is pending).
  *
- * Timed waits add one lock, g_waitq_timer_lock, which protects the list of
- * threads sleeping with a deadline and their wait_timer_* fields. It is the
- * outermost lock here: the tick holds it while it takes a thread off its queue
- * (queue->lock) and wakes it (the scheduler's locks), and nothing takes it
- * while holding either of those. Holding it across the wakeup is what keeps
- * the thread alive for the tick: a thread cannot be reclaimed until
- * waitq_timer_cancel has been through this lock.
+ * Timed waits. A wait with a deadline enters the thread's own timer call
+ * (thread->wait_timer, kern/clock/timer_call.h) once the thread is on the
+ * queue, under queue->lock, so the call can never fire for a thread that has
+ * not started waiting yet. The call's queue lock is a leaf (taken inside
+ * queue->lock here, never held while anything else is taken). Its callback
+ * runs with no lock held and ends the wait the way waitq_interrupt does: only
+ * if it is the one that takes the thread off the queue. The thread cancels the
+ * call synchronously before it leaves waitq_block_deadline, so a callback
+ * still running on another CPU is finished before the thread reads
+ * wait_timed_out or goes on to be reclaimed (sched_thread_terminate cancels
+ * it synchronously too).
  */
 
 #include <kern/sched_prism/waitq.h>
 
+#include <kern/clock/timer_call.h>
 #include <kern/machine/machine_routines.h>
 #include <kern/machine/timer.h>
 #include <kern/process/proc.h>
@@ -225,8 +230,14 @@ waitq_interrupt(thread_t thread)
  * and switch away. The caller has interrupts masked (irq_state is what to restore)
  * and, when it holds a guard, releases it after the thread is on the queue.
  */
+static void waitq_deadline_expired(void *param0, void *param1);
+
+/* Threads in a timed wait right now (waitq_timer_waiters). */
+static uint32_t g_waitq_timed_waiters;
+
 static bool
-waitq_sleep(waitq_t *queue, bool interruptible, nxu_spinlock_t *guard, uint64_t irq_state, const uint32_t *expected_seq)
+waitq_sleep(waitq_t *queue, bool interruptible, nxu_spinlock_t *guard, uint64_t irq_state, const uint32_t *expected_seq,
+			uint64_t deadline)
 {
 	thread_t thread = current_thread();
 
@@ -274,6 +285,20 @@ waitq_sleep(waitq_t *queue, bool interruptible, nxu_spinlock_t *guard, uint64_t 
 		}
 	}
 
+	/*
+	 * On the queue, so the deadline can only find the thread waiting (or
+	 * already woken, when it does nothing). A deadline already past fires as
+	 * soon as this CPU takes interrupts again, that is once it has switched
+	 * away.
+	 */
+	if (deadline != WAITQ_NO_DEADLINE) {
+		timer_call_setup(&thread->wait_timer, waitq_deadline_expired, thread, 0);
+		thread->wait_timed_out = false;
+		__atomic_store_n(&thread->wait_timer_armed, true, __ATOMIC_RELEASE);
+		(void)__atomic_add_fetch(&g_waitq_timed_waiters, 1U, __ATOMIC_ACQ_REL);
+		(void)timer_call_enter(&thread->wait_timer, deadline);
+	}
+
 	bool waiting = sched_thread_wait(thread, false);
 
 	nxu_spin_unlock(&queue->lock);
@@ -296,76 +321,33 @@ waitq_sleep(waitq_t *queue, bool interruptible, nxu_spinlock_t *guard, uint64_t 
 	return switched && !thread->wait_interrupted;
 }
 
-static nxu_spinlock_t g_waitq_timer_lock = NXU_SPINLOCK_INIT;
-static thread_t g_waitq_timer_head;
-
-/* How many threads are on the list; lets the tick skip the lock when there are none. */
-static uint32_t g_waitq_timer_count;
-
+/*
+ * The deadline of a timed wait passed (interrupt context, on the CPU that
+ * entered the call). As for a signal (waitq_interrupt): only whoever unlinks
+ * the thread from its queue wakes it, so a wakeup that got there first wins
+ * and this does nothing.
+ */
 static void
-waitq_timer_arm_locked(thread_t thread, uint64_t deadline)
+waitq_deadline_expired(void *param0, void *param1)
 {
-	thread->wait_deadline = deadline;
-	thread->wait_timed_out = false;
-	thread->wait_timer_prev = 0;
-	thread->wait_timer_next = g_waitq_timer_head;
+	thread_t thread = (thread_t)param0;
 
-	if (g_waitq_timer_head != 0) g_waitq_timer_head->wait_timer_prev = thread;
+	(void)param1;
 
-	g_waitq_timer_head = thread;
-	thread->wait_timer_armed = true;
+	if (!waitq_remove(thread)) return;
 
-	(void)__atomic_add_fetch(&g_waitq_timer_count, 1U, __ATOMIC_ACQ_REL);
+	thread->wait_timed_out = true;
+	(void)sched_thread_wakeup(thread);
 }
 
+/* The thread's timed wait is over: make sure its deadline can no longer fire, and forget it. */
 static void
-waitq_timer_disarm_locked(thread_t thread)
+waitq_deadline_disarm(thread_t thread)
 {
-	if (!thread->wait_timer_armed) return;
+	(void)timer_call_cancel_sync(&thread->wait_timer);
 
-	if (thread->wait_timer_prev != 0) {
-		thread->wait_timer_prev->wait_timer_next = thread->wait_timer_next;
-	} else {
-		g_waitq_timer_head = thread->wait_timer_next;
-	}
-
-	if (thread->wait_timer_next != 0) thread->wait_timer_next->wait_timer_prev = thread->wait_timer_prev;
-
-	thread->wait_timer_next = 0;
-	thread->wait_timer_prev = 0;
-	thread->wait_timer_armed = false;
-
-	(void)__atomic_sub_fetch(&g_waitq_timer_count, 1U, __ATOMIC_ACQ_REL);
-}
-
-void
-waitq_timer_tick(uint64_t now)
-{
-	if (__atomic_load_n(&g_waitq_timer_count, __ATOMIC_ACQUIRE) == 0U) return;
-
-	uint64_t irq_state = nxu_spin_lock_irqsave(&g_waitq_timer_lock);
-
-	for (thread_t thread = g_waitq_timer_head; thread != 0;) {
-		thread_t next = thread->wait_timer_next;
-
-		/*
-		 * As for a signal (waitq_interrupt): only whoever unlinks the thread
-		 * from its queue wakes it. A thread that is past its deadline but not on
-		 * a queue was either woken a moment ago, and will take itself off this
-		 * list, or has not gone to sleep yet, and is found again on the next
-		 * tick; either way it is left alone now.
-		 */
-		if (thread->wait_deadline <= now && waitq_remove(thread)) {
-			waitq_timer_disarm_locked(thread);
-			thread->wait_timed_out = true;
-
-			(void)sched_thread_wakeup(thread);
-		}
-
-		thread = next;
-	}
-
-	nxu_spin_unlock_irqrestore(&g_waitq_timer_lock, irq_state);
+	if (__atomic_exchange_n(&thread->wait_timer_armed, false, __ATOMIC_ACQ_REL))
+		(void)__atomic_sub_fetch(&g_waitq_timed_waiters, 1U, __ATOMIC_ACQ_REL);
 }
 
 void
@@ -373,18 +355,13 @@ waitq_timer_cancel(thread_t thread)
 {
 	if (thread == 0) return;
 
-	/* Always through the lock, armed or not: a tick that already chose this thread finishes with it first. */
-	uint64_t irq_state = nxu_spin_lock_irqsave(&g_waitq_timer_lock);
-
-	waitq_timer_disarm_locked(thread);
-
-	nxu_spin_unlock_irqrestore(&g_waitq_timer_lock, irq_state);
+	waitq_deadline_disarm(thread);
 }
 
 uint32_t
 waitq_timer_waiters(void)
 {
-	return __atomic_load_n(&g_waitq_timer_count, __ATOMIC_ACQUIRE);
+	return __atomic_load_n(&g_waitq_timed_waiters, __ATOMIC_ACQUIRE);
 }
 
 waitq_result_t
@@ -399,7 +376,7 @@ waitq_block_deadline(waitq_t *queue, uint32_t seq, bool interruptible, uint64_t 
 	if (timer_get_microseconds() >= deadline) return WAITQ_TIMED_OUT;
 
 	/*
-	 * Before the scheduler ticks nothing would end the wait at its deadline,
+	 * Before timer calls can fire nothing would end the wait at its deadline,
 	 * so do not sleep: yield until a wakeup moves the sequence or time runs out.
 	 */
 	if (!sched_is_ticking()) {
@@ -412,28 +389,16 @@ waitq_block_deadline(waitq_t *queue, uint32_t seq, bool interruptible, uint64_t 
 		return WAITQ_TIMED_OUT;
 	}
 
-	uint64_t irq_state = nxu_spin_lock_irqsave(&g_waitq_timer_lock);
+	thread->wait_timed_out = false;
 
-	waitq_timer_arm_locked(thread, deadline);
+	uint64_t irq_state = ml_irq_save();
+	bool woken = waitq_sleep(queue, interruptible, 0, irq_state, &seq, deadline);
 
-	nxu_spin_unlock_irqrestore(&g_waitq_timer_lock, irq_state);
-
-	/*
-	 * The deadline is armed before the thread joins the queue. If it passes in
-	 * between, the tick finds the thread on no queue and leaves it armed; the
-	 * next tick ends the sleep that starts below.
-	 */
-	bool woken = waitq_block_seq(queue, seq, interruptible);
-
-	irq_state = nxu_spin_lock_irqsave(&g_waitq_timer_lock);
-
-	waitq_timer_disarm_locked(thread);
+	waitq_deadline_disarm(thread);
 
 	bool timed_out = thread->wait_timed_out;
 
 	thread->wait_timed_out = false;
-
-	nxu_spin_unlock_irqrestore(&g_waitq_timer_lock, irq_state);
 
 	if (timed_out) return WAITQ_TIMED_OUT;
 
@@ -447,7 +412,7 @@ waitq_block(waitq_t *queue, bool interruptible)
 
 	uint64_t irq_state = ml_irq_save();
 
-	return waitq_sleep(queue, interruptible, 0, irq_state, 0);
+	return waitq_sleep(queue, interruptible, 0, irq_state, 0, WAITQ_NO_DEADLINE);
 }
 
 bool
@@ -457,7 +422,7 @@ waitq_block_seq(waitq_t *queue, uint32_t seq, bool interruptible)
 
 	uint64_t irq_state = ml_irq_save();
 
-	return waitq_sleep(queue, interruptible, 0, irq_state, &seq);
+	return waitq_sleep(queue, interruptible, 0, irq_state, &seq, WAITQ_NO_DEADLINE);
 }
 
 bool
@@ -469,5 +434,5 @@ waitq_block_unlock(waitq_t *queue, bool interruptible, nxu_spinlock_t *guard, ui
 		return false;
 	}
 
-	return waitq_sleep(queue, interruptible, guard, irq_state, 0);
+	return waitq_sleep(queue, interruptible, guard, irq_state, 0, WAITQ_NO_DEADLINE);
 }

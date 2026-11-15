@@ -16,6 +16,7 @@
 #include <kern/machine/timer.h>
 #include <kern/boot/boot_args.h>
 #include <kern/boot/boot_mode.h>
+#include <kern/update/erase.h>
 #include <drivers/block/block_device.h>
 #include <drivers/block/partition.h>
 #include <drivers/input/input.h>
@@ -116,6 +117,13 @@ static bool
 syscall_has_caps(uint32_t caps)
 {
 	return proc_has_caps(current_proc(), caps);
+}
+
+/* Only the eraser the kernel started as PID 1 (kern/update/erase.c), and only for that boot. */
+static bool
+syscall_erase_privileged(void)
+{
+	return boot_erase_running() && proc_selfpid() == 1U;
 }
 
 static syscall_error_t
@@ -2086,7 +2094,10 @@ syscall_unlink(uint64_t user_path)
 	if (!sap_canonical_path(path, canonical)) return syscall_error(SYSCALL_ERROR_DENIED);
 
 	vfs_status_t status;
-	if (sap_protected_path(canonical) || !syscall_has_caps(NXU_CAP_FS_WRITE))
+	if (syscall_erase_privileged())
+		/* The kernel-started eraser wipes the whole system volume, protected files included. */
+		status = vfs_unlink(canonical);
+	else if (sap_protected_path(canonical) || !syscall_has_caps(NXU_CAP_FS_WRITE))
 		/* A protected path, or a caller without the write capability, is sent to
 		 * the SAP authorisation prompt rather than denied outright: the user can
 		 * approve the delete. (sap_submit is the authorisation, so it needs no
@@ -2104,7 +2115,8 @@ syscall_rmdir(uint64_t user_path)
 	syscall_error_t path_error = syscall_copy_path(user_path, path);
 	if (path_error != 0) return syscall_error(path_error);
 
-	if (!syscall_has_caps(NXU_CAP_FS_WRITE) || !sap_canonical_path(path, canonical) || sap_protected_path(canonical))
+	if (!sap_canonical_path(path, canonical)) return syscall_error(SYSCALL_ERROR_DENIED);
+	if (!syscall_erase_privileged() && (!syscall_has_caps(NXU_CAP_FS_WRITE) || sap_protected_path(canonical)))
 		return syscall_error(SYSCALL_ERROR_DENIED);
 	vfs_status_t status = vfs_rmdir(canonical);
 	return status == VFS_STATUS_OK ? syscall_return(0) : syscall_error(syscall_vfs_error(status));

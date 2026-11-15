@@ -72,12 +72,14 @@ I386_QEMU_AUDIO ?= -audiodev coreaudio,id=snd0 -device virtio-sound-pci,audiodev
 # Shared flags-stamp, object and link rules (makedefs/MakeInc.rules).
 $(eval $(call NXU_ARCH_RULES,i386,I386))
 
-$(I386_BUILD)/login_wallpaper.qoi: tools/UI/Backgrounds/Sonoma.jpg tools/make_login_wallpaper.py $(FONT_PYTHON)
+$(I386_BUILD)/login_wallpaper.qoi: $(DEFAULT_WALLPAPER) tools/make_login_wallpaper.py $(FONT_PYTHON)
 	$(Q)$(FONT_PYTHON) tools/make_login_wallpaper.py --source $< --output $@
 
 $(I386_BUILD)/drivers/video/login_wallpaper_asset.o: drivers/video/login_wallpaper_asset.S $(I386_BUILD)/login_wallpaper.qoi
 	@mkdir -p $(dir $@)
-	$(Q)$(I386_CC) $(I386_ASFLAGS) '-DNXU_LOGIN_WALLPAPER_QOI="$(I386_BUILD)/login_wallpaper.qoi"' -c $< -o $@
+	@# ccache hashes the preprocessed source, not what .incbin pulls in: it would
+	@# hand back an object with the previous picture.
+	$(Q)CCACHE_DISABLE=1 $(I386_CC) $(I386_ASFLAGS) '-DNXU_LOGIN_WALLPAPER_QOI="$(I386_BUILD)/login_wallpaper.qoi"' -c $< -o $@
 
 
 i386: $(I386_KERNEL)

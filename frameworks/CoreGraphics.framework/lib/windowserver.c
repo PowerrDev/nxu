@@ -134,6 +134,12 @@ CG_Set_Window_Opaque_Interior(WSWindowID window, bool opaque)
 	return action(WS_ACTION_OPAQUE_INTERIOR, window, (uint32_t[8]){opaque});
 }
 
+bool
+CG_Set_Window_Client_Alpha(WSWindowID window, bool client_alpha)
+{
+	return action(WS_ACTION_CLIENT_ALPHA, window, (uint32_t[8]){client_alpha});
+}
+
 void
 CG_Set_Shadow_Scale(uint32_t scale)
 {

@@ -43,9 +43,9 @@ static bool g_uart_ready;
 /*
  * tep_mailbox_wait_us:
  *
- * Let other threads run for about `microseconds`. Sleeps once the periodic
- * timer runs; before that (boot-time tests) the scheduler is cooperative and
- * a sleep would never be woken, so it yields instead.
+ * Let other threads run for about `microseconds`. Sleeps once timed waits
+ * work (sched_is_ticking); before that (boot-time tests) the scheduler is
+ * cooperative and a sleep would never be woken, so it yields instead.
  */
 void
 tep_mailbox_wait_us(uint64_t microseconds)
@@ -53,7 +53,7 @@ tep_mailbox_wait_us(uint64_t microseconds)
 	uint64_t deadline = timer_get_microseconds() + microseconds;
 
 	while (timer_get_microseconds() < deadline) {
-		if (timer_get_interrupt_count() != 0ULL && sched_sleep_us(deadline - timer_get_microseconds())) continue;
+		if (sched_is_ticking() && sched_sleep_us(deadline - timer_get_microseconds())) continue;
 		if (!sched_yield()) cpu_relax();
 	}
 }

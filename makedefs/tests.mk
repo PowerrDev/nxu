@@ -67,7 +67,7 @@ TEST_IDS := \
     socket-process \
     network \
     windowserver-process \
-    about-sevos-process \
+    about-groveos-process \
     smp \
     smp-user \
     tty \
@@ -97,7 +97,7 @@ TEST_IDS := \
 #   windowserver-about   ui-about again (both bootstrap WindowServer, then run About)
 #   windowserver-process a second display server: the userland WindowServer
 #                        claims the one display the UI session already owns
-#   about-sevos-process  needs that userland WindowServer to draw into
+#   about-groveos-process  needs that userland WindowServer to draw into
 #
 # `make check` runs it headless: the same kernel with -display none (the UI
 # session still runs, on the virtio-gpu framebuffer) and every pass line below

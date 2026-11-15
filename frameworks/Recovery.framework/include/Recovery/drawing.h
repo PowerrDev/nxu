@@ -48,7 +48,7 @@ bool startup_options_ui_font_preload_mono(void);
  *	Purpose:
  *		Report native style capabilities of the built-in recovery face.
  *	Discussion:
- *		Recovery deliberately has no dependency on the normal sevOS font
+ *		Recovery deliberately has no dependency on the normal groveOS font
  *		stack. Styled drawing degrades to the bootstrap raster face.
  */
 bool startup_options_ui_font_sans_has_weights(void);

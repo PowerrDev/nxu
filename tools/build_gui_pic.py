@@ -311,7 +311,7 @@ def main():
                     'INTER_REGULAR': str(ROOT / 'tools/DiskRoot/System/Library/Fonts/SF-Pro-Text-Regular.ttf'),
                     'INTER_SEMIBOLD': str(ROOT / 'tools/DiskRoot/System/Library/Fonts/SF-Pro-Text-Semibold.ttf'),
                     'BOREL_REGULAR': 'fonts/Borel-Regular.ttf',
-                    'BACKGROUND': str(ROOT / 'tools/UI/Backgrounds/Sonoma.jpg'),
+                    'BACKGROUND': str(ROOT / 'tools/DiskRoot/Library/Caches/Wallpapers/GoldenGate.jpg'),
                     'MENUBAR_LOGO': 'Branding/logo.png',
                 }
                 for cursor in ('arrow', 'hand', 'move', 'resize-ew', 'resize-ns',

@@ -83,14 +83,22 @@ thread_t run_queue_peek(const run_queue_t *runq);
 thread_t run_queue_dequeue_priority(run_queue_t *runq, uint16_t priority);
 
 /*
- * run_queue_clock / run_queue_clock_advance
+ * The scheduler tick's period: 100 Hz on every architecture. Counts kept in
+ * ticks (quanta, the boost interval, starvation) are in these.
+ */
+#define SCHED_TICK_US 10000ULL
+
+/*
+ * run_queue_clock
  *
- * Scheduler ticks since boot, as the boot CPU counts them: every enqueue
+ * Scheduler tick periods since the monotonic clock started: every enqueue
  * records it in the thread (runq_enqueued_tick), which is how long a thread
- * has waited to run is measured (wrapping: compare by difference).
+ * has waited to run is measured (wrapping: compare by difference). Derived
+ * from the clock, not counted by a tick, so it advances the same whether or
+ * not any CPU is taking ticks (an idle CPU takes none on a deadline event
+ * timer).
  */
 uint32_t run_queue_clock(void);
-void run_queue_clock_advance(void);
 
 /*
  * run_queue_validate

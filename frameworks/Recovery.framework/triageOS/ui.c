@@ -7,7 +7,7 @@
 #include <stdint.h>
 
 #define TRIAGE_SYSTEM_DEVICE "disk0p2"
-#define TRIAGE_SYSTEM_PARTITION_NAME "sevOS System"
+#define TRIAGE_SYSTEM_PARTITION_NAME "groveOS System"
 #define TRIAGE_BG_TOP STARTUP_OPTIONS_UI_ARGB(255U, 15U, 16U, 19U)
 #define TRIAGE_BG_BOTTOM STARTUP_OPTIONS_UI_ARGB(255U, 9U, 10U, 12U)
 #define TRIAGE_BAR STARTUP_OPTIONS_UI_ARGB(255U, 20U, 21U, 25U)
@@ -468,7 +468,7 @@ triage_layout(triage_ui_t *ui)
 	int32_t first_y = ui->panel_y + 100;
 	static const triage_action_t actions[4] = {TRIAGE_ACTION_REINSTALL, TRIAGE_ACTION_DISK_UTILITY,
 											   TRIAGE_ACTION_TERMINAL, TRIAGE_ACTION_RESTART};
-	static const char *const titles[4] = {"Reinstall sevOS", "Disk Utility", "Terminal", "Restart"};
+	static const char *const titles[4] = {"Reinstall groveOS", "Disk Utility", "Terminal", "Restart"};
 	static const char *const details[4] = {"Install a system image", "Inspect storage", "Open a recovery shell",
 										   "Restart the system"};
 
@@ -526,7 +526,7 @@ triage_draw_static(triage_ui_t *ui)
 	startup_options_ui_draw_text(&ui->canvas, 124, bar_text_y, "Recovery", TRIAGE_MUTED, 2U);
 	startup_options_ui_canvas_stroke_squircle(&ui->canvas, ui->panel_x, ui->panel_y, ui->panel_width, ui->panel_height,
 											  20U, 1U, TRIAGE_BORDER, TRIAGE_PANEL);
-	triage_center_text(&ui->canvas, ui->panel_x + (int32_t)(ui->panel_width / 2U), ui->panel_y + 30, "sevOS Recovery",
+	triage_center_text(&ui->canvas, ui->panel_x + (int32_t)(ui->panel_width / 2U), ui->panel_y + 30, "groveOS Recovery",
 					   TRIAGE_TEXT, 3U);
 	triage_center_text(&ui->canvas, ui->panel_x + (int32_t)(ui->panel_width / 2U), ui->panel_y + 66,
 					   "Choose a recovery tool.", TRIAGE_MUTED, 2U);
@@ -583,7 +583,7 @@ static const char *
 triage_modal_title(triage_action_t action)
 {
 	if (action == TRIAGE_ACTION_REINSTALL) {
-		return "Reinstall sevOS";
+		return "Reinstall groveOS";
 	}
 
 	if (action == TRIAGE_ACTION_DISK_UTILITY) {
@@ -1074,10 +1074,10 @@ triage_disk_toggle_mount(triage_ui_t *ui)
 	int64_t result;
 	if (ui->disk_mounted) {
 		result = recovery_fs_unmount(ui->disk_mount_path);
-		triage_disk_set_status(ui, result < 0 ? "Unable to unmount sevOS System." : "sevOS System unmounted.");
+		triage_disk_set_status(ui, result < 0 ? "Unable to unmount groveOS System." : "groveOS System unmounted.");
 	} else if (ui->disk_layout.scheme == RECOVERY_BLOCK_LAYOUT_RAW) {
 		result = recovery_fs_mount("ext4", 0U, "/Volumes/mainOS");
-		triage_disk_set_status(ui, result < 0 ? "Unable to mount sevOS System." : "sevOS System mounted at /Volumes/mainOS.");
+		triage_disk_set_status(ui, result < 0 ? "Unable to mount groveOS System." : "groveOS System mounted at /Volumes/mainOS.");
 	} else {
 		uint32_t system_device;
 		if (!triage_device_index(TRIAGE_SYSTEM_DEVICE, &system_device)) {
@@ -1087,7 +1087,7 @@ triage_disk_toggle_mount(triage_ui_t *ui)
 		}
 
 		result = recovery_fs_mount("ext4", system_device, "/Volumes/mainOS");
-		triage_disk_set_status(ui, result < 0 ? "Unable to mount sevOS System." : "sevOS System mounted at /Volumes/mainOS.");
+		triage_disk_set_status(ui, result < 0 ? "Unable to mount groveOS System." : "groveOS System mounted at /Volumes/mainOS.");
 	}
 
 	triage_disk_refresh(ui);
@@ -1204,14 +1204,14 @@ static const char *
 triage_sheet_role_name(uint32_t role)
 {
 	if (role == (uint32_t)RECOVERY_BLOCK_PARTITION_ROLE_SYSTEM) {
-		return "sevOS System";
+		return "groveOS System";
 	}
 
 	if (role == (uint32_t)RECOVERY_BLOCK_PARTITION_ROLE_EFI) {
 		return "EFI System";
 	}
 
-	return "sevOS Data";
+	return "groveOS Data";
 }
 
 /*
@@ -2209,14 +2209,14 @@ triage_disk_delete(triage_ui_t *ui)
 
 	if (ui->disk_mounted) {
 		ui->disk_delete_armed = false;
-		triage_disk_set_status(ui, "Unmount sevOS System before deleting a partition.");
+		triage_disk_set_status(ui, "Unmount groveOS System before deleting a partition.");
 		triage_mark_disk(ui);
 		return;
 	}
 
-	if (triage_equal(ui->disk_partitions[ui->disk_selected_partition].name, "sevOS Recovery")) {
+	if (triage_equal(ui->disk_partitions[ui->disk_selected_partition].name, "groveOS Recovery")) {
 		ui->disk_delete_armed = false;
-		triage_disk_set_status(ui, "sevOS Recovery is in use and cannot delete itself.");
+		triage_disk_set_status(ui, "groveOS Recovery is in use and cannot delete itself.");
 		triage_mark_disk(ui);
 		return;
 	}
@@ -2433,7 +2433,7 @@ triage_draw_disk_utility(triage_ui_t *ui)
 	if (ui->disk_partition_count == 0U) {
 		startup_options_ui_draw_text(
 			&ui->canvas, x + 28, detail_y,
-			ui->disk_layout.scheme == RECOVERY_BLOCK_LAYOUT_RAW ? "sevOS Volume" : "No partitions", TRIAGE_TEXT, 2U);
+			ui->disk_layout.scheme == RECOVERY_BLOCK_LAYOUT_RAW ? "groveOS Volume" : "No partitions", TRIAGE_TEXT, 2U);
 
 		if (ui->disk_layout.scheme == RECOVERY_BLOCK_LAYOUT_RAW) {
 			startup_options_ui_draw_text(&ui->canvas, x + 28, detail_y + 28,

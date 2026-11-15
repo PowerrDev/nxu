@@ -101,6 +101,22 @@ struct processor {
 	/* (own) ticks since this CPU's run queue was last boosted. */
 	uint32_t boost_ticks;
 
+	/*
+	 * (own) The scheduler's tick on a deadline event timer
+	 * (kern/sched_prism/sched_timer.c): when this CPU's next tick is due (0
+	 * while it is idle and takes none), and since when it has been idle, so
+	 * the ticks it skipped can be accounted for when it gets busy again.
+	 */
+	uint64_t sched_tick_deadline_us;
+	uint64_t sched_idle_since_us;
+
+	/*
+	 * Set by a busy CPU that has threads waiting which this idle CPU could
+	 * take, together with a reschedule IPI: an idle CPU takes no ticks, so
+	 * it would not otherwise look for work to pull (sched_balance). Atomic.
+	 */
+	bool balance_requested;
+
 	uint64_t user_dispatch_count;  /* times this CPU switched to a thread of a user process */
 	uint64_t ipi_reschedule_count; /* reschedule IPIs taken */
 	uint64_t migrate_in_count;	   /* threads placed or moved here by another CPU */

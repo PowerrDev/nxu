@@ -617,7 +617,64 @@ terminal_key(terminal_tab_t *tab, const nxu_ui_message_t *message)
 /* Tab lifecycle.                                                            */
 /* ------------------------------------------------------------------------- */
 
-/* Start an nzh shell for `tab` on a pseudo-terminal of its own, sized to the window. */
+#define TERMINAL_SHELL "/Volumes/mainOS/System/Library/CoreServices/nzh"
+#define TERMINAL_SU "/Volumes/mainOS/System/Library/CoreServices/su"
+#define TERMINAL_PASSWD "/Volumes/mainOS/etc/passwd"
+
+/*
+ * The computer's user: the first ordinary account in /etc/passwd (uid 500
+ * or more, not nobody), the one the setup assistant makes (uid 1000). Empty
+ * when there is none.
+ */
+static char g_user[33];
+
+static void
+find_user(void)
+{
+	static char text[4096];
+	int64_t file = nxu_open(TERMINAL_PASSWD, NXU_O_READ);
+	int64_t length = file < 0 ? -1 : nxu_read((uint64_t)file, text, sizeof(text) - 1U);
+
+	g_user[0] = '\0';
+	if (file >= 0) (void)nxu_close((uint64_t)file);
+	if (length <= 0) return;
+	text[length] = '\0';
+
+	/* name:x:uid:... one per line. */
+	for (char *line = text; *line != '\0';) {
+		char *end = line;
+		while (*end != '\0' && *end != '\n')
+			end++;
+
+		char *name_end = line;
+		while (name_end < end && *name_end != ':')
+			name_end++;
+		char *uid_field = name_end;
+		for (uint32_t colons = 0U; uid_field < end && colons < 2U; uid_field++)
+			if (*uid_field == ':') colons++;
+
+		uint32_t uid = 0U;
+		bool digits = uid_field < end && *uid_field >= '0' && *uid_field <= '9';
+		while (uid_field < end && *uid_field >= '0' && *uid_field <= '9')
+			uid = uid * 10U + (uint32_t)(*uid_field++ - '0');
+
+		uint32_t name_length = (uint32_t)(name_end - line);
+		if (digits && uid >= 500U && uid != 65534U && name_length > 0U && name_length < sizeof(g_user)) {
+			memcpy(g_user, line, name_length);
+			g_user[name_length] = '\0';
+			return;
+		}
+		line = *end == '\0' ? end : end + 1;
+	}
+}
+
+/*
+ * Start a shell for `tab` on a pseudo-terminal of its own, sized to the
+ * window: the user's own, in their home directory, through `su -l` (Terminal
+ * is started as root; su from root needs no password and leaves the shell
+ * the user's groups and IDs, as a login would). With no ordinary account,
+ * the shell is started directly, as Terminal's own user.
+ */
 static bool
 spawn_shell(terminal_tab_t *tab)
 {
@@ -625,13 +682,16 @@ spawn_shell(terminal_tab_t *tab)
 	memset(tab->rows, ' ', sizeof(tab->rows));
 	tab->stream = -1;
 
-	const char *arguments[] = {"nzh", 0};
+	const char *own_shell[] = {"nzh", 0};
+	const char *as_user[] = {"su", "-l", g_user, 0};
+	bool switch_user = g_user[0] != '\0' && nxu_getuid() == 0;
 	struct nxu_winsize size = {.ws_row = TERMINAL_ROWS,
 							   .ws_col = TERMINAL_COLUMNS,
 							   .ws_xpixel = TERMINAL_COLUMNS * CELL_W,
 							   .ws_ypixel = TERMINAL_ROWS * CELL_H};
 	int64_t master = -1;
-	int64_t shell = nxu_spawn_pty("/Volumes/mainOS/System/Library/CoreServices/nzh", arguments, &size, &master);
+	int64_t shell = switch_user ? nxu_spawn_pty(TERMINAL_SU, as_user, &size, &master)
+								: nxu_spawn_pty(TERMINAL_SHELL, own_shell, &size, &master);
 
 	if (shell <= 0) return false;
 
@@ -773,6 +833,7 @@ pointer_down(int32_t x, int32_t y)
 int
 main(void)
 {
+	find_user();
 	if (!spawn_shell(&g_tabs[0])) {
 		return 4;
 	}
@@ -793,7 +854,8 @@ main(void)
 							 .max_width = TERMINAL_WIDTH,
 							 .max_height = FRAME_HEIGHT + TITLEBAR_HEIGHT,
 							 .titlebar_height = TITLEBAR_HEIGHT,
-							 .corner_radius = 24};
+							 /* Tighter than the other windows' 52: a terminal is a dense, square-ish grid. */
+							 .corner_radius = 16};
 	memcpy(info.name, "Terminal", sizeof("Terminal"));
 	memcpy(info.bundle_path, "/Applications/Terminal.app", sizeof("/Applications/Terminal.app"));
 	int64_t connection = nxu_ui_connect(&info);

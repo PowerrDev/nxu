@@ -133,10 +133,10 @@ void smp_stop_other_cpus(void);
  *
  * Called from the boot CPU's own PIT interrupt handler (kern/i386/irq.c),
  * after it has counted the tick and charged its own scheduler: broadcasts a
- * reschedule IPI to every other online CPU so they run sched_tick() too. This
- * port has no per-CPU LAPIC timer (see apic.h's file comment), so a
- * secondary's quantum accounting is entirely driven by this broadcast, at
- * whatever rate the boot CPU's PIT is programmed for.
+ * tick IPI to every other online CPU so they run sched_tick() too. Only while
+ * the PIT drives the machine: with the Local APIC timers running (the usual
+ * case, kern/i386/lapic_timer.c) the PIT is silent and each CPU takes its
+ * own ticks.
  */
 void smp_tick_others(void);
 

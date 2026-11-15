@@ -98,14 +98,17 @@ which sets up this CPU's own GDT/TSS/percpu cell, loads the (shared) IDT,
 enables its Local APIC and interrupts, and joins the scheduler's idle loop.
 Never returns.
 
-## No IOAPIC, no per-CPU LAPIC timer
+## No IOAPIC; a Local APIC timer per CPU
 
 Every existing device IRQ stays on the legacy 8259 PIC, delivered to the
 boot CPU only, exactly as before SMP existed (see `doc/i386/devices.md`).
-The Local APIC is used only for IPIs and INIT-SIPI-SIPI. A secondary's
-scheduler tick is `smp_tick_others()`, a broadcast IPI from the boot CPU's
-own PIT handler (`kern/i386/irq.c`) -- not a real per-CPU hardware timer, so
-a secondary's tick rate and jitter both follow the boot CPU's PIT exactly.
+The Local APIC carries IPIs, INIT-SIPI-SIPI, and each CPU's own timer: every
+secondary starts its Local APIC timer early in `i386_smp_secondary_main`,
+before it enables interrupts, and from then on takes its own deadlines and
+scheduler ticks (see [Timers](../kern/timers.md)). Only when no Local APIC
+timer mode works does a secondary's scheduler tick still come from
+`smp_tick_others()`, a broadcast IPI from the boot CPU's PIT handler
+(`kern/i386/irq.c`).
 
 ## Boot arguments (self-test)
 

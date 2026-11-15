@@ -26,9 +26,6 @@
 /* Dock activation requests not yet seen by the desktop. */
 #define UI_BRIDGE_ACTIVATION_MAX 8U
 
-/* How often a bounded receive looks at its queue (a sleep lasts a timer tick anyway). */
-#define UI_BRIDGE_POLL_US 10000ULL
-
 /* Activity Monitor asks for at most this many processes at a time. */
 #define UI_BRIDGE_ACTIVITY_PROCESS_MAX 128U
 
@@ -308,14 +305,17 @@ ui_bridge_syscall_receive(uint64_t number, uint64_t user_message, uint64_t wait)
 		}
 
 		/*
-		 * A bounded wait (the Dock, which also watches the apps it started):
-		 * short sleeps until the deadline, since a wait queue has no timeout.
+		 * A bounded wait (the Dock, which also watches the apps it started;
+		 * an app pacing its own animation): until a message or the deadline,
+		 * which ends the wait to the millisecond, not at the next 10 ms
+		 * poll.
 		 */
 		uint64_t now = timer_get_microseconds();
 
 		if (deadline == 0ULL) deadline = now + wait * 1000ULL;
 		if (now >= deadline) return 0;
-		(void)sched_sleep_us(UI_BRIDGE_POLL_US);
+		if (waitq_block_deadline(&connection->inbox, sequence, true, deadline) == WAITQ_INTERRUPTED)
+			return -NXU_SYS_E_INTERRUPTED;
 	}
 }
 

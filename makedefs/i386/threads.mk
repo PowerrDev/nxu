@@ -47,6 +47,10 @@ I386_C_SOURCES += \
     kern/sched_prism/run_queue.c \
     kern/sched_prism/waitq.c \
     kern/sched_prism/sched.c \
+    kern/sched_prism/sched_timer.c \
+    kern/clock/clock.c \
+    kern/clock/timer_call.c \
+    kern/clock/etimer.c \
     kern/syscall/syscall.c \
     kern/ipc/ipc_init.c \
     kern/ipc/ipc_kmsg.c \

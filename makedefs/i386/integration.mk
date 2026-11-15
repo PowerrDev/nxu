@@ -20,6 +20,8 @@ I386_C_SOURCES += \
     kern/boot/boot_args.c \
     kern/boot/recovery_volume.c \
     kern/update/update.c \
+    kern/update/erase.c \
+    kern/boot/startup_disk.c \
     drivers/block/file_image.c \
     frameworks/SoftwareUpdate.framework/lib/manifest.c \
     frameworks/CoreFoundation.framework/lib/plist/plist.c \

@@ -1120,7 +1120,7 @@ triage_shell_execute(triage_shell_t *shell, const char *command)
 		shell_write(shell, "help clear echo pwd cd ls tree stat cat hexdump");
 		shell_write(shell, "mkdir rmdir touch write rm sync mount umount");
 		shell_write(shell, "mounts disks partitions disk-health df fsinfo");
-		shell_write(shell, "gpt-init partition-create partition-delete nsw reinstall version uname reboot exit");
+		shell_write(shell, "gpt-init partition-create partition-delete nsw reinstall erase version uname reboot exit");
 		return TRIAGE_SHELL_OK;
 	}
 
@@ -1452,6 +1452,35 @@ triage_shell_execute(triage_shell_t *shell, const char *command)
 								   : "NSW preparation failed; no ready build published");
 		return TRIAGE_SHELL_OK;
 	}
+	if (shell_equal(argv[0], "erase")) {
+		/* Queue Erase All Content and Settings; patchd runs it from this volume at the next boot. */
+		if (argc != 2 || !shell_equal(argv[1], "confirm")) {
+			shell_write(shell, "erase confirm: wipe /Volumes/mainOS and reinstall it from the factory payload");
+			shell_write(shell, "every file and all user data on the system volume are removed");
+			return TRIAGE_SHELL_OK;
+		}
+		int64_t result = recovery_fs_mkdir(NSW_ERASE_ROOT);
+		if (result < 0 && result != -NXU_SYS_E_EXISTS) {
+			shell_error(shell, "erase", result);
+			return TRIAGE_SHELL_OK;
+		}
+		result = recovery_fs_write(NSW_ERASE_QUEUED, NSW_ERASE_MARKER, sizeof(NSW_ERASE_MARKER) - 1U);
+		if (result >= 0) {
+			(void)recovery_fs_unlink(NSW_ERASE_FAILED);
+			result = recovery_fs_sync();
+		}
+		if (result < 0) {
+			shell_error(shell, "erase", result);
+			return TRIAGE_SHELL_OK;
+		}
+		shell_write(shell, "erase queued; restarting (the log is " NSW_ERASE_LOG ")...");
+		result = recovery_system_reset();
+		if (result < 0) {
+			shell_error(shell, "reboot", result);
+		}
+		return TRIAGE_SHELL_OK;
+	}
+
 	if (shell_equal(argv[0], "reinstall")) {
 		shell_write(shell, "restoring system files...");
 		int64_t result = shell_mount_system_volume();
@@ -1466,7 +1495,7 @@ triage_shell_execute(triage_shell_t *shell, const char *command)
 		if (result < 0) {
 			shell_error(shell, "reinstall", result);
 		} else {
-			shell_write(shell, "sevOS restored; reboot to continue");
+			shell_write(shell, "groveOS restored; reboot to continue");
 		}
 
 		return TRIAGE_SHELL_OK;

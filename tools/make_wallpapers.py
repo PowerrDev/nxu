@@ -13,6 +13,11 @@ Pillow reads) is therefore re-encoded here, on the host:
                                       pixels on its longer side
     <output>/.thumbnails/<Name>.png   a THUMB_WIDTH x THUMB_HEIGHT cover crop
                                       for System Settings' tiles and preview
+    <output>/.login/<Name>.qoi        the wallpaper again, as QOI at most
+                                      LOGIN_WIDTH x LOGIN_HEIGHT, for the lock
+                                      screen: it is drawn by the kernel, which
+                                      decodes QOI but not PNG (see
+                                      drivers/video/keystore_manager.c)
 
 <Name> is the source file's name without its extension. Files Pillow cannot
 read are skipped with a warning rather than failing the build.
@@ -27,8 +32,13 @@ import sys
 
 from PIL import Image, ImageOps
 
+from make_login_wallpaper import qoi_encode
+
 THUMB_WIDTH = 320
 THUMB_HEIGHT = 200
+# The largest picture the lock screen's QOI decoder takes.
+LOGIN_WIDTH = 1920
+LOGIN_HEIGHT = 1080
 
 
 def sources(paths):
@@ -80,6 +90,12 @@ def main():
 
         thumbnail = ImageOps.fit(image, (THUMB_WIDTH, THUMB_HEIGHT), Image.Resampling.LANCZOS)
         write_png(thumbnail, args.output / '.thumbnails' / f'{name}.png')
+
+        login = image.copy()
+        login.thumbnail((LOGIN_WIDTH, LOGIN_HEIGHT), Image.Resampling.LANCZOS)
+        login_path = args.output / '.login' / f'{name}.qoi'
+        login_path.parent.mkdir(parents=True, exist_ok=True)
+        login_path.write_bytes(qoi_encode(login))
         written += 1
 
     if not written:

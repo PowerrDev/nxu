@@ -35,6 +35,8 @@
 #include <kern/boot/boot_args.h>
 #include <kern/boot/recovery_volume.h>
 #include <kern/update/update.h>
+#include <kern/update/erase.h>
+#include <kern/boot/startup_disk.h>
 #include <kern/boot/boot_mode.h>
 #include <kern/boot/splash.h>
 #include <drivers/video/display.h>
@@ -120,6 +122,15 @@ static bool
 userland_spawn_bootd(void)
 {
 	bool recovery = boot_mode_is_triage_os();
+
+	/* An erase queued in System Settings: patchd from the recovery volume is PID 1 for this boot. */
+	if (!recovery && boot_erase_pending()) {
+		if (boot_erase_spawn(&g_boot_process) == LOADER_STATUS_OK) return true;
+
+		g_boot_process = 0;
+		kprintf("starting bootd instead; the system volume was not changed\n");
+	}
+
 	const char *path = recovery ? boot_update_recovery_program() : USERLAND_BOOTD_PATH;
 	const char *name = recovery ? "triageOS" : "bootd";
 	kprintf("loading %s as PID 1\n", path);
@@ -238,6 +249,8 @@ i386_init_userland(const i386_boot_info_t *boot)
 
 	boot_mount_recovery_volume();
 	if (!boot_update_install()) return false;
+	boot_startup_disk_init();
+	boot_erase_init();
 
 	if (!boot_update_is_active() && i386_startup_tests_enabled() && !i386_startup_storage_test()) {
 		kprintf("storage self-tests failed\n");
@@ -305,6 +318,21 @@ i386_init_userland(const i386_boot_info_t *boot)
 			(void)sched_sleep_us(10000);
 		}
 	}
+	/*
+	 * The erase runs alone: no desktop, no bootd services touching the volume
+	 * being wiped. Nothing else takes the screen either, so the boot log stays
+	 * up on it: every file patchd removes, reinstalls and verifies scrolls by
+	 * under the logo, as well as on serial. If the eraser cannot start, the
+	 * erase was cancelled with nothing changed and this boot carries on as a
+	 * normal one.
+	 */
+	if (!boot_mode_is_triage_os() && boot_erase_pending()) {
+		if (display_primary()) boot_splash_set_status("Erasing All Content and Settings");
+		if (boot_erase_spawn(&g_boot_process) == LOADER_STATUS_OK) return true;
+
+		g_boot_process = 0;
+	}
+
 	/* Stop the boot log sink before recovery or the desktop owns scanout. */
 	if (display_primary()) (void)boot_splash_finish();
 

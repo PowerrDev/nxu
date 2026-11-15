@@ -24,6 +24,13 @@ cpu_wait_for_interrupt(void)
 	__asm__ volatile("hlt" : : : "memory");
 }
 
+/* As kern/i386/cpu.h's: called with interrupts masked; sti's one-instruction shadow covers the hlt. */
+static inline void
+cpu_idle_halt(void)
+{
+	__asm__ volatile("sti\n\thlt" : : : "memory");
+}
+
 static inline void
 cpu_wait_for_event(void)
 {

@@ -197,7 +197,7 @@ main(uint64_t argc, const char *const *argv)
 
 		reset_terminal(terminal);
 
-		say("\nsevOS");
+		say("\ngroveOS");
 		if (host[0] != '\0') {
 			say(" (");
 			say(host);
