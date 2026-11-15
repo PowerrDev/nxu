@@ -45,10 +45,21 @@
 #   TEST_<id>_SERIAL_SCRIPT  what the host types into the console UART, for a
 #                         test that reads it (tools/serial_expect.pl; make check
 #                         only: `make test` leaves the typing to you)
-#   TEST_<id>_TEP         set to 1 to boot tepOS alongside, joined by the mailbox
-#                         (tools/with_tepos.sh; TEP=0 turns it off, TEP=1 on)
+#   TEST_<id>_TEP         set to 1 to build the optional tepOS mailbox in and
+#                         boot tepOS alongside (tools/with_tepos.sh); TEP=0 or
+#                         TEP=1 on the command line overrides it. No row sets it
+#                         by default: nothing in NXU needs tepOS
+#   TEST_<id>_TEP_KERNEL  set to 1 to build the mailbox in without the wrapper
+#                         (a row that wires serial1 to tepOS itself)
+#   TEST_<id>_LOCKED      set to 1 to keep the login screen: every other test
+#                         kernel is built with NXU_LOGIN_UNLOCKED, since nobody
+#                         is at the keyboard to type a passcode. Only `desktop`
+#                         (what `make run` boots) sets it
 
 TEST_GUI_STACK := UISERVICE=1 WINDOWSERVER=1
+
+# What a test's kernel is compiled with: its own flags, and unlocked unless it is a locked row.
+test_cflags = $(TEST_$(1)_CFLAGS) $(if $(filter 1,$(TEST_$(1)_LOCKED)),,-DNXU_LOGIN_UNLOCKED)
 
 # The rule below adds the `-display` flag itself, so hand it just the backend.
 TEST_GUI_DISPLAY := $(QEMU_DISPLAY_BACKEND)
@@ -167,18 +178,23 @@ TEST_IDS := \
 # QEMU 11.1 aborts a reconnecting socket client whenever a connection attempt
 # fails.
 #
-# tools/with_tepos.sh does all of that around NXU's QEMU: it builds and boots
+# All of it is optional. A default build has no mailbox driver and boots NXU
+# alone; the passcode and random numbers are the kernel's own
+# (kern/security/passcode.c, kern/security/random.c). TEP=1 builds the
+# mailbox in and wraps QEMU in tools/with_tepos.sh, which builds and boots
 # tepOS headless (console in BUILD/tepos-run/console.log), starts the relay,
-# adds the mailbox serial port and stops tepOS when NXU exits. `make run`
-# uses it (TEST_desktop_TEP); TEP=0 boots NXU alone, TEP=1 adds tepOS to any
-# `make test` or to `make run-console`. Without the tepOS checkout (TEP_DIR,
-# default next to this repository) NXU boots alone and tepOS requests fail
-# closed.
+# adds the mailbox serial port and stops tepOS when NXU exits: `make run TEP=1`,
+# `make run-console TEP=1` or any `make test ... TEP=1`. With it, tepOS checks
+# bootd against its signed manifest and reports the verdict; nothing waits for
+# it. Without the tepOS checkout (TEP_DIR, default next to this repository)
+# NXU boots alone.
 #
 # tools/test_tep_mailbox.sh (make test-tep-mailbox) runs the tep-mailbox test
 # with both machines and the relay, stopping and restarting tepOS. It is not
 # a `make check` row because it needs the tepOS repository.
-TEP_WRAPPER = $(if $(filter 1,$(or $(TEP),$(TEST_$(TEST)_TEP))),tools/with_tepos.sh)
+TEST_TEP = $(if $(filter command line environment,$(origin TEP)),$(TEP),$(or $(TEST_$(TEST)_TEP),0))
+TEP_WRAPPER = $(if $(filter 1,$(TEST_TEP)),tools/with_tepos.sh)
+TEST_TEP_KERNEL = $(if $(filter 1,$(TEST_TEP) $(TEST_$(TEST)_TEP_KERNEL)),1,0)
 
 # `make test TEST=tep-mailbox` alone: start tepOS and the relay yourself.
 TEP_NXU_SOCK ?= /tmp/nxu-mailbox.sock
@@ -251,7 +267,7 @@ test-list:
 check-list:
 
 	@printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'default' '$(CHECK_TIMEOUT)' '$(CHECK_DEFAULT_PASS)' '-' '-' '-' '-' '4' '-'
-	@$(foreach id,$(CHECK_IDS),printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' '$(id)' '$(or $(TEST_$(id)_TIMEOUT),$(CHECK_TIMEOUT))' '$(TEST_$(id)_PASS)' '$(or $(TEST_$(id)_CFLAGS),-)' '$(if $(TEST_$(id)_CAPTURE),1,-)' '$(or $(TEST_$(id)_VERIFY),-)' '$(or $(TEST_$(id)_FRAMEWORKS),-)' '$(or $(TEST_$(id)_SMP),1)' '$(or $(TEST_$(id)_SERIAL_SCRIPT),-)';)
+	@$(foreach id,$(CHECK_IDS),printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' '$(id)' '$(or $(TEST_$(id)_TIMEOUT),$(CHECK_TIMEOUT))' '$(TEST_$(id)_PASS)' '$(strip $(call test_cflags,$(id)))' '$(if $(TEST_$(id)_CAPTURE),1,-)' '$(or $(TEST_$(id)_VERIFY),-)' '$(or $(TEST_$(id)_FRAMEWORKS),-)' '$(or $(TEST_$(id)_SMP),1)' '$(or $(TEST_$(id)_SERIAL_SCRIPT),-)';)
 
 
 check-i386-list:
@@ -298,7 +314,8 @@ test: $(DISK) $(DISK_FORMAT_STAMP)
 	$(MAKE) -j$(BUILD_JOBS) \
 		BUILD_ROOT=BUILD CONFIG=$(TEST) \
 		$(TEST_$(TEST)_FRAMEWORKS) \
-		EXTRA_CFLAGS="$(EXTRA_CFLAGS) $(TEST_$(TEST)_CFLAGS)" \
+		TEP=$(TEST_TEP_KERNEL) \
+		EXTRA_CFLAGS="$(EXTRA_CFLAGS) $(call test_cflags,$(TEST))" \
 		NBL_ARM64_ARGS="$(TEST_BOOT_ARGS)" \
 		all $(TEST_BOOT_GOALS)
 

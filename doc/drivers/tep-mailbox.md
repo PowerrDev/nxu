@@ -1,5 +1,12 @@
 # Trusted Enclave Mailbox
 
+> **Optional experiment.** Nothing in NXU depends on tepOS. A default build
+> has no mailbox driver, and the run targets boot NXU alone. The login
+> passcode is the kernel's own ([Login passcode](../kern/passcode.md)), and so
+> are random numbers ([Random numbers](../kern/random.md)). `TEP=1` builds the
+> driver in, signs bootd for tepOS and boots tepOS alongside NXU; what tepOS
+> then adds is the bootd measurement below, reported and never enforced.
+
 ## Overview
 
 tepOS, the security OS of the Trusted Enclave Processor, runs on its own
@@ -67,56 +74,16 @@ the exact payload length of every answer.
 
 No command reads or writes memory on either side.
 
-## Passcode
+## Passcode and login (no longer here)
 
-tepOS's AuthenticationService keeps only a salted Argon2id hash of the
-passcode, sealed in its key store, and does all the checking: the failure
-count is written to disk before a passcode is compared, from the fifth
-failure in a row each attempt waits (1 min, 5 min, 15 min, 1 h, 1 h), and the
-tenth locks the passcode until a recovery reset that only whoever runs tepOS's
-machine can make. A right passcode clears the count. NXU keeps no copy of the
-passcode or its hash and wipes its request buffer after sending.
-
-Limits worth knowing: the passcode crosses the serial link in the clear (the
-link is checked for corruption, not encrypted), the delays use tepOS's RTC,
-which is the host's clock, and the key store is sealed with a host file. So
-this protects against guessing through NXU, not against the host.
-
-## Login screen
-
-When the mailbox port exists, the desktop is locked behind the passcode
-(`drivers/video/ui_service_login.c`). Before the desktop app starts, the UIService
-host runs `UIServiceRunLogin` (UIService.framework's `ui-login`), a fullscreen
-screen over the blurred wallpaper:
-
-- **First boot** (tepOS has no passcode): "welcome to groveOS" in Borel, the
-  script face armOS's setup greets with, then "Create a passcode" (typed
-  twice). It is set with `tep_auth_set` and the desktop starts.
-- **Every later boot:** "Enter your passcode", checked with `tep_auth_verify`.
-  A wrong one shakes the card; tepOS's delays show as a countdown that blocks
-  typing, and a locked passcode says it needs a recovery reset on tepOS's
-  machine.
-- **tepOS unreachable:** "Waiting for the Trusted Enclave", asking again every
-  second. It never unlocks without tepOS.
-
-Forgot the passcode, or locked out? `TEP_AUTH_RESET=1 make run` boots tepOS
-with its recovery reset (fw_cfg `opt/org.tepos/auth-reset`): the passcode and
-failure count are cleared, keys are kept, and the login screen asks for a new
-passcode. That switch belongs to whoever runs tepOS's machine; NXU cannot ask
-for it.
-
-The login screen runs on arm64 (`make run`) and on the i386 desktop
-(`make run-i386-desktop`); plain `make run-i386` has no desktop to lock.
-
-Only tepOS's OK unlocks. Any other end of the login screen keeps the desktop
-locked, and without the mailbox port (`TEP=0`, the `make check` rows) there is
-no login screen. Keys reach UIService as key events from
-`drivers/input/keyboard.c`'s press queue, and the kernel log records only what
-tepOS answered.
-
-Like the passcode itself, this stops someone at the keyboard, not someone with
-the disk image or the host: the disk is not encrypted, and a modified kernel
-can skip the screen.
+tepOS's AuthenticationService (`AUTH_SET`, `AUTH_VERIFY`, `AUTH_STATUS`,
+`tep_auth_*` in `drivers/tep/tep_crypto.h`) used to hold the login passcode,
+and with it the lock screen depended on tepOS. The passcode is now kept by
+the kernel on the system volume, with the same delays and lockout
+([Login passcode](../kern/passcode.md)), and the desktop is locked whether or
+not tepOS runs. The `tep_auth_*` calls remain for the mailbox test; nothing
+else calls them. Likewise `tep_random` is no longer where ASLR slides and
+salts come from ([Random numbers](../kern/random.md)).
 
 ## Measured bootd (reported, not enforced)
 
@@ -186,13 +153,17 @@ halting while a mailbox port exists, so the monitor keeps running.
 
 ## Running it
 
-`make run`, `make run-i386` and `make run-i386-desktop` boot tepOS alongside NXU
-(`tools/with_tepos.sh`): it builds tepOS from the TrustedEnclaveProcessor
-checkout next to this repository (`TEP_DIR` overrides it), boots it headless,
-starts the relay and gives NXU's QEMU the mailbox serial port. Quitting NXU
-stops tepOS and the relay. `TEP=0` boots NXU alone; `TEP=1` adds tepOS to any
-`make test TEST=<id>` or to `make run-console`. Without the tepOS checkout, or
-if it does not build, NXU boots alone and requests to tepOS fail closed.
+`TEP=1` (`makedefs/MakeInc.config`) builds the mailbox driver into the kernel
+(`-DNXU_TEP=1`, `drivers/tep/*`), signs bootd for tepOS in the disk build and
+wraps QEMU in `tools/with_tepos.sh`: `make run TEP=1`, `make run-i386 TEP=1`,
+`make run-i386-desktop TEP=1`, `make run-console TEP=1` or any
+`make test TEST=<id> TEP=1`. The wrapper builds tepOS from the
+TrustedEnclaveProcessor checkout next to this repository (`TEP_DIR` overrides
+it), boots it headless, starts the relay and gives NXU's QEMU the mailbox
+serial port. Quitting NXU stops tepOS and the relay. Without the tepOS
+checkout, or if it does not build, NXU boots alone. The default, `TEP=0`,
+builds and boots none of it. Objects that look at `NXU_TEP` are rebuilt when
+`TEP` changes (the `tep-config` stamp in the build directory).
 
 From a terminal the consoles share it (`tools/console_switch.py`):
 

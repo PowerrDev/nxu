@@ -158,7 +158,8 @@ frameworks and apps. `make i386-frameworks BUILD_ROOT=BUILD/BUILD-i386-desktop`
 builds the framework images without rebuilding the kernel.
 
 The i386 loader validates ELF32 images, maps each into a bounded slot below the
-shared-memory window, requests enclave-backed random slides and measures load
+shared-memory window, takes random slides from the kernel's generator
+([Random numbers](../kern/random.md)) and measures load
 bytes through the registered `dyrld` daemon. It supports `R_386_32`,
 `R_386_GLOB_DAT`, `R_386_JMP_SLOT` and `R_386_RELATIVE` with implicit addends,
 runs constructors after binding, and seals writable GNU_RELRO pages. TLS, text

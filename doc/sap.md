@@ -4,7 +4,8 @@ SAP authorizes one selected file deletion through a trusted modal on ARM64 and
 i386. Recovery PID 1 can also request deletion of one selected directory tree.
 The first screen asks: "Deleting this file could break your entire system and
 make it unusable. Are you sure?" Continue opens a masked password field.
-Delete succeeds only after tepOS verifies the existing login passcode. Cancel,
+Delete succeeds only after the kernel's passcode store
+([Login passcode](kern/passcode.md)) verifies the existing login passcode. Cancel,
 Escape, timeout, unavailable authentication and a cancelled caller preserve the
 file. Incorrect credentials keep the modal open for retry or cancellation.
 
@@ -18,7 +19,7 @@ The ARM64 desktop host pauses presentation and input delivery while the kernel
 worker owns the prompt. The modal displays the selected path, captures input
 exclusively, and restores the prior screen when finished. It requires an unlocked
 desktop session or recovery boot and fails closed without a suitable graphical
-display or working tepOS password verification. Only one request is active
+display or a passcode store that can answer (the system volume mounted). Only one request is active
 at a time; other callers receive BUSY. Requests expire after two minutes.
 
 `nxu_sap_delete` remains limited to regular files on the disk mount. Recovery's

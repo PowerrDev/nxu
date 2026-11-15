@@ -17,8 +17,6 @@
 #include <drivers/input/input.h>
 #include <drivers/input/keyboard.h>
 #include <drivers/virtio/virtio_input.h>
-#include <drivers/tep/tep_crypto.h>
-#include <drivers/tep/tep_mailbox.h>
 #include <platform/rtc.h>
 #include <frameworks/include/nxu/pointer_cursor.h>
 #include <kern/boot/boot_args.h>
@@ -28,6 +26,7 @@
 #include <kern/process/thread.h>
 #include <kern/process/proc.h>
 #include <kern/sched_prism/sched.h>
+#include <kern/security/passcode.h>
 #include <libk/string.h>
 #include <vfs/vfs.h>
 
@@ -728,7 +727,7 @@ login_paint(display_device_t *display, const uint32_t *wallpaper, uint32_t lengt
 	uint32_t field_height = 38U;
 	uint32_t field_y = field_top + (field_height - regular.height) / 2U;
 	uint32_t field_color = available ? LOGIN_FIELD_TEXT : LOGIN_FIELD_MUTED;
-	const char *placeholder = !available   ? "Connecting securely..."
+	const char *placeholder = !available   ? "Starting up..."
 							  : confirming ? "Confirm Password"
 							  : setting	   ? "Create Password"
 										   : "Enter Password";
@@ -892,7 +891,7 @@ login_thread(void *unused)
 	uint32_t length = 0, first_length = 0;
 	bool setting = false, confirming = false;
 	bool repaint = true, availability_known = false, set_up = false, welcome_cleared = false;
-	tep_result_t previous_available = TEP_ERR_UNAVAILABLE;
+	passcode_result_t previous_available = PASSCODE_ERR_UNAVAILABLE;
 	uint64_t painted_minute = UINT64_MAX;
 	const char *message = "";
 
@@ -939,12 +938,16 @@ login_thread(void *unused)
 			if (chosen != LOGIN_CHOSEN_PENDING) repaint = true;
 		}
 
-		tep_auth_status_t status = {0};
-		tep_result_t available = tep_auth_status(&status);
+		passcode_status_t status = {0};
+		passcode_result_t available = passcode_status(&status);
 		uint64_t current_minute = rtc_unix_time() / 60U;
 
-		if (available == TEP_OK) {
+		if (available == PASSCODE_OK) {
 			setting = !status.passcode_set;
+			if (status.locked && *message == '\0') {
+				message = "Password locked. Reset it from Recovery.";
+				repaint = true;
+			}
 		}
 
 		/*
@@ -952,7 +955,7 @@ login_thread(void *unused)
 		 * screen: it ends with the password set, which unlocks. If it cannot
 		 * finish, the lock screen's own "create a password" takes over.
 		 */
-		if (available == TEP_OK && setting && !set_up) {
+		if (available == PASSCODE_OK && setting && !set_up) {
 			set_up = true;
 			if (setup_assistant_run(display, wallpaper, scale_permille)) {
 				keyboard_flush_keys();
@@ -967,13 +970,13 @@ login_thread(void *unused)
 		}
 
 		/* Every later boot: the desktop's one-time welcome has been seen. */
-		if (available == TEP_OK && !setting && !welcome_cleared) welcome_cleared = setup_assistant_forget_welcome();
+		if (available == PASSCODE_OK && !setting && !welcome_cleared) welcome_cleared = setup_assistant_forget_welcome();
 
 		if (!availability_known || available != previous_available || current_minute != painted_minute) {
 			repaint = true;
 		}
 		if (repaint) {
-			login_paint(display, wallpaper, length, setting, confirming, available == TEP_OK, message);
+			login_paint(display, wallpaper, length, setting, confirming, available == PASSCODE_OK, message);
 			repaint = false;
 			availability_known = true;
 			previous_available = available;
@@ -1005,9 +1008,9 @@ login_thread(void *unused)
 					length = first_length = 0;
 					confirming = false;
 					message = "";
-				} else if (key.code == 28 && available == TEP_OK) {
+				} else if (key.code == 28 && available == PASSCODE_OK) {
 					uint32_t wait_seconds = 0;
-					tep_result_t result;
+					passcode_result_t result;
 
 					if (setting && !confirming) {
 						if (length < 4) {
@@ -1027,18 +1030,18 @@ login_thread(void *unused)
 					}
 
 					if (setting && (length != first_length || memcmp(first, password, length)))
-						result = TEP_ERR_INVALID;
+						result = PASSCODE_ERR_INVALID;
 					else if (setting)
-						result = tep_auth_set(0, 0, password, length, &wait_seconds);
+						result = passcode_set(0, 0, password, length, &wait_seconds);
 					else
-						result = tep_auth_verify(password, length, &wait_seconds);
+						result = passcode_verify(password, length, &wait_seconds);
 
 					wipe(password, sizeof(password));
 					wipe(first, sizeof(first));
 					length = first_length = 0;
 					confirming = false;
 
-					if (result == TEP_OK) {
+					if (result == PASSCODE_OK) {
 						wipe(&key, sizeof(key));
 						keyboard_flush_keys();
 						input_flush();
@@ -1048,14 +1051,19 @@ login_thread(void *unused)
 						return;
 					}
 
-					kprintf("password refused.\n");
-					
-          if (result == TEP_ERR_INVALID) {
+					kprintf("password refused: %s\n", passcode_result_name(result));
+
+					if (result == PASSCODE_ERR_INVALID) {
 						message = "Passwords did not match. Try again.";
-					} else if (result == TEP_ERR_DENIED) {
+					} else if (result == PASSCODE_ERR_DENIED) {
 						message = "Incorrect password. Try again.";
+					} else if (result == PASSCODE_ERR_RETRY_LATER) {
+						message = wait_seconds > 60U ? "Too many attempts. Try again in a few minutes."
+													 : "Too many attempts. Try again in a minute.";
+					} else if (result == PASSCODE_ERR_LOCKED) {
+						message = "Password locked. Reset it from Recovery.";
 					} else {
-						message = "Authentication unavailable or delayed. Try again.";
+						message = "The password could not be checked. Try again.";
 					}
 				} else if (key.character >= 32 && key.character < 127 && length < 64) {
 					password[length++] = key.character;
@@ -1074,14 +1082,9 @@ login_thread(void *unused)
 bool
 ui_service_trusted_prepare(void)
 {
-	if (tep_mailbox_link_state() == TEP_LINK_ABSENT) {
-		kprintf("no enclave link\n");
-		kprintf("no login screen\n");
-		return true;
-	}
-
 	/* Installed before PID 1 can execute. Neither display claims nor raw input
-	 * are available until the enclave accepts the kernel-owned login. */
+	 * are available until the passcode (kern/security/passcode.c) is accepted,
+	 * or set for the first time. */
 	if (!ui_service_secure_lock()) return false;
 
 	thread_t thread;

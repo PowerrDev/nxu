@@ -34,8 +34,11 @@
 #include <drivers/video/display.h>
 #include <drivers/video/ui_service_host.h>
 #include <drivers/block/block_device.h>
+#if defined(NXU_TEP)
 #include <drivers/tep/tep_boot.h>
 #include <drivers/tep/tep_mailbox.h>
+#endif
+#include <kern/security/random.h>
 #include <kern/console/bootlog.h>
 #include <kern/console/ioregistry.h>
 #include <kern/memory/heap.h>
@@ -979,11 +982,17 @@ kern_init_higher_half(void)
 		kern_fail("kernel_do_post: core self-tests failed");
 	}
 
+	/* ASLR slides and password salts come from here; nothing outside this machine is needed. */
+	random_init();
+
+#if defined(NXU_TEP)
 	/*
-	 * The Trusted Enclave link; its monitor thread runs once the scheduler does. Absent, tepOS requests fail closed.
+	 * The optional Trusted Enclave link (TEP=1 builds only); its monitor thread runs once the scheduler does.
 	 * With it, tepOS checks bootd against its signed manifest: reported, never waited for or enforced.
+	 * Nothing else depends on it: passcodes and random numbers are the kernel's own.
 	 */
 	if (tep_mailbox_start()) (void)tep_boot_check_start();
+#endif
 
 	if (!boot_mode_is_triage_os() && boot_arg_bool("ui.userland", false) && !ui_service_trusted_prepare())
 		kern_fail("ui_service_trusted_prepare: unable to establish login boundary");

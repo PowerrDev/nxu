@@ -17,7 +17,8 @@
  *              wallpaper, one step at a time: the account, the device's
  *              name, the Dock (with a live preview), the menu bar clock (with
  *              a live clock), the wallpaper.
- *   apply      the password into tepOS (that is what unlocks), the account
+ *   apply      the password into the passcode store (kern/security/
+ *              passcode.c; that is what unlocks), the account
  *              into /etc/passwd, group and shadow, the name into
  *              /etc/hostname, the rest as the preferences System Settings
  *              writes.
@@ -30,7 +31,6 @@
 
 #include <drivers/input/input.h>
 #include <drivers/input/keyboard.h>
-#include <drivers/tep/tep_crypto.h>
 #include <drivers/video/login_hello_strokes.h>
 #include <drivers/video/login_private.h>
 #include <drivers/video/login_wallpaper.h>
@@ -41,6 +41,9 @@
 #include <kern/memory/heap.h>
 #include <kern/process/proc.h>
 #include <kern/sched_prism/sched.h>
+#include <kern/security/passcode.h>
+#include <kern/security/random.h>
+#include <libk/pbkdf2.h>
 #include <libk/sha256.h>
 #include <libk/string.h>
 #include <platform/rtc.h>
@@ -2194,50 +2197,6 @@ sa_go(sa_page_t page, uint64_t now)
 /* ---- applying ----------------------------------------------------------------- */
 
 static void
-sa_hmac(const uint8_t *key, size_t key_length, const uint8_t *first, size_t first_length, const uint8_t *second,
-		size_t second_length, uint8_t out[SHA256_DIGEST_SIZE])
-{
-	uint8_t block[SHA256_BLOCK_SIZE] = {0};
-	uint8_t inner[SHA256_DIGEST_SIZE];
-	sha256_context_t context;
-
-	if (key_length > SHA256_BLOCK_SIZE) sha256(key, key_length, block);
-	else memcpy(block, key, key_length);
-
-	for (uint32_t index = 0U; index < SHA256_BLOCK_SIZE; index++) block[index] ^= 0x36U;
-	sha256_init(&context);
-	sha256_update(&context, block, SHA256_BLOCK_SIZE);
-	sha256_update(&context, first, first_length);
-	if (second_length != 0U) sha256_update(&context, second, second_length);
-	sha256_final(&context, inner);
-
-	for (uint32_t index = 0U; index < SHA256_BLOCK_SIZE; index++) block[index] ^= 0x36U ^ 0x5CU;
-	sha256_init(&context);
-	sha256_update(&context, block, SHA256_BLOCK_SIZE);
-	sha256_update(&context, inner, SHA256_DIGEST_SIZE);
-	sha256_final(&context, out);
-	sa_wipe(block, sizeof(block));
-	sa_wipe(inner, sizeof(inner));
-	sa_wipe(&context, sizeof(context));
-}
-
-/* PBKDF2-HMAC-SHA256, one 32-byte block: the /etc/shadow hash (frameworks/lib/auth.c). */
-static void
-sa_pbkdf2(const char *password, size_t length, const uint8_t *salt, uint32_t iterations, uint8_t out[SHA256_DIGEST_SIZE])
-{
-	static const uint8_t first_block[4] = {0U, 0U, 0U, 1U};
-	uint8_t u[SHA256_DIGEST_SIZE];
-
-	sa_hmac((const uint8_t *)password, length, salt, SA_SALT_BYTES, first_block, sizeof(first_block), u);
-	memcpy(out, u, sizeof(u));
-	for (uint32_t iteration = 1U; iteration < iterations; iteration++) {
-		sa_hmac((const uint8_t *)password, length, u, sizeof(u), 0, 0U, u);
-		for (uint32_t index = 0U; index < SHA256_DIGEST_SIZE; index++) out[index] ^= u[index];
-	}
-	sa_wipe(u, sizeof(u));
-}
-
-static void
 sa_hex(const uint8_t *bytes, size_t length, char *out)
 {
 	static const char digits[] = "0123456789abcdef";
@@ -2257,15 +2216,9 @@ sa_password_hash(char *out, size_t capacity)
 	char salt_hex[SA_SALT_BYTES * 2U + 1U], hash_hex[SHA256_DIGEST_SIZE * 2U + 1U];
 	size_t used = 0U;
 
-	if (tep_random(salt, sizeof(salt)) != TEP_OK) {
-		/* tepOS answered for the password a moment ago; still, never a fixed salt. */
-		uint64_t now = timer_get_microseconds();
-		uint8_t digest[SHA256_DIGEST_SIZE];
-
-		sha256(&now, sizeof(now), digest);
-		memcpy(salt, digest, sizeof(salt));
-	}
-	sa_pbkdf2(g_sa.fields[SA_FIELD_PASSWORD].text, g_sa.fields[SA_FIELD_PASSWORD].length, salt, SA_PBKDF2_ITERATIONS, hash);
+	random_bytes(salt, sizeof(salt));
+	pbkdf2_hmac_sha256(g_sa.fields[SA_FIELD_PASSWORD].text, g_sa.fields[SA_FIELD_PASSWORD].length, salt, sizeof(salt),
+					   SA_PBKDF2_ITERATIONS, hash, sizeof(hash));
 	sa_hex(salt, sizeof(salt), salt_hex);
 	sa_hex(hash, sizeof(hash), hash_hex);
 	out[0] = '\0';
@@ -2518,7 +2471,7 @@ sa_write_preferences(void)
 }
 
 /*
- * Make it so. The password goes to tepOS first: that is what unlocks, and
+ * Make it so. The password goes to the passcode store first: that is what unlocks, and
  * if it fails nothing else is written. The rest is best effort, logged.
  */
 static bool
@@ -2526,15 +2479,14 @@ sa_apply(void)
 {
 	sa_field_t *password = &g_sa.fields[SA_FIELD_PASSWORD];
 	uint32_t wait_seconds = 0U;
-	tep_result_t result = tep_auth_set(0, 0, (const uint8_t *)password->text, password->length, &wait_seconds);
+	passcode_result_t result = passcode_set(0, 0, (const uint8_t *)password->text, password->length, &wait_seconds);
 	char hash[128];
 
-	if (result != TEP_OK) {
-		kprintf("tepOS did not take the password: %s\n", tep_result_name(result));
-		g_sa.error = "The Trusted Enclave could not save your password. Try again.";
+	if (result != PASSCODE_OK) {
+		kprintf("the passcode store did not take the password: %s\n", passcode_result_name(result));
+		g_sa.error = "Your password could not be saved. Try again.";
 		return false;
 	}
-	kprintf("password set in tepOS\n");
 
 	if (sa_password_hash(hash, sizeof(hash))) sa_write_accounts(hash);
 	sa_wipe(hash, sizeof(hash));
@@ -2733,7 +2685,7 @@ sa_frame(uint64_t now, bool *dirty)
 		if (g_sa.page != g_sa.from_page && now - g_sa.page_at >= SA_PAGE_US + SA_FRAME_US) g_sa.from_page = g_sa.page;
 
 		if (g_sa.page == SA_PAGE_APPLY && g_sa.from_page == SA_PAGE_APPLY) {
-			/* "Setting Up" is on screen: do it (tepOS's Argon2id takes a moment). */
+			/* "Setting Up" is on screen: do it (the password hashing takes a moment). */
 			sa_card_frame(now, false);
 			if (sa_apply()) {
 				sa_enter(SA_TO_DONE, timer_get_microseconds());
@@ -2860,7 +2812,7 @@ setup_assistant_run(display_device_t *display, uint32_t *wallpaper, uint32_t sca
 		} while (timer_get_microseconds() < next && !dirty);
 	}
 
-	/* The password is in tepOS and the files: nothing of it stays here. */
+	/* The password is hashed in the passcode store and the files: nothing of it stays here. */
 	sa_wipe(g_sa.fields, sizeof(g_sa.fields));
 	for (uint32_t index = 0U; index < g_sa.picture_count; index++)
 		if (g_sa.pictures[index].thumbnail != 0) (void)kfree(g_sa.pictures[index].thumbnail);

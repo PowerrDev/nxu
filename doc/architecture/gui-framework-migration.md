@@ -371,10 +371,10 @@ WindowServer, CoreGraphics and DesktopService also pass.
 
 The ARM64 integration path uses `ui.userland=1` to select a kernel-owned
 login renderer independent of UIService.framework. The kernel installs the
-presentation/input exclusion before PID 1 can run. With an enclave UART
-present, a missing or unavailable tepOS keeps login locked. Only tepOS accepting
-the password, or accepting initial password setup after confirmation, clears
-the boundary. With no enclave UART, the existing no-login policy remains.
+presentation/input exclusion before PID 1 can run. Only the kernel's
+passcode store ([Login passcode](../kern/passcode.md)) accepting the password,
+or the first password being set, clears the boundary; a store that cannot
+answer yet keeps login locked. tepOS, now optional, plays no part.
 Recovery boot does not enter this login path.
 
 WindowServer waits while trusted UI excludes lease negotiation; DesktopService
@@ -549,8 +549,8 @@ The ELF32 loader maps each image into its own bounded slot below the i386 shared
 memory window. It validates ELF32 headers and segments, measures load bytes
 through the bootd registry service, applies `R_386_32`, `R_386_GLOB_DAT`,
 `R_386_JMP_SLOT` and `R_386_RELATIVE` relocations, runs constructors, and seals
-GNU_RELRO pages read-only. Address slides use the enclave random service and
-fail closed when that service is unavailable. The x86 relocation format uses
+GNU_RELRO pages read-only. Address slides come from the kernel's random number
+generator ([Random numbers](../kern/random.md)). The x86 relocation format uses
 implicit addends; symbol versions, TLS, text relocations and RELR remain
 unsupported, matching the current ARM64 loader's small ABI.
 

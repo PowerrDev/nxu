@@ -4,8 +4,9 @@
 /*
  * File:        drivers/video/ui_service_login.c
  *
- * See drivers/video/ui_service_login.h. Logs say what tepOS answered, never
- * anything about the passcode itself.
+ * See drivers/video/ui_service_login.h. Logs say what the passcode store
+ * (kern/security/passcode.c) answered, never anything about the passcode
+ * itself.
  */
 
 #include <drivers/video/ui_service_login.h>
@@ -13,9 +14,8 @@
 #if defined(NXU_UI_SERVICE)
 
 #include <drivers/input/keyboard.h>
-#include <drivers/tep/tep_crypto.h>
-#include <drivers/tep/tep_mailbox.h>
 #include <kern/console/console.h>
+#include <kern/security/passcode.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -52,24 +52,24 @@ ui_service_poll_key(UIServiceHostEvent *event)
 	return true;
 }
 
-/* tepOS's answer as a UI_SERVICE_AUTH_* code; anything unexpected is an error, never OK. */
+/* The store's answer as a UI_SERVICE_AUTH_* code; anything unexpected is an error, never OK. */
 static uint32_t
-ui_login_result(tep_result_t result)
+ui_login_result(passcode_result_t result)
 {
 	switch (result) {
-	case TEP_OK:
+	case PASSCODE_OK:
 		return UI_SERVICE_AUTH_OK;
-	case TEP_ERR_DENIED:
+	case PASSCODE_ERR_DENIED:
 		return UI_SERVICE_AUTH_DENIED;
-	case TEP_ERR_RETRY_LATER:
+	case PASSCODE_ERR_RETRY_LATER:
 		return UI_SERVICE_AUTH_RETRY_LATER;
-	case TEP_ERR_LOCKED:
+	case PASSCODE_ERR_LOCKED:
 		return UI_SERVICE_AUTH_LOCKED;
-	case TEP_ERR_UNAVAILABLE:
+	case PASSCODE_ERR_UNAVAILABLE:
 		return UI_SERVICE_AUTH_UNAVAILABLE;
-	case TEP_ERR_NOT_FOUND:
+	case PASSCODE_ERR_NOT_FOUND:
 		return UI_SERVICE_AUTH_NOT_SET;
-	case TEP_ERR_INVALID:
+	case PASSCODE_ERR_INVALID:
 		return UI_SERVICE_AUTH_INVALID;
 	default:
 		return UI_SERVICE_AUTH_ERROR;
@@ -81,18 +81,18 @@ ui_login_status(void *context, UIServiceAuthStatus *status)
 {
 	(void)context;
 
-	tep_auth_status_t tep_status;
+	passcode_status_t passcode;
 
 	if (status == 0) return UI_SERVICE_AUTH_INVALID;
 
-	tep_result_t result = tep_auth_status(&tep_status);
+	passcode_result_t result = passcode_status(&passcode);
 
-	if (result != TEP_OK) return ui_login_result(result);
+	if (result != PASSCODE_OK) return ui_login_result(result);
 
-	status->passcode_set = tep_status.passcode_set ? 1U : 0U;
-	status->failures = tep_status.failures;
-	status->locked = tep_status.locked ? 1U : 0U;
-	status->wait_seconds = tep_status.wait_seconds;
+	status->passcode_set = passcode.passcode_set ? 1U : 0U;
+	status->failures = passcode.failures;
+	status->locked = passcode.locked ? 1U : 0U;
+	status->wait_seconds = passcode.wait_seconds;
 	return UI_SERVICE_AUTH_OK;
 }
 
@@ -101,14 +101,14 @@ ui_login_verify(void *context, const uint8_t *passcode, uint32_t length, uint32_
 {
 	(void)context;
 
-	tep_result_t result = tep_auth_verify(passcode, length, wait_seconds);
+	passcode_result_t result = passcode_verify(passcode, length, wait_seconds);
 
-	if (result == TEP_OK) {
-		UI_LOGIN_LOG("passcode accepted by tepOS\n");
-	} else if (result == TEP_ERR_RETRY_LATER && wait_seconds != 0) {
-		UI_LOGIN_LOG("passcode refused by tepOS: retry in %u s\n", (unsigned)*wait_seconds);
+	if (result == PASSCODE_OK) {
+		UI_LOGIN_LOG("passcode accepted\n");
+	} else if (result == PASSCODE_ERR_RETRY_LATER && wait_seconds != 0) {
+		UI_LOGIN_LOG("passcode refused: retry in %u s\n", (unsigned)*wait_seconds);
 	} else {
-		UI_LOGIN_LOG("passcode refused by tepOS: %s\n", tep_result_name(result));
+		UI_LOGIN_LOG("passcode refused: %s\n", passcode_result_name(result));
 	}
 	return ui_login_result(result);
 }
@@ -119,12 +119,12 @@ ui_login_set(void *context, const uint8_t *old_passcode, uint32_t old_length, co
 {
 	(void)context;
 
-	tep_result_t result = tep_auth_set(old_passcode, old_length, passcode, length, wait_seconds);
+	passcode_result_t result = passcode_set(old_passcode, old_length, passcode, length, wait_seconds);
 
-	if (result == TEP_OK) {
-		UI_LOGIN_LOG("passcode set in tepOS\n");
+	if (result == PASSCODE_OK) {
+		UI_LOGIN_LOG("passcode set\n");
 	} else {
-		UI_LOGIN_LOG("setting the passcode failed: %s\n", tep_result_name(result));
+		UI_LOGIN_LOG("setting the passcode failed: %s\n", passcode_result_name(result));
 	}
 	return ui_login_result(result);
 }
@@ -132,10 +132,15 @@ ui_login_set(void *context, const uint8_t *old_passcode, uint32_t old_length, co
 bool
 ui_service_login(const UIServiceHostV5 *host)
 {
-	if (tep_mailbox_link_state() == TEP_LINK_ABSENT) {
-		UI_LOGIN_LOG("no Trusted Enclave link: no login screen\n");
-		return true;
-	}
+#if defined(NXU_LOGIN_UNLOCKED)
+	/* A test kernel (makedefs/tests.mk): nobody is at the keyboard to type a passcode. */
+	(void)host;
+	(void)ui_login_status;
+	(void)ui_login_verify;
+	(void)ui_login_set;
+	UI_LOGIN_LOG("test kernel built unlocked: no login screen\n");
+	return true;
+#else
 
 	UIServiceLoginHostV1 login = {
 		.header = {.struct_size = sizeof(UIServiceLoginHostV1), .abi_version = UI_SERVICE_LOGIN_ABI_VERSION_V1},
@@ -152,7 +157,7 @@ ui_service_login(const UIServiceHostV5 *host)
 
 	/* Keys pressed before the screen was up are not part of anything typed on it. */
 	keyboard_flush_keys();
-	UI_LOGIN_LOG("the desktop waits for the passcode (checked by tepOS)\n");
+	UI_LOGIN_LOG("the desktop waits for the passcode\n");
 
 	uint32_t status = UIServiceRunLogin(host, &login);
 
@@ -163,6 +168,7 @@ ui_service_login(const UIServiceHostV5 *host)
 
 	UI_LOGIN_LOG("unlocked\n");
 	return true;
+#endif
 }
 
 #endif

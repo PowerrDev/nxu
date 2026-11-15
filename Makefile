@@ -297,6 +297,20 @@ endif
 
 
 # =============================================================================
+# Optional Trusted Enclave mailbox (TEP=1)
+# =============================================================================
+
+ifeq ($(TEP),1)
+CFLAGS += -DNXU_TEP=1
+endif
+
+# The objects that look at NXU_TEP are rebuilt when TEP changes.
+TEP_CONFIG := $(BUILD)/tep-config
+$(call nxu_config_stamp,$(TEP_CONFIG),TEP=$(TEP))
+$(BUILD)/kern/kern_init.o $(BUILD)/kern/tests/boot_test.o: $(TEP_CONFIG)
+
+
+# =============================================================================
 # WindowServer.framework integration
 # =============================================================================
 
@@ -336,10 +350,6 @@ C_SOURCES := \
     drivers/input/mouse.c \
     drivers/block/block_device.c \
     drivers/block/partition.c \
-    drivers/tep/tep_boot.c \
-    drivers/tep/tep_crypto.c \
-    drivers/tep/tep_mailbox.c \
-    drivers/tep/tep_uart_pl011.c \
     drivers/video/display.c \
     drivers/video/ramfb_console.c \
     skylight/skylight.c \
@@ -443,7 +453,6 @@ C_SOURCES := \
     kern/tests/pty_test.c \
     kern/tests/serial_test.c \
     kern/tests/termios_process_test.c \
-    kern/tests/tep_mailbox_test.c \
     kern/tests/windowserver_process_test.c \
     kern/tests/about_groveos_process_test.c \
     kern/tests/unified_boot.c \
@@ -452,6 +461,8 @@ C_SOURCES := \
     kern/process/statistics.c \
     kern/process/crash.c \
     kern/security/sap.c \
+    kern/security/random.c \
+    kern/security/passcode.c \
     kern/logging/diagnostics.c \
     vfs/btrfs/btrfs_chunk.c \
     vfs/btrfs/btrfs_csum.c \
@@ -505,9 +516,22 @@ C_SOURCES := \
     platform/arm64/uart.c \
     libk/crc32c.c \
     libk/sha256.c \
+    libk/pbkdf2.c \
     libk/mp3.c \
     libk/string.c \
     libk/wav.c
+
+# The Trusted Enclave mailbox (doc/drivers/tep-mailbox.md) is an optional
+# experiment: only `TEP=1` builds it (makedefs/MakeInc.config). Nothing else
+# in the kernel needs it.
+ifeq ($(TEP),1)
+C_SOURCES += \
+    drivers/tep/tep_boot.c \
+    drivers/tep/tep_crypto.c \
+    drivers/tep/tep_mailbox.c \
+    drivers/tep/tep_uart_pl011.c \
+    kern/tests/tep_mailbox_test.c
+endif
 
 
 ASM_SOURCES := \
@@ -1306,7 +1330,8 @@ $(USER_STAGE_STAMP): frameworks/Terminal.framework/Info.plist tools/UI/Icons/Ter
 
 	$(Q)cp $(USER_BUILD)/bootd $(DISK_ROOT)/System/Library/CoreServices/bootd
 
-	$(Q)tools/sign_boot_image.sh $(DISK_ROOT)/System/Library/CoreServices/bootd bootd $(DISK_ROOT)/System/Library/CoreServices/bootd.manifest
+	@# Only TEP=1 signs bootd for the optional tepOS (doc/drivers/tep-mailbox.md).
+	$(Q)$(if $(filter 1,$(TEP)),tools/sign_boot_image.sh $(DISK_ROOT)/System/Library/CoreServices/bootd bootd,rm -f) $(DISK_ROOT)/System/Library/CoreServices/bootd.manifest
 
 	$(Q)cp $(USER_BUILD)/bootd $(DISK_ROOT)/System/Library/CoreServices/bootd.recovery
 

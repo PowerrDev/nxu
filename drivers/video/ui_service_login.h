@@ -6,12 +6,14 @@
  *
  * What the UIService hosts (platform/{arm64,i386}/services/ui_service.c)
  * share for the login screen: keyboard events, and the passcode callbacks
- * behind UIServiceRunLogin, answered by tepOS (drivers/tep/tep_crypto.h).
+ * behind UIServiceRunLogin, answered by the kernel's passcode store
+ * (kern/security/passcode.h).
  *
- * The desktop is locked only when there is a Trusted Enclave link to check
- * a passcode with. When there is one, nothing but tepOS accepting a
- * passcode (or setting the first one) unlocks it: an unreachable tepOS
- * leaves the login screen waiting, never the desktop open.
+ * The desktop is always locked. Nothing but the store accepting a passcode
+ * (or setting the first one) unlocks it: a store that cannot answer yet
+ * (the system volume not mounted) leaves the login screen waiting, never
+ * the desktop open. Only a test kernel built with NXU_LOGIN_UNLOCKED skips
+ * the login screen.
  */
 
 #ifndef NXU_DRIVERS_VIDEO_UI_SERVICE_LOGIN_H
@@ -31,10 +33,9 @@ uint64_t ui_service_keyboard_capability(void);
 bool ui_service_poll_key(UIServiceHostEvent *event);
 
 /*
- * Before the desktop app starts: true when it may. Without a Trusted
- * Enclave port there is nothing to check a passcode with and no login
- * screen; with one, the login screen runs until tepOS accepts a passcode,
- * and anything else keeps the desktop locked (false).
+ * Before the desktop app starts: true when it may. The login screen runs
+ * until the passcode store accepts a passcode, and anything else keeps the
+ * desktop locked (false).
  */
 bool ui_service_login(const UIServiceHostV5 *host);
 

@@ -84,7 +84,9 @@ regular files; `rm -r` also removes nested files and empty ext4 directories.
 Recovery directory enumeration hides `.` and `..`. Directory, read-only,
 permission and nonempty-directory failures retain their specific diagnostics.
 For protected directories, `rm -r --force-system PATH` opens the SAP modal and
-requires the existing tepOS passcode before any deletion starts.
+requires the existing login passcode ([Login passcode](kern/passcode.md))
+before any deletion starts. A forgotten or locked passcode is reset here with
+`rm /Volumes/mainOS/var/db/passcode`.
 
 `partition-delete DEVICE INDEX --force` deletes an existing MBR/GPT partition.
 The index is the zero-based index shown by `partitions`. A device with a mounted

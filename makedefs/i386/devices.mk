@@ -19,10 +19,6 @@ I386_C_SOURCES += \
     drivers/input/input.c \
     drivers/input/keyboard.c \
     drivers/input/mouse.c \
-    drivers/tep/tep_boot.c \
-    drivers/tep/tep_crypto.c \
-    drivers/tep/tep_mailbox.c \
-    drivers/tep/tep_uart_16550.c \
     drivers/video/display.c \
     kern/boot/splash.c \
     kern/boot/splash_asset.c \
@@ -63,3 +59,21 @@ I386_C_SOURCES += \
 test-i386-devices: $(I386_KERNEL)
 
 	tools/test_i386_devices.sh $(I386_KERNEL)
+
+
+# The Trusted Enclave mailbox (doc/drivers/tep-mailbox.md) is an optional
+# experiment: only `TEP=1` builds it. Nothing else in the kernel needs it.
+ifeq ($(TEP),1)
+I386_C_SOURCES += \
+    drivers/tep/tep_boot.c \
+    drivers/tep/tep_crypto.c \
+    drivers/tep/tep_mailbox.c \
+    drivers/tep/tep_uart_16550.c
+
+I386_CFLAGS += -DNXU_TEP=1
+endif
+
+# The objects that look at NXU_TEP are rebuilt when TEP changes.
+I386_TEP_CONFIG := $(I386_BUILD)/tep-config
+$(call nxu_config_stamp,$(I386_TEP_CONFIG),TEP=$(TEP))
+$(I386_BUILD)/platform/i386/devices_init.o $(I386_BUILD)/kern/i386/userland_init.o: $(I386_TEP_CONFIG)

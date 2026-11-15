@@ -23,10 +23,9 @@
 #include <kern/machine/user.h>
 #include <kern/process/thread.h>
 #include <libk/sha256.h>
-#include <drivers/tep/tep_crypto.h>
-#include <drivers/tep/tep_mailbox.h>
 #include <kern/boot/boot_args.h>
 #include <kern/sched_prism/sched.h>
+#include <kern/security/random.h>
 #include <vfs/vfs.h>
 #include <vm/address_space.h>
 #include <vm/pmm.h>
@@ -1301,16 +1300,8 @@ loader_dyrld_map(proc_t proc, nxu_dyrld_image_t *image)
 	nxu_dyrld_image_t result = {0};
 	memcpy(result.path, image->path, sizeof(result.path));
 	uint32_t random = 0;
-	if (boot_arg_uint32("dyrld.aslr", 1) && tep_random(&random, sizeof(random)) != TEP_OK) {
-		/* A machine with no enclave UART has no source for randomized slides.
-		 * Keep the ordinary untrusted desktop usable with fixed slides there.
-		 * If a mailbox is present but tepOS is not answering, retain the
-		 * fail-closed behavior instead of silently weakening ASLR. */
-		if (tep_mailbox_link_state() != TEP_LINK_ABSENT) {
-			vnode_rele(vnode);
-			return LOADER_STATUS_IO_ERROR;
-		}
-	}
+	/* The kernel's own generator (kern/security/random.h); dyrld.aslr=0 gives fixed slides, for debugging. */
+	if (boot_arg_uint32("dyrld.aslr", 1)) random_bytes(&random, sizeof(random));
 
 #if defined(__i386__)
 	/* Sixteen 56-MiB slots fit below the anonymous-mapping window. Each

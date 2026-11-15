@@ -29,10 +29,10 @@ application stranded when the daemon restarts during launch.
 
 Mappings reject overlapping segments, writable executable segments, excessive
 size, unsupported interpreters and dependency paths outside the framework root.
-ASLR obtains randomness from tepOS. When the machine has no enclave mailbox,
-frameworks use fixed slides so the untrusted desktop can still launch. If a
-mailbox is present but tepOS is unavailable, mapping fails closed. The explicit
-developer boot argument `dyrld.aslr=0` disables random sliding for isolated
+ASLR obtains randomness from the kernel's own generator
+(`kern/security/random.c`, [Random numbers](kern/random.md)), on every
+machine, with or without the optional tepOS. The explicit developer boot
+argument `dyrld.aslr=0` disables random sliding for isolated
 tests. Each process can load 16 images plus its interpreter.
 
 Supported relocations are AArch64 RELATIVE, ABS64, GLOB_DAT and JUMP_SLOT.

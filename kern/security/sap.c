@@ -27,7 +27,7 @@
 #include <frameworks/include/nxu/pointer_cursor.h>
 #include <drivers/input/keyboard.h>
 #include <drivers/virtio/virtio_input.h>
-#include <drivers/tep/tep_crypto.h>
+#include <kern/security/passcode.h>
 #include <reporter_fonts.h>
 
 /* Apple-style alert palette (0x00RRGGBB for text, 0xAARRGGBB for fills). A
@@ -425,20 +425,21 @@ prompt(const char *path, bool recursive)
 
 		if (activate && stage) {
 			uint32_t wait = 0;
-			tep_result_t status = tep_auth_verify(password, length, &wait);
+			passcode_result_t status = passcode_verify(password, length, &wait);
 
 			wipe(password, sizeof(password));
 			length = 0;
 
-			if (status == TEP_OK) {
+			if (status == PASSCODE_OK) {
 				approved = !cancelled();
 				break;
 			}
 
 			kprintf("password refused\n");
-			message = status == TEP_ERR_DENIED		  ? "Incorrect password. Try again or press Escape."
-					  : status == TEP_ERR_RETRY_LATER ? "Please wait before trying again, or press Escape."
-													  : "Password verification is unavailable. Press Escape to cancel.";
+			message = status == PASSCODE_ERR_DENIED		   ? "Incorrect password. Try again or press Escape."
+					  : status == PASSCODE_ERR_RETRY_LATER ? "Please wait before trying again, or press Escape."
+					  : status == PASSCODE_ERR_LOCKED	   ? "Password locked. Reset it from Recovery."
+														   : "Password verification is unavailable. Press Escape to cancel.";
 		}
 	}
 

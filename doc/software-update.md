@@ -129,10 +129,10 @@ active rollback journal must stay with its original system. Existing seeds
 are read and copied into a new recovery filesystem. For a fresh install,
 omit the seed argument even on the first launch.
 
-For isolated debugging without tepOS, use:
+For isolated debugging with fixed framework slides, use:
 
 ```sh
-make run-i386-desktop I386_BOOT=direct I386_DESKTOP_SMP=1 TEP=0 \
+make run-i386-desktop I386_BOOT=direct I386_DESKTOP_SMP=1 \
     BOOT_ARGS="dyrld.aslr=0"
 ```
 

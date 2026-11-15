@@ -90,8 +90,14 @@ UI session draws into the virtio-gpu framebuffer, so it runs headless too.
 
 ### The Trusted Enclave mailbox
 
+Test kernels are built with `NXU_LOGIN_UNLOCKED`: the UIService login screen
+is skipped, since nobody is at the keyboard. Only the `desktop` row (`make
+run`) keeps the login (`TEST_desktop_LOCKED`); see
+[Login passcode](kern/passcode.md).
+
 `tep-mailbox` needs a second machine running tepOS, so it is not a `make check`
-row either. `make test-tep-mailbox` (`tools/test_tep_mailbox.sh`) builds tepOS
+row either. tepOS is optional and off by default (`TEP=1` builds it in); this
+row builds its kernel with the mailbox (`TEST_tep-mailbox_TEP_KERNEL`). `make test-tep-mailbox` (`tools/test_tep_mailbox.sh`) builds tepOS
 from the TrustedEnclaveProcessor checkout next to this repository (`TEP_DIR`
 overrides it), boots it and the test kernel with the mailbox relay, and passes
 only if the protocol checks pass, the driver fails closed after the harness

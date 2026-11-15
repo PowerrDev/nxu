@@ -3,8 +3,8 @@
 # =============================================================================
 #
 #   make i386        build BUILD/i386/kernel.elf (a Multiboot ELF)
-#   make run-i386    boot it under qemu-system-i386 with the console on stdio,
-#                    tepOS alongside (TEP=0: NXU alone)
+#   make run-i386    boot it under qemu-system-i386 with the console on stdio
+#                    (TEP=1: with the optional tepOS alongside)
 #   make test-i386   boot it once per trap test and check the reports
 #
 # Kept separate from the arm64 build until the shared sources are all
@@ -85,12 +85,13 @@ $(I386_BUILD)/drivers/video/login_wallpaper_asset.o: drivers/video/login_wallpap
 i386: $(I386_KERNEL)
 
 
-# run-i386 boots tepOS alongside, joined over COM2 by the mailbox
-# (tools/with_tepos.sh, doc/drivers/tep-mailbox.md); TEP=0 boots NXU alone.
-# Neither run target passes -no-reboot (the tests do): a reset, from the guest
-# or QEMU's Machine > Reset, reboots NXU instead of exiting QEMU, which
-# with_tepos.sh would take as the end of the run and stop tepOS too.
-I386_TEP_WRAPPER = $(if $(filter 0,$(TEP)),,tools/with_tepos.sh)
+# run-i386 boots NXU alone. TEP=1 builds the optional mailbox in and boots
+# tepOS alongside, joined over COM2 (tools/with_tepos.sh,
+# doc/drivers/tep-mailbox.md). Neither run target passes -no-reboot (the
+# tests do): a reset, from the guest or QEMU's Machine > Reset, reboots NXU
+# instead of exiting QEMU, which with_tepos.sh would take as the end of the
+# run and stop tepOS too.
+I386_TEP_WRAPPER = $(if $(filter 1,$(TEP)),tools/with_tepos.sh)
 
 run-i386: $(I386_KERNEL)
 

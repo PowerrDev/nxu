@@ -694,7 +694,7 @@ ui_service_bootstrap(void)
 	kputln(UIServiceHasInter() != 0U ? "[com.butterscotch.UIService.framework]: font renderer active"
 									 : "[com.butterscotch.UIService.framework]: bootstrap text renderer active");
 
-	/* With a Trusted Enclave link the desktop waits for tepOS to accept the passcode; a refusal keeps it locked. */
+	/* The desktop waits for the passcode store (kern/security/passcode.c) to accept the passcode; a refusal keeps it locked. */
 	g_ui_service_running = true;
 	if (!ui_service_login(&host)) {
 		g_ui_service_running = false;

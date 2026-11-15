@@ -97,6 +97,24 @@ required component**.
 - Long term, TEP stays isolated, documented, independently buildable, and may be
   removed entirely if its upkeep outweighs its benefit.
 
+**As built.** TEP is a build option, `TEP=1` (`makedefs/MakeInc.config`), off
+by default; the default kernel has no `drivers/tep` code and the run targets
+boot NXU alone. What used to need tepOS is the kernel's own:
+
+- the login passcode, used by the lock screen, the setup assistant, the
+  UIService login and SAP, is a PBKDF2-HMAC-SHA256 record on the system
+  volume at `/var/db/passcode` with tepOS's delays and lockout
+  (`kern/security/passcode.c`, [Login passcode](../kern/passcode.md));
+- random numbers for ASLR slides and salts come from a SHA-256 DRBG seeded
+  from RDRAND/RNDR, counter jitter and a seed file kept on disk
+  (`kern/security/random.c`, [Random numbers](../kern/random.md));
+- PBKDF2 is one kernel implementation, `libk/pbkdf2.c`, verified against the
+  RFC 7914 vectors and the seeded `/etc/shadow` records.
+
+With `TEP=1`, tepOS only adds the bootd measurement (reported, not enforced).
+The login passcode is not yet the account password: `passwd` changes
+`/etc/shadow`, not `/var/db/passcode`.
+
 ## 6. Phased roadmap
 
 Each phase is a self-contained, compiling, testable increment.

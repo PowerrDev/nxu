@@ -20,7 +20,7 @@
  * Run the assistant on display, over wallpaper (the screen's picture, one
  * display->width wide row after another, or null for a flat colour; the
  * wallpaper chosen in it is drawn into this buffer). True once the password
- * is set in tepOS and the choices are written: the session is unlocked.
+ * is set in the passcode store and the choices are written: the session is unlocked.
  */
 bool setup_assistant_run(display_device_t *display, uint32_t *wallpaper, uint32_t scale_permille);
 

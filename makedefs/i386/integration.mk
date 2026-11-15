@@ -54,6 +54,9 @@ I386_C_SOURCES += \
     kern/tty/serial.c \
     libk/crc32c.c \
     libk/sha256.c \
+    libk/pbkdf2.c \
+    kern/security/random.c \
+    kern/security/passcode.c \
     libk/mp3.c \
     libk/wav.c \
     vfs/devfs.c \

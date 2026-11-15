@@ -8,4 +8,4 @@ TEST_desktop_DISPLAY := $(TEST_GUI_DISPLAY)
 TEST_desktop_GPU := ,xres=$(QEMU_GPU_XRES),yres=$(QEMU_GPU_YRES)
 TEST_desktop_RAMFB := $(QEMU_RAMFB_DEVICE)
 TEST_desktop_SMP := 12
-TEST_desktop_TEP := 1
+TEST_desktop_LOCKED := 1

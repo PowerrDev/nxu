@@ -35,8 +35,11 @@
 #include <platform/rtc.h>
 
 #include <drivers/block/block_device.h>
+#if defined(NXU_TEP)
 #include <drivers/tep/tep_boot.h>
 #include <drivers/tep/tep_mailbox.h>
+#endif
+#include <kern/security/random.h>
 #include <drivers/input/input.h>
 #include <drivers/input/keyboard.h>
 #include <drivers/input/mouse.h>
@@ -358,15 +361,21 @@ i386_init_drivers(const i386_boot_info_t *boot)
 			block_device_count(), virtio_input_count(), keyboard_is_present() ? "present" : "absent",
 			mouse_is_present() ? "present" : "absent", virtio_gpu_device_count());
 
-	/*
-	 * The Trusted Enclave link (COM2 when QEMU has a second -serial). Absent, tepOS requests fail closed.
-	 * With it, tepOS checks bootd against its signed manifest: reported, never waited for or enforced.
-	 */
 	virtio_dump();
 	block_device_dump();
 	display_dump();
 
+	/* ASLR slides and password salts come from here; nothing outside this machine is needed. */
+	random_init();
+
+#if defined(NXU_TEP)
+	/*
+	 * The optional Trusted Enclave link (TEP=1 builds only; COM2 when QEMU has a second -serial).
+	 * With it, tepOS checks bootd against its signed manifest: reported, never waited for or enforced.
+	 * Nothing else depends on it: passcodes and random numbers are the kernel's own.
+	 */
 	if (tep_mailbox_start()) (void)tep_boot_check_start();
+#endif
 
 	return true;
 }

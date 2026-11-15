@@ -88,6 +88,8 @@ deviates from that rule in two places; both are recorded in
 - [Process control](kern/process-control.md) — user-fault containment, signals, `fork` and `exec`.
 - [Scheduler](kern/scheduler.md) — processor object, priority run queue and quantum core.
 - [Timers](kern/timers.md): the monotonic clock, per-CPU timer calls, the event timer, the scheduler's deadlines and the i386 Local APIC timer.
+- [Login passcode](kern/passcode.md): the desktop passcode kept by the kernel on the system volume, with its delays and lockout.
+- [Random numbers](kern/random.md): the kernel's own generator for ASLR slides and salts.
 
 ## Virtual filesystem (`vfs`)
 

@@ -372,7 +372,8 @@ $(I386_USER_STAMP): $(I386_USER_BINARIES) $(I386_USER_PLISTS) $(I386_DISK_STATIC
 
 	$(Q)cp $(I386_USER_BUILD)/bootd $(I386_DISKROOT)/System/Library/CoreServices/bootd
 
-	$(Q)tools/sign_boot_image.sh $(I386_DISKROOT)/System/Library/CoreServices/bootd bootd $(I386_DISKROOT)/System/Library/CoreServices/bootd.manifest
+	@# Only TEP=1 signs bootd for the optional tepOS (doc/drivers/tep-mailbox.md).
+	$(Q)$(if $(filter 1,$(TEP)),tools/sign_boot_image.sh $(I386_DISKROOT)/System/Library/CoreServices/bootd bootd,rm -f) $(I386_DISKROOT)/System/Library/CoreServices/bootd.manifest
 
 	$(Q)cp $(I386_USER_BUILD)/bootd $(I386_DISKROOT)/System/Library/CoreServices/bootd.recovery
 

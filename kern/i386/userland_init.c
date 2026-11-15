@@ -28,7 +28,9 @@
 #include <drivers/block/block_device.h>
 #include <drivers/input/keyboard.h>
 #include <drivers/virtio/virtio_input.h>
+#if defined(NXU_TEP)
 #include <drivers/tep/tep_mailbox.h>
+#endif
 #include <drivers/video/ui_service_host.h>
 #include <kern/aqua/window_server.h>
 #include <kern/boot/boot_chime.h>
@@ -392,10 +394,14 @@ i386_init_run(const i386_boot_info_t *boot)
 
 	/*
 	 * Without bootd (no disk, as in make run-i386) there is normally nothing
-	 * left to run. The tepOS mailbox monitor is a kernel thread, though, so
-	 * keep scheduling while the machine has a mailbox link.
+	 * left to run. In a TEP=1 build the tepOS mailbox monitor is a kernel
+	 * thread, though, so keep scheduling while the machine has a mailbox link.
 	 */
+#if defined(NXU_TEP)
 	if (g_boot_process == 0 && tep_mailbox_link_state() == TEP_LINK_ABSENT) return true;
+#else
+	if (g_boot_process == 0) return true;
+#endif
 
 	char value[16];
 	uint64_t limit_us = 0ULL;

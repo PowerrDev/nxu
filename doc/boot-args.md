@@ -58,19 +58,21 @@ is read-only.
   at `/Volumes/Recovery` for NSW preparation. It cannot remount a device
   already in use.
 - `dyrld.aslr=0` disables runtime framework sliding for developer tests.
-  The default is 1 and uses randomness from tepOS when an enclave mailbox is
-  available. Machines without a mailbox use fixed framework slides; if a
-  mailbox is present but tepOS is unavailable, dynamic launches fail closed.
+  The default is 1: slides come from the kernel's random number generator
+  (`kern/security/random.c`, [Random numbers](kern/random.md)) on every
+  machine.
 
 The parser also supports `name=value` tokens for later kernel tunables.
 
 ## Userland desktop integration
 
 `ui.userland=1` selects the independent trusted kernel login path and skips the
-legacy kernel desktop. With an enclave UART present, ordinary display/input
-operations remain excluded until tepOS accepts authentication. An unreachable
-enclave leaves the desktop locked; no enclave UART retains the existing
-no-login policy. Recovery boot bypasses this desktop login path.
+legacy kernel desktop. Ordinary display/input operations remain excluded until
+the kernel's passcode store accepts the passcode, or the setup assistant sets
+the first one ([Login passcode](kern/passcode.md)). Until the system volume is
+mounted the store cannot answer and the desktop stays locked. Recovery boot
+bypasses this desktop login path. There is no boot argument that skips the
+login.
 
 `make run` boots this mode by default. bootd starts the installed WindowServer
 and DesktopService jobs; DesktopService requires `ui.userland=1`. The kernel

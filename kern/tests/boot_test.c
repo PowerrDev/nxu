@@ -22,7 +22,9 @@
 #include <kern/tests/process_control_test.h>
 #include <kern/tests/socket_process_test.h>
 #include <kern/tests/sound_test.h>
+#if defined(NXU_TEP_MAILBOX_TEST)
 #include <kern/tests/tep_mailbox_test.h>
+#endif
 #include <kern/tests/thread_process_test.h>
 #include <kern/tests/unified_boot.h>
 #include <kern/tests/windowserver_process_test.h>

@@ -101,6 +101,7 @@ TEP_DEVICES=$("$MAKE_CMD" -s -C "$TEP_DIR" qemu-devices TEP_KEYSTORE_IMG="$SCRAT
 echo "test_tep_mailbox: building the $ID kernel and a scratch disk"
 cp -R tools/DiskRoot "$SCRATCH/DiskRoot" || exit 1
 DISK_OVERRIDES=(
+	"TEP=1"
 	"DISK=$SCRATCH/disk.img"
 	"DISK_ROOT=$SCRATCH/DiskRoot"
 	"DISK_FORMAT_STAMP=$SCRATCH/format.stamp"
@@ -117,8 +118,8 @@ python3 -c 'import sys; b = bytearray(open(sys.argv[1], "rb").read()); b[len(b) 
 NXU_BOOT_VERSION=1 tools/sign_boot_image.sh "$CORE/bootd" bootd "$CORE/bootd.v1.manifest" >>"$SCRATCH/nxu-build.log" 2>&1
 [ -f "$CORE/bootd.v1.manifest" ] || { echo "test_tep_mailbox: could not sign the version 1 manifest"; exit 1; }
 "$MAKE_CMD" --no-print-directory "${DISK_OVERRIDES[@]}" "$SCRATCH/disk.img" >>"$SCRATCH/nxu-build.log" 2>&1 </dev/null || { tail -20 "$SCRATCH/nxu-build.log"; exit 1; }
-"$MAKE_CMD" --no-print-directory "${DISK_OVERRIDES[@]}" BUILD_ROOT=BUILD CONFIG="$ID" \
-	EXTRA_CFLAGS="-DNXU_TEP_MAILBOX_TEST" all >>"$SCRATCH/nxu-build.log" 2>&1 </dev/null || { grep error "$SCRATCH/nxu-build.log" | head; exit 1; }
+"$MAKE_CMD" --no-print-directory "${DISK_OVERRIDES[@]}" BUILD_ROOT=BUILD CONFIG="$ID" TEP=1 \
+	EXTRA_CFLAGS="-DNXU_TEP_MAILBOX_TEST -DNXU_LOGIN_UNLOCKED" all >>"$SCRATCH/nxu-build.log" 2>&1 </dev/null || { grep error "$SCRATCH/nxu-build.log" | head; exit 1; }
 
 echo "test_tep_mailbox: booting NXU"
 : >"$NXU_LOG"

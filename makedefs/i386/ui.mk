@@ -105,8 +105,9 @@ i386-desktop:
 # arbitrary size that happens to render but isn't actually correct for this
 # host.
 #
-# Like run-i386 it boots tepOS alongside (tools/with_tepos.sh, TEP=0 to skip),
-# so the desktop is locked behind the tepOS passcode, and it has the host's
+# The desktop is locked behind the login passcode, kept by the kernel on the
+# system volume (kern/security/passcode.c); TEP=1 also boots the optional
+# tepOS alongside (tools/with_tepos.sh), which nothing needs. It has the host's
 # speakers as a VirtIO sound device for the boot chime.
 #
 # virtio-irq=1: the VirtIO devices interrupt (PCI INTx) instead of being
