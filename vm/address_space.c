@@ -303,6 +303,28 @@ vm_address_space_unmap_page(vm_address_space_t *space, uint64_t virtual_address)
 }
 
 bool
+vm_address_space_unmap_page_take(vm_address_space_t *space, uint64_t virtual_address, uint64_t *physical_address)
+{
+	if (space == 0 || physical_address == 0) return false;
+
+	nxu_spin_lock(&space->lock);
+
+	vm_user_page_mapping_t mapping;
+	bool removed = pmap_query(&space->pmap, virtual_address, &mapping) &&
+				   pmap_remove(&space->pmap, virtual_address, &space->active_cpus);
+
+	if (removed) {
+		space->resident_pages--;
+		if (vm_address_in_shm_window(virtual_address)) space->shared_pages--;
+		*physical_address = mapping.physical_address;
+	}
+
+	nxu_spin_unlock(&space->lock);
+
+	return removed;
+}
+
+bool
 vm_address_space_restrict_page(vm_address_space_t *space, uint64_t address)
 {
 	if (space == 0) return false;

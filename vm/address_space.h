@@ -112,6 +112,17 @@ bool vm_address_space_map_page(vm_address_space_t *space, uint64_t virtual_addre
  */
 bool vm_address_space_unmap_page(vm_address_space_t *space, uint64_t virtual_address);
 
+/*
+ * Remove one user page mapping and report the physical page it pointed at, as
+ * one step under the space lock. Returns false (and leaves *physical_address
+ * alone) when nothing was mapped there. A caller that owns the page frees
+ * exactly what this returns: looking the page up first and removing it
+ * separately lets another thread (a copy-on-write break, a second munmap)
+ * swap or remove it in between, and the wrong page gets freed.
+ */
+bool vm_address_space_unmap_page_take(vm_address_space_t *space, uint64_t virtual_address,
+									  uint64_t *physical_address);
+
 /* Loader finalization: remove write/COW permission from an existing
  * non-executable page. Never grants permission or changes page ownership. */
 bool vm_address_space_restrict_page(vm_address_space_t *space, uint64_t address);

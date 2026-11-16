@@ -1354,13 +1354,12 @@ test_fault_vs_unmap(void)
 			cpu_relax();
 
 		for (uint32_t page = 0U; page < VRACE_PAGES; page++) {
-			vm_user_page_mapping_t mapping;
 			uint64_t address = VRACE_BASE + (uint64_t)page * 4096ULL;
+			uint64_t physical;
 
-			if (vm_address_space_query_page(&g_vrace.space, address, &mapping)) {
+			if (vm_address_space_unmap_page_take(&g_vrace.space, address, &physical)) {
 				stragglers++;
-				(void)vm_address_space_unmap_page(&g_vrace.space, address);
-				(void)pmm_free_page(mapping.physical_address);
+				(void)pmm_free_page(physical);
 			}
 		}
 	}

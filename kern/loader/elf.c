@@ -1452,10 +1452,8 @@ loader_dyrld_map(proc_t proc, nxu_dyrld_image_t *image)
 			for (uint32_t i = 0; i < result.segment_count; i++) {
 				uint64_t end = (result.segments[i].address + result.segments[i].size + 4095) & ~4095ULL;
 				for (uint64_t address = result.segments[i].address & ~4095ULL; address < end; address += 4096) {
-					vm_user_page_mapping_t mapping;
-					if (vm_address_space_query_page(map, address, &mapping) &&
-						vm_address_space_unmap_page(map, address))
-						pmm_free_page(mapping.physical_address);
+					uint64_t physical;
+					if (vm_address_space_unmap_page_take(map, address, &physical)) pmm_free_page(physical);
 				}
 			}
 		return status;

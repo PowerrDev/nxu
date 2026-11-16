@@ -327,12 +327,8 @@ vm_map_free(vm_address_space_t *space, uint64_t va, uint64_t size_bytes)
 	nxu_spin_unlock(&space->lock);
 
 	for (uint64_t offset = 0ULL; offset < span; offset += PMM_PAGE_SIZE) {
-		uint64_t page_va = va + offset;
-		vm_user_page_mapping_t mapping;
-		if (vm_address_space_query_page(space, page_va, &mapping)) {
-			(void)vm_address_space_unmap_page(space, page_va);
-			(void)pmm_free_page(mapping.physical_address);
-		}
+		uint64_t physical;
+		if (vm_address_space_unmap_page_take(space, va + offset, &physical)) (void)pmm_free_page(physical);
 	}
 
 	if (whole) (void)kfree(entry);
@@ -380,11 +376,8 @@ vm_map_destroy_all(vm_address_space_t *space)
 		vm_map_entry_t next = entry->next;
 
 		for (uint64_t page_va = entry->start_va; page_va < entry->end_va; page_va += PMM_PAGE_SIZE) {
-			vm_user_page_mapping_t mapping;
-			if (vm_address_space_query_page(space, page_va, &mapping)) {
-				(void)vm_address_space_unmap_page(space, page_va);
-				(void)pmm_free_page(mapping.physical_address);
-			}
+			uint64_t physical;
+			if (vm_address_space_unmap_page_take(space, page_va, &physical)) (void)pmm_free_page(physical);
 		}
 
 		(void)kfree(entry);
