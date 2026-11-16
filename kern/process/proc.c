@@ -975,7 +975,10 @@ proc_exit(proc_t proc, uint64_t status)
 	/* Let a parent that installed a SIGCHLD handler know. */
 	signal_notify_parent_of_exit_locked(proc->p_pptr);
 
+	/* Held across the wakeup and the log below: once the lock is dropped the
+	 * parent can exit and be reaped on another CPU, and its slot reused. */
 	proc_t parent = proc->p_pptr;
+	if (parent != 0 && !proc_reference_locked(parent)) parent = 0;
 
 	proc_unlock(&g_proc_lock);
 
@@ -999,6 +1002,8 @@ proc_exit(proc_t proc, uint64_t status)
 	kverbosef("pid %u (%s) exited with status 0x%llx; parent pid %u, %u process group(s) orphaned\n",
 			  (uint32_t)proc->p_ident.pid, proc->p_comm, (unsigned long long)status,
 			  parent != 0 ? (uint32_t)parent->p_ident.pid : 0U, orphaned_count);
+
+	proc_rele(parent);
 
 	sched_unbind_boot_cpu();
 	return true;
