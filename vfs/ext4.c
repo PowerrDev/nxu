@@ -739,6 +739,10 @@ ext4_parse_superblock(ext4_mount_data_t *data, const uint8_t super[EXT4_SUPERBLO
 	uint32_t journal_inode = ext4_le32(super + 0xE0U);
 	if (blocks_count == 0ULL || blocks_per_group == 0U || inodes_per_group == 0U) return VFS_STATUS_IO_ERROR;
 
+	/* Each group's block and inode bitmaps are one block: a group cannot describe
+	 * more bits than that block holds, or the bitmap walks run off the buffer. */
+	if (blocks_per_group > block_size * 8U || inodes_per_group > block_size * 8U) return VFS_STATUS_IO_ERROR;
+
 	if (inodes_count < EXT4_ROOT_INODE || journal_inode != EXT4_JOURNAL_INODE_DEFAULT) return VFS_STATUS_NOT_SUPPORTED;
 	if (first_inode < 11U || first_inode > inodes_count) return VFS_STATUS_IO_ERROR;
 
@@ -754,6 +758,9 @@ ext4_parse_superblock(ext4_mount_data_t *data, const uint8_t super[EXT4_SUPERBLO
 	uint64_t described_blocks = blocks_count - first_data_block;
 	uint64_t groups = (described_blocks + blocks_per_group - 1ULL) / blocks_per_group;
 	if (groups == 0ULL || groups > UINT32_MAX) return VFS_STATUS_NOT_SUPPORTED;
+
+	/* Every inode number must land in a group that exists. */
+	if ((uint64_t)inodes_count > groups * inodes_per_group) return VFS_STATUS_IO_ERROR;
 	uint16_t descriptor_size = 32U;
 	if ((incompat & EXT4_FEATURE_INCOMPAT_64BIT) != 0U) {
 		descriptor_size = ext4_le16(super + 0xFEU);
