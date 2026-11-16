@@ -127,8 +127,9 @@ typedef struct {
 
 /*
  * Load the executable at path and start it as a child of parent, configured
- * as `request` says. LOADER_STATUS_DENIED: the process group to join does not
- * exist in the parent's session. LOADER_STATUS_INVALID: a descriptor named in
+ * as `request` says. LOADER_STATUS_DENIED: the parent may not execute the file,
+ * or the process group to join does not exist in the parent's session.
+ * LOADER_STATUS_INVALID: a descriptor named in
  * the request is not open in the parent, or is named twice for the child.
  */
 loader_status_t loader_spawn_request(proc_t parent, const char *path, const loader_spawn_request_t *request,

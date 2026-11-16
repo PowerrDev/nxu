@@ -641,6 +641,26 @@ loader_configure_process(proc_t parent, proc_t proc, const loader_spawn_request_
 	return status;
 }
 
+/*
+ * May `who` run the regular file `vnode`? It needs execute permission for its
+ * credentials; root, which bypasses the mode check, still needs the file to
+ * carry at least one execute bit (as on every Unix). Filesystems without
+ * ownership metadata are not enforced.
+ */
+static bool
+loader_may_execute(proc_t who, vnode_t vnode)
+{
+	const struct ucred *cred = proc_ucred(who);
+	if (cred == 0) return false;
+
+	if (vnode_access(vnode, cred, VNODE_ACCESS_EXEC) != VFS_STATUS_OK) return false;
+	if (!ucred_is_root(cred)) return true;
+
+	vnode_attr_t attr;
+	if (vnode_getattr(vnode, &attr) != VFS_STATUS_OK) return true;
+	return (attr.va_mode & 0111U) != 0U;
+}
+
 static loader_status_t
 loader_spawn_internal(proc_t parent, const char *path, const loader_spawn_request_t *request, const char *dynamic_main,
 					  proc_t *result)
@@ -663,6 +683,12 @@ loader_spawn_internal(proc_t parent, const char *path, const loader_spawn_reques
 	if (vnode->v_type != VNODE_TYPE_REGULAR) {
 		vnode_rele(vnode);
 		return LOADER_STATUS_BAD_FORMAT;
+	}
+
+	/* Checked before setuid is honored, so a 4750 binary stays its group's. */
+	if (!loader_may_execute(parent, vnode)) {
+		vnode_rele(vnode);
+		return LOADER_STATUS_DENIED;
 	}
 
 	/*
@@ -775,6 +801,7 @@ loader_spawn_internal(proc_t parent, const char *path, const loader_spawn_reques
 	uint64_t created_us = timer_get_microseconds();
 
 	/* Before setuid-exec below, so an executable that asks for its owner's identity still gets it. */
+	bool child_was_root = proc_ucred(proc) != 0 && ucred_is_root(proc_ucred(proc));
 	if (request->set_identity) {
 		struct ucred *child_cred = proc_ucred(proc);
 
@@ -807,6 +834,10 @@ loader_spawn_internal(proc_t parent, const char *path, const loader_spawn_reques
 				kprintf("setuid-exec %s: euid %u -> %u\n", path, (unsigned)before, (unsigned)setuid_uid);
 		}
 	}
+
+	/* A child that starts as a user (spawn identity, or setuid to a non-root
+	 * owner) does not keep a root parent's machine-wide capabilities. */
+	proc_drop_root_caps(proc, child_was_root);
 
 	loader_handoff_bootstrap_port(proc);
 
@@ -1025,6 +1056,11 @@ loader_exec_internal(proc_t proc, const char *path, const loader_exec_args_t *ar
 	if (vnode->v_type != VNODE_TYPE_REGULAR) {
 		vnode_rele(vnode);
 		return LOADER_STATUS_BAD_FORMAT;
+	}
+
+	if (!loader_may_execute(proc, vnode)) {
+		vnode_rele(vnode);
+		return LOADER_STATUS_DENIED;
 	}
 
 	loader_header_t header;

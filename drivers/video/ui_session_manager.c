@@ -10,6 +10,7 @@
 #include <kern/process/signal.h>
 #include <kern/sched_prism/sched.h>
 #include <kern/sched_prism/waitq.h>
+#include <kern/security/sap.h>
 #include <kern/machine/timer.h>
 #include <vfs/vfs.h>
 #include <vm/user_copy.h>
@@ -454,21 +455,68 @@ ui_bridge_control_activity(uint64_t user_request)
 	return result;
 }
 
-/* Activity Monitor's Kill button: terminate an arbitrary process by pid. The
- * kernel task (PID 0) is never killable here; everything else gets SIGKILL from
- * the kernel. */
+/*
+ * Whether `path` may be queued for the desktop to open. The desktop launches
+ * with the bundle's own capability policy, so a request must name an installed
+ * app (a `.app` directly inside one of the root-owned app directories, with or
+ * without the /Volumes/mainOS prefix), never a bundle a user wrote elsewhere.
+ */
+static bool
+ui_bridge_launch_allowed(const char *path)
+{
+	static const char *const roots[] = {"/Applications/", "/System/Library/CoreServices/"};
+	static const char mount[] = "/Volumes/mainOS";
+
+	char canonical[VFS_PATH_MAX];
+	if (!sap_canonical_path(path, canonical)) return false;
+
+	const char *rest = canonical;
+	size_t rest_length = strlen(rest);
+	if (rest_length > sizeof(mount) - 1U && memcmp(rest, mount, sizeof(mount) - 1U) == 0 &&
+		rest[sizeof(mount) - 1U] == '/') {
+		rest += sizeof(mount) - 1U;
+		rest_length -= sizeof(mount) - 1U;
+	}
+
+	for (size_t r = 0U; r < sizeof(roots) / sizeof(roots[0]); r++) {
+		size_t root_length = strlen(roots[r]);
+		if (rest_length <= root_length || memcmp(rest, roots[r], root_length) != 0) continue;
+
+		const char *name = rest + root_length;
+		size_t name_length = rest_length - root_length;
+		if (name_length <= 4U) return false;
+		for (size_t i = 0U; i < name_length; i++) {
+			if (name[i] == '/') return false;
+		}
+		return memcmp(name + name_length - 4U, ".app", 4U) == 0;
+	}
+
+	return false;
+}
+
+/* Activity Monitor's Kill button: terminate a process by pid. The caller sends
+ * the SIGKILL itself, so kill(2)'s permission rules apply (root, or the same
+ * user; PID 1 and the kernel task are never ended this way). */
 static int64_t
 ui_bridge_control_kill(uint32_t pid)
 {
 	if (pid == PROC_PID_KERNEL) return -NXU_SYS_E_INVALID_ARGUMENT;
 
 	/*
-	 * SIGKILL from the kernel ends the target outright (proc_exit); nothing
-	 * is delivered to user mode, so this works on every port, with or
-	 * without MACHINE_USER_CONTEXT.
+	 * SIGKILL to another process ends it outright (proc_exit); nothing is
+	 * delivered to user mode, so this works on every port, with or without
+	 * MACHINE_USER_CONTEXT.
 	 */
-	(void)signal_send(proc_kernel(), pid, NXU_SIGKILL);
-	return 0;
+	switch (signal_send(current_proc(), pid, NXU_SIGKILL)) {
+	case SIGNAL_SEND_OK:
+		return 0;
+	case SIGNAL_SEND_NO_SUCH_PROCESS:
+		return -NXU_SYS_E_NOT_FOUND;
+	case SIGNAL_SEND_DENIED:
+		return -NXU_SYS_E_DENIED;
+	default:
+		return -NXU_SYS_E_INVALID_ARGUMENT;
+	}
 }
 
 int64_t
@@ -493,6 +541,7 @@ ui_bridge_syscall_control(uint64_t operation, uint64_t argument)
 		char path[NXU_UI_PATH_MAX];
 
 		if (!vm_copy_string_from_user(path, argument, sizeof(path))) return -NXU_SYS_E_BAD_ADDRESS;
+		if (!ui_bridge_launch_allowed(path)) return -NXU_SYS_E_DENIED;
 
 		int64_t result = -NXU_SYS_E_AGAIN;
 

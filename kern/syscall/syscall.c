@@ -254,7 +254,9 @@ syscall_setuid(uint64_t uid)
 {
 	struct ucred *cred = proc_ucred(current_proc());
 	if (cred == 0 || uid > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	bool was_root = ucred_is_root(cred);
 	if (!ucred_setuid(cred, (nxu_uid_t)uid)) return syscall_error(SYSCALL_ERROR_DENIED);
+	proc_drop_root_caps(current_proc(), was_root);
 	return syscall_return(0ULL);
 }
 
@@ -263,7 +265,9 @@ syscall_seteuid(uint64_t uid)
 {
 	struct ucred *cred = proc_ucred(current_proc());
 	if (cred == 0 || uid > UINT32_MAX) return syscall_error(SYSCALL_ERROR_INVALID_ARGUMENT);
+	bool was_root = ucred_is_root(cred);
 	if (!ucred_seteuid(cred, (nxu_uid_t)uid)) return syscall_error(SYSCALL_ERROR_DENIED);
+	proc_drop_root_caps(current_proc(), was_root);
 	return syscall_return(0ULL);
 }
 
@@ -816,6 +820,63 @@ syscall_open_may_modify(const char *path, uint32_t flags)
 	return device;
 }
 
+/*
+ * syscall_directory_may_change:
+ *
+ * Unix permission check for adding or removing the last component of `path`
+ * (an absolute path from syscall_copy_path): the caller needs write and search
+ * permission on the parent directory. When `removing` and the parent has the
+ * sticky bit, the caller must also own the parent or the entry itself, so one
+ * user cannot delete another's files from a shared directory. Root bypasses,
+ * and filesystems that report no ownership are not enforced (vnode_access).
+ */
+static vfs_status_t
+syscall_directory_may_change(const char *path, bool removing)
+{
+	const struct ucred *cred = proc_ucred(current_proc());
+	if (ucred_is_root(cred)) return VFS_STATUS_OK;
+
+	char canonical[VFS_PATH_MAX];
+	if (!sap_canonical_path(path, canonical)) return VFS_STATUS_DENIED;
+
+	char parent[VFS_PATH_MAX];
+	uint32_t slash = 0U;
+	for (uint32_t i = 0U; canonical[i] != 0; i++) {
+		if (canonical[i] == '/') slash = i;
+	}
+	if (slash == 0U) {
+		parent[0] = '/';
+		parent[1] = 0;
+	} else {
+		memcpy(parent, canonical, slash);
+		parent[slash] = 0;
+	}
+
+	vnode_t directory;
+	vfs_status_t status = vfs_lookup(parent, &directory);
+	if (status != VFS_STATUS_OK) return status;
+
+	status = vnode_access(directory, cred, VNODE_ACCESS_WRITE | VNODE_ACCESS_EXEC);
+
+	vnode_attr_t directory_attr;
+	bool sticky = false;
+	if (status == VFS_STATUS_OK && removing && vnode_getattr(directory, &directory_attr) == VFS_STATUS_OK)
+		sticky = (directory_attr.va_mode & NXU_S_ISVTX) != 0U && directory_attr.va_uid != cred->cr_uid;
+	vnode_rele(directory);
+	if (status != VFS_STATUS_OK || !sticky) return status;
+
+	/* Sticky directory the caller does not own: only the entry's owner may remove it. */
+	vnode_t entry;
+	status = vfs_lookup(canonical, &entry);
+	if (status != VFS_STATUS_OK) return status;
+
+	vnode_attr_t entry_attr;
+	status = vnode_getattr(entry, &entry_attr);
+	vnode_rele(entry);
+	if (status != VFS_STATUS_OK) return status;
+	return entry_attr.va_uid == cred->cr_uid ? VFS_STATUS_OK : VFS_STATUS_DENIED;
+}
+
 static syscall_result_t
 syscall_open(uint64_t user_path, uint64_t flags)
 {
@@ -829,19 +890,22 @@ syscall_open(uint64_t user_path, uint64_t flags)
 	/*
 	 * Unix permission check for a file that already exists: the caller's
 	 * credentials against the file's owner/group/mode. Root bypasses. Creating
-	 * a new file is governed by the directory (a directory write/search check
-	 * is a later slice) and remains gated by NXU_CAP_FS_WRITE.
+	 * a new file is governed by the directory instead: write and search on the
+	 * parent, on top of NXU_CAP_FS_WRITE.
 	 */
 	uint32_t want = 0U;
 	if (((uint32_t)flags & NXU_O_READ) != 0U) want |= VNODE_ACCESS_READ;
 	if (((uint32_t)flags & NXU_O_MODIFYING) != 0U) want |= VNODE_ACCESS_WRITE;
-	if (want != 0U) {
-		vnode_t existing;
-		if (vfs_lookup(path, &existing) == VFS_STATUS_OK) {
-			vfs_status_t access = vnode_access(existing, proc_ucred(current_proc()), want);
-			vnode_rele(existing);
-			if (access != VFS_STATUS_OK) return syscall_error(syscall_vfs_error(access));
-		}
+	vnode_t existing;
+	if (vfs_lookup(path, &existing) == VFS_STATUS_OK) {
+		vfs_status_t access =
+			want != 0U ? vnode_access(existing, proc_ucred(current_proc()), want) : VFS_STATUS_OK;
+		vnode_rele(existing);
+		if (access != VFS_STATUS_OK) return syscall_error(syscall_vfs_error(access));
+	} else if (((uint32_t)flags & NXU_O_CREATE) != 0U) {
+		/* A new file is an entry added to its directory. */
+		vfs_status_t access = syscall_directory_may_change(path, false);
+		if (access != VFS_STATUS_OK) return syscall_error(syscall_vfs_error(access));
 	}
 
 	uint32_t descriptor;
@@ -1479,7 +1543,8 @@ syscall_mkdir(uint64_t user_path)
 	syscall_error_t path_error = syscall_copy_path(user_path, path);
 	if (path_error != 0) return syscall_error(path_error);
 
-	vfs_status_t status = vfs_mkdir(path);
+	vfs_status_t status = syscall_directory_may_change(path, false);
+	if (status == VFS_STATUS_OK) status = vfs_mkdir(path);
 	return status == VFS_STATUS_OK ? syscall_return(0ULL) : syscall_error(syscall_vfs_error(status));
 }
 
@@ -2103,7 +2168,7 @@ syscall_unlink(uint64_t user_path)
 		 * approve the delete. (sap_submit is the authorisation, so it needs no
 		 * capability of its own.) */
 		status = sap_delete(current_proc(), canonical);
-	else
+	else if ((status = syscall_directory_may_change(canonical, true)) == VFS_STATUS_OK)
 		status = vfs_unlink(canonical);
 	return status == VFS_STATUS_OK ? syscall_return(0) : syscall_error(syscall_vfs_error(status));
 }
@@ -2118,7 +2183,8 @@ syscall_rmdir(uint64_t user_path)
 	if (!sap_canonical_path(path, canonical)) return syscall_error(SYSCALL_ERROR_DENIED);
 	if (!syscall_erase_privileged() && (!syscall_has_caps(NXU_CAP_FS_WRITE) || sap_protected_path(canonical)))
 		return syscall_error(SYSCALL_ERROR_DENIED);
-	vfs_status_t status = vfs_rmdir(canonical);
+	vfs_status_t status = syscall_erase_privileged() ? VFS_STATUS_OK : syscall_directory_may_change(canonical, true);
+	if (status == VFS_STATUS_OK) status = vfs_rmdir(canonical);
 	return status == VFS_STATUS_OK ? syscall_return(0) : syscall_error(syscall_vfs_error(status));
 }
 
@@ -3337,6 +3403,8 @@ syscall_dispatch_inner(const syscall_request_t *request)
 	case SYSCALL_SYSTEM_RESET:
 		return syscall_system_reset();
 	case SYSCALL_PANIC:
+		/* Halting the machine is a reset, so it takes the reset capability (root has it). */
+		if (!syscall_has_caps(NXU_CAP_RESET)) return syscall_error(SYSCALL_ERROR_DENIED);
 		return syscall_panic();
 	case SYSCALL_SEEK:
 		return syscall_seek(request->arguments[0], request->arguments[1]);

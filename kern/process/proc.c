@@ -1295,6 +1295,25 @@ proc_set_caps(proc_t proc, uint32_t caps)
 	if (proc != 0) proc->p_caps = caps & NXU_CAP_ALL;
 }
 
+/*
+ * The capabilities a process may keep once it is no longer root: ordinary
+ * per-user work (files, the display, sound, crash-report notices). Machine-wide
+ * powers (reset, storage, reading other processes' crash snapshots) are root's.
+ */
+#define PROC_CAPS_UNPRIVILEGED (NXU_CAP_FS_WRITE | NXU_CAP_DISPLAY | NXU_CAP_AUDIO | NXU_CAP_CRASH_UI)
+
+void
+proc_drop_root_caps(proc_t proc, bool was_root)
+{
+	if (proc == 0 || !was_root || ucred_is_root(&proc->p_ucred)) return;
+
+	uint32_t before = proc->p_caps;
+	proc->p_caps = before & PROC_CAPS_UNPRIVILEGED;
+	if (proc->p_caps != before)
+		kprintf("pid %u left root: caps 0x%x -> 0x%x\n", (unsigned)proc->p_ident.pid, (unsigned)before,
+				(unsigned)proc->p_caps);
+}
+
 struct ucred *
 proc_ucred(proc_t proc)
 {

@@ -348,6 +348,11 @@ bool proc_set_cwd(proc_t proc, const char *path);
  * checks the mask against the parent's first. */
 void proc_set_caps(proc_t proc, uint32_t caps);
 
+/* Called after proc's credentials change. If proc was root (`was_root`) and no
+ * longer is, narrow its capability mask to what an ordinary user may hold, so
+ * a root parent's grant does not survive the switch to a user (login, su). */
+void proc_drop_root_caps(proc_t proc, bool was_root);
+
 /* The process's Unix credentials (never null for a live process). */
 struct ucred *proc_ucred(proc_t proc);
 
