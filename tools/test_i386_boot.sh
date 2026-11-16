@@ -76,7 +76,7 @@ run_case() {
 
 run_case kernel no "test=kernel qemu-exit=1" $STATUS_CLEAN \
   "i386_init_kernel: ramfs mounted at /, /Volumes/mainOS mountpoint created" \
-  "i386_init_kernel_selftest: NXPC, name tables, ramfs and boot-args ok"
+  "i386_init: kernel self-test passed"
 
 run_case kernel-only no "qemu-exit=1" $STATUS_CLEAN \
   "no block device, staying in kernel-only mode" \
