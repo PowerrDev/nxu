@@ -10,6 +10,7 @@
 #include <kern/i386/pmap.h>
 
 #include <kern/i386/gdt.h>
+#include <kern/i386/smp.h>
 #include <kern/i386/memory_map.h>
 
 #include <kern/console/console.h>
@@ -490,6 +491,8 @@ pmap_unmap_mmio(void *virtual_address, uint64_t size)
 		if (pmap_get_entry(directory, page_address, false, false, 0, &entry)) {
 			pmap_entry_store(entry, 0U);
 			pmap_invalidate_page(page_address);
+			/* The window is reused for the next device: no CPU may keep it. */
+			smp_tlb_shootdown_kernel(&page_address, 1U);
 		}
 	}
 	for (uint32_t index = 0U; index < reserved; index++)

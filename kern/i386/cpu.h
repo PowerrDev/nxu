@@ -15,10 +15,27 @@
 
 #include <stdint.h>
 
+#if defined(__i386__)
+/*
+ * TLB shootdown poll (kern/i386/smp.c). Every spin loop goes through
+ * cpu_relax(), and syscalls, traps and the kernel VM locks all run with
+ * interrupts masked, so a CPU spinning there could never take the shootdown
+ * IPI of a CPU that is waiting on it. Servicing a pending request here breaks
+ * that cycle. Weak, so code linked without smp.c still builds.
+ */
+extern uint32_t g_tlb_shootdown_targets __attribute__((weak));
+void smp_tlb_shootdown_handle(void) __attribute__((weak));
+#endif
+
 static inline void
 cpu_relax(void)
 {
 	__asm__ volatile("pause" : : : "memory");
+#if defined(__i386__)
+	if (&g_tlb_shootdown_targets != 0 && __atomic_load_n(&g_tlb_shootdown_targets, __ATOMIC_RELAXED) != 0U &&
+		smp_tlb_shootdown_handle != 0)
+		smp_tlb_shootdown_handle();
+#endif
 }
 
 static inline void

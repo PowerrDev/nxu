@@ -93,11 +93,21 @@ void smp_handle_ipi(uint32_t vector);
  * count==0 or the list overflows -- on every CPU in `active` other than the
  * caller, for the space whose CR3 (PTE_FRAME bits) is `directory_physical`.
  * Returns only once every target has acknowledged its local invalidation, so
- * the mutation is globally coherent on return. Must be called with interrupts
- * enabled (the VM paths hold only the plain space->lock); a no-op on a
- * single-CPU system. smp_tlb_shootdown_handle() is its interrupt-context peer.
+ * the mutation is globally coherent on return. Any interrupt state: a target
+ * with interrupts masked services the request from its spin loop (cpu_relax).
+ * A no-op on a single-CPU system.
+ *
+ * smp_tlb_shootdown_kernel
+ *
+ * The same for kernel higher-half pages, on every other online CPU.
+ *
+ * smp_tlb_shootdown_handle
+ *
+ * Service the current request on this CPU if it is a target: the
+ * T_IPI_SHOOTDOWN handler, and the spin-loop poll.
  */
 void smp_tlb_shootdown(const nxu_cpuset_t *active, uint32_t directory_physical, const uint32_t *vas, uint32_t count);
+void smp_tlb_shootdown_kernel(const uint32_t *vas, uint32_t count);
 void smp_tlb_shootdown_handle(void);
 
 /*

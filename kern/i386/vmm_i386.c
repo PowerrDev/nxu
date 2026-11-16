@@ -30,6 +30,7 @@
 #include <vm/vmm.h>
 
 #include <kern/i386/pmap.h>
+#include <kern/i386/smp.h>
 
 #include <kern/console/console.h>
 #include <vm/address_space.h>
@@ -222,6 +223,11 @@ vmm_unmap_page(uint64_t virtual_address, uint64_t *physical_address)
 
 	pmap_entry_store(entry, 0U);
 	pmap_invalidate_page((uint32_t)virtual_address);
+
+	/* Every CPU shares the kernel half: drop the old translation everywhere
+	 * before the caller may free the page or reuse the address. */
+	uint32_t va = (uint32_t)virtual_address;
+	smp_tlb_shootdown_kernel(&va, 1U);
 	return true;
 }
 
@@ -246,6 +252,10 @@ vmm_protect_page(uint64_t virtual_address, vmm_protection_t protection)
 	pmap_entry_store(entry, (pmap_entry_load(entry) & ~(PTE_WRITE | PTE_SOFTWARE_EXEC | PTE_NX)) |
 								(flags & (PTE_WRITE | PTE_SOFTWARE_EXEC | PTE_NX)));
 	pmap_invalidate_page((uint32_t)virtual_address);
+
+	/* A narrowed permission must hold on every CPU, not just this one. */
+	uint32_t va = (uint32_t)virtual_address;
+	smp_tlb_shootdown_kernel(&va, 1U);
 	return true;
 }
 

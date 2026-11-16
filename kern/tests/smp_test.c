@@ -2239,19 +2239,18 @@ smp_test_run(void)
  * secondaries tick off a PIT broadcast -- runs them to validate its user pmap
  * TLB shootdown without the scheduler/timer cases that target arm64's model.
  *
- * `memory` (the kernel-arena vm_kern map/unmap coherence test) is deliberately
- * NOT here: the kernel higher-half map's mutators run under the recursive
- * interrupt-masked vm_kern rlock, so cross-CPU shootdown there cannot rely on a
- * waiting CPU taking the IPI; it needs the invalidation moved outside that lock.
- * It stays in the full suite (arm64, whose broadcast TLBI covers it) until i386
- * grows that kernel-map shootdown.
+ * `memory` (the kernel-arena vm_kern map/unmap coherence test) runs here too:
+ * the kernel higher-half map's mutators broadcast their invalidations
+ * (smp_tlb_shootdown_kernel), which works under the interrupt-masked vm_kern
+ * rlock because a CPU spinning with interrupts masked services pending
+ * shootdowns from cpu_relax().
  */
 bool
 smp_test_run_vm(void)
 {
 	static const smp_test_case_t cases[] = {
-		{"usertlb", test_user_tlb}, {"vmrace", test_fault_vs_unmap}, {"cowrace", test_cow_race},
-		{"tty", test_tty_stress}};
+		{"memory", test_memory},	  {"usertlb", test_user_tlb}, {"vmrace", test_fault_vs_unmap},
+		{"cowrace", test_cow_race}, {"tty", test_tty_stress}};
 
 	/* Every case here pins work to a second CPU; with one online there is no
 	 * cross-CPU translation to make stale, so the shootdown is trivially correct

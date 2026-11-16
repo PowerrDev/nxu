@@ -13,6 +13,7 @@
 #include <kern/process/proc.h>
 
 #include <kern/machine/cpu.h>
+#include <kern/machine/machine_routines.h>
 #include <kern/sched_prism/processor.h>
 
 #include <platform/uart.h>
@@ -31,6 +32,7 @@
  */
 typedef struct {
 	volatile uint32_t value;
+	uint64_t irq_state; /* the holder's interrupt state from before it took the lock */
 } thread_lock_t;
 
 static thread_lock_t g_thread_lock;
@@ -49,13 +51,21 @@ static bool g_thread_initialized;
  * thread_lock
  *
  * Serialize thread-object, task-membership and global-list state.
+ *
+ * Taken with interrupts masked: timer callbacks wake threads from interrupt
+ * context (waitq deadlines -> thread_go), so a holder interrupted on its own
+ * CPU would otherwise spin on itself for ever. The lock is innermost and never
+ * nested, so the holder's saved interrupt state can live in the lock itself.
  */
 static void
 thread_lock(thread_lock_t *lock)
 {
+	uint64_t state = ml_irq_save();
+
 	while (__atomic_exchange_n(&lock->value, 1U, __ATOMIC_ACQUIRE) != 0U) {
 		cpu_relax();
 	}
+	lock->irq_state = state;
 }
 
 /*
@@ -64,7 +74,10 @@ thread_lock(thread_lock_t *lock)
 static void
 thread_unlock(thread_lock_t *lock)
 {
+	uint64_t state = lock->irq_state;
+
 	__atomic_store_n(&lock->value, 0U, __ATOMIC_RELEASE);
+	ml_irq_restore(state);
 }
 
 /*

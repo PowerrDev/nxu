@@ -104,6 +104,9 @@ extern uint8_t i386_smp_trampoline_end[];
 
 static uint32_t g_cpu_total = 1U;
 static uint32_t g_cpu_online = 1U;
+/* CPUs that take part in TLB shootdowns (bit = logical id): able to take the
+ * IPI, and not stopped. The boot CPU is bit 0. */
+static uint32_t g_cpu_online_mask = 1U;
 /* Monotonic delivery acknowledgements; scheduling flags can be consumed. */
 static uint32_t g_reschedule_deliveries[NXU_MAX_CPUS];
 
@@ -161,6 +164,10 @@ i386_smp_secondary_main(uint32_t cpu_id, processor_t cpu)
 
 	apic_enable_local();
 
+	/* From here it can be sent shootdowns (it polls them while interrupts are
+	 * still masked), so kernel-map changes from now on reach its TLB. */
+	__atomic_fetch_or(&g_cpu_online_mask, 1U << cpu_id, __ATOMIC_ACQ_REL);
+
 	/* This CPU's own event timer, before it can take an interrupt (nothing if the PIT is kept). */
 	lapic_timer_cpu_start();
 
@@ -214,53 +221,69 @@ machine_ipi_raise_others(uint32_t vector)
 	apic_send_ipi_all_but_self(raw_vector);
 }
 
-/* ---- cross-CPU TLB shootdown (user address spaces) ---------------------- */
+/* ---- cross-CPU TLB shootdown -------------------------------------------- */
 /*
- * x86 has no hardware TLBI broadcast: a CPU that changed or removed a user
- * mapping an address space loaded on another CPU must interrupt that CPU, have
- * it invalidate locally, and wait for it to acknowledge before the mutation is
- * globally coherent (the vm/pmap.h "coherent on return" contract).
+ * x86 has no hardware TLBI broadcast: a CPU that changed or removed a mapping
+ * another CPU may have cached must interrupt that CPU, have it invalidate
+ * locally, and wait for it to acknowledge before the mutation is globally
+ * coherent (the vm/pmap.h "coherent on return" contract). That covers user
+ * address spaces (only the CPUs that have the space loaded) and the kernel's
+ * higher half (every online CPU).
  *
- * One global request serialised by a plain spinlock, acknowledged through a
- * countdown the targets decrement. The invariant that keeps it deadlock-free is
- * that the sender waits with interrupts ENABLED: a CPU that is itself a shootdown
- * target still takes and services the incoming IPI while waiting, so two CPUs
- * shooting each other down both make progress. The VM mutators hold only the
- * plain space->lock (interrupts enabled), never an irq-masking lock, across a
- * mutating pmap_* call, so this invariant holds. The handler takes no lock, and
- * the sender keeps the lock until every target has decremented, so the request
- * stays stable for the whole exchange.
+ * One global request, serialised by g_tlb_shootdown.lock and kept stable until
+ * every target has acknowledged. Each target owns one bit of
+ * g_tlb_shootdown_targets and clears it once it has invalidated; the sender
+ * waits for the mask to empty.
  *
- * (The kernel higher-half map needs its own cross-CPU shootdown too, but its
- * mutators run under the recursive interrupt-MASKED vm_kern rlock, so a CPU
- * waiting on that lock cannot take the IPI -- this engine's precondition fails
- * there. That path requires moving the invalidation outside the lock and is not
- * implemented here.)
+ * A target is serviced either by the T_IPI_SHOOTDOWN interrupt or, when its
+ * interrupts are masked (every syscall and trap runs on an interrupt gate, and
+ * the kernel VM locks mask them), by polling from cpu_relax() in whatever spin
+ * loop it is in -- including the loop waiting for this very lock. That is what
+ * keeps two CPUs shooting each other down, or a sender and a CPU spinning on a
+ * lock the sender holds, from deadlocking (XNU services pending flushes from
+ * its lock spin loops the same way). Servicing is keyed on the CPU's own bit,
+ * so an IPI that arrives after its request was already polled is a no-op and
+ * can never acknowledge a later request.
  */
 
-/* Above this many pages a request flushes the whole (non-global) TLB instead of
- * carrying an unbounded VA list; user pages are not global, so a CR3 reload
- * flushes them. */
+/* Above this many pages a user request flushes the whole (non-global) TLB
+ * instead of carrying an unbounded VA list; user pages are not global, so a CR3
+ * reload flushes them. Kernel requests are always carried page by page. */
 #define SMP_TLB_SHOOTDOWN_MAX_VAS 64U
+
+/* A target that has not answered in this long is reported; in this long, the
+ * system is stopped rather than left running on a stale translation. */
+#define SMP_TLB_SHOOTDOWN_WARN_US 1000000ULL
+#define SMP_TLB_SHOOTDOWN_FATAL_US 10000000ULL
 
 static struct {
 	nxu_spinlock_t lock;
-	uint32_t directory_physical; /* target space CR3 (PTE_FRAME bits); a CPU whose
+	bool kernel;				 /* the higher half: every target invalidates, whatever its CR3 */
+	uint32_t directory_physical; /* user request: target space CR3 (PTE_FRAME bits); a CPU whose
 								  * CR3 differs has already flushed and skips. */
 	bool flush_all;
 	uint32_t count;
 	uint32_t vas[SMP_TLB_SHOOTDOWN_MAX_VAS];
-	uint32_t pending; /* targets not yet acknowledged; __atomic_* only */
 } g_tlb_shootdown;
 
+/* CPUs that still owe the current request an invalidation (bit = logical id).
+ * Not static: cpu_relax() polls it (kern/i386/cpu.h). __atomic_* only. */
+uint32_t g_tlb_shootdown_targets;
+
+_Static_assert(NXU_MAX_CPUS <= 32U, "g_tlb_shootdown_targets is one 32-bit mask");
+
 /*
- * Run on a target CPU in interrupt context (T_IPI_SHOOTDOWN). Invalidate the
- * request's pages if this CPU still has the mutated space loaded, then ack.
+ * Service the current request on this CPU if it is still a target: from the
+ * T_IPI_SHOOTDOWN interrupt, or polled from a spin loop. Cheap when it is not.
  */
 void
 smp_tlb_shootdown_handle(void)
 {
-	if (pmap_current_directory_physical() == g_tlb_shootdown.directory_physical) {
+	uint32_t bit = 1U << (uint32_t)machine_cpu_id();
+
+	if ((__atomic_load_n(&g_tlb_shootdown_targets, __ATOMIC_ACQUIRE) & bit) == 0U) return;
+
+	if (g_tlb_shootdown.kernel || pmap_current_directory_physical() == g_tlb_shootdown.directory_physical) {
 		if (g_tlb_shootdown.flush_all) {
 			pmap_flush_tlb();
 		} else {
@@ -269,35 +292,33 @@ smp_tlb_shootdown_handle(void)
 		}
 	}
 
-	/* Release so the sender observes the invalidation completing before the
-	 * count drops. */
-	__atomic_sub_fetch(&g_tlb_shootdown.pending, 1U, __ATOMIC_ACQ_REL);
+	/* Release: the sender sees the invalidation done before it sees the bit clear. */
+	__atomic_fetch_and(&g_tlb_shootdown_targets, ~bit, __ATOMIC_RELEASE);
 }
 
 /*
- * Invalidate `count` pages (`vas`) -- or the whole space when vas==0/count==0 or
- * the list would overflow -- on every CPU in `active` other than the caller, for
- * the address space whose CR3 is `directory_physical`. Returns once every target
- * has acknowledged (or a safety deadline elapses). The caller must already have
- * invalidated locally and must have interrupts enabled. A no-op on a single-CPU
- * system or when no other CPU holds the space.
+ * Publish one request to `targets` (a CPU mask, never including the caller),
+ * interrupt them, and wait until every one has acknowledged. Any interrupt
+ * state; the request lock masks interrupts so a handler on this CPU that maps
+ * or unmaps kernel memory cannot spin on a lock its own CPU holds.
  */
-void
-smp_tlb_shootdown(const nxu_cpuset_t *active, uint32_t directory_physical, const uint32_t *vas, uint32_t count)
+static void
+smp_tlb_shootdown_send(uint32_t targets, bool kernel, uint32_t directory_physical, const uint32_t *vas,
+					   uint32_t count)
 {
-	if (active == 0 || g_cpu_total <= 1U) return;
-
-	uint32_t self = (uint32_t)machine_cpu_id();
-	uint32_t targets = 0U;
-
-	for (uint32_t cpu = 0U; cpu < g_cpu_total; cpu++) {
-		if (cpu != self && cpuset_contains(active, cpu)) targets++;
-	}
-
 	if (targets == 0U) return;
 
-	nxu_spin_lock(&g_tlb_shootdown.lock);
+	uint64_t irq = nxu_spin_lock_irqsave(&g_tlb_shootdown.lock);
 
+	/* Recompute against CPUs still online now that the request is ours. */
+	targets &= __atomic_load_n(&g_cpu_online_mask, __ATOMIC_ACQUIRE);
+	targets &= ~(1U << (uint32_t)machine_cpu_id());
+	if (targets == 0U) {
+		nxu_spin_unlock_irqrestore(&g_tlb_shootdown.lock, irq);
+		return;
+	}
+
+	g_tlb_shootdown.kernel = kernel;
 	g_tlb_shootdown.directory_physical = directory_physical;
 
 	if (vas == 0 || count == 0U || count > SMP_TLB_SHOOTDOWN_MAX_VAS) {
@@ -310,26 +331,84 @@ smp_tlb_shootdown(const nxu_cpuset_t *active, uint32_t directory_physical, const
 			g_tlb_shootdown.vas[i] = vas[i];
 	}
 
-	__atomic_store_n(&g_tlb_shootdown.pending, targets, __ATOMIC_RELEASE);
-
-	/* Publish the whole request before any CPU is interrupted. */
+	/* Publish the whole request before any CPU can see itself targeted. */
+	__atomic_store_n(&g_tlb_shootdown_targets, targets, __ATOMIC_RELEASE);
 	__atomic_thread_fence(__ATOMIC_SEQ_CST);
 
 	for (uint32_t cpu = 0U; cpu < g_cpu_total; cpu++) {
-		if (cpu != self && cpuset_contains(active, cpu)) apic_send_ipi(g_cpu_apic_id[cpu], T_IPI_SHOOTDOWN);
+		if ((targets & (1U << cpu)) != 0U) apic_send_ipi(g_cpu_apic_id[cpu], T_IPI_SHOOTDOWN);
 	}
 
-	/* Spin for acknowledgements with interrupts enabled (the deadlock-free
-	 * invariant). The deadline guards a wedged/offlined target; the caller's
-	 * local invalidation stands regardless. */
-	uint64_t deadline = timer_get_microseconds() + 1000000ULL;
+	uint64_t started = timer_get_microseconds();
+	bool warned = false;
 
-	while (__atomic_load_n(&g_tlb_shootdown.pending, __ATOMIC_ACQUIRE) != 0U) {
-		if (timer_get_microseconds() > deadline) break;
+	for (;;) {
+		uint32_t left = __atomic_load_n(&g_tlb_shootdown_targets, __ATOMIC_ACQUIRE);
+		if (left == 0U) break;
+
+		uint64_t waited = timer_get_microseconds() - started;
+		if (!warned && waited > SMP_TLB_SHOOTDOWN_WARN_US) {
+			warned = true;
+			kprintf("TLB shootdown from cpu%u: cpus 0x%x have not acknowledged after %llu us\n",
+					(unsigned)machine_cpu_id(), (unsigned)left, (unsigned long long)waited);
+		}
+		if (waited > SMP_TLB_SHOOTDOWN_FATAL_US) {
+			/* Carrying on would leave a CPU translating through a freed or
+			 * changed mapping. Stop here, through the trap panic report. */
+			kprintf("TLB shootdown from cpu%u: cpus 0x%x never acknowledged; stopping\n",
+					(unsigned)machine_cpu_id(), (unsigned)left);
+			__builtin_trap();
+		}
 		cpu_relax();
 	}
 
-	nxu_spin_unlock(&g_tlb_shootdown.lock);
+	nxu_spin_unlock_irqrestore(&g_tlb_shootdown.lock, irq);
+}
+
+/*
+ * Invalidate `count` pages (`vas`) -- or the whole space when vas==0/count==0 or
+ * the list would overflow -- on every CPU in `active` other than the caller, for
+ * the user address space whose CR3 is `directory_physical`. Returns once every
+ * target has acknowledged. The caller must already have invalidated locally.
+ * A no-op on a single-CPU system or when no other CPU holds the space.
+ */
+void
+smp_tlb_shootdown(const nxu_cpuset_t *active, uint32_t directory_physical, const uint32_t *vas, uint32_t count)
+{
+	if (active == 0 || g_cpu_total <= 1U) return;
+
+	uint32_t self = (uint32_t)machine_cpu_id();
+	uint32_t targets = 0U;
+
+	for (uint32_t cpu = 0U; cpu < g_cpu_total; cpu++) {
+		if (cpu != self && cpuset_contains(active, cpu)) targets |= 1U << cpu;
+	}
+
+	smp_tlb_shootdown_send(targets, false, directory_physical, vas, count);
+}
+
+/*
+ * Invalidate the kernel higher-half pages `vas` on every other online CPU and
+ * wait for all of them. The caller must already have invalidated locally.
+ * Safe under the interrupt-masked kernel VM locks: a CPU spinning on one of
+ * them services the request from its spin loop.
+ */
+void
+smp_tlb_shootdown_kernel(const uint32_t *vas, uint32_t count)
+{
+	if (vas == 0 || count == 0U || g_cpu_total <= 1U) return;
+
+	uint32_t others = __atomic_load_n(&g_cpu_online_mask, __ATOMIC_ACQUIRE) & ~(1U << (uint32_t)machine_cpu_id());
+	if (others == 0U) return;
+
+	/* Kernel pages may be global, which a CR3 reload would not flush: always go page by page. */
+	while (count != 0U) {
+		uint32_t chunk = count < SMP_TLB_SHOOTDOWN_MAX_VAS ? count : SMP_TLB_SHOOTDOWN_MAX_VAS;
+
+		smp_tlb_shootdown_send(others, true, 0U, vas, chunk);
+		vas += chunk;
+		count -= chunk;
+	}
 }
 
 void
@@ -348,6 +427,8 @@ smp_handle_ipi(uint32_t vector)
 		/* Never returns: this CPU takes no further interrupts and stops touching memory. */
 		ml_irq_disable();
 		__atomic_store_n(&self->state, PROCESSOR_SHUTDOWN, __ATOMIC_RELEASE);
+		/* A stopped CPU answers no more shootdowns: leave every future target set. */
+		__atomic_fetch_and(&g_cpu_online_mask, ~(1U << self->cpu_id), __ATOMIC_ACQ_REL);
 
 		for (;;)
 			cpu_wait_for_event();
